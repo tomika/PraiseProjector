@@ -4,6 +4,12 @@
 
 Electron-based PraiseProjector desktop app with a React renderer, TypeScript codebase, and built-in local web server.
 
+## What it is all about?
+
+This is my hobby project, which was originally built using C# .NET WinForms. For a long time, I’ve wanted to make it cross-platform, but I never had the time alongside my fulltime job to rewrite the entire thing from scratch. Then came the era of Artificial Intelligence — love it or hate it. I used it to port seven years of manual development into this multiplatform Electron application in just a few months of weekend work.
+
+As a result, the code is by no means 'pretty' or elegant or well designed; however, it gets the job done. While I’m not particularly proud of it — especially since, as mentioned, I didn’t write most of it with my own two hands — I am making it public for a specific reason. Nowadays, installing software on your computer isn't exactly a risk-free decision, so I want to help potential users by providing the source code so anyone can see for themselves that the program performs no 'under-the-table' activities. If you’re as skeptical as I am, you can even compile it yourself directly from the source.
+
 ## Features
 
 - Cross-platform desktop app (Windows, macOS, Linux)
