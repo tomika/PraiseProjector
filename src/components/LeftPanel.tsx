@@ -84,8 +84,6 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       onSongFilterChange,
       playlistSelectedIndex,
       onPlaylistSelectedIndexChange,
-      selectedSongId,
-      onSelectedSongIdChange,
       onPlaylistLoaded,
       settings,
     },

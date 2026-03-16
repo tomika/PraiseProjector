@@ -66,7 +66,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       enableHighlight = true,
       currentSongText = "",
       remoteHighlightController = "",
-      selectedSectionIndex: controlledSectionIndex,
+      selectedSectionIndex = -1,
       onSelectedSectionIndexChange,
       onSectionsReady,
       previewSplitSize,
@@ -83,23 +83,18 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const { isAuthenticated } = useAuth();
     const [activeTab, setActiveTab] = useState("format");
     const [sections, setSections] = useState<ExtendedSectionItem[]>([]);
-    const [selectedSectionIndex, setSelectedSectionIndexInternal] = useState(-1);
     const [nextSectionIndex, setNextSectionIndex] = useState(-1);
     const { guestLeaderId: _guestLeaderId } = useLeader(); // kept for potential future use
 
-    // Sync internal state from controlled prop when it changes
+    // Auto-compute nextSectionIndex when selection or sections change.
+    // Keyboard navigation (arrow keys, Home/End, Page) overrides this until the next selection change.
     useEffect(() => {
-      if (controlledSectionIndex !== undefined && controlledSectionIndex >= -1) {
-        // console.debug("Preview", `Syncing from controlled prop: ${controlledSectionIndex}`);
-        setSelectedSectionIndexInternal(controlledSectionIndex);
+      if (selectedSectionIndex >= 0 && sections.length > 0) {
+        setNextSectionIndex((selectedSectionIndex + 1) % sections.length);
+      } else {
+        setNextSectionIndex(-1);
       }
-    }, [controlledSectionIndex]);
-
-    // Wrapper for setting section index - updates internal state AND notifies parent
-    const setSelectedSectionIndex = useCallback((index: number) => {
-      setSelectedSectionIndexInternal(index);
-      // Don't notify parent here - it will be done via onSelectedSectionIndexChange where appropriate
-    }, []);
+    }, [selectedSectionIndex, sections]);
 
     // Track previous projectedSong to detect when it changes
     const prevProjectedSongIdRef = useRef<string | null>(null);
@@ -349,17 +344,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           for (let i = 0; i < sections.length; i++) {
             const section = sections[i];
             if (section.from <= lineNumber && lineNumber < section.to) {
-              setSelectedSectionIndex(i);
               onSelectedSectionIndexChange?.(i);
-              // Next section is always (selected + 1) % length
-              const nextIndex = sections.length > 0 ? (i + 1) % sections.length : -1;
-              setNextSectionIndex(nextIndex);
               updateDisplayState(i, section);
               return true;
             }
           }
-          setSelectedSectionIndex(-1);
           onSelectedSectionIndexChange?.(-1);
+          updateCurrentDisplay({ from: 0, to: 0, section: -1 }); // Clear display
           return false;
         },
         getSelectedSectionIndex: (): number => {
@@ -367,18 +358,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         },
         setSelectedSectionIndex: (index: number): void => {
           if (index >= -1 && index < sections.length) {
-            setSelectedSectionIndex(index);
-            // Don't call onSelectedSectionIndexChange here - this is called FROM parent during restoration
+            onSelectedSectionIndexChange?.(index);
             if (index >= 0 && sections[index]) {
-              // Next section is always (selected + 1) % length
-              const nextIndex = sections.length > 0 ? (index + 1) % sections.length : -1;
-              setNextSectionIndex(nextIndex);
               updateDisplayState(index, sections[index]);
             }
           }
         },
       }),
-      [sections, getNextCheckedIndex, updateDisplayState, selectedSectionIndex, onSelectedSectionIndexChange]
+      [sections, updateDisplayState, selectedSectionIndex, onSelectedSectionIndexChange]
     );
 
     // Toggle section checkbox
@@ -522,8 +509,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       if (!song || !generatorRef.current) {
         const timerId = setTimeout(() => {
           setSections([]);
-          setSelectedSectionIndex(-1);
-          setNextSectionIndex(-1);
+          onSelectedSectionIndexChange?.(-1);
         }, 0);
         return () => clearTimeout(timerId);
       }
@@ -586,49 +572,21 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
       // Reset selection when projectedSong changes (different song)
       const currentSongId = projectedSong?.Id || null;
-      const songChanged = prevProjectedSongIdRef.current !== currentSongId;
       prevProjectedSongIdRef.current = currentSongId;
 
       // Determine the new selected index
       let newSelectedIndex: number;
 
       // If we have a controlled section index from parent, use it (during restoration)
-      // This check must come first to prevent auto-selection from overriding restored value
-      if (controlledSectionIndex !== undefined && controlledSectionIndex >= 0 && controlledSectionIndex < newSections.length) {
-        newSelectedIndex = controlledSectionIndex;
-        // console.debug("Preview", `Using controlled section index: ${newSelectedIndex}`);
-        // Don't call setSelectedSectionIndex here - sync effect handles it
-        // But do update next section and display state
+      // Parent has a valid selection — apply it
+      if (selectedSectionIndex >= 0 && selectedSectionIndex < newSections.length) {
+        newSelectedIndex = selectedSectionIndex;
         if (newSections[newSelectedIndex]) {
-          const nextIndex = newSections.length > 0 ? (newSelectedIndex + 1) % newSections.length : -1;
-          setNextSectionIndex(nextIndex);
           updateDisplayState(newSelectedIndex, newSections[newSelectedIndex]);
         }
-      }
-      // Keep selection if possible (but reset on song change)
-      else if (!songChanged && selectedSectionIndex >= 0 && selectedSectionIndex < newSections.length) {
-        newSelectedIndex = selectedSectionIndex;
-        setSelectedSectionIndex(newSelectedIndex);
-        // Highlight in editor (use requestAnimationFrame instead of setTimeout)
+        // Highlight in editor
         if (enableHighlight && settings?.sectionHighlightInEditor && editorRef?.current && newSections[newSelectedIndex]) {
           const section = newSections[newSelectedIndex];
-          requestAnimationFrame(() => {
-            editorRef.current?.highlightSectionInEditor(section.from, section.to);
-          });
-        }
-      } else if (newSections.length > 0) {
-        newSelectedIndex = 0;
-        setSelectedSectionIndex(newSelectedIndex);
-        onSelectedSectionIndexChange?.(newSelectedIndex);
-        // Next section is always (selected + 1) % length
-        setNextSectionIndex(newSections.length > 1 ? 1 : 0);
-        // Update display state when song changes and first section is auto-selected
-        if (songChanged && newSections[0]) {
-          updateDisplayState(0, newSections[0]);
-        }
-        // Highlight in editor (use requestAnimationFrame instead of setTimeout)
-        if (enableHighlight && settings?.sectionHighlightInEditor && editorRef?.current) {
-          const section = newSections[0];
           requestAnimationFrame(() => {
             editorRef.current?.highlightSectionInEditor(section.from, section.to);
           });
@@ -649,7 +607,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       projectInstructions,
       projectorWidth,
       projectorHeight,
-      controlledSectionIndex,
+      selectedSectionIndex,
     ]);
 
     // Highlight section in editor when selection changes (matching C# SectionHighlightInEditor)
@@ -664,18 +622,23 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         const section = sections[selectedSectionIndex];
         // Call editor's highlight method with from/to line numbers
         editorRef.current.highlightSectionInEditor(section.from, section.to);
+      } else if (enableHighlight && editorRef?.current && selectedSectionIndex < 0) {
+        // Clear highlight when no section is selected
+        editorRef.current.highlightSectionInEditor(0, 0);
       }
     }, [selectedSectionIndex, sections, settings?.sectionHighlightInEditor, editorRef, enableHighlight]);
 
-    // Scroll selected section into view when selection changes
+    // Scroll selected section into view, or scroll to top when no selection (new song loaded)
     useEffect(() => {
       if (selectedSectionIndex >= 0 && sectionRefs.current[selectedSectionIndex]) {
         sectionRefs.current[selectedSectionIndex]?.scrollIntoView({
           behavior: "smooth",
           block: "nearest",
         });
+      } else if (selectedSectionIndex < 0 && sectionListRef.current) {
+        sectionListRef.current.scrollTop = 0;
       }
-    }, [selectedSectionIndex]);
+    }, [selectedSectionIndex, sections]);
 
     // Observe the CONTAINER to compute the correct letterboxed image dimensions.
     // The container's size is constrained by the flex layout, so it's the reliable reference.
@@ -874,11 +837,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     ]);
 
     const handleSectionClick = (index: number) => {
-      setSelectedSectionIndex(index);
       onSelectedSectionIndexChange?.(index);
-      // Next section is always (selected + 1) % length when clicking on a section
-      const nextIndex = sections.length > 0 ? (index + 1) % sections.length : -1;
-      setNextSectionIndex(nextIndex);
       if (sections[index]) {
         updateDisplayState(index, sections[index]);
       }
@@ -998,14 +957,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             // Go to next index (matching C# OnKeyPress enter)
             if (nextSectionIndex >= 0) {
               const newSelectedIndex = nextSectionIndex;
-              setSelectedSectionIndex(newSelectedIndex);
               onSelectedSectionIndexChange?.(newSelectedIndex);
               if (sections[newSelectedIndex]) {
                 updateDisplayState(newSelectedIndex, sections[newSelectedIndex]);
               }
-              // Next section is always (selected + 1) % length
-              const nextIndex = sections.length > 0 ? (newSelectedIndex + 1) % sections.length : -1;
-              setNextSectionIndex(nextIndex);
             }
             e.preventDefault();
             break;

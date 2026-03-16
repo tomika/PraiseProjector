@@ -367,7 +367,6 @@ const AppContent: React.FC = () => {
   // Save app state to localStorage on changes
   useEffect(() => {
     if (isRestoringStateRef.current) {
-      // console.debug("App", "Save effect SKIPPED - isRestoringStateRef.current = true");
       return;
     }
 
@@ -385,7 +384,6 @@ const AppContent: React.FC = () => {
       previewSplitSize: previewSplitSize,
       windowBounds: undefined, // Will be set on beforeunload
     };
-    // console.debug("App", "SAVING app state", state);
     saveAppState(state);
   }, [
     editedSong?.Id,
@@ -451,6 +449,9 @@ const AppContent: React.FC = () => {
     // But NOT during restoration - we restore to savedState.selectedSongId instead
     if (item && !isRestoringStateRef.current) {
       leftPanelRef.current?.setSelectedSongId(item.songId);
+      // Auto-select first section when user selects a new playlist item from UI
+      setSelectedSectionIndex(0);
+      previewPanelRef.current?.setSelectedSectionIndex(0);
     }
     // Note: index is now updated via onPlaylistSelectedIndexChange prop separately
     // This avoids timing issues with querying state after setState
@@ -511,27 +512,21 @@ const AppContent: React.FC = () => {
 
   // Callback when sections are generated - used for state restoration
   const handleSectionsReady = useCallback((sectionCount: number, autoSelectedIndex: number) => {
-    // console.debug(
-    //   "App",
-    //   `handleSectionsReady: ${sectionCount} sections, auto-selected: ${autoSelectedIndex}, pendingIndex: ${pendingSectionIndexRef.current}, isRestoring: ${isRestoringStateRef.current}`
-    // );
-
     // Check if we have a pending section index to restore
     const pendingIndex = pendingSectionIndexRef.current;
     if (pendingIndex >= 0 && pendingIndex < sectionCount) {
-      // console.debug("App", `Restoring section selection: ${pendingIndex}`);
       previewPanelRef.current?.setSelectedSectionIndex(pendingIndex);
       setSelectedSectionIndex(pendingIndex);
       restoredSectionIndexRef.current = pendingIndex; // Track target for state verification
       pendingSectionIndexRef.current = -1; // Clear pending
       // Note: isRestoringStateRef will be cleared in useEffect after state updates
-    } else if (autoSelectedIndex >= 0 && !isRestoringStateRef.current) {
-      // Only auto-select if we're NOT in the process of restoring
-      // This prevents the second handleSectionsReady call from overriding the restored section
+    } else if (isRestoringStateRef.current) {
+      // Restoring but no pending section to restore (savedState had no section selected)
+      // — clear the flag so the app becomes fully interactive
+      isRestoringStateRef.current = false;
+    } else if (autoSelectedIndex >= 0) {
       setSelectedSectionIndex(autoSelectedIndex);
     }
-    // Note: isRestoringStateRef is NOT cleared here - it's cleared in a useEffect
-    // after the section selection state has been updated
   }, []);
 
   // Clear isRestoringStateRef after section selection has been restored
@@ -542,20 +537,12 @@ const AppContent: React.FC = () => {
     // 2. Pending section has been applied (pendingRef is -1)
     // 3. We have a target section to restore (restoredSectionIndexRef >= 0)
     // 4. The actual state matches the target (React state update has completed)
-    // console.debug(
-    //   "App",
-    //   `Section index effect: selectedSectionIndex=${selectedSectionIndex}, isRestoring=${isRestoringStateRef.current}, pendingRef=${pendingSectionIndexRef.current}, restoredRef=${restoredSectionIndexRef.current}`
-    // );
     if (
       isRestoringStateRef.current &&
       pendingSectionIndexRef.current < 0 &&
       restoredSectionIndexRef.current >= 0 &&
       selectedSectionIndex === restoredSectionIndexRef.current
     ) {
-      // console.debug(
-      //   "App",
-      //   `Clearing isRestoringStateRef after section restoration (selectedSectionIndex=${selectedSectionIndex}, target=${restoredSectionIndexRef.current})`
-      // );
       restoredSectionIndexRef.current = -1; // Clear target
       isRestoringStateRef.current = false;
     }
@@ -565,7 +552,6 @@ const AppContent: React.FC = () => {
   const handleSelectedSectionIndexChange = useCallback((index: number) => {
     // Don't allow PreviewPanel to override section during restoration
     if (isRestoringStateRef.current) {
-      // console.debug("App", `handleSelectedSectionIndexChange BLOCKED during restoration: index=${index}`);
       return;
     }
     setSelectedSectionIndex(index);
@@ -590,19 +576,9 @@ const AppContent: React.FC = () => {
     if (!dbSong) {
       // New song - consider it "dirty" if it has real content beyond just whitespace
       const hasContent = song.Text.trim().length > 0;
-      // console.debug("App", "checkCanSaveSong - new song", {
-      //   editedSongId: song.Id,
-      //   hasContent,
-      // });
       return hasContent;
     }
     const isDifferent = song.Text !== dbSong.Text;
-    // console.debug("App", "checkCanSaveSong", {
-    //   editedSongId: song.Id,
-    //   editedSongTextLength: song.Text.length,
-    //   dbTextLength: dbSong.Text.length,
-    //   isDifferent,
-    // });
     return isDifferent;
   }, []);
 
@@ -631,7 +607,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     // Don't run until auth loading is complete
     if (isAuthLoading) {
-      // console.debug("App", "initializeAndLoad waiting for auth to complete...");
       return;
     }
 
@@ -639,7 +614,6 @@ const AppContent: React.FC = () => {
       // Guard against React Strict Mode double-execution - check BEFORE any await
       // If we've already started restoring, don't do anything on the second run
       if (hasRestoredStateRef.current) {
-        // console.debug("App", "initializeAndLoad already ran, skipping duplicate call");
         return;
       }
       // Mark immediately to prevent second Strict Mode call from proceeding
@@ -655,32 +629,27 @@ const AppContent: React.FC = () => {
 
       // Now restore app state from localStorage (after database is ready)
       const savedState = loadAppState();
-      // console.debug("App", "RESTORING app state", savedState);
 
       if (savedState) {
         // isRestoringStateRef already true from initialization
 
         // Store pending section index to restore via callback when sections are ready
         if (savedState.selectedSectionIndex >= 0) {
-          // console.debug("App", `Setting pendingSectionIndexRef = ${savedState.selectedSectionIndex}`);
           pendingSectionIndexRef.current = savedState.selectedSectionIndex;
         }
 
         // Restore playlist selection index - PlaylistPanel will apply via componentDidUpdate
         // The actual song loading happens when PlaylistPanel triggers onPlaylistItemSelected
         if (savedState.selectedPlaylistIndex >= 0) {
-          // console.debug("App", `Calling setSelectedPlaylistIndex(${savedState.selectedPlaylistIndex})`);
           setSelectedPlaylistIndex(savedState.selectedPlaylistIndex);
 
           // Also restore song tree selection and editor to the saved selectedSongId (may be different from playlist item)
           if (savedState.selectedSongId) {
-            // console.debug("App", `Restoring song tree selection and editor: ${savedState.selectedSongId}`);
             setSelectedSongId(savedState.selectedSongId);
 
             // Load the savedState.selectedSongId into the editor (not the playlist item's song)
             const editorSong = db.getSongById(savedState.selectedSongId);
             if (editorSong) {
-              // console.debug("App", `Loading editor song: ${editorSong.Title}`);
               const clonedEditorSong = editorSong.clone();
               setEditedSong(clonedEditorSong);
               updateCurrentSongText(clonedEditorSong.Text);
@@ -695,7 +664,6 @@ const AppContent: React.FC = () => {
           // Restore song selection only if no playlist item was selected
           const song = db.getSongById(savedState.selectedSongId);
           if (song) {
-            // console.debug("App", `Restoring song from tree: ${savedState.selectedSongId}`);
             const cloned = song.clone();
             setEditedSong(cloned);
             setProjectedSong(cloned);
@@ -705,12 +673,10 @@ const AppContent: React.FC = () => {
             leftPanelRef.current?.setSelectedSongId(savedState.selectedSongId);
           } else {
             // Song not found in database - clear the restoring flag
-            // console.debug("App", "Song not found, clearing isRestoringStateRef");
             isRestoringStateRef.current = false;
           }
         } else {
           // No song or playlist to restore - clear the restoring flag
-          // console.debug("App", "No song/playlist to restore, clearing isRestoringStateRef");
           isRestoringStateRef.current = false;
         }
 
@@ -718,7 +684,6 @@ const AppContent: React.FC = () => {
         // when sections are generated for the restored song
       } else {
         // No saved state - allow saving
-        // console.debug("App", "No saved state, clearing isRestoringStateRef");
         isRestoringStateRef.current = false;
       }
     };
@@ -784,7 +749,10 @@ const AppContent: React.FC = () => {
       } else if (currentDisplay.songId !== data.id) {
         const _db = Database.getInstance();
         const song = _db.getSongById(data.id);
-        if (song) leftPanelRef.current?.selectPlaylistSongById(song.Id);
+        if (song) {
+          setSelectedSectionIndex(-1);
+          leftPanelRef.current?.selectPlaylistSongById(song.Id);
+        }
       } else {
         // Same song - simulate user interaction: update preferences and select section
         // 1. Update playlist item preferences (transpose, capo, instructions)
@@ -992,9 +960,6 @@ const AppContent: React.FC = () => {
           if (!isEditing && !isRestoringStateRef.current) {
             setEditedSong(clonedSong);
             updateCurrentSongText(clonedSong.Text);
-            // Reset section selection to first section when changing songs
-            setSelectedSectionIndex(0);
-            previewPanelRef.current?.setSelectedSectionIndex(0);
           } else if (isRestoringStateRef.current) {
             console.debug("App", "Skipping editor song update during restoration");
           }

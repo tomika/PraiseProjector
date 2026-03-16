@@ -217,7 +217,6 @@ const GroupFolderNode: React.FC<{
   onDropSongOnSong,
   selectedSong,
   hasLeader,
-  selectedLeader,
   onSongClick,
   onSongDoubleClick,
   onSongContextMenu,
@@ -326,7 +325,6 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   public setSelectedSongId(songId: string | null): void {
-    // console.debug("Search", `setSelectedSongId called with: ${songId}`);
     if (!songId) {
       this.setState({ selectedSong: null });
       return;
@@ -338,13 +336,10 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       const db = Database.getInstance();
       song = db.getSongById(songId) ?? null;
     }
-    // console.debug("Search", `Found song: ${song?.Title || "NOT FOUND"}, categories count: ${this.state.categories.length}`);
     if (song) {
       this.setState({ selectedSong: song }, () => {
-        // console.debug("Search", `State updated, expanding category for: ${song!.Title}`);
         this.expandCategoryForSong(song!);
         setTimeout(() => {
-          // console.debug("Search", `Scrolling into view, selectedItemElement exists: ${!!this.selectedItemElement}`);
           if (this.selectedItemElement) {
             this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
           }
