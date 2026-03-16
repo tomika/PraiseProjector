@@ -751,7 +751,12 @@ const AppContent: React.FC = () => {
         const song = _db.getSongById(data.id);
         if (song) {
           setSelectedSectionIndex(-1);
-          leftPanelRef.current?.selectPlaylistSongById(song.Id);
+          const item = leftPanelRef.current?.selectPlaylistSongById(song.Id);
+          if (item) {
+            // Set playlist item directly without auto-selecting first section
+            setSelectedPlaylistItem(item);
+            leftPanelRef.current?.setSelectedSongId(item.songId);
+          }
         }
       } else {
         // Same song - simulate user interaction: update preferences and select section

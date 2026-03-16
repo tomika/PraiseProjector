@@ -18,7 +18,7 @@ import { updateCurrentDisplay } from "../state/CurrentSongStore";
 // Methods exposed via ref
 export interface LeftPanelMethods {
   // Playlist methods
-  selectPlaylistSongById: (songId: string) => void;
+  selectPlaylistSongById: (songId: string) => PlaylistEntry | null;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => void;
@@ -103,7 +103,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       ref,
       () => ({
         // Playlist methods
-        selectPlaylistSongById: (songId: string) => playlistPanelRef.current?.selectSongById(songId),
+        selectPlaylistSongById: (songId: string) => playlistPanelRef.current?.selectSongById(songId) ?? null,
         getPreferencesForSongId: (songId: string) => playlistPanelRef.current?.getPreferencesForSongId(songId) ?? null,
         updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist),
         updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) =>

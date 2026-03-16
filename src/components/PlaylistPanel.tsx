@@ -67,7 +67,7 @@ function getContrastTextColor(bgColor: string): string {
 
 // Methods exposed for external access
 export interface PlaylistPanelMethods {
-  selectSongById: (songId: string) => void;
+  selectSongById: (songId: string) => PlaylistEntry | null;
   selectItem: (index: number) => void;
   getSelectedIndex: () => number;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
@@ -297,19 +297,32 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return this.state.currentPlaylist;
   }
 
-  selectSongById(songId: string): void {
+  selectSongById(songId: string): PlaylistEntry | null {
     const { currentPlaylist } = this.state;
     let index = currentPlaylist.items.findIndex((item) => item.songId === songId);
     if (index < 0) {
-      // console.debug("Playlist", `selectSongById: songId=${songId} not found in playlist`);
-      const song = Database.getInstance().getSongById(songId); // Preload song in case it's added later
+      const song = Database.getInstance().getSongById(songId);
       if (song) {
-        // console.debug("Playlist", `selectSongById: songId=${songId} adding to playlist`);
         this.addSongToPlaylist(song);
         index = currentPlaylist.items.findIndex((item) => item.songId === songId);
       }
-    } //else console.debug("Playlist", `selectSongById: songId=${songId}, found index=${index}`);
-    if (index >= 0 && index < currentPlaylist.items.length) this.selectItem(index);
+    }
+    if (index >= 0 && index < currentPlaylist.items.length) {
+      const item = currentPlaylist.items[index];
+      // Only update visual selection state — don't fire onPlaylistItemSelected.
+      // The caller (remote handler) is responsible for setting selectedPlaylistItem
+      // without auto-selecting a section.
+      this.setState({
+        selectedItems: new Set([index]),
+        focusedIndex: index,
+        selectionAnchor: index,
+      });
+      if (this.props.onSelectedIndexChange) {
+        this.props.onSelectedIndexChange(index);
+      }
+      return item;
+    }
+    return null;
   }
 
   getPreferencesForSongId(songId: string): SongPreferenceEntryData | null {
