@@ -325,7 +325,7 @@ const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1024,
     height: 695,
-    minWidth: 1024,
+    minWidth: 360,
     minHeight: 695,
     autoHideMenuBar: true,
     icon: resolveAppIcon(),
