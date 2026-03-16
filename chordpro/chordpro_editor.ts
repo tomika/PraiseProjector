@@ -560,6 +560,7 @@ export class ChordProEditor {
   private readonly rxStartsWithChord: RegExp;
 
   private midiPlayer?: ReturnType<typeof playMidiFile>;
+  private localeHandler?: (s: string) => string;
 
   log(s: string) {
     if (this.onLog) this.onLog(s.toString());
@@ -742,6 +743,14 @@ export class ChordProEditor {
 
     this.draw();
     this.blinkCursor();
+  }
+
+  installLocaleHandler(handler: (s: string) => string) {
+    this.localeHandler = handler;
+  }
+
+  private localize(s: string) {
+    return this.localeHandler?.(s.replace(/_/g, " ")) ?? s;
   }
 
   /**
@@ -2598,22 +2607,26 @@ export class ChordProEditor {
       user-select: none;
     `;
 
-    const addItem = (label: string, shortcut: string, action: () => void, enabled = true) => {
+    const addItem = (label: string, shortcut: string, action: () => void, enabled = true, icon = "") => {
       const item = document.createElement("div");
       item.style.cssText = `
         display: flex;
-        justify-content: space-between;
         align-items: center;
         padding: 6px 24px 6px 12px;
         cursor: ${enabled ? "pointer" : "default"};
         color: ${enabled ? textColor : disabledColor};
         white-space: nowrap;
       `;
+      const iconSpan = document.createElement("span");
+      iconSpan.textContent = icon;
+      iconSpan.style.cssText = `width: 20px; text-align: center; margin-right: 6px; font-size: 14px;`;
       const labelSpan = document.createElement("span");
+      labelSpan.style.cssText = `flex: 1;`;
       labelSpan.textContent = label;
       const shortcutSpan = document.createElement("span");
       shortcutSpan.textContent = shortcut;
       shortcutSpan.style.cssText = `margin-left: 32px; color: ${enabled ? shortcutColor : disabledColor}; font-size: 12px;`;
+      item.appendChild(iconSpan);
       item.appendChild(labelSpan);
       item.appendChild(shortcutSpan);
       if (enabled) {
@@ -2644,21 +2657,23 @@ export class ChordProEditor {
       const canRedo = this.redoBuffer.length > 0;
 
       addItem(
-        "Undo",
+        this.localize("Undo"),
         "Ctrl+Z",
         () => {
           this.undo();
         },
-        canUndo
+        canUndo,
+        "\u21B6"
       );
 
       addItem(
-        "Redo",
+        this.localize("Redo"),
         "Ctrl+Y",
         () => {
           this.redo();
         },
-        canRedo
+        canRedo,
+        "\u21B7"
       );
 
       addSeparator();
@@ -2667,7 +2682,7 @@ export class ChordProEditor {
     // Clipboard operations
     if (isEditable) {
       addItem(
-        "Cut",
+        this.localize("Cut"),
         "Ctrl+X",
         () => {
           this.saveState();
@@ -2675,30 +2690,32 @@ export class ChordProEditor {
           this.eraseSelection();
           this.draw();
         },
-        hasText
+        hasText,
+        "\u2702"
       );
     }
 
     addItem(
-      "Copy",
+      this.localize("Copy"),
       "Ctrl+C",
       () => {
         this.copySelected();
       },
-      hasText
+      hasText,
+      "\u2398"
     );
 
     if (isEditable) {
-      addItem("Paste", "Ctrl+V", () => {
+      addItem(this.localize("Paste"), "Ctrl+V", () => {
         this.paste();
         this.draw();
-      });
+      }, true, "\u2399");
     }
 
-    addItem("Select All", "Ctrl+A", () => {
+    addItem(this.localize("Select All"), "Ctrl+A", () => {
       this.selectAll();
       this.draw();
-    });
+    }, true, "\u2B1A");
 
     if (isEditable) {
       addSeparator();
@@ -2708,7 +2725,7 @@ export class ChordProEditor {
         this.actionTarget instanceof ChordProLine && this.cursorPos !== null && !hasLineSelection && !hasText && !this.actionTarget.isComment;
 
       addItem(
-        "Insert Chord",
+        this.localize("Insert Chord"),
         "[",
         () => {
           if (this.actionTarget instanceof ChordProLine && this.cursorPos !== null) {
@@ -2722,73 +2739,81 @@ export class ChordProEditor {
             this.draw();
           }
         },
-        canInsertChord
+        canInsertChord,
+        "\u266B"
       );
 
       addSeparator();
 
       // Section tags
       addItem(
-        "Title",
+        this.localize("Title"),
         "Ctrl+T",
         () => {
           this.makeSelectionTitle();
         },
-        hasText
+        hasText,
+        "\uD835\uDC13"
       );
 
       addItem(
-        "Verse",
+        this.localize("Verse"),
         "Ctrl+Shift+V",
         () => {
           this.tagSelection("start_of_verse", this.getAutoTagValue("start_of_verse"));
         },
-        hasLineSelection
+        hasLineSelection,
+        "\uD835\uDC15"
       );
 
       addItem(
-        "Chorus",
+        this.localize("Chorus"),
         "Ctrl+Shift+C",
         () => {
           this.tagSelection("start_of_chorus", this.getAutoTagValue("start_of_chorus"));
         },
-        hasLineSelection
+        hasLineSelection,
+        "\uD835\uDC02"
       );
 
       addItem(
-        "Bridge",
+        this.localize("Bridge"),
         "Ctrl+Shift+B",
         () => {
           this.tagSelection("start_of_bridge", this.getAutoTagValue("start_of_bridge"));
         },
-        hasLineSelection
+        hasLineSelection,
+        "\uD835\uDC01"
       );
 
       addItem(
-        "Grid",
+        this.localize("Grid"),
         "Ctrl+Shift+G",
         () => {
           this.tagSelection("start_of_grid", this.getAutoTagValue("start_of_grid"));
         },
-        hasLineSelection
+        hasLineSelection,
+        "\u25A6"
       );
 
       addItem(
-        "Comment",
+        this.localize("Comment"),
         "Ctrl+Shift+K",
         () => {
           this.toggleCommentType();
         },
-        hasLineSelection
+        hasLineSelection,
+        "\u2638"
       );
 
       addItem(
-        "Clear Tag",
+        this.localize("Clear Tag"),
         "Ctrl+Shift+X",
         () => {
           this.tagSelection("", "");
         },
-        hasLineSelection
+        hasLineSelection,
+        "\u2715"
       );
     }
 

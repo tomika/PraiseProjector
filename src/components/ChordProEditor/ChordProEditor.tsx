@@ -356,6 +356,13 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
         // Setup callback handlers for editor events
         this.setupEditorCallbacks();
+
+        // Install locale handler for context menu strings — reads this.props.t
+        // on each call so it picks up language changes without reinstalling.
+        chordApi.installLocaleHandler?.((s: string) => {
+          const key = ("ChpMenu" + s.replace(/ /g, "")) as StringKey;
+          return this.props.t?.(key) ?? s;
+        });
       }
     } catch (error) {
       console.error("Editor", "Error initializing database with editor data", error);

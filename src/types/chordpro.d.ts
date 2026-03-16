@@ -21,6 +21,7 @@ interface ChordProAPI {
   getUnknownChords?(): string;
   updateDocument?(text: string): void;
   dispose?(): void;
+  installLocaleHandler?(handler: (s: string) => string): void;
   darkMode?(dark: boolean): void;
 }
 

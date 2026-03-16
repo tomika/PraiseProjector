@@ -3,7 +3,7 @@ import { Song } from "../classes/Song";
 import { ChordProEditor } from "../../chordpro/chordpro_editor";
 import { getChordSystem } from "../../chordpro/chordpro_base";
 import { useTooltips } from "../localization/TooltipContext";
-import { useLocalization } from "../localization/LocalizationContext";
+import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import "./InstructionsEditorForm.css";
 import { NoteSystemCode } from "../../chordpro/note_system";
 
@@ -18,6 +18,8 @@ interface InstructionsEditorFormProps {
 const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, initialInstructions, isInProfile, onSave, onClose }) => {
   const { tt } = useTooltips();
   const { t } = useLocalization();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [storeInProfile, setStoreInProfile] = useState(isInProfile ? true : true);
 
   // Refs for the three panes
@@ -57,6 +59,7 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     if (!editor) return;
 
     editor.darkMode(document.documentElement.getAttribute("data-theme") === "dark");
+    editor.installLocaleHandler((s: string) => tRef.current(("ChpMenu" + s.replace(/ /g, "")) as StringKey));
 
     editorRef.current = editor;
 

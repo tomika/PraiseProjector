@@ -19,6 +19,7 @@ const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
 let editor: ChordProEditor | null = null;
 let chordSelector: ChordSelector | null = null;
 let chordSelectorHost: HTMLDivElement | null = null;
+let currentLocaleHandler: ((s: string) => string) | null = null;
 
 function ensureChordSelector(system: ChordSystem): ChordSelector | undefined {
   const host = document.getElementById("chordsel") as HTMLDivElement | null;
@@ -76,6 +77,9 @@ function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean
 
   editor = new ChordProEditor(system, editorDiv, chp, !!editable, undefined, selector, false, compareBase, true, false);
   editor.darkMode(document.documentElement.getAttribute("data-theme") === "dark");
+  if (currentLocaleHandler) {
+    editor.installLocaleHandler(currentLocaleHandler);
+  }
   return editor;
 }
 
@@ -199,6 +203,12 @@ export const chordProAPI = {
     if (editor) {
       editor.dispose();
       editor = null;
+    }
+  },
+  installLocaleHandler(handler: (s: string) => string) {
+    currentLocaleHandler = handler;
+    if (editor) {
+      editor.installLocaleHandler(handler);
     }
   },
   darkMode(dark: boolean) {
