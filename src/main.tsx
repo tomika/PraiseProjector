@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.tsx";
-import LogViewerPage from "./components/LogViewerPage.tsx";
-import PrintWindow from "./components/PrintWindow.tsx";
-import { LocalizationProvider } from "./localization/LocalizationContext.tsx";
-import { ThemeProvider } from "./contexts/ThemeContext.tsx";
+import App from "./App";
+import LogViewerPage from "./components/LogViewerPage";
+import PrintWindow from "./components/PrintWindow";
+import { LocalizationProvider } from "./localization/LocalizationContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import { installConsoleInterceptor, subscribeToLogs } from "../common/logger";
 import "./index.css";
 import "bootstrap/dist/css/bootstrap.min.css";
