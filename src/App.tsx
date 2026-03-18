@@ -744,7 +744,7 @@ const AppContent: React.FC = () => {
         let playlist: PlaylistEntryDataList;
         try {
           playlist = decode(playlistEntryListCodec, JSON.parse(data.playlist));
-        } catch (error) {
+        } catch {
           playlist = data.playlist.split("\n").map((line) => decode(playlistEntryCodec, JSON.parse(line)));
         }
         leftPanelRef.current?.updatePlaylist(playlist);
@@ -758,6 +758,20 @@ const AppContent: React.FC = () => {
             // Set playlist item directly without auto-selecting first section
             setSelectedPlaylistItem(item);
             leftPanelRef.current?.setSelectedSongId(item.songId);
+
+            // Keep backend display state in sync for remote song changes.
+            // Without this, Electron changeDisplay is not triggered until a section is selected.
+            updateCurrentDisplay({
+              songId: song.Id,
+              song: song.Text,
+              system: song.System,
+              from: data.from ?? 0,
+              to: data.to ?? 0,
+              section: -1,
+              transpose: data.transpose ?? item.transpose ?? 0,
+              capo: data.capo ?? item.capo,
+              instructions: data.instructions ?? item.instructions,
+            });
           }
         }
       } else {
