@@ -92,21 +92,23 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
     return decision === "approve" ? "APPROVE" : "REJECT";
   };
 
-  const getConfirmMessage = (decision: SongCheckDecision): StringKey => {
+  const getConfirmMessage = (decision: SongCheckDecision, state: PendingSongState): StringKey => {
+    if (state === "REJECTED" && decision === "approve") return "SongCheckConfirmKeep";
+    if (state === "KEPT" || state === "REJECTED") return "SongCheckConfirmWithdraw";
     switch (decision) {
       case "approve":
         return "SongCheckConfirmApprove";
       case "reject":
         return "SongCheckConfirmReject";
       case "revoke":
-        return "SongCheckConfirmRevoke";
+        return "SongCheckConfirmWithdraw";
     }
   };
 
   const handleSongCheckDecision = async (decision: SongCheckDecision) => {
     if (!selectedEntry || processing) return;
 
-    const confirmed = await showConfirmAsync(t("Confirm"), t(getConfirmMessage(decision)));
+    const confirmed = await showConfirmAsync(t("Confirm"), t(getConfirmMessage(decision, selectedEntry.state)));
     if (!confirmed) return;
 
     try {
@@ -212,7 +214,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
           rightLabel={t("SongCheckProposedVersion")}
           onSongCheckDecision={handleSongCheckDecision}
           songCheckIsOwnUpload={isOwnUpload(selectedEntry)}
-          songCheckWasRejected={selectedEntry.state === "REJECTED"}
+          songCheckState={selectedEntry.state}
         />
       )}
     </>

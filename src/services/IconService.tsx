@@ -66,6 +66,7 @@ export enum IconType {
   HEART_IGNORED = "heart_ignored",
   BIG_HEART_EMPTY = "big_heart_empty",
   BIG_HEART_FILLED = "big_heart_filled",
+  CLOUD_AUTH_FAILED = "cloud_auth_failed",
 }
 
 interface IconConfig {
@@ -359,6 +360,17 @@ const iconMap: Record<IconType, IconConfig> = {
     faIcon: "fa fa-heart",
     imagePath: "assets/heart_filled.png",
     alt: "Preferred",
+  },
+  [IconType.CLOUD_AUTH_FAILED]: {
+    faContent: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M 3.759 1.574 C 3.541 1.255 2.83 0.835 2.662 1.182 C 2.585 1.344 2.327 1.959 2.428 2.107 L 11.435 14.621 C 11.653 14.94 12.585 15.444 12.753 15.097 C 12.83 14.936 12.861 14.139 12.76 13.991 L 3.759 1.574 Z"></path>
+        <path d="M 11.252 7.343 C 11.255 3.461 8.607 2.927 6.217 4.937 C 5.699 5.373 5.665 7.096 5.396 7.717 C 2.196 7.085 1.395 9.229 3.339 10.727 C 3.76 11.051 4.093 11.12 4.597 11.296 L 6.15 11.461 L 5.887 13.128 L 4.328 13.128 C 1.179 13.149 -1.004 9.56 0.551 6.823 C 1.249 5.597 2.974 5.145 4.149 5.552 C 3.902 1.443 11.353 -0.008 12.878 4.195 C 13.108 4.829 13.047 4.975 13.127 6.098 C 17.038 5.726 16.673 11.28 14.246 12.67 C 13.954 12.835 12.717 12.905 12.394 12.983 L 12.061 12.541 L 10.994 11.058 L 12.96 11.052 C 14.223 10.276 14.876 7.942 11.478 7.709 C 11.461 7.708 11.266 7.35 11.252 7.343 Z"></path>
+      </svg>
+    ),
+    faContentAlways: true,
+    imagePath: "assets/cloud.png",
+    alt: "Cloud Auth Failed",
   },
 };
 

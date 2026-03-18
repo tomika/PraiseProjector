@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Song } from "../classes/Song";
+import { PendingSongState } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import ChordProEditor from "./ChordProEditor/ChordProEditor";
 import "./CompareDialog.css";
@@ -26,8 +27,8 @@ interface CompareDialogProps {
   onSongCheckDecision?: (decision: SongCheckDecision) => void;
   /** SongCheck mode: if true, reject button shows "Revoke" instead */
   songCheckIsOwnUpload?: boolean;
-  /** SongCheck mode: if true, the song was previously rejected */
-  songCheckWasRejected?: boolean;
+  /** SongCheck mode: the current state of the pending song */
+  songCheckState?: PendingSongState;
 }
 
 // Helper to get version display text from song's Change property
@@ -56,7 +57,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   rightButtonLabel,
   onSongCheckDecision,
   songCheckIsOwnUpload,
-  songCheckWasRejected,
+  songCheckState,
 }) => {
   const { t } = useLocalization();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -294,19 +295,30 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   </button>
                 </>
               )}
-              {isSongCheckMode && onSongCheckDecision && (
+              {isSongCheckMode && onSongCheckDecision && songCheckState === "PENDING" && (
                 <>
-                  <button type="button" className="btn btn-success" onClick={() => onSongCheckDecision(songCheckWasRejected ? "approve" : "approve")}>
-                    {songCheckWasRejected ? t("SongCheckApprove") : t("SongCheckApprove")}
+                  <button type="button" className="btn btn-success" onClick={() => onSongCheckDecision("approve")}>
+                    {t("SongCheckApprove")}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={() => onSongCheckDecision(songCheckIsOwnUpload || songCheckWasRejected ? "revoke" : "reject")}
-                  >
-                    {songCheckIsOwnUpload || songCheckWasRejected ? t("SongCheckRevoke") : t("SongCheckReject")}
+                  <button type="button" className="btn btn-danger" onClick={() => onSongCheckDecision(songCheckIsOwnUpload ? "revoke" : "reject")}>
+                    {songCheckIsOwnUpload ? t("SongCheckWithdraw") : t("SongCheckReject")}
                   </button>
                 </>
+              )}
+              {isSongCheckMode && onSongCheckDecision && songCheckState === "REJECTED" && (
+                <>
+                  <button type="button" className="btn btn-success" onClick={() => onSongCheckDecision("approve")}>
+                    {t("SongCheckKeep")}
+                  </button>
+                  <button type="button" className="btn btn-danger" onClick={() => onSongCheckDecision("revoke")}>
+                    {t("SongCheckWithdraw")}
+                  </button>
+                </>
+              )}
+              {isSongCheckMode && onSongCheckDecision && songCheckState === "KEPT" && (
+                <button type="button" className="btn btn-danger" onClick={() => onSongCheckDecision("revoke")}>
+                  {t("SongCheckWithdraw")}
+                </button>
               )}
               <button className="btn btn-secondary" onClick={() => onClose()}>
                 {isImportMode ? t("Cancel") : t("Close")}

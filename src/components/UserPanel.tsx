@@ -32,7 +32,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
 }) => {
   const { selectedLeader, setSelectedLeaderId, allLeaders } = useLeader();
   const { isGuest, username, user, logout, login, commitSession, setOnLoginSuccess } = useAuth();
-  const { showMessage } = useMessageBox();
+  const { showMessage, showConfirmAsync } = useMessageBox();
   const { t } = useLocalization();
   const { tt } = useTooltips();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
@@ -57,12 +57,9 @@ const UserPanel: React.FC<UserPanelProps> = ({
       const count = await cloudApi.fetchPendingSongsCount();
       setPendingSongCount(count);
       setCloudAuthFailed(false);
-    } catch (error) {
-      if (error instanceof Error && error.message === "401") {
-        setCloudAuthFailed(true);
-        setPendingSongCount(0);
-      }
-      // Silently ignore other errors — server may be unreachable
+    } catch {
+      setCloudAuthFailed(true);
+      setPendingSongCount(0);
     }
     lastPendingCheckRef.current = Date.now();
   }, []);
@@ -73,7 +70,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
         fetchPendingCount();
       }
     }, PENDING_POLL_TICK_MS);
-    // Also check immediately on mount / auth change
+    // Also check immediately on mount / auth change / user change
     if (!isGuest) {
       fetchPendingCount();
     } else {
@@ -81,16 +78,16 @@ const UserPanel: React.FC<UserPanelProps> = ({
       lastPendingCheckRef.current = 0;
     }
     return () => clearInterval(tick);
-  }, [isGuest, fetchPendingCount]);
+  }, [isGuest, username, fetchPendingCount]);
 
   // Listen for external refresh requests (e.g. after SongCheckDialog processes songs)
   useEffect(() => {
     const handleRefresh = () => {
-      lastPendingCheckRef.current = 0; // force next tick to query
+      fetchPendingCount();
     };
     window.addEventListener("pp-pending-songs-changed", handleRefresh);
     return () => window.removeEventListener("pp-pending-songs-changed", handleRefresh);
-  }, []);
+  }, [fetchPendingCount]);
 
   // Register callback for auto-selecting leader after login
   useEffect(() => {
@@ -151,6 +148,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
     if (success) {
       setCloudAuthFailed(false);
       setShowAuthDialog(false);
+      fetchPendingCount();
 
       // In Electron mode, ask user whether to persist login (Remember Me).
       const isElectron = typeof window !== "undefined" && !!window.electronAPI;
@@ -221,9 +219,13 @@ const UserPanel: React.FC<UserPanelProps> = ({
             >
               <span className="sync-menu-indicator">▾</span>
             </button>
-            {pendingSongCount > 0 && (
+            {cloudAuthFailed ? (
+              <span className="pending-badge-abs cloud-auth-failed" title={t("PleaseLoginAgain")}>
+                <Icon type={IconType.CLOUD_AUTH_FAILED} />
+              </span>
+            ) : pendingSongCount > 0 ? (
               <span className="badge bg-danger rounded-pill pending-badge-abs">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
-            )}
+            ) : null}
             {showSyncMenu && (
               <div className="dropdown-menu show sync-dropdown-menu">
                 <button

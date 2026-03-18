@@ -181,6 +181,13 @@
   z-index: 1;
 }
 
+/* Cloud auth failure icon — crossed-out cloud shown when session expired */
+.cloud-auth-failed {
+  color: #dc3545;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .sync-menu-indicator {
   font-size: 0.625rem;
   line-height: 1;

@@ -583,9 +583,13 @@
   "SongCheckApprove": "Jóváhagyás",
   "SongCheckReject": "Elutasítás",
   "SongCheckRevoke": "Visszavonás",
+  "SongCheckKeep": "Megtartás",
+  "SongCheckWithdraw": "Visszavonás",
   "SongCheckConfirmApprove": "Jóváhagyja ezt a dalt?",
   "SongCheckConfirmReject": "Elutasítja ezt a dalt?",
   "SongCheckConfirmRevoke": "Visszavonja ezt a dalt?",
+  "SongCheckConfirmKeep": "Megtartja ezt a dalt?",
+  "SongCheckConfirmWithdraw": "Visszavonja ezt a dalt?",
   "SongCheckCurrentVersion": "Jelenlegi verzió",
   "SongCheckProposedVersion": "Javasolt verzió",
   "SongCheckNewSong": "Új dal (nincs korábbi verzió)",
@@ -594,5 +598,8 @@
   "EulaTitle": "Végfelhasználói licencszerződés (EULA)",
   "EulaAccept": "Elfogadom",
   "EulaDecline": "Elutasítom",
-  "EulaViewLicense": "Licencszerződés megtekintése"
+  "EulaViewLicense": "Licencszerződés megtekintése",
+
+  "RememberMeTitle": "Bejelentkezve marad?",
+  "RememberMeMessage": "Szeretne bejelentkezve maradni az alkalmazás újraindítása között? Ez kényelmesebb, de valamivel kevésbé biztonságos."
 }

@@ -582,9 +582,13 @@
   "SongCheckApprove": "Approve",
   "SongCheckReject": "Reject",
   "SongCheckRevoke": "Revoke",
+  "SongCheckKeep": "Keep",
+  "SongCheckWithdraw": "Withdraw",
   "SongCheckConfirmApprove": "Do you want to approve this song?",
   "SongCheckConfirmReject": "Do you want to reject this song?",
   "SongCheckConfirmRevoke": "Do you want to revoke this song?",
+  "SongCheckConfirmKeep": "Do you want to keep this song?",
+  "SongCheckConfirmWithdraw": "Do you want to withdraw this song?",
   "SongCheckCurrentVersion": "Current Version",
   "SongCheckProposedVersion": "Proposed Version",
   "SongCheckNewSong": "New Song (no previous version)",
@@ -593,5 +597,8 @@
   "EulaTitle": "End-User License Agreement",
   "EulaAccept": "I Accept",
   "EulaDecline": "I Decline",
-  "EulaViewLicense": "View License Agreement"
+  "EulaViewLicense": "View License Agreement",
+
+  "RememberMeTitle": "Stay Logged In?",
+  "RememberMeMessage": "Would you like to stay logged in between app restarts? This is more convenient but slightly less secure."
 }
