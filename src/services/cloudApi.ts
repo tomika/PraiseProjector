@@ -289,7 +289,7 @@ class CloudApiService {
   async syncDatabase(request: SyncRequest, options?: { signal?: AbortSignal }): Promise<SyncResponse> {
     console.info("Sync", `Starting sync with database version: ${request.version}`);
     console.info("Sync", `Uploading ${request.songs.length} songs and ${request.profiles.length} leaders`);
-    const response = await this.apiCall<unknown>("/dbsync", request, options);
+    const response = await this.apiCall<unknown>("/dbsync?version=2", request, options);
     return this.parseResponse(syncResponseCodec, response);
   }
 

@@ -835,13 +835,8 @@ const AppContent: React.FC = () => {
           const entries: SongDBEntryWithData[] = songs.map((song) => {
             const pref = leftPanelRef.current?.getPreferencesForSongId(song.Id) ?? leader?.getPreference(song.Id);
             return {
-              songId: song.Id,
-              title: song.Title,
-              version: song.version,
-              songdata: {
-                text: song.Text,
-                system: song.System,
-              },
+              ...song.toJSON(),
+              title: pref?.title || song.Title,
               capo: pref?.capo || 0,
               transpose: pref?.transpose || 0,
               instructions: pref?.instructions || "",

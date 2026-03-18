@@ -1,16 +1,21 @@
 import { v4 as uuidv4 } from "uuid";
 import { KnownChordModifiers } from "./KnownChordModifiers";
 import { StringExtensions } from "./StringExtensions";
-import { ChordSystemCode } from "../../common/pp-types";
+import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../../common/pp-types";
 import { decode } from "../../common/io-utils";
 import * as t from "io-ts";
-import { chordSystemCodec, songDataCodec } from "../../common/pp-codecs";
+import { chordSystemCodec, songDataCodec, uniType } from "../../common/pp-codecs";
 
-const songStoreCodec = t.type({
-  songId: t.string,
-  songdata: songDataCodec,
-  version: t.number,
-});
+const songStoreCodec = uniType(
+  {
+    songId: t.string,
+    songdata: songDataCodec,
+    version: t.number,
+  },
+  {
+    groupId: t.string,
+  }
+);
 
 const legacySongStoreCodec = t.type({
   _id: t.string,
@@ -74,10 +79,11 @@ export class Song {
     this.parse();
   }
 
-  public static fromServer(data: { songId: string; songdata: { text: string; system: ChordSystemCode }; version: number }): Song {
+  public static fromServer(data: SongDBEntryWithData): Song {
     const song = new Song(data.songdata.text, data.songdata.system);
     song.Id = data.songId;
     song.version = data.version;
+    if (data.groupId) song.GroupId = data.groupId;
     return song;
   }
 
@@ -88,6 +94,7 @@ export class Song {
       song = new Song(json.songdata.text, json.songdata.system);
       song._id = json.songId;
       song.version = json.version;
+      if (json.groupId) song._group_id = json.groupId;
     } catch (error) {
       try {
         const json = decode(legacySongStoreCodec, _json);
@@ -422,10 +429,8 @@ export class Song {
     return !!this._group_id && !!s._group_id && this._group_id === s._group_id;
   }
 
-  public ToUpdate() {
-    let header = "";
-    if (this.GroupId) header += "# group_id:" + this.GroupId + "\n";
-    return { songId: this.Id, songdata: { text: header + this._text, system: this._system } };
+  public ToUpdate(): SongUpdate {
+    return { songId: this.Id, songdata: { text: this._text, system: this._system }, groupId: this._group_id };
   }
 
   public toJSON(): t.TypeOf<typeof songStoreCodec> {

@@ -104,7 +104,7 @@ export const songEntryCodec = uniType(
   { transpose: t.number, capo: t.number, instructions: t.string, songdata: songDataCodec }
 );
 
-export const songDBEntryCodec = t.intersection([songEntryCodec, t.type({ version: t.number })]);
+export const songDBEntryCodec = t.intersection([songEntryCodec, uniType({ version: t.number }, { groupId: t.string })]);
 
 export const songDBEntryWithDataCodec = t.intersection([songDBEntryCodec, t.type({ songdata: songDataCodec })]);
 
@@ -240,7 +240,7 @@ export const songHistoryResponseCodec = t.array(songHistoryEntryCodec);
 //  API request body codecs (client → server)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const songUpdateCodec = t.type({ songId: t.string, songdata: songDataCodec });
+export const songUpdateCodec = uniType({ songId: t.string, songdata: songDataCodec }, { groupId: t.string });
 
 export const syncRequestCodec = t.type({
   version: t.number,

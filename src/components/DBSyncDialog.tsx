@@ -486,6 +486,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         const song = new Song(songdata.text, songdata.system as ChordSystemCode);
         song.Id = s.songId;
         song.version = s.version;
+        if ("groupId" in s && s.groupId != null) song.GroupId = s.groupId;
 
         const existing = database.getSong(s.songId);
 
