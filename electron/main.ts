@@ -16,6 +16,10 @@ import { Settings } from "../src/types";
 import { setupBLEPeripheralIPC } from "./blePeripheral";
 import { installLoggerInterceptor, setupLoggerIPC, closeLogViewerWindow } from "./logger";
 import { changeDisplay } from "./display";
+import { WindowBounds } from "../src/types/electron";
+
+const APPWINDOW_MIN_WIDTH = 360;
+const APPWINDOW_MIN_HEIGHT = 695;
 
 // Ensure the userData path is stable across versions and name changes.
 // Electron derives this from package.json "name" / electron-builder "productName".
@@ -325,8 +329,8 @@ const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1024,
     height: 695,
-    minWidth: 360,
-    minHeight: 695,
+    minWidth: APPWINDOW_MIN_WIDTH,
+    minHeight: APPWINDOW_MIN_HEIGHT,
     autoHideMenuBar: true,
     icon: resolveAppIcon(),
     webPreferences: {
@@ -500,10 +504,14 @@ ipcMain.handle("set-current-display", async (_event, display) => {
 ipcMain.handle("get-window-bounds", () => {
   const win = mainWindow;
   if (!win) return null;
-  return win.getBounds();
+  const isMaximized = win.isMaximized();
+  // When maximized, return the restore bounds (normal window position/size before maximize)
+  // so we don't persist the maximized dimensions as the normal window size
+  const bounds = isMaximized ? win.getNormalBounds() : win.getBounds();
+  return { ...bounds, isMaximized };
 });
 
-ipcMain.handle("set-window-bounds", (_event, bounds: { x: number; y: number; width: number; height: number }) => {
+ipcMain.handle("set-window-bounds", (_event, bounds: WindowBounds) => {
   const win = mainWindow;
   if (!win) return;
 
@@ -517,10 +525,13 @@ ipcMain.handle("set-window-bounds", (_event, bounds: { x: number; y: number; wid
 
   if (isVisible) {
     // Enforce minimum size – setBounds() bypasses minWidth/minHeight
-    bounds.width = Math.max(bounds.width, 1024);
-    bounds.height = Math.max(bounds.height, 695);
+    bounds.width = Math.max(bounds.width, APPWINDOW_MIN_WIDTH);
+    bounds.height = Math.max(bounds.height, APPWINDOW_MIN_HEIGHT);
+    // Always restore normal bounds first, then maximize if needed
     win.setBounds(bounds);
   }
+
+  if (bounds.isMaximized) win.maximize();
 });
 
 ipcMain.handle("get-main-window-display-id", () => {

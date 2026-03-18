@@ -60,7 +60,7 @@ import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryW
 import { playlistEntryCodec, playlistEntryListCodec } from "../common/pp-codecs";
 import * as t from "io-ts";
 import { isRight } from "fp-ts/lib/Either";
-import { DisplayUpdateRequest } from "./types/electron";
+import { DisplayUpdateRequest, WindowBounds } from "./types/electron";
 import { Settings } from "./types";
 import { enqueue } from "./utils/asyncQueue";
 import { Database, FormatFoundReason } from "./classes/Database";
@@ -97,6 +97,7 @@ const AppStateCodec = t.type({
       y: t.number,
       width: t.number,
       height: t.number,
+      isMaximized: t.boolean,
     }),
     t.undefined,
   ]),
@@ -405,12 +406,10 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handleBeforeUnload = async () => {
       // Get window bounds in electron mode
-      let windowBounds: { x: number; y: number; width: number; height: number } | undefined;
+      let windowBounds: WindowBounds | undefined = undefined;
       if (window.electronAPI?.getWindowBounds) {
         const bounds = await window.electronAPI.getWindowBounds();
-        if (bounds) {
-          windowBounds = bounds;
-        }
+        if (bounds) windowBounds = bounds;
       }
 
       const state: AppState = {
@@ -425,7 +424,7 @@ const AppContent: React.FC = () => {
         playlistPanelSize: playlistPanelSize,
         songListPanelSize: songListPanelSize,
         previewSplitSize: previewSplitSize,
-        windowBounds: windowBounds,
+        windowBounds,
       };
       saveAppState(state);
     };

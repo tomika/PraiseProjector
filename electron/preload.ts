@@ -2,11 +2,12 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 import { Display } from "../common/pp-types";
 import { Settings } from "../src/types";
 import { ApiResponse } from "../common/ipc-types";
+import { WindowBounds } from "../src/types/electron";
 
 contextBridge.exposeInMainWorld("electronAPI", {
   // Window bounds management
   getWindowBounds: () => ipcRenderer.invoke("get-window-bounds"),
-  setWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke("set-window-bounds", bounds),
+  setWindowBounds: (bounds: WindowBounds) => ipcRenderer.invoke("set-window-bounds", bounds),
 
   // Display/Monitor management
   getAllDisplays: () => ipcRenderer.invoke("get-all-displays"),

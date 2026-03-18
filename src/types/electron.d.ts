@@ -24,10 +24,18 @@ export type DisplayUpdateRequest = {
   playlist?: string;
 };
 
+export type WindowBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isMaximized: boolean;
+};
+
 export interface IElectronAPI {
   // Window bounds management
-  getWindowBounds?: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
-  setWindowBounds?: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+  getWindowBounds?: () => Promise<WindowBounds | null>;
+  setWindowBounds?: (bounds: WindowBounds) => Promise<void>;
 
   // Playlist file operations (optional - falls back to browser APIs)
   savePlaylistFile?: (content: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
