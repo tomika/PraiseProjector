@@ -213,7 +213,7 @@
   "SettingsExternalWebDisplay": "Enable external web display",
   "SettingsShowTooltips": "Show tooltips",
   "SettingsPeekIntervalMinutes": "Cloud status check interval (minutes)",
-  "SettingsPeekIntervalMinutesDescription": "How often the app calls the cloud peek endpoint to refresh sync indicators (minimum 1 minute).",
+  "SettingsPeekIntervalMinutesDescription": "How often the app checks for new songs in the cloud.",
   "SettingsSectionSelectionInEditor": "Section selection in editor",
   "SettingsSectionSelNone": "None",
   "SettingsSectionSelClick": "Click",

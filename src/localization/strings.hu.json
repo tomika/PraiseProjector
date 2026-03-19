@@ -213,7 +213,7 @@
   "SettingsExternalWebDisplay": "Külső webes megjelenítő engedélyezése",
   "SettingsShowTooltips": "Buboréksúgók megjelenítése",
   "SettingsPeekIntervalMinutes": "Felhő állapot lekérési időköz (perc)",
-  "SettingsPeekIntervalMinutesDescription": "Milyen gyakran hívja az alkalmazás a felhő peek végpontot a szinkron jelzések frissítéséhez (minimum 1 perc).",
+  "SettingsPeekIntervalMinutesDescription": "Milyen gyakran ellenőrzi az alkalmazás új dalok elérhetőségét a felhőben.",
   "SettingsSectionSelectionInEditor": "Szakasz kiválasztás a szerkesztőben",
   "SettingsSectionSelNone": "Nincs",
   "SettingsSectionSelClick": "Kattintással",
