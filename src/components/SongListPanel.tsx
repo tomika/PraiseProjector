@@ -1073,14 +1073,15 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             className="form-control song-filter-input"
             placeholder={this.props.t?.("FilterSongsPlaceholder") || "Filter songs..."}
             value={filter}
+            title={this.props.tt?.("song_filter")}
             onChange={this.handleFilterChange}
           />
           <div className="input-group-append">
             <button
               className="btn btn-outline-secondary"
               type="button"
-              aria-label="Clear Filter"
-              title={this.props.tt?.("song_filter")}
+              aria-label="Clear Filter"           
+              title={this.props.tt?.("song_filter_clear")}   
               onClick={() => {
                 const oldFilter = this.state.filter.toLowerCase();
                 // Notify parent about filter change (controlled mode)
@@ -1091,6 +1092,11 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
                   this.updateCategories();
                   this.scrollAfterFilterChange(oldFilter, "");
                 });
+                // Focus the input after clearing
+                setTimeout(() => {
+                  const input = document.querySelector(".song-filter-input") as HTMLInputElement | null;
+                  if (input) input.focus();
+                }, 50);
               }}
             >
               <Icon type={IconType.CLEAR} />
