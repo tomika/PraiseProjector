@@ -260,13 +260,6 @@ export const editSongRequestCodec = t.type({ id: t.string });
 
 export const suggestRequestCodec = uniType({ id: t.string, version: t.number, song: t.string }, { system: chordSystemCodec, leaderId: t.string });
 
-export const messageStatusRequestCodec = t.type({ id: t.string, status: t.string });
-
-export const createUserInfoCodec = uniType(
-  { name: t.string, username: t.string, password: t.string, groupIdOrName: t.string },
-  { leadername: t.string, publish: t.string }
-);
-
 // ── Sync ──────────────────────────────────────────────────────────────────────
 export const syncedLeaderEntryCodec = t.intersection([
   t.type({

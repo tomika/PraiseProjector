@@ -44,8 +44,6 @@ import {
   sessionRequestCodec,
   editSongRequestCodec,
   suggestRequestCodec,
-  messageStatusRequestCodec,
-  createUserInfoCodec,
 } from "./pp-codecs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -185,8 +183,6 @@ export type SyncRequest = t.TypeOf<typeof syncRequestCodec>;
 export type SessionRequest = t.TypeOf<typeof sessionRequestCodec>;
 export type EditSongRequest = t.TypeOf<typeof editSongRequestCodec>;
 export type SuggestRequest = t.TypeOf<typeof suggestRequestCodec>;
-export type MessageStatusRequest = t.TypeOf<typeof messageStatusRequestCodec>;
-export type CreateUserInfo = t.TypeOf<typeof createUserInfoCodec>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Notification types
