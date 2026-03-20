@@ -10,7 +10,6 @@ import { useSettings } from "../hooks/useSettings";
 import { Database } from "../classes/Database";
 import AuthDialog from "./AuthDialog";
 
-const DEFAULT_PEEK_INTERVAL_SECONDS = 60 * 60;
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
 
@@ -44,6 +43,8 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const [pendingSongCount, setPendingSongCount] = useState(0);
   const [cloudDbVersion, setCloudDbVersion] = useState<number | null>(null);
   const [localDbVersion, setLocalDbVersion] = useState(0);
+  const [updatedSongCount, setUpdatedSongCount] = useState(0);
+  const [updatedProfileCount, setUpdatedProfileCount] = useState(0);
   const [cloudAuthFailed, setCloudAuthFailed] = useState(false);
   const syncMenuRef = useRef<HTMLDivElement>(null);
   const lastPeekCheckRef = useRef(0);
@@ -88,7 +89,13 @@ const UserPanel: React.FC<UserPanelProps> = ({
       const db = await Database.waitForReady();
       if (!mounted) return;
       setLocalDbVersion(db.version);
-      const onDbUpdated = () => setLocalDbVersion(db.version);
+      setUpdatedSongCount(db.countUpdatedSongs());
+      setUpdatedProfileCount(db.countUpdatedProfiles());
+      const onDbUpdated = () => {
+        setLocalDbVersion(db.version);
+        setUpdatedSongCount(db.countUpdatedSongs());
+        setUpdatedProfileCount(db.countUpdatedProfiles());
+      };
       db.emitter.on("db-updated", onDbUpdated);
       cleanupDbListener = () => db.emitter.off("db-updated", onDbUpdated);
     };
@@ -233,7 +240,8 @@ const UserPanel: React.FC<UserPanelProps> = ({
   };
 
   const showSyncControls = !!(onSyncClick || onExportDatabase || onImportDatabase || onReplaceDatabase);
-  const hasCloudDbUpdate = !isGuest && cloudDbVersion !== null && cloudDbVersion > localDbVersion;
+  const localChangeCount = updatedSongCount + updatedProfileCount;
+  const remoteChangeCount = !isGuest && cloudDbVersion !== null ? cloudDbVersion - localDbVersion : 0;
 
   return (
     <div>
@@ -246,7 +254,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
             type="text"
             readOnly
             className="form-control user-login-input"
-            value={userDisplayName}
+            value={userDisplayName ?? ""}
             aria-label="User Name"
             onClick={handleUserButtonClick}
             style={{ cursor: "pointer" }}
@@ -256,6 +264,16 @@ const UserPanel: React.FC<UserPanelProps> = ({
           <div className="btn-group position-relative user-sync-group mr-2" ref={syncMenuRef}>
             <button className="btn btn-light user-sync-main-btn" aria-label="Sync" title={tt("toolbar_sync")} onClick={onSyncClick}>
               <Icon type={IconType.SYNC} />
+              {localChangeCount ? (
+                <span className="pending-badge-abs sync-version-indicator-topleft" aria-hidden="true">
+                  {localChangeCount ? localChangeCount + "↑" : ""}
+                </span>
+              ) : null}
+              {remoteChangeCount ? (
+                <span className="pending-badge-abs sync-version-indicator-bottomleft" aria-hidden="true">
+                  {remoteChangeCount ? remoteChangeCount + "↓" : ""}
+                </span>
+              ) : null}
             </button>
             <button
               className="btn btn-light dropdown-toggle-split sync-menu-toggle"
@@ -271,8 +289,6 @@ const UserPanel: React.FC<UserPanelProps> = ({
               </span>
             ) : pendingSongCount > 0 ? (
               <span className="badge bg-danger rounded-pill pending-badge-abs">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
-            ) : hasCloudDbUpdate ? (
-              <span className="pending-badge-abs sync-empty-dot" aria-hidden="true"></span>
             ) : null}
             {showSyncMenu && (
               <div className="dropdown-menu show sync-dropdown-menu">
@@ -284,7 +300,11 @@ const UserPanel: React.FC<UserPanelProps> = ({
                   }}
                 >
                   {t("MenuSyncDatabase")}
-                  {hasCloudDbUpdate && <span className="sync-menu-item-dot" aria-hidden="true"></span>}
+                  {localChangeCount || remoteChangeCount ? (
+                    <span className="sync-menu-item-version-indicator" aria-hidden="true">
+                      🗘
+                    </span>
+                  ) : null}
                 </button>
                 {onSongCheckClick && !isGuest && (
                   <button

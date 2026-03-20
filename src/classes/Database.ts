@@ -748,6 +748,24 @@ class Database {
     return result;
   }
 
+  /** Number of locally-modified songs that have not yet been synced to the cloud (version === 0). */
+  public countUpdatedSongs(): number {
+    let count = 0;
+    for (const song of this.songs.values()) {
+      if (song.version === 0) count++;
+    }
+    return count;
+  }
+
+  /** Number of locally-modified leader profiles that have not yet been synced to the cloud (version === 0). */
+  public countUpdatedProfiles(): number {
+    let count = 0;
+    for (const leader of this.leaders.items) {
+      if (leader.version === 0) count++;
+    }
+    return count;
+  }
+
   /**
    * Get backup version of a song
    */
