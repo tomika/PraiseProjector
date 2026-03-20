@@ -284,7 +284,6 @@ export class Song {
   private parse() {
     this._textOnly = !Song.rxTagged.test(this._text);
 
-    this._change = "";
     this._group_id = "";
 
     const m = this._text.match(Song.rxNotes);
