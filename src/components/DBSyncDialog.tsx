@@ -6,13 +6,12 @@ import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { cloudApi } from "../../common/cloudApi";
-import CompareDialog from "./CompareDialog";
+import CompareDialog, { convertHistoryEntryToSongWithHistory } from "./CompareDialog";
 import LeaderDataMergeDialog from "./LeaderDataMergeDialog";
 import "./DBSyncDialog.css";
 import { ChordSystemCode } from "../../chordpro/chordpro_base";
 import { SyncRequest, SyncResponse } from "../../common/pp-types";
 import { useTooltips } from "../localization/TooltipContext";
-import { convertHistoryEntriyToSongWithHistory } from "../../common/pp-utils";
 
 enum SyncItemType {
   Song = "song",
@@ -1063,7 +1062,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       try {
         const historyEntries = await cloudApi.fetchSongHistory(song.Id);
         if (historyEntries.length > 0) {
-          const serverSong = convertHistoryEntriyToSongWithHistory(historyEntries[0]);
+          const serverSong = convertHistoryEntryToSongWithHistory(historyEntries[0]);
           serverSongCacheRef.current.set(song.Id, serverSong);
           setUpdatedSongCompare({ localSong: song, otherSong: serverSong, compareType: "server" });
         } else {

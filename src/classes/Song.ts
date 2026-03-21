@@ -25,6 +25,11 @@ const legacySongStoreCodec = t.type({
   _text: t.string,
 });
 
+export type SongChange = {
+  uploader: string;
+  created: Date;
+};
+
 export class Song {
   public static readonly SectionType = {
     unknown: 0,
@@ -57,7 +62,7 @@ export class Song {
   private _metadata: Map<string, string> = new Map();
   private _textOnly: boolean = false;
   private _headerWordCount: number = -1;
-  private _change: string = "";
+  private _change?: SongChange;
   private _notes: string = "";
   private _capo: number = 0;
   private _sectionsMap: Map<string, InstanceType<typeof Song.Section>[]> = new Map();
@@ -71,7 +76,7 @@ export class Song {
   private static rxNotes = /^# notes:(.*)$/m;
   private static rxInstructionMultiplier = /^(.*)[ \t]*[-:]?[ \t]*[(]?[ \t]*([0-9]+)[xX*][ \t]*[)]?[ \t]*$/;
 
-  constructor(t: string, s: ChordSystemCode = "G", change = "") {
+  constructor(t: string, s: ChordSystemCode = "G", change?: SongChange) {
     this._text = t.replace(Song.rxEmptyLines, "\n");
     this._system = s;
     this._id = uuidv4();
@@ -140,7 +145,7 @@ export class Song {
   public get Sections(): InstanceType<typeof Song.Section>[] {
     return this._sections;
   }
-  public get Change(): string {
+  public get Change(): SongChange | undefined {
     return this._change;
   }
   public get MetaData(): Map<string, string> {

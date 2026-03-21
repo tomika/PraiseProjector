@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Song } from "../classes/Song";
-import { PendingSongState } from "../../common/pp-types";
+import { Song, SongChange } from "../classes/Song";
+import { PendingSongState, SongHistoryEntry } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import ChordProEditor from "./ChordProEditor/ChordProEditor";
 import "./CompareDialog.css";
@@ -13,6 +13,19 @@ export interface ImportDecision {
 
 // Result type for SongCheck mode decisions
 export type SongCheckDecision = "approve" | "reject" | "revoke";
+
+export function convertHistoryEntryToSongWithHistory(historyEntry: SongHistoryEntry): Song {
+  return new Song(historyEntry.songdata.text, historyEntry.songdata.system, {
+    uploader: historyEntry.uploader,
+    created: new Date(historyEntry.created),
+  });
+}
+
+export function convertHistoryEntriesToSongsWithHistory(historyEntries: SongHistoryEntry[]): Song[] {
+  return historyEntries.map((entry) => {
+    return convertHistoryEntryToSongWithHistory(entry);
+  });
+}
 
 interface CompareDialogProps {
   originalSong: Song | null;
@@ -37,13 +50,13 @@ const getVersionLabel = (
   isActual: boolean,
   actualSongText: string,
   t: (key: StringKey) => string,
-  actualChangeOverride?: string
+  actualChangeOverride?: SongChange
 ): string => {
-  const change = (isActual ? actualChangeOverride : song.Change) || "";
+  const change = isActual ? actualChangeOverride : song.Change;
   if (isActual && song.Text === actualSongText) {
-    return change ? `${change} (${t("ActualSong")})` : t("ActualSong");
+    return change ? `${change.uploader} @ ${change.created.toLocaleString()} (${t("ActualSong")})` : t("ActualSong");
   }
-  return change || t("UnknownVersion");
+  return change ? `${change.uploader} @ ${change.created.toLocaleString()}` : t("UnknownVersion");
 };
 
 const CompareDialog: React.FC<CompareDialogProps> = ({
@@ -77,7 +90,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const buildVersionList = (): { label: string; song: Song }[] => {
     const versions: { label: string; song: Song }[] = [];
     const actualText = originalSong?.Text || "";
-    let actualChange = originalSong?.Change || "";
+    let actualChange = originalSong?.Change;
 
     // If current song has no embedded change metadata, reuse it from matching history entry.
     // History entries carry uploader@timestamp in Song.Change.

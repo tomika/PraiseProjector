@@ -14,9 +14,8 @@ import { Settings } from "../types";
 import { cloudApi } from "../../common/cloudApi";
 import { SongPreference } from "../classes/SongPreference";
 import { Leader } from "../classes/Leader";
-import CompareDialog from "./CompareDialog";
+import CompareDialog, { convertHistoryEntriesToSongsWithHistory } from "./CompareDialog";
 import "./SongListPanel.css";
-import { convertHistoryEntriesToSongsWithHistory } from "../../common/pp-utils";
 
 let addSongToPlaylistCallback: ((song: Song) => void) | null = null;
 

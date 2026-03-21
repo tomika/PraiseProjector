@@ -11,7 +11,6 @@ import {
   SongPreferenceEntry,
 } from "./pp-types";
 import { log, logError } from "./pp-log";
-import { Song } from "../src/classes/Song";
 import { decode, parseAndDecode } from "./io-utils";
 import { playlistEntryCodec } from "./pp-codecs";
 
@@ -155,22 +154,6 @@ function parseOldSongSettingFormat(s: string): SongPreferenceEntry | null {
 export function verifyPlaylist(playlist: PlayList): void {
   if (playlist.scheduled) playlist.scheduled = new Date(playlist.scheduled as unknown as string);
   if (!playlist.label) playlist.label = playlist.scheduled ? formatDateForLabel(playlist.scheduled) : "";
-}
-
-export function convertHistoryEntriyToSongWithHistory(historyEntry: SongHistoryEntry): Song {
-  let change = historyEntry.uploader + "@";
-  try {
-    change += new Date(historyEntry.created).toLocaleString();
-  } catch {
-    change += historyEntry.created;
-  }
-  return new Song(historyEntry.songdata.text, historyEntry.songdata.system, change);
-}
-
-export function convertHistoryEntriesToSongsWithHistory(historyEntries: SongHistoryEntry[]): Song[] {
-  return historyEntries.map((entry) => {
-    return convertHistoryEntriyToSongWithHistory(entry);
-  });
 }
 
 export function deserializePlaylist(playlistRaw: unknown): PlaylistEntry[] | undefined {
