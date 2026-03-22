@@ -2030,9 +2030,10 @@ export class App extends AppBase {
         this.selShift.appendChild(o);
       }
     if (this.selCapo)
-      for (let i = 0; i < 12; ++i) {
+      for (let i = -1; i < 12; ++i) {
         const o = document.createElement("option") as HTMLOptionElement;
-        o.innerText = o.value = i.toString();
+        o.value = i.toString();
+        o.innerText = i >= 0 ? o.value : "";
         this.selCapo.appendChild(o);
       }
   }
@@ -2875,7 +2876,7 @@ export class App extends AppBase {
                     ? songEntry.transpose + UnicodeSymbol.sharp
                     : Math.abs(songEntry.transpose) + UnicodeSymbol.flat
                   : "";
-              } else lab.innerText = songEntry.capo && songEntry.capo > 0 ? songEntry.capo.toString() : "";
+              } else lab.innerText = songEntry.capo != null && songEntry.capo >= 0 ? songEntry.capo.toString() : "";
               td.appendChild(lab);
               if (!this.allSong) {
                 const sel = document.createElement("select") as HTMLSelectElement;

@@ -405,7 +405,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     if (index >= 0) {
       const item = currentPlaylist.items[index];
       if (transpose !== undefined) item.transpose = transpose;
-      if (capo !== undefined) item.capo = capo > 0 ? capo : -1; // Capo of 0 or less is treated as "no capo"
+      if (capo !== undefined) {
+        const db = Database.getInstance();
+        const song = db?.getSongById(songId);
+        item.capo = song && song.Capo === capo ? -1 : capo >= 0 ? capo : -1;
+      }
       if (instructions !== undefined) item.instructions = instructions;
       const newPlaylist = new Playlist(currentPlaylist.name, [...currentPlaylist.items], currentPlaylist.id);
       this.setState(

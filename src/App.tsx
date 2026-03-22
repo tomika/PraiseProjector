@@ -862,9 +862,9 @@ const AppContent: React.FC = () => {
             return {
               ...song.toJSON(),
               title: pref?.title || song.Title,
-              capo: pref?.capo || 0,
-              transpose: pref?.transpose || 0,
-              instructions: pref?.instructions || "",
+              capo: pref?.capo == null || pref?.capo < 0 ? undefined : pref?.capo,
+              transpose: pref?.transpose || undefined,
+              instructions: pref?.instructions || undefined,
             };
           });
 

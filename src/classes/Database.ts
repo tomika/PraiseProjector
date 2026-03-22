@@ -1787,7 +1787,7 @@ class Database {
         const entry = new PlaylistEntry(song.songId);
         entry.title = song.title;
         entry.transpose = song.transpose || 0;
-        entry.capo = song.capo || -1;
+        entry.capo = song.capo == null || song.capo < 0 ? -1 : song.capo;
         entry.instructions = song.instructions || "";
         entries.push(entry);
       }
@@ -1836,7 +1836,7 @@ class Database {
         const entry = new PlaylistEntry(song.songId);
         entry.title = song.title;
         entry.transpose = song.transpose || 0;
-        entry.capo = song.capo || -1;
+        entry.capo = song.capo == null || song.capo < 0 ? -1 : song.capo;
         entry.instructions = song.instructions || "";
         entries.push(entry);
       }

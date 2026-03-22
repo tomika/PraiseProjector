@@ -125,21 +125,34 @@ export class Leader {
       return pref;
     }
 
+    let song: Song | undefined;
+    const getSong = () => {
+      if (!song) {
+        song = database.getSongs().find((s) => s.Id === songId);
+      }
+      return song;
+    };
+
     // Backup the profile before first local modification (must happen before version changes)
     if (this.version !== 0) database.ensureProfileBackup(this._id);
 
     if (title != null && pref.title !== title) {
-      pref.title = title;
-      this.version = 0;
+      const song = getSong();
+      if (!song || song.Title !== title) {
+        pref.title = title;
+        this.version = 0;
+      }
     }
     if (transpose != null && pref.transpose !== transpose && transpose > -12 && transpose < 12) {
       pref.transpose = transpose;
       this.version = 0;
     }
     if (capo != null && capo >= -1 && pref.capo !== capo) {
-      const song = database?.getSongs().find((s) => s.Id === songId);
-      pref.capo = song && song.Capo === capo ? -1 : capo;
-      this.version = 0;
+      const song = getSong();
+      if (!song || song.Capo !== capo) {
+        pref.capo = capo;
+        this.version = 0;
+      }
     }
     if (type != null && pref.type !== type) {
       pref.type = type === "" ? undefined : type;
