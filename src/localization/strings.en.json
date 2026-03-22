@@ -291,7 +291,7 @@
   "TypesenseSetupGuide": "Local Typesense Setup",
   "TypesenseSetupWindows": "On Windows, run Typesense via Docker or Podman:",
   "TypesenseSetupMac": "On macOS, install via Homebrew:",
-  "TypesenseSetupLinux": "On Linux, run via Docker:",
+  "TypesenseSetupLinux": "On Linux, install natively via DEB package:",
   "TypesenseMoreInfo": "For more information about Typesense, visit",
   "Leader": "Leader",
   "SelectALeader": "-- Select a Leader --",

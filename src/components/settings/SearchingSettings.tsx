@@ -215,9 +215,10 @@ const SearchingSettings: React.FC<SearchingSettingsProps> = ({ settings, updateS
                 ) : (
                   <div>
                     <p className="mb-1">{t("TypesenseSetupLinux")}</p>
-                    <code className="d-block bg-dark text-light p-2 rounded small mb-2">
-                      docker run --rm -p 8108:8108 -v typesense-data:/data typesense/typesense:27.1 --data-dir /data --api-key=
-                      {settings.typesenseApiKey || "your_api_key"}
+                    <code className="d-block bg-dark text-light p-2 rounded small mb-2" style={{ whiteSpace: "pre-line" }}>
+                      {"curl -O https://dl.typesense.org/releases/27.1/typesense-server-27.1-amd64.deb\n"}
+                      {"sudo apt install ./typesense-server-27.1-amd64.deb\n"}
+                      {`typesense-server --data-dir=/tmp/typesense-data --api-key=${settings.typesenseApiKey || "your_api_key"}`}
                     </code>
                   </div>
                 )}

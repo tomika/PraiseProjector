@@ -291,7 +291,7 @@
   "TypesenseSetupGuide": "Helyi Typesense telepítés",
   "TypesenseSetupWindows": "Windowson futtassa a Typesense-t Docker vagy Podman segítségével:",
   "TypesenseSetupMac": "macOS-en telepítés Homebrew-val:",
-  "TypesenseSetupLinux": "Linuxon futtatás Docker-rel:",
+  "TypesenseSetupLinux": "Linuxon telepítés DEB csomaggal:",
   "TypesenseMoreInfo": "További információkért a Typesense-ről látogasson el:",
   "Leader": "Dicsőítő",
   "SelectALeader": "-- Válasszon dicsőítőt --",
