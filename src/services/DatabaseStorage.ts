@@ -150,9 +150,9 @@ export async function migrateFromLocalStorage(username?: string): Promise<boolea
     console.info("DatabaseStorage", `Migrating data from localStorage to IndexedDB for key: ${key}`);
     await dbStorage.setItem(key, localStorageData);
 
-    // Optionally remove from localStorage after successful migration
-    // localStorage.removeItem(key);
-    // console.info("DatabaseStorage", `Removed localStorage data for key: ${key}`);
+    // Remove from localStorage after successful migration to free up the limited quota
+    localStorage.removeItem(key);
+    console.info("DatabaseStorage", `Removed localStorage data for key: ${key}`);
 
     console.info("DatabaseStorage", `Migration complete for key: ${key} (${localStorageData.length} bytes)`);
     return true;

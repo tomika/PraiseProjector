@@ -583,6 +583,7 @@ class Database {
     // Use fire-and-forget pattern for backwards compatibility
     this.forceSaveAsync().catch((error) => {
       console.error("Database", "Failed to save data to IndexedDB", error);
+      this.emitter.emit("db-save-error", error);
     });
   }
 
@@ -610,6 +611,7 @@ class Database {
         this.emitter.emit("db-updated");
       } catch (error) {
         console.error("Database", "Failed to save data to IndexedDB", error);
+        this.emitter.emit("db-save-error", error);
         throw error;
       } finally {
         this.savePromise = null;

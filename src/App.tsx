@@ -443,6 +443,21 @@ const AppContent: React.FC = () => {
     previewSplitSize,
   ]);
 
+  // Notify the user exactly once if the database fails to persist (storage full / IndexedDB unavailable)
+  const saveErrorNotifiedRef = useRef(false);
+  useEffect(() => {
+    const db = Database.getInstance();
+    const handleSaveError = () => {
+      if (saveErrorNotifiedRef.current) return;
+      saveErrorNotifiedRef.current = true;
+      showMessage(t("StorageSaveErrorTitle"), t("StorageSaveErrorMessage"));
+    };
+    db.emitter.on("db-save-error", handleSaveError);
+    return () => {
+      db.emitter.off("db-save-error", handleSaveError);
+    };
+  }, [showMessage, t]);
+
   // Wrapper for playlist item selection that also tracks the index
   const handlePlaylistItemSelected = useCallback((item: PlaylistEntry | null) => {
     setSelectedPlaylistItem(item);

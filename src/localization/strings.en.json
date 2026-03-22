@@ -134,6 +134,8 @@
   "ImportSuccess": "Database imported successfully. The application will reload.",
   "ExportFailed": "Failed to export database.",
   "ImportFailed": "Failed to import database.",
+  "StorageSaveErrorTitle": "Storage Error",
+  "StorageSaveErrorMessage": "Your data could not be saved. Please export your database now to avoid data loss.",
   "ImportSong": "Import Song",
   "SongToImport": "Song to Import",
   "SimilarSongInDatabase": "Similar Song in Database",

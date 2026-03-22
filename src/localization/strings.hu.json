@@ -134,6 +134,8 @@
   "ImportSuccess": "Adatbázis sikeresen importálva. Az alkalmazás újratöltődik.",
   "ExportFailed": "Nem sikerült az adatbázis exportálása.",
   "ImportFailed": "Nem sikerült az adatbázis importálása.",
+  "StorageSaveErrorTitle": "Tárolási hiba",
+  "StorageSaveErrorMessage": "Az adatok nem menthetők. Kérjük, exportálja az adatbázist most, hogy elkerülje az adatvesztést.",
   "ImportSong": "Dal importálása",
   "SongToImport": "Importálandó dal",
   "SimilarSongInDatabase": "Hasonló dal az adatbázisban",
