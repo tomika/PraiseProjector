@@ -38,12 +38,11 @@ export interface Settings {
   traditionalSearchCaseSensitive: boolean;
   traditionalSearchWholeWords: boolean;
 
-  // Search method: "traditional" = word-index + Damerau-Levenshtein, "fuse" = Fuse.js fuzzy search
-  searchMethod: "traditional" | "fuse";
-  // Fuse.js settings
-  fuseThreshold: number; // 0 = exact match, 1 = match anything (default 0.35)
-  fuseMinMatchCharLength: number; // minimum character length of matched pattern (default 2)
-  fuseUseExtendedSearch: boolean; // enable extended search syntax (default false)
+  // Search method: "traditional" = word-index + Damerau-Levenshtein, "typesense" = Typesense server
+  searchMethod: "traditional" | "typesense";
+  // Typesense settings
+  typesenseUrl: string; // Typesense server URL (default "http://127.0.0.1:8108")
+  typesenseApiKey: string; // Typesense search-only API key
 
   useFontAwesomeIcons: boolean;
   baseFontSize: number; // Base font size in pixels for UI scaling

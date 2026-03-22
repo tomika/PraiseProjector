@@ -77,7 +77,6 @@
     "electron-updater": "^6.7.3",
     "express": "^5.1.0",
     "font-awesome": "^4.7.0",
-    "fuse.js": "^7.1.0",
     "fp-ts": "^2.16.11",
     "io-ts": "^2.2.22",
     "localforage": "^1.10.0",
@@ -91,6 +90,7 @@
     "react-dom": "^18.0.0",
     "react-resizable-panels": "^3.0.6",
     "tiny-emitter": "^2.1.0",
+    "typesense": "^1.8.2",
     "uuid": "^13.0.0",
     "yalps": "^0.5.7"
   },

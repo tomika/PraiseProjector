@@ -79,7 +79,7 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
     },
   }));
 
-  const updateView = useCallback(() => {
+  const updateView = useCallback(async () => {
     if (!leader) {
       setRows([]);
       return;
@@ -141,7 +141,7 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
     // Normal mode
     if (showAllSongs) {
       // Show all songs with their preferences (or default empty preference)
-      const filteredSongs = db.filter(songFilter.trim(), null, true, true, true, 0);
+      const filteredSongs = await db.filter(songFilter.trim(), null, true, true, true, 0);
       for (const sf of filteredSongs) {
         const raw = leader.getPreference(sf.song.Id) || new SongPreference(sf.song.Id);
         const pref = normalizeTitlePref(raw, sf.song);

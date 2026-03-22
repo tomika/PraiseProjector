@@ -66,10 +66,10 @@ const electronFrontendWebApp: ThirdPartyEntry[] = [
     licenceUrl: "https://github.com/mwilliamson/mammoth.js/blob/master/LICENSE",
   },
   {
-    name: "Fuse.js",
-    url: "https://github.com/krisk/Fuse",
-    licence: "Apache License 2.0",
-    licenceUrl: "https://github.com/krisk/Fuse/blob/master/LICENSE",
+    name: "Typesense-JS",
+    url: "https://github.com/typesense/typesense-js",
+    licence: "Apache-2.0 license",
+    licenceUrl: "https://github.com/typesense/typesense-js?tab=Apache-2.0-1-ov-file#readme",
   },
   {
     name: "Font Awesome",

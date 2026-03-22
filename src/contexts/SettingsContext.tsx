@@ -29,6 +29,7 @@ const storeApi = {
 
 interface SettingsContextType {
   settings: Settings | null;
+  initialSettings: Settings | null;
   updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   updateSettingWithAutoSave: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   saveSettings: () => Promise<void>;
@@ -87,11 +88,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       traditionalSearchCaseSensitive: false,
       traditionalSearchWholeWords: false,
 
-      // Search method and Fuse.js settings
+      // Search method and Typesense settings
       searchMethod: "traditional",
-      fuseThreshold: 0.35,
-      fuseMinMatchCharLength: 2,
-      fuseUseExtendedSearch: false,
+      typesenseUrl: "http://127.0.0.1:8108",
+      typesenseApiKey: "",
 
       useFontAwesomeIcons: true,
       allClientsCanUseLeaderMode: true, // C# default: True
@@ -140,6 +140,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .then((loadedSettings) => {
         // Merge defaults with loaded settings so new settings get their default values
         const merged = { ...defaultSettings, ...loadedSettings };
+        if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
         setSettings(merged);
         setInitialSettings(merged);
       })
@@ -230,7 +231,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   return (
-    <SettingsContext.Provider value={{ settings, updateSetting, updateSettingWithAutoSave, saveSettings, revertSettings, syncToBackend }}>
+    <SettingsContext.Provider
+      value={{ settings, initialSettings, updateSetting, updateSettingWithAutoSave, saveSettings, revertSettings, syncToBackend }}
+    >
       {children}
     </SettingsContext.Provider>
   );

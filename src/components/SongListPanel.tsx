@@ -732,7 +732,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     console.info("Database", `Deleted song: ${song.Title} (${song.Id})`);
   }
 
-  updateCategories() {
+  async updateCategories() {
     const { filter, showSongs, showTextOnly, showMarked, showPreferredOnly, orderMode } = this.state;
     const db = Database.getInstance();
 
@@ -744,7 +744,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     // Call Database.filter with all parameters matching C# implementation
     // filter, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order
-    const filteredSongs = db.filter(
+    const filteredSongs = await db.filter(
       filter,
       this.props.selectedLeader ?? null, // Pass selected leader for filtering
       showSongs, // includeItemsWithChords

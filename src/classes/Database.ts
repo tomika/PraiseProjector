@@ -6,7 +6,7 @@ import { Leaders } from "./Leaders";
 import { SongWords } from "./SongWords";
 import { StringExtensions } from "./StringExtensions";
 import { DamerauLevenshtein } from "./DamerauLevenshtein";
-import { FuseSearch } from "./FuseSearch";
+import { TypesenseClient } from "../../common/typesense-client";
 import { PlaylistEntry } from "./PlaylistEntry";
 import { cloudApi } from "../../common/cloudApi";
 import { formatLocalDateLabel, parseScheduleDate } from "../../common/date-only";
@@ -285,18 +285,24 @@ class Database {
   public songPreferences: Map<string, SongPreference> = new Map();
   public leaders: Leaders = new Leaders();
   public words: SongWords = new SongWords();
-  public fuseSearch: FuseSearch = new FuseSearch();
+  private typesense: TypesenseClient | null = null;
+
+  private songToTypesenseInfo(song: Song) {
+    return { id: song.Id, version: song.version, text: song.Text };
+  }
 
   private rebuildSearchEngine(songs: Iterable<Song>) {
-    this.fuseSearch.rebuild(songs);
+    if (!this.typesense) return;
+    this.typesense.update(Array.from(songs, (s) => this.songToTypesenseInfo(s))).catch(() => {});
   }
 
   private addSongToSearchEngine(song: Song) {
-    this.fuseSearch.addSong(song);
+    if (!this.typesense) return;
+    this.typesense.update([this.songToTypesenseInfo(song)]).catch(() => {});
   }
 
-  private removeSongFromSearchEngine(song: Song) {
-    this.fuseSearch.removeSong(song);
+  private removeSongFromSearchEngine(_song: Song) {
+    // Typesense non-existing results are filtered at search time
   }
   private leaderFilters: Map<Leader, Set<Song>> = new Map();
   // Backup of original songs before user modification (version !== current when edited)
@@ -1154,7 +1160,7 @@ class Database {
     return true;
   }
 
-  public filter(
+  public async filter(
     expr: string,
     leader: Leader | null = null,
     includeItemsWithChords = true,
@@ -1162,39 +1168,86 @@ class Database {
     includeItemsWithNotes = true,
     order: SongOrder = SongOrder.Alphabetical,
     settings?: Settings | null
-  ): SongFoundList {
-    if (settings?.searchMethod === "fuse" && expr.trim()) {
-      return this.fuseFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
+  ): Promise<SongFoundList> {
+    if (settings?.searchMethod === "typesense" && expr.trim()) {
+      try {
+        const result = await this.typesenseFilter(
+          expr,
+          leader,
+          includeItemsWithChords,
+          includeItemsWithoutChords,
+          includeItemsWithNotes,
+          order,
+          settings
+        );
+        this.typesenseFallbackFired = false;
+        return result;
+      } catch {
+        if (!this.typesenseFallbackFired) {
+          this.typesenseFallbackFired = true;
+          window.dispatchEvent(new CustomEvent("pp-typesense-fallback"));
+        }
+        return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
+      }
     }
     return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
   }
 
-  private fuseFilter(
+  private typesenseInitHash = "";
+  private typesenseFallbackFired = false;
+
+  private ensureTypesenseInit(settings: Settings) {
+    const hash = `${settings.typesenseUrl}|${settings.typesenseApiKey}`;
+    if (hash === this.typesenseInitHash) return;
+    this.typesenseInitHash = hash;
+    try {
+      const url = new URL(settings.typesenseUrl);
+      this.typesense = new TypesenseClient(
+        url.hostname,
+        parseInt(url.port) || (url.protocol === "https:" ? 443 : 8108),
+        url.protocol.replace(":", ""),
+        settings.typesenseApiKey
+      );
+    } catch {
+      this.typesense = null;
+    }
+  }
+
+  private static readonly TYPESENSE_TYPE_TO_REASON: Record<string, FoundReason> = {
+    TITLE: FoundReason.Title,
+    HEAD: FoundReason.Header,
+    LYRICS: FoundReason.Lyrics,
+    META: FoundReason.Meta,
+  };
+
+  private async typesenseFilter(
     expr: string,
     leader: Leader | null,
     includeItemsWithChords: boolean,
     includeItemsWithoutChords: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
-    settings?: Settings | null
-  ): SongFoundList {
+    settings: Settings
+  ): Promise<SongFoundList> {
     const res = new SongFoundList();
-    const maxResults = settings?.searchMaxResults ?? 0;
+    const maxResults = settings.searchMaxResults ?? 0;
     const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
 
-    const engineResults = this.fuseSearch.search(expr, this.songs, settings, maxResults || undefined);
+    this.ensureTypesenseInit(settings);
 
-    for (const result of engineResults) {
-      const song = this.songs.get(result.songId);
+    const hits = await this.typesense!.search(expr, maxResults || undefined);
+
+    for (const hit of hits) {
+      const song = this.songs.get(hit.songId);
       if (!song) continue;
 
-      // Apply same chord/text/notes/leader filters as traditional search
       if (!(markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes)) continue;
       if (!(song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)) continue;
       if (leaderFilter && leaderFilter.has(song)) continue;
 
-      res.addSong(song, result.reason, result.cost, leader, result.snippet);
+      const reason = Database.TYPESENSE_TYPE_TO_REASON[hit.found.type] ?? FoundReason.Lyrics;
+      res.addSong(song, reason, hit.found.cost, leader, hit.found.snippet);
     }
 
     // Sorting

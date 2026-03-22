@@ -34,6 +34,7 @@ import { MessageBoxProvider, MessageBoxConfig, useMessageBox } from "./contexts/
 import { UpdateProvider } from "./contexts/UpdateContext";
 import { LocalizationProvider } from "./localization/LocalizationContext";
 import { TooltipProvider } from "./localization/TooltipContext";
+import { ToastProvider, useToast } from "./contexts/ToastContext";
 import { ResponsiveFontSizeManager } from "./components/ResponsiveFontSizeManager";
 import { UpdateNotification } from "./components/UpdateNotification";
 import "./styles.css";
@@ -181,7 +182,24 @@ const AppContent: React.FC = () => {
   const { selectedLeader, guestLeaderId } = useLeader();
   const { loadInitialCredentials, isAuthenticated, isGuest, isLoading: isAuthLoading } = useAuth();
   const { t } = useLocalization();
+  const { showToast } = useToast();
   const hasSyncedSettingsRef = useRef(false);
+
+  // Auto-fallback from Typesense to traditional search on connectivity failure
+  const fallbackFiredRef = useRef(false);
+  useEffect(() => {
+    fallbackFiredRef.current = settings?.searchMethod === "typesense" ? false : true;
+  }, [settings?.searchMethod]);
+  useEffect(() => {
+    const handleFallback = () => {
+      if (fallbackFiredRef.current) return;
+      fallbackFiredRef.current = true;
+      updateSettingWithAutoSave("searchMethod", "traditional");
+      showToast(t("TypesenseFallbackToast"), "warning");
+    };
+    window.addEventListener("pp-typesense-fallback", handleFallback);
+    return () => window.removeEventListener("pp-typesense-fallback", handleFallback);
+  }, [updateSettingWithAutoSave, showToast, t]);
 
   // F11 fullscreen toggle (browser/webapp mode)
   useEffect(() => {
@@ -884,7 +902,7 @@ const AppContent: React.FC = () => {
           const text = (apiRequest.query.text as string) || "";
           const limit = (apiRequest.query.limit as string) || "";
           const maxResults = limit ? parseInt(limit) : 30;
-          const results = db.filter(text, leader);
+          const results = await db.filter(text, leader);
           const data: SongFound[] = results.slice(0, maxResults > 0 ? maxResults : undefined).map((found) => ({
             songId: found.song.Id,
             title: found.song.Title,
@@ -2176,7 +2194,9 @@ const App: React.FC = () => {
               <LeaderProvider>
                 <UpdateProvider>
                   <MessageBoxProvider onMessageBoxChange={setMessageBox}>
-                    <AppContent />
+                    <ToastProvider>
+                      <AppContent />
+                    </ToastProvider>
                     {messageBox && (
                       <MessageBox
                         title={messageBox.title}

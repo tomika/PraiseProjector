@@ -15,6 +15,8 @@ import { useTooltips } from "../localization/TooltipContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useUpdate } from "../contexts/UpdateContext";
+import { useMessageBox } from "../contexts/MessageBoxContext";
+import { TypesenseClient } from "../../common/typesense-client";
 
 interface SettingsFormProps {
   onClose: () => void;
@@ -24,18 +26,20 @@ interface SettingsFormProps {
 }
 
 const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initialLeaderId, onOpenLogs }) => {
-  const { settings, updateSetting, saveSettings, revertSettings } = useSettings();
+  const { settings, initialSettings, updateSetting, saveSettings, revertSettings } = useSettings();
   const { leaders, setLeaders, saveLeaders, revertLeaders } = useDatabase();
   const { tt } = useTooltips();
   const { t } = useLocalization();
   const { isGuest } = useAuth();
   const { hasUpdate } = useUpdate();
+  const { showMessage } = useMessageBox();
   const [activeTab, setActiveTab] = useState(initialTab || "general");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(initialLeaderId ?? null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isMobile, setIsMobile] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Detect mobile viewport
   useEffect(() => {
@@ -143,7 +147,30 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
   }
 
   const handleOk = async () => {
-    // Save settings and leaders, then sync to backend
+    // Validate typesense if user just switched to it
+    if (settings.searchMethod === "typesense" && initialSettings?.searchMethod !== "typesense") {
+      setSaving(true);
+      try {
+        const url = new URL(settings.typesenseUrl);
+        const client = new TypesenseClient(
+          url.hostname,
+          parseInt(url.port) || (url.protocol === "https:" ? 443 : 8108),
+          url.protocol.replace(":", ""),
+          settings.typesenseApiKey
+        );
+        const ok = await client.healthCheck();
+        if (!ok) {
+          setSaving(false);
+          showMessage(t("TypesenseValidationTitle"), t("TypesenseValidationUnhealthy"));
+          return;
+        }
+      } catch {
+        setSaving(false);
+        showMessage(t("TypesenseValidationTitle"), t("TypesenseValidationFailed"));
+        return;
+      }
+      setSaving(false);
+    }
     await saveSettings();
     await saveLeaders();
     onClose();
@@ -293,7 +320,8 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
           <button type="button" className="btn btn-secondary" title={tt("settings_cancel")} onClick={handleCancel}>
             {t("Cancel")}
           </button>
-          <button type="button" className="btn btn-primary" title={tt("settings_ok")} onClick={handleOk}>
+          <button type="button" className="btn btn-primary" title={tt("settings_ok")} onClick={handleOk} disabled={saving}>
+            {saving && <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>}
             {t("OK")}
           </button>
         </div>
