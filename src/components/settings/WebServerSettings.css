@@ -10,3 +10,8 @@
 .clickable {
   cursor: pointer;
 }
+
+.netdisplay-quality-value {
+  min-width: 3rem;
+  text-align: right;
+}

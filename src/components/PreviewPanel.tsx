@@ -127,6 +127,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Preview canvas state
     const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+    const [netDisplayDataUrl, setNetDisplayDataUrl] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
     const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
@@ -683,6 +684,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     // Live QR position: prefer drag position, fall back to persisted settings
     const liveQrX = qrDragPos !== null ? qrDragPos.x : (settings?.qrCodeX ?? 85);
     const liveQrY = qrDragPos !== null ? qrDragPos.y : (settings?.qrCodeY ?? 82);
+    const netDisplayJpegQuality = Math.max(1, Math.min(100, settings?.netDisplayJpegQuality ?? 70));
+    const netDisplayJpegQualityFactor = netDisplayJpegQuality / 100;
 
     // Clamp QR position when size changes so it stays within the image area
     useEffect(() => {
@@ -708,6 +711,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
       if (!rendererRef.current) {
         const timerId = setTimeout(() => setPreviewDataUrl(null), 0);
+        setNetDisplayDataUrl(null);
         return () => clearTimeout(timerId);
       }
 
@@ -765,10 +769,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
           try {
             const canvas = rendererRef.current.renderSection(messageText, renderSettings, showImage ? bgImage : null);
-            setPreviewDataUrl(canvas.toDataURL());
+            setPreviewDataUrl(canvas.toDataURL("image/png"));
+            setNetDisplayDataUrl(canvas.toDataURL("image/jpeg", netDisplayJpegQualityFactor));
           } catch (error) {
             console.error("Preview", "Error rendering message", error);
             setPreviewDataUrl(null);
+            setNetDisplayDataUrl(null);
           }
           return;
         }
@@ -776,6 +782,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         // Normal section rendering
         if (selectedSectionIndex < 0 || !sections[selectedSectionIndex]) {
           setPreviewDataUrl(null);
+          setNetDisplayDataUrl(null);
           return;
         }
 
@@ -810,10 +817,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
         try {
           const canvas = rendererRef.current.renderSection(sectionText, renderSettings, showImage ? bgImage : null);
-          setPreviewDataUrl(canvas.toDataURL());
+          setPreviewDataUrl(canvas.toDataURL("image/png"));
+          setNetDisplayDataUrl(canvas.toDataURL("image/jpeg", netDisplayJpegQualityFactor));
         } catch (error) {
           console.error("Preview", "Error rendering section", error);
           setPreviewDataUrl(null);
+          setNetDisplayDataUrl(null);
         }
       }
 
@@ -830,6 +839,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       projectorWidth,
       projectorHeight,
       qrCodeUrl,
+      netDisplayJpegQualityFactor,
       isQrDragging,
       qrDragPos,
       liveQrX,
@@ -1205,10 +1215,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         projectorChannelRef.current.postMessage({ type: "UPDATE_DISPLAY", imageData: previewDataUrl });
       }
       // Send to webserver for net display clients (matching C# SetImage)
-      // In Electron mode, the display window also loads /netdisplay from the
-      // webserver, so pushing the image here updates both web and local displays.
-      window.electronAPI?.setNetDisplayImage?.(previewDataUrl);
-    }, [previewDataUrl, projectorWindowRef, projectorEnabled]);
+      // Keep Electron display window lossless (PNG) while netdisplay uses JPEG.
+      window.electronAPI?.setDisplayWindowImage?.(previewDataUrl);
+      window.electronAPI?.setNetDisplayImage?.(netDisplayDataUrl);
+    }, [previewDataUrl, netDisplayDataUrl, projectorWindowRef, projectorEnabled]);
 
     // Note: We intentionally do NOT close the projector window on unmount
     // because the PreviewPanel can be conditionally rendered (paging mode vs 3-panel mode)

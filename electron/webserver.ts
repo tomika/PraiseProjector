@@ -607,7 +607,7 @@ export class WebServer {
       // No id param (browser image load via ?c=...): serve actual image data
       if (!imgid) {
         if (this.currentImageData) {
-          res.type("image/png").send(this.currentImageData);
+          res.type("image/jpeg").send(this.currentImageData);
         } else {
           res.status(404).send("No image available");
         }
@@ -616,7 +616,7 @@ export class WebServer {
 
       // If client's id doesn't match current: respond immediately with new id
       if (!this.currentImageId || imgid !== this.currentImageId) {
-        res.type("text/plain").send(this.currentImageId || "NULL");
+        res.json(this.currentImageId);
         return;
       }
 
@@ -624,7 +624,7 @@ export class WebServer {
       const timeoutMs = (this.settings.longPollTimeout || 30) * 1000;
       const timeout = setTimeout(() => {
         this.removePendingImageRequest(res);
-        res.type("text/plain").send(this.currentImageId);
+        res.json(this.currentImageId);
       }, timeoutMs);
 
       this.pendingImageRequests.push({ res, imgid, timeout });
@@ -1113,10 +1113,10 @@ export class WebServer {
   /**
    * Set the current net display image data (matching C# SetImage).
    * Called from IPC when the frontend renders a new display frame.
-   * @param pngDataUrl - data URL (data:image/png;base64,...) or raw base64 string
+   * @param imageDataUrl - data URL (data:image/jpeg;base64,..., data:image/png;base64,...) or raw base64 string
    */
-  public setImage(pngDataUrl: string | null): void {
-    if (!pngDataUrl) {
+  public setImage(imageDataUrl: string | null): void {
+    if (!imageDataUrl) {
       this.currentImageData = null;
       this.currentImageId = "";
       // Notify pending requests that image cleared
@@ -1124,9 +1124,9 @@ export class WebServer {
       return;
     }
 
-    // Convert data URL or base64 to buffer
-    const base64Match = pngDataUrl.match(/^data:image\/png;base64,(.+)$/);
-    const base64Data = base64Match ? base64Match[1] : pngDataUrl;
+    // Convert data URL (any image format) or raw base64 to buffer
+    const base64Match = imageDataUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+    const base64Data = base64Match ? base64Match[1] : imageDataUrl;
     this.currentImageData = Buffer.from(base64Data, "base64");
 
     // Compute SHA1 hash for image ID (matching C# SHA1CryptoServiceProvider)
@@ -1140,7 +1140,7 @@ export class WebServer {
     for (const pending of this.pendingImageRequests) {
       clearTimeout(pending.timeout);
       try {
-        pending.res.type("text/plain").send(this.currentImageId || "NULL");
+        pending.res.json(this.currentImageId);
       } catch {
         // Client may have disconnected
       }

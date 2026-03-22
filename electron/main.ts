@@ -737,13 +737,16 @@ function updateDisplayWindowImage(pngDataUrl: string | null): void {
 }
 
 // Net display image update from renderer (matching C# SetImage)
-ipcMain.on("set-net-display-image", (_event, pngDataUrl: string | null) => {
+ipcMain.on("set-net-display-image", (_event, imageDataUrl: string | null) => {
   const webServer = getWebServerInstance();
   if (webServer) {
-    webServer.setImage(pngDataUrl);
+    webServer.setImage(imageDataUrl);
   }
-  // Also push to the local Electron display window
-  updateDisplayWindowImage(pngDataUrl);
+});
+
+// Internal Electron display window image update (lossless frame)
+ipcMain.on("set-display-window-image", (_event, imageDataUrl: string | null) => {
+  updateDisplayWindowImage(imageDataUrl);
 });
 
 // Sync leader name (for UDP offer - C# uses cmbLeader.Text which is the name, not ID)

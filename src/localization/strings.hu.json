@@ -359,6 +359,8 @@
   "Domain": "Domain",
   "WebServerAcceptLanClientsOnly": "Kliensek fogadása csak a helyi hálózatról",
   "MaxResponseTime": "Max. válaszidő (másodperc)",
+  "NetDisplayJpegQuality": "Hálózati kijelző JPEG minőség",
+  "NetDisplayJpegQualityHelp": "Alacsonyabb érték csökkenti a hálózati forgalmat, de rontja a képminőséget.",
   "EnableWebServerToSeeQR": "Engedélyezze a webszervert a QR kód megtekintéséhez",
   "RegisterLocalServer": "Helyi szerver regisztrálása",
   "AllClientsAreAdmins": "Minden kliens lehet vezető",

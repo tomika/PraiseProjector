@@ -359,6 +359,8 @@
   "Domain": "Domain",
   "WebServerAcceptLanClientsOnly": "Accept clients from Local Area Network only",
   "MaxResponseTime": "Max Response Time (seconds)",
+  "NetDisplayJpegQuality": "Net display JPEG quality",
+  "NetDisplayJpegQualityHelp": "Lower values reduce network traffic but also reduce image quality.",
   "EnableWebServerToSeeQR": "Enable web server to see QR code",
   "RegisterLocalServer": "Register local server",
   "AllClientsAreAdmins": "All clients are can be leader",

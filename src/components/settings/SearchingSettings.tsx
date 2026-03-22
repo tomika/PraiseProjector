@@ -199,7 +199,7 @@ const SearchingSettings: React.FC<SearchingSettingsProps> = ({ settings, updateS
                   <div>
                     <p className="mb-1">{t("TypesenseSetupWindows")}</p>
                     <code className="d-block bg-dark text-light p-2 rounded small mb-2">
-                      docker run -p 8108:8108 -v typesense-data:/data typesense/typesense:27.1 --data-dir /data --api-key=
+                      docker run --rm -p 8108:8108 -v typesense-data:/data typesense/typesense:27.1 --data-dir /data --api-key=
                       {settings.typesenseApiKey || "your_api_key"}
                     </code>
                   </div>
@@ -216,7 +216,7 @@ const SearchingSettings: React.FC<SearchingSettingsProps> = ({ settings, updateS
                   <div>
                     <p className="mb-1">{t("TypesenseSetupLinux")}</p>
                     <code className="d-block bg-dark text-light p-2 rounded small mb-2">
-                      docker run -p 8108:8108 -v typesense-data:/data typesense/typesense:27.1 --data-dir /data --api-key=
+                      docker run --rm -p 8108:8108 -v typesense-data:/data typesense/typesense:27.1 --data-dir /data --api-key=
                       {settings.typesenseApiKey || "your_api_key"}
                     </code>
                   </div>

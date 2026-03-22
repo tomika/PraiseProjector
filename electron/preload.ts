@@ -56,9 +56,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send("sync-leader-name", leaderName);
   },
 
-  // Net display image update (matching C# SetImage - sends display PNG to webserver)
-  setNetDisplayImage: (pngDataUrl: string | null) => {
-    ipcRenderer.send("set-net-display-image", pngDataUrl);
+  // Net display image update (network-optimized frame sent to webserver)
+  setNetDisplayImage: (imageDataUrl: string | null) => {
+    ipcRenderer.send("set-net-display-image", imageDataUrl);
+  },
+
+  // Internal Electron display window update (lossless frame)
+  setDisplayWindowImage: (imageDataUrl: string | null) => {
+    ipcRenderer.send("set-display-window-image", imageDataUrl);
   },
 
   // Get connected clients from webserver (for admin client selection)

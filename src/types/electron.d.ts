@@ -77,8 +77,11 @@ export interface IElectronAPI {
   // Sync leader name (for UDP offer - C# uses cmbLeader.Text which is the name, not ID)
   syncLeaderName?: (leaderName: string) => void;
 
-  // Net display image update (matching C# SetImage - sends display PNG to webserver)
+  // Net display image update (sends network-optimized frame to webserver)
   setNetDisplayImage?: (pngDataUrl: string | null) => void;
+
+  // Internal Electron display window update (lossless frame)
+  setDisplayWindowImage?: (imageDataUrl: string | null) => void;
 
   // Get connected clients from webserver (for leader-mode client selection)
   getConnectedClients?: () => Promise<Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>>;

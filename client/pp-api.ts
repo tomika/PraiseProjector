@@ -200,6 +200,7 @@ export function initApp(url: string, options: AppConfig, greeting: string) {
 }
 
 export function imageApp(url: string) {
+  if (!url.endsWith("/")) url += "/";
   const app = new App(url);
   apps.push(app);
   let startupImageId: string | undefined = "startup";
@@ -215,7 +216,9 @@ export function imageApp(url: string) {
   const requestImage = () => {
     app.requestImage(
       (id) => {
-        document.body.style.backgroundImage = "url(" + url + "image?c=" + id + ")";
+        if (id && id !== "NULL") {
+          document.body.style.backgroundImage = "url(" + url + "image?c=" + encodeURIComponent(id) + ")";
+        }
         setTimeout(requestImage, 100);
         init();
       },

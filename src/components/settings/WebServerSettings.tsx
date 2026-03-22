@@ -399,6 +399,25 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
                 onChange={(e) => updateSetting("longPollTimeout", parseInt(e.target.value))}
               />
             </div>
+            <div className="form-group">
+              <label htmlFor="netDisplayJpegQuality">{t("NetDisplayJpegQuality")}</label>
+              <div className="d-flex align-items-center gap-2">
+                <input
+                  type="range"
+                  className="form-range flex-grow-1"
+                  id="netDisplayJpegQuality"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={Math.max(1, Math.min(100, settings.netDisplayJpegQuality || 70))}
+                  onChange={(e) => updateSetting("netDisplayJpegQuality", parseInt(e.target.value, 10))}
+                />
+                <span className="small text-muted netdisplay-quality-value">
+                  {Math.max(1, Math.min(100, settings.netDisplayJpegQuality || 70))}%
+                </span>
+              </div>
+              <small className="form-text text-muted">{t("NetDisplayJpegQualityHelp")}</small>
+            </div>
             <div className="form-check mt-3">
               <input
                 className="form-check-input"
