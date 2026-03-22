@@ -960,6 +960,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               db
             );
           });
+
+          // Commit the mutated leader back into the canonical DB leader collection.
+          // This keeps Settings/Leader views consistent even if selectedLeader was a stale reference.
+          db.updateLeader(this.props.selectedLeader!);
         }
       }
 
@@ -1192,6 +1196,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             },
             db
           );
+          // Commit back to canonical DB collection so Settings sees the update immediately.
+          db.updateLeader(this.props.selectedLeader);
         }
       }
     }

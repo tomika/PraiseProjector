@@ -715,6 +715,11 @@ const AppContent: React.FC = () => {
 
     const updateLeaderPreferenceFromPlaylist = (songId: string) => {
       if (!leader) return;
+      const mode = settings?.leaderProfileUpdateMode || "allSources";
+      if (mode !== "allSources") {
+        console.debug("App", `Skipping profile update from remote playlist change (mode: ${mode})`);
+        return;
+      }
       const pref = leftPanelRef.current?.getPreferencesForSongId(songId);
       if (!pref) return;
       const song = db.getSongById(songId);
@@ -729,15 +734,17 @@ const AppContent: React.FC = () => {
         },
         db
       );
+      db.updateLeader(leader);
     };
 
     const updateLeaderPreferenceFromRequest = (request: DisplayUpdateRequest) => {
       if (!leader) return;
       // Check if this update source is allowed by the current settings
       const mode = settings?.leaderProfileUpdateMode || "allSources";
-      if (mode === "leaderPageOnly") {
-        // Don't update profile from client requests
-        console.debug("App", "Skipping profile update from client request (mode: leaderPageOnly)");
+      if (mode !== "allSources") {
+        // Don't update profile from client requests unless explicitly enabled.
+        // uiChangesAlso means local UI only; allSources also includes remote clients.
+        console.debug("App", `Skipping profile update from client request (mode: ${mode})`);
         return;
       }
 
@@ -746,6 +753,7 @@ const AppContent: React.FC = () => {
       const transpose = request.transpose;
       const capo = request.capo;
       leader.updatePreference(request.id, { title: titleToSave, transpose, capo, instructions: request.instructions }, db);
+      db.updateLeader(leader);
     };
 
     const currentDisplay = getCurrentDisplay();
