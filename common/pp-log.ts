@@ -1,9 +1,11 @@
-export type LogLevel = "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFunction = (message: string, level: LogLevel) => void;
 
 export let logFunc: LogFunction = (message: string, level: LogLevel) => {
   if (level === "error") console.error(message);
-  else console.log(message);
+  else if (level === "warn") console.warn(message);
+  else if (level === "debug") console.debug(message);
+  else console.info(message);
 };
 
 export function setLogFunction(func: LogFunction) {
