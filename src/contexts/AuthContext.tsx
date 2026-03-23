@@ -75,6 +75,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(session);
     setToken(session.token);
     cloudApi.setToken(shouldUseBearerHeader ? session.token : null);
+    cloudApi.setFixedHeader("X-PP-Expected-User", session.login);
     setAuthStatus("authenticated");
     localStorage.removeItem("auth_token");
     if (persist) {
@@ -90,12 +91,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const authType = authToken ? (authToken.startsWith("Bearer ") ? "Bearer" : authToken.startsWith("Basic ") ? "Basic" : "raw") : "cookie-only";
       console.debug("[Auth] verifySession:", { username, authType });
       cloudApi.setToken(authToken ?? null);
-      const response = await cloudApi.fetchSession(await getDeviceClientId(), { skipRefresh: true });
+      const clientId = await getDeviceClientId();
+      const response = await cloudApi.fetchSession(clientId, { skipRefresh: true });
       if (response.login === username) {
         console.debug("[Auth] verifySession: success for", username);
         return response;
       }
-      console.debug("[Auth] verifySession: login mismatch, expected", username, "got", response.login);
+      // Login mismatch: the server resolved a different user (typically from
+      // shared HttpOnly cookies set by a browser session on the same origin).
+      // Clear the stale cookies so they don't silently authenticate future
+      // requests.  The server is known to be reachable (fetchSession succeeded),
+      // so the logout call should reliably clear the HttpOnly cookies via
+      // Set-Cookie: …; Max-Age=0 in the response.
+      console.debug("[Auth] verifySession: login mismatch, expected", username, "got", response.login, "— clearing stale session");
+      if (response.login) {
+        cloudApi.setToken(null);
+        try {
+          await cloudApi.logoutSession(clientId);
+        } catch {
+          // Ignore errors (e.g. network issues) since we're clearing local state anyway
+        }
+        await window.electronAPI?.clearPersistedCookies?.();
+      }
       return null;
     } catch (error) {
       console.debug("[Auth] verifySession: failed", error instanceof Error ? error.message : error);
@@ -147,6 +164,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(null);
         setToken(null);
         cloudApi.setToken(null);
+        cloudApi.setFixedHeader("X-PP-Expected-User", "");
+
+        // PWAs and multiple browser tabs share HttpOnly cookies with the main
+        // browser session on the same origin, while localStorage is separate.
+        // If the browser is logged in but this instance has no stored username,
+        // the shared cookies would silently authenticate every fetch request as
+        // the browser's user while the UI shows "Guest".  verifySession with an
+        // empty expected login detects the mismatch and clears the stale cookies.
+        await verifySession("", null);
+
         setAuthStatus("guest");
         if (Database.getCurrentUsername() !== "") {
           await Database.switchUser("");
@@ -252,6 +279,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUsername(null);
       setAuthStatus("guest");
       cloudApi.setToken(null);
+      cloudApi.setFixedHeader("X-PP-Expected-User", "");
       localStorage.removeItem("auth_username");
       localStorage.removeItem("auth_token");
       localStorage.removeItem("pp_session_token");
@@ -290,6 +318,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem("auth_token");
     localStorage.removeItem("pp_session_token");
     setAuthStatus(username ? "offline" : "guest");
+    cloudApi.setFixedHeader("X-PP-Expected-User", username ?? "");
+    if (!username) window.electronAPI?.clearPersistedCookies?.();
   }, [username]);
 
   const commitSession = useCallback(() => {
