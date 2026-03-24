@@ -302,7 +302,8 @@ const iconMap: Record<IconType, IconConfig> = {
   [IconType.TEXT_ONLY]: {
     faIcon: "fa fa-file-text-o",
     imagePath: "assets/text.png",
-    alt: "Text",
+    faContentAlways: true,
+    alt: "Text Only",
   },
   [IconType.ALERT]: {
     faIcon: "fa fa-exclamation-triangle",
