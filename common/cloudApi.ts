@@ -88,6 +88,25 @@ export class CloudApiService {
   private fixedHeaders = new Map<string, string>();
   private proxyApi?: IProxyAPI;
 
+  // Peek response cache — avoids duplicate network calls within the TTL window.
+  // Default TTL (10 s) matches MIN_PEEK_INTERVAL_SECONDS in UserPanel.
+  // Callers that want a guaranteed fresh result call invalidatePeekCache() first.
+  static readonly DEFAULT_PEEK_CACHE_TTL_MS = 10_000;
+  private peekCache: { result: PeekResponse; expiresAt: number } | null = null;
+  private peekInFlight: Promise<PeekResponse> | null = null;
+  private peekCacheTtlMs = CloudApiService.DEFAULT_PEEK_CACHE_TTL_MS;
+
+  /** Override the peek cache TTL (milliseconds). Call with the user-configured
+   *  peek interval so that all callers share the same deduplication window. */
+  setPeekCacheTtl(ms: number): void {
+    this.peekCacheTtlMs = Math.max(1_000, ms);
+  }
+
+  /** Force the next fetchPeek() to go to the network regardless of cache age. */
+  invalidatePeekCache(): void {
+    this.peekCache = null;
+  }
+
   setProxy(proxyApi: IProxyAPI) {
     this.proxyApi = proxyApi;
   }
@@ -454,10 +473,31 @@ export class CloudApiService {
 
   /**
    * Fetch lightweight sync metadata.
+   * Results are cached for `peekCacheTtlMs` (default 10 s) so that multiple
+   * callers (UserPanel, legacy app, fetchPendingSongsCount …) in quick
+   * succession share a single network round-trip.  In-flight deduplication
+   * ensures only one request is outstanding at a time.
    */
   async fetchPeek(): Promise<PeekResponse> {
-    const response = await this.apiCall<unknown>("/peek");
-    return this.parseResponse(peekResponseCodec, response);
+    const now = Date.now();
+    if (this.peekCache && now < this.peekCache.expiresAt) {
+      return this.peekCache.result;
+    }
+    if (this.peekInFlight) {
+      return this.peekInFlight;
+    }
+    const request = (async () => {
+      try {
+        const response = await this.apiCall<unknown>("/peek");
+        const result = this.parseResponse(peekResponseCodec, response);
+        this.peekCache = { result, expiresAt: Date.now() + this.peekCacheTtlMs };
+        return result;
+      } finally {
+        this.peekInFlight = null;
+      }
+    })();
+    this.peekInFlight = request;
+    return request;
   }
 
   /**

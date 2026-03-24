@@ -63,6 +63,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const peekIntervalSeconds = Math.max(MIN_PEEK_INTERVAL_SECONDS, (settings?.serverPeekIntervalMinutes ?? 60) * 60);
   const peekIntervalMs = peekIntervalSeconds * 1000;
 
+  // Keep cloudApi's peek cache TTL in sync with the user-configured interval.
+  useEffect(() => {
+    // Set TTL slightly shorter than the interval to ensure the cache expires before we check it again.
+    cloudApi.setPeekCacheTtl(Math.max(1000, peekIntervalMs - 100));
+  }, [peekIntervalMs]);
+
   const fetchPeek = useCallback(async () => {
     try {
       const peek = await cloudApi.fetchPeek();
@@ -77,6 +83,14 @@ const UserPanel: React.FC<UserPanelProps> = ({
     }
     lastPeekCheckRef.current = Date.now();
   }, [isGuest, isAuthLoading]);
+
+  // Keep a stable ref so the polling effect doesn't need fetchPeek in its deps.
+  // This prevents auth-state flickers (isGuest/isAuthLoading) from re-creating
+  // the interval and firing a kickoff peek on every change.
+  const fetchPeekRef = useRef(fetchPeek);
+  useEffect(() => {
+    fetchPeekRef.current = fetchPeek;
+  }, [fetchPeek]);
 
   const userDisplayName = isAuthLoading ? user?.login || username || t("Loading") : !isGuest ? user?.login || username : t("Guest");
 
@@ -117,28 +131,29 @@ const UserPanel: React.FC<UserPanelProps> = ({
   useEffect(() => {
     const tick = setInterval(() => {
       if (Date.now() - lastPeekCheckRef.current >= peekIntervalMs) {
-        fetchPeek();
+        fetchPeekRef.current();
       }
     }, PEEK_POLL_TICK_MS);
 
     const kickoff = setTimeout(() => {
-      fetchPeek();
+      fetchPeekRef.current();
     }, 0);
 
     return () => {
       clearInterval(tick);
       clearTimeout(kickoff);
     };
-  }, [username, peekIntervalMs, fetchPeek]);
+  }, [username, peekIntervalMs]);
 
   // Listen for external refresh requests (e.g. after SongCheckDialog processes songs)
   useEffect(() => {
     const handleRefresh = () => {
-      fetchPeek();
+      cloudApi.invalidatePeekCache();
+      fetchPeekRef.current();
     };
     window.addEventListener("pp-pending-songs-changed", handleRefresh);
     return () => window.removeEventListener("pp-pending-songs-changed", handleRefresh);
-  }, [fetchPeek]);
+  }, []);
 
   // Register callback for auto-selecting leader after login
   useEffect(() => {
