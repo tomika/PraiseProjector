@@ -2497,19 +2497,19 @@ export class ChordProEditor {
     this.draw();
   }
 
-  getSelectedText() {
+  getSelectedText(lyricsOnly = false): string {
     let str = "";
     if (this.chordPro && this.selectionStart != null && this.selectionEnd != null && this.comparePositions(this.selectionStart, this.selectionEnd)) {
       if (this.selectionStart instanceof ChordProSelection && this.selectionEnd instanceof ChordProSelection) {
         for (let l = this.selectionStart.line; l <= this.selectionEnd.line; ++l) {
           const line_obj = this.chordPro.lines[l];
           if (this.selectionStart.line < l && l < this.selectionEnd.line) {
-            str += this.getLineChordProText(line_obj, 0, line_obj.lyrics.length) + "\n";
+            str += lyricsOnly ? line_obj.lyrics + "\n" : this.getLineChordProText(line_obj, 0, line_obj.lyrics.length) + "\n";
             continue;
           }
           const start = this.selectionStart.line === l ? this.selectionStart.col : 0,
             end = this.selectionEnd.line === l ? this.selectionEnd.col : line_obj.lyrics.length;
-          str += this.getLineChordProText(line_obj, start, end);
+          str += lyricsOnly ? line_obj.lyrics.substring(start, end) : this.getLineChordProText(line_obj, start, end);
           if (this.selectionEnd.line !== l) str += "\n";
         }
       } else if (typeof this.selectionStart === "number" && typeof this.selectionEnd === "number") {
@@ -2947,7 +2947,7 @@ export class ChordProEditor {
   }
 
   makeSelectionTitle() {
-    const str = this.getSelectedText();
+    const str = this.getSelectedText(true);
     if (this.chordPro && str) {
       this.saveState();
       this.chordPro.setMeta("title", str.replace(/\?r\n/gs, " ").replace(/ +/g, " ").trim());
