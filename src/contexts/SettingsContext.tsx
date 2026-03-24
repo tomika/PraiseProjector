@@ -71,6 +71,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       keepAwake: false,
       showTooltips: true,
       pictureFolder: "",
+      backgroundImageFit: "touchInner",
       baseFontSize: 16, // Base font size for UI scaling
       autoAdjustFontSize: true, // Auto-adjust based on screen size
       webServerPath: "/",

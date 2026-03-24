@@ -27,6 +27,7 @@ export interface Settings {
   sectionSelByEditorDblclk: boolean;
   keepAwake: boolean;
   pictureFolder: string;
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
   useTextSimilarities: boolean;
   searchMaxResults: number;
   traditionalSearchCaseSensitive: boolean;

@@ -15,6 +15,7 @@ export interface RenderSettings {
   textShadowOffset: number;
   renderWidth: number;
   renderHeight: number;
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
   // Render margins (percentage)
   marginLeft: number;
   marginRight: number;
@@ -140,10 +141,24 @@ export class SectionRenderer {
     this.ctx.fillStyle = settings.bgColor;
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Draw background image if provided (letterboxed)
+    // Draw background image using the configured fit mode.
     if (bgImage) {
-      const letterbox = this.calculateLetterboxRect(bgImage.width, bgImage.height, this.canvas.width, this.canvas.height);
-      this.ctx.drawImage(bgImage, letterbox.x, letterbox.y, letterbox.width, letterbox.height);
+      switch (settings.backgroundImageFit) {
+        case "stretch":
+          this.ctx.drawImage(bgImage, 0, 0, this.canvas.width, this.canvas.height);
+          break;
+        case "touchOuter": {
+          const crop = this.calculateCoverSourceRect(bgImage.width, bgImage.height, this.canvas.width, this.canvas.height);
+          this.ctx.drawImage(bgImage, crop.x, crop.y, crop.width, crop.height, 0, 0, this.canvas.width, this.canvas.height);
+          break;
+        }
+        case "touchInner":
+        default: {
+          const letterbox = this.calculateLetterboxRect(bgImage.width, bgImage.height, this.canvas.width, this.canvas.height);
+          this.ctx.drawImage(bgImage, letterbox.x, letterbox.y, letterbox.width, letterbox.height);
+          break;
+        }
+      }
     }
   }
 
@@ -429,6 +444,29 @@ export class SectionRenderer {
     }
 
     return { x, y, width, height };
+  }
+
+  /**
+   * Calculates source crop rectangle for image to fully cover bounds while maintaining aspect ratio.
+   */
+  private calculateCoverSourceRect(
+    imageWidth: number,
+    imageHeight: number,
+    containerWidth: number,
+    containerHeight: number
+  ): { x: number; y: number; width: number; height: number } {
+    const imageAspect = imageWidth / imageHeight;
+    const containerAspect = containerWidth / containerHeight;
+
+    if (imageAspect > containerAspect) {
+      const width = imageHeight * containerAspect;
+      const x = (imageWidth - width) / 2;
+      return { x, y: 0, width, height: imageHeight };
+    }
+
+    const height = imageWidth / containerAspect;
+    const y = (imageHeight - height) / 2;
+    return { x: 0, y, width: imageWidth, height };
   }
 
   /**

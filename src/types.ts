@@ -30,6 +30,7 @@ export interface Settings {
   keepAwake: boolean;
   showTooltips: boolean;
   pictureFolder: string;
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
   // Search settings
   useTextSimilarities: boolean;
 

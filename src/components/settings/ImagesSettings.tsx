@@ -19,6 +19,11 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
   const [storageUsage, setStorageUsage] = useState(0);
   const [isImporting, setIsImporting] = useState(false);
   const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+  const backgroundImageFitOptions: Array<{ value: Settings["backgroundImageFit"]; label: string }> = [
+    { value: "touchInner", label: t("BackgroundImageFitTouchInner") || "Touch Inner" },
+    { value: "touchOuter", label: t("BackgroundImageFitTouchOuter") || "Touch Outer" },
+    { value: "stretch", label: t("BackgroundImageFitStretch") || "Stretch" },
+  ];
 
   // Load images on mount
   const loadImages = useCallback(async () => {
@@ -158,6 +163,26 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
 
   return (
     <div className="images-settings">
+      <div className="form-group mb-3">
+        <label htmlFor="backgroundImageFit">{t("BackgroundImageFit") || "Background Image Fit"}</label>
+        <select
+          className="form-select"
+          id="backgroundImageFit"
+          value={settings.backgroundImageFit || "touchInner"}
+          onChange={(e) => updateSetting("backgroundImageFit", e.target.value as Settings["backgroundImageFit"])}
+        >
+          {backgroundImageFitOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <small className="form-text text-muted">
+          {t("BackgroundImageFitHelp") ||
+            "Touch Inner keeps the whole image visible, Touch Outer fills the screen by cropping, Stretch fills the screen by distorting the image."}
+        </small>
+      </div>
+
       {/* Picture folder setting - only visible in Electron mode */}
       {isElectron && (
         <div className="form-group mb-3">

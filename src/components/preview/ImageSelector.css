@@ -18,8 +18,8 @@
 
 .image-selector-expand-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 0;
+  right: 0;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -39,8 +39,8 @@
 
 .image-selector-settings-btn {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 0;
+  left: 0;
   width: 24px;
   height: 24px;
   padding: 0;
