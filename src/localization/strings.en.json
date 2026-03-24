@@ -231,6 +231,7 @@
   "SettingsMarginBottom": "Bottom",
   "SettingsMarginLeft": "Left",
   "SettingsMarginRight": "Right",
+  "SettingsMarginPreviewHelp": "You can drag the blue frame edges to adjust margins.",
   "SettingsUseNonBreakingWords": "Use non-breaking words",
   "SettingsNonBreakingWordsPlaceholder": "Enter non-breaking words, one per line",
   "Playlist": "Playlist",
