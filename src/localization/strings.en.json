@@ -150,6 +150,7 @@
   "SongListOrderAlphabetical": "Alphabetical",
   "SongListOrderMoreRecent": "More recent",
   "SongListOrderMatchingValue": "Matching value",
+  "SongListImportFromClipboard": "Import from clipboard",
   "AskConfirmDeleteSong": "Are you sure you want to delete \"{0}\"? This action cannot be undone.",
   "GroupSongs": "Group Songs",
   "AskGroupSongsFormat": "Group \"{0}\" with \"{1}\"?",

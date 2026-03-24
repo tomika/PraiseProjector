@@ -150,6 +150,7 @@
   "SongListOrderAlphabetical": "ABC sorrend",
   "SongListOrderMoreRecent": "Újabbak elöl",
   "SongListOrderMatchingValue": "Egyezési érték",
+  "SongListImportFromClipboard": "Importálás vágólapról",
   "AskConfirmDeleteSong": "Biztosan törölni szeretné a következő dalt: \"{0}\"? Ez a művelet nem vonható vissza.",
   "GroupSongs": "Dalok csoportosítása",
   "AskGroupSongsFormat": "Csoportosítja a \"{0}\" dalt a \"{1}\" dallal?",

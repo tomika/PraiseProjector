@@ -57,6 +57,7 @@ interface SongListPanelState {
   historyOriginalSong: Song | null;
   historyVersions: Song[];
   showHistoryDialog: boolean;
+  clipboardImportAvailable: boolean;
 }
 
 // Draggable Song Item Component (also a drop target for grouping)
@@ -367,6 +368,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       historyOriginalSong: null,
       historyVersions: [],
       showHistoryDialog: false,
+      clipboardImportAvailable: false,
     };
 
     this.handleFilterChange = this.handleFilterChange.bind(this);
@@ -395,6 +397,9 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     // Listen for database updates to refresh song list (matching C# behavior)
     this.currentDb = Database.getInstance();
     this.currentDb.emitter.on("db-updated", this.updateCategories);
+
+    void this.checkClipboardForImportableData();
+    window.addEventListener("focus", this.handleWindowFocus);
   }
 
   componentWillUnmount() {
@@ -402,6 +407,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (this.currentDb) {
       this.currentDb.emitter.off("db-updated", this.updateCategories);
     }
+    window.removeEventListener("focus", this.handleWindowFocus);
   }
 
   componentDidUpdate(prevProps: SongListPanelProps, prevState: SongListPanelState) {
@@ -913,6 +919,63 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     );
   }
 
+  private handleWindowFocus = () => {
+    void this.checkClipboardForImportableData();
+  };
+
+  private async checkClipboardForImportableData(): Promise<void> {
+    try {
+      const items = await navigator.clipboard.read();
+      const available = items.some((item) => item.types.includes("text/html") || item.types.includes("text/plain"));
+      this.setState({ clipboardImportAvailable: available });
+    } catch {
+      // Fallback: try readText for browsers that don't support read()
+      try {
+        const text = await navigator.clipboard.readText();
+        this.setState({ clipboardImportAvailable: !!text?.trim() });
+      } catch {
+        this.setState({ clipboardImportAvailable: false });
+      }
+    }
+  }
+
+  private handleImportFromClipboard = async () => {
+    this.hideContextMenu();
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (item.types.includes("text/html")) {
+          const blob = await item.getType("text/html");
+          const html = await blob.text();
+          if (html?.trim()) {
+            const file = new File([html], "clipboard-text.html", { type: "text/html" });
+            this.props.onExternalFilesDropped?.([file]);
+            return;
+          }
+        }
+        if (item.types.includes("text/plain")) {
+          const blob = await item.getType("text/plain");
+          const text = await blob.text();
+          if (text?.trim()) {
+            const file = new File([text], "clipboard-text.txt", { type: "text/plain" });
+            this.props.onExternalFilesDropped?.([file]);
+            return;
+          }
+        }
+      }
+    } catch {
+      // Fallback: try readText for browsers that don't support read()
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text?.trim()) return;
+        const file = new File([text], "clipboard-text.txt", { type: "text/plain" });
+        this.props.onExternalFilesDropped?.([file]);
+      } catch {
+        // Clipboard read failed or permission denied — nothing to do
+      }
+    }
+  };
+
   handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Delete") {
       const { selectedSong } = this.state;
@@ -920,6 +983,11 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
         event.preventDefault();
         this.handleUngroupSong();
       }
+    }
+    // Ctrl+V or Shift+Insert → import from clipboard
+    if ((event.ctrlKey && event.key === "v") || (event.shiftKey && event.key === "Insert")) {
+      event.preventDefault();
+      void this.handleImportFromClipboard();
     }
   }
 
@@ -1058,6 +1126,14 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
               </div>
             </>
           )}
+          <div className="songlist-context-menu-divider"></div>
+          <div
+            className={`songlist-context-menu-item ${!this.state.clipboardImportAvailable ? "disabled" : ""}`}
+            onClick={this.state.clipboardImportAvailable ? () => void this.handleImportFromClipboard() : undefined}
+          >
+            <i className="fa fa-clipboard me-2"></i>
+            {this.props.t?.("SongListImportFromClipboard") || "Import from clipboard"}
+          </div>
         </div>
       </>
     );
