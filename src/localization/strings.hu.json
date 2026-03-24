@@ -232,6 +232,8 @@
   "SettingsMarginLeft": "Bal",
   "SettingsMarginRight": "Jobb",
   "SettingsMarginPreviewHelp": "A kék keret széleit húzva is állíthatod a margókat.",
+  "SettingsSyncDeclineTimeoutMinutes": "Régi szinkron figyelmeztetés várakozási ideje (perc)",
+  "SettingsSyncDeclineTimeoutMinutesDescription": "Ennyi ideig ne kérdezzen rá újra a szinkronra, ha most elutasítottad. A 0 azt jelenti, hogy minden alkalommal kérdezzen.",
   "SettingsUseNonBreakingWords": "Nem törhető szavak használata",
   "SettingsNonBreakingWordsPlaceholder": "Nem törhető szavak, soronként egy",
   "Playlist": "Műsortár",

@@ -95,6 +95,9 @@ export interface Settings {
   // Last sync date for "old sync" warning when entering edit mode
   lastSyncDate?: string; // ISO date string, null if never synced
 
+  // Cooldown after declining the old-sync prompt before asking again
+  syncDeclineTimeoutMinutes: number;
+
   // Interval of automatic /peek calls (minutes)
   serverPeekIntervalMinutes: number;
 

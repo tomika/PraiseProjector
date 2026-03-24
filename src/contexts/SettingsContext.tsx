@@ -122,6 +122,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       selectedLeader: undefined,
       defaultChordSystem: "G", // German chord system by default
       displayMonitorId: "",
+      syncDeclineTimeoutMinutes: 15,
       serverPeekIntervalMinutes: 60,
       logLevel: 3, // Error level by default (0=Debug, 1=Info, 2=Warn, 3=Error, 4=None)
       logAutoExpandParams: true, // Auto-expand object params when expanding a log entry

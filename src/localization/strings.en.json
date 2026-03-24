@@ -232,6 +232,8 @@
   "SettingsMarginLeft": "Left",
   "SettingsMarginRight": "Right",
   "SettingsMarginPreviewHelp": "You can drag the blue frame edges to adjust margins.",
+  "SettingsSyncDeclineTimeoutMinutes": "Old sync reminder cooldown (minutes)",
+  "SettingsSyncDeclineTimeoutMinutesDescription": "How long to wait before asking again after declining the sync prompt. Set to 0 to ask every time.",
   "SettingsUseNonBreakingWords": "Use non-breaking words",
   "SettingsNonBreakingWordsPlaceholder": "Enter non-breaking words, one per line",
   "Playlist": "Playlist",

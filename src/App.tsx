@@ -296,6 +296,7 @@ const AppContent: React.FC = () => {
   const settingsRef = useRef<Settings | null>(settings);
   const isWatching = watchedSessionId !== null;
   const previewPanelRef = useRef<PreviewPanelMethods>(null);
+  const syncDeclinedAtRef = useRef<number | null>(null);
   const leftPanelRef = useRef<LeftPanelMethods>(null);
   const editorPanelRef = useRef<EditorPanel>(null);
   const editedSong = useEditedSong();
@@ -1088,6 +1089,11 @@ const AppContent: React.FC = () => {
       const now = new Date();
       const oneHourInMs = 60 * 60 * 1000;
       if (now.getTime() - lastSync.getTime() > oneHourInMs) {
+        const syncDeclineTimeoutMinutes = Math.max(0, settings?.syncDeclineTimeoutMinutes ?? 15);
+        const syncDeclineCooldownMs = syncDeclineTimeoutMinutes * 60 * 1000;
+        if (syncDeclineCooldownMs > 0 && syncDeclinedAtRef.current !== null && now.getTime() - syncDeclinedAtRef.current < syncDeclineCooldownMs) {
+          return true;
+        }
         // Ask user if they want to sync before editing
         return new Promise((resolve) => {
           showConfirm(
@@ -1101,6 +1107,7 @@ const AppContent: React.FC = () => {
             },
             () => {
               // User chose not to sync - proceed with edit mode
+              syncDeclinedAtRef.current = Date.now();
               resolve(true);
             },
             { confirmText: t("SyncNow") }
@@ -1109,7 +1116,7 @@ const AppContent: React.FC = () => {
       }
     }
     return true;
-  }, [isAuthenticated, settings?.lastSyncDate, showConfirm, t]);
+  }, [isAuthenticated, settings?.lastSyncDate, settings?.syncDeclineTimeoutMinutes, showConfirm, t]);
 
   // Called after leaving edit mode with changed text - prompt to save (matching C# Editor_LeaveEditMode)
   const handleAfterLeaveEditMode = useCallback(

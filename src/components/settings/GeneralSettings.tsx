@@ -270,6 +270,20 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
             <small className="form-text text-muted">{t("SettingsPeekIntervalMinutesDescription")}</small>
           </div>
           <div className="form-group">
+            <label htmlFor="syncDeclineTimeoutMinutes">{t("SettingsSyncDeclineTimeoutMinutes")}</label>
+            <input
+              id="syncDeclineTimeoutMinutes"
+              className="form-control"
+              type="number"
+              min={0}
+              max={1440}
+              step={1}
+              value={settings.syncDeclineTimeoutMinutes}
+              onChange={(e) => updateSetting("syncDeclineTimeoutMinutes", Math.max(0, Math.min(1440, parseInt(e.target.value || "0", 10) || 0)))}
+            />
+            <small className="form-text text-muted">{t("SettingsSyncDeclineTimeoutMinutesDescription")}</small>
+          </div>
+          <div className="form-group">
             <label htmlFor="sectionSelectionMode">{t("SettingsSectionSelectionInEditor")}</label>
             <select className="form-control" id="sectionSelectionMode" value={getSectionSelectionValue()} onChange={handleSectionSelectionChange}>
               <option value="None">{t("SettingsSectionSelNone")}</option>

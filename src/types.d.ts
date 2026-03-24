@@ -72,6 +72,7 @@ export interface Settings {
   defaultChordSystem: "G" | "S";
   displayMonitorId: string;
   lastSyncDate?: string;
+  syncDeclineTimeoutMinutes: number;
   serverPeekIntervalMinutes: number;
   logLevel: number;
   logAutoExpandParams: boolean;
