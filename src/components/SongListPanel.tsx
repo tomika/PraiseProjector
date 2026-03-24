@@ -924,7 +924,9 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   private handleExternalDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+    const hasFiles = event.dataTransfer?.files && event.dataTransfer.files.length > 0;
+    const hasText = event.dataTransfer?.types?.includes("text/plain");
+    if (hasFiles || hasText) {
       event.preventDefault();
       event.stopPropagation();
       event.dataTransfer.dropEffect = "copy";
@@ -932,11 +934,22 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   };
 
   private handleExternalFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) return;
     event.preventDefault();
     event.stopPropagation();
-    const files = Array.from(event.dataTransfer.files);
-    this.props.onExternalFilesDropped?.(files);
+    const hasFiles = event.dataTransfer?.files && event.dataTransfer.files.length > 0;
+    if (hasFiles) {
+      const files = Array.from(event.dataTransfer.files);
+      this.props.onExternalFilesDropped?.(files);
+      return;
+    }
+    const html = event.dataTransfer?.getData("text/html");
+    let file: File | undefined;
+    if (html?.trim()) file = new File([html], "dropped-text.html", { type: "text/html" });
+    else {
+      const text = event.dataTransfer?.getData("text/plain");
+      if (text?.trim()) file = new File([text], "dropped-text.txt", { type: "text/plain" });
+    }
+    if (file) this.props.onExternalFilesDropped?.([file]);
   };
 
   renderContextMenu() {
