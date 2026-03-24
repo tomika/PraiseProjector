@@ -46,6 +46,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const [updatedSongCount, setUpdatedSongCount] = useState(0);
   const [updatedProfileCount, setUpdatedProfileCount] = useState(0);
   const [cloudAuthFailed, setCloudAuthFailed] = useState(false);
+  const lastPeekedLocalDbVersionRef = useRef<number | null>(null);
   const syncMenuRef = useRef<HTMLDivElement>(null);
   const lastPeekCheckRef = useRef(0);
   // Tracks which action to perform after successful login (null = none).
@@ -69,20 +70,29 @@ const UserPanel: React.FC<UserPanelProps> = ({
     cloudApi.setPeekCacheTtl(Math.max(1000, peekIntervalMs - 100));
   }, [peekIntervalMs]);
 
-  const fetchPeek = useCallback(async () => {
-    try {
-      const peek = await cloudApi.fetchPeek();
-      setPendingSongCount(peek.pendingSongCount ?? 0);
-      setCloudDbVersion(peek.dbVersion ?? null);
-      setCloudAuthFailed(false);
-    } catch {
-      // During initial auth restore, avoid showing cloud-auth-failed state.
-      if (!isGuest && !isAuthLoading) setCloudAuthFailed(true);
-      setPendingSongCount(0);
-      setCloudDbVersion(null);
-    }
-    lastPeekCheckRef.current = Date.now();
-  }, [isGuest, isAuthLoading]);
+  const fetchPeek = useCallback(
+    async (options?: { force?: boolean }) => {
+      const shouldInvalidateCache = options?.force || lastPeekedLocalDbVersionRef.current !== localDbVersion;
+      if (shouldInvalidateCache) {
+        cloudApi.invalidatePeekCache();
+      }
+
+      try {
+        const peek = await cloudApi.fetchPeek();
+        setPendingSongCount(peek.pendingSongCount ?? 0);
+        setCloudDbVersion(peek.dbVersion ?? null);
+        setCloudAuthFailed(false);
+        lastPeekedLocalDbVersionRef.current = localDbVersion;
+      } catch {
+        // During initial auth restore, avoid showing cloud-auth-failed state.
+        if (!isGuest && !isAuthLoading) setCloudAuthFailed(true);
+        setPendingSongCount(0);
+        setCloudDbVersion(null);
+      }
+      lastPeekCheckRef.current = Date.now();
+    },
+    [isGuest, isAuthLoading, localDbVersion]
+  );
 
   // Keep a stable ref so the polling effect doesn't need fetchPeek in its deps.
   // This prevents auth-state flickers (isGuest/isAuthLoading) from re-creating
@@ -148,12 +158,17 @@ const UserPanel: React.FC<UserPanelProps> = ({
   // Listen for external refresh requests (e.g. after SongCheckDialog processes songs)
   useEffect(() => {
     const handleRefresh = () => {
-      cloudApi.invalidatePeekCache();
-      fetchPeekRef.current();
+      fetchPeekRef.current({ force: true });
     };
     window.addEventListener("pp-pending-songs-changed", handleRefresh);
     return () => window.removeEventListener("pp-pending-songs-changed", handleRefresh);
   }, []);
+
+  useEffect(() => {
+    if (lastPeekedLocalDbVersionRef.current !== localDbVersion) {
+      fetchPeekRef.current({ force: true });
+    }
+  }, [localDbVersion]);
 
   // Register callback for auto-selecting leader after login
   useEffect(() => {
