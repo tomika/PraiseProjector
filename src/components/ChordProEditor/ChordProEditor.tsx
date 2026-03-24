@@ -38,7 +38,7 @@ type ChordProExternalCallbacks = {
   UpdateChordProData: (newText: string) => void;
   LogFromWebEditor: (message: string) => void;
   OnLineDblclk: (lineNumber: number) => void;
-  OnCopy: (text: string) => boolean;
+  OnCopy: (chordpro: string) => boolean;
   OnPaste: () => string;
 };
 

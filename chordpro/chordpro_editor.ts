@@ -502,7 +502,7 @@ export class ChordProEditor {
     if (this.textarea) this.textarea.focus({ preventScroll: true });
     else this.parent_div.focus({ preventScroll: true });
   };
-  onCopy: ((copy: string) => void) | null = null;
+  onCopy: ((plain: string, chordpro: string) => void) | null = null;
   onPaste: (() => void) | null = null;
 
   onLog: ((s: string) => void) | null = null;
@@ -2406,9 +2406,10 @@ export class ChordProEditor {
     if (this.onPaste) this.onPaste();
     else {
       try {
-        this._paste(await clipboard.readText());
+        const { text, isChordPro } = await clipboard.readBestText();
+        this._paste(text, isChordPro);
       } catch (err) {
-        this.log("clipBoard.readText: " + err);
+        this.log("clipBoard.readBestText: " + err);
         try {
           const legacyClipboard = (window as unknown as { clipboardData?: { getData: (type: string) => string } }).clipboardData;
           let str = legacyClipboard ? legacyClipboard.getData("Text") : undefined;
@@ -2417,7 +2418,7 @@ export class ChordProEditor {
             document.execCommand("paste");
             str = this.systemPasteContent || this.clipboardTextArea.value;
           }
-          if (str !== undefined) this._paste(str);
+          if (str !== undefined) this._paste(str, false);
         } catch (e2) {
           this.log(String(e2));
         }
@@ -2426,10 +2427,13 @@ export class ChordProEditor {
   }
 
   externalPaste(str: string) {
-    this._paste(str);
+    this._paste(str, true);
   }
 
-  private _paste(str: string) {
+  private _paste(str: string, isChordPro = false) {
+    // Normalize line endings
+    str = str.replace(/\r\n/g, "\n");
+
     if (!this.chordPro) return;
     if (!this.eraseSelection()) this.saveState();
 
@@ -2437,45 +2441,101 @@ export class ChordProEditor {
       let line_obj = this.actionTarget;
       const cursorPos = this.cursorPos || 0;
 
-      // Parse ChordPro notation: extract lyrics and chords from the pasted text
-      const chords: { text: string; pos: number }[] = [];
-      let plainText = "";
-      let i = 0;
-      while (i < str.length) {
-        if (str[i] === "[") {
-          const closeIdx = str.indexOf("]", i + 1);
-          if (closeIdx >= 0) {
-            const chordText = str.substring(i + 1, closeIdx);
-            if (chordText) chords.push({ text: chordText, pos: cursorPos + plainText.length });
-            i = closeIdx + 1;
-            continue;
-          }
+      if (isChordPro) {
+        // Parse pasted content as a full ChordPro document to preserve chords, styles, and metadata
+        let tempChordPro: ChordProDocument | null = null;
+        try {
+          tempChordPro = new ChordProDocument(this.chordPro.system, str);
+        } catch (e) {
+          console.debug("Failed to parse pasted content as ChordPro document, using fallback mode", e);
         }
-        plainText += str[i];
-        ++i;
+
+        if (tempChordPro) {
+          const pastedLines = tempChordPro.lines;
+
+          // Merge the first pasted line into the current cursor line
+          const firstLine = pastedLines[0];
+          if (firstLine && !(firstLine instanceof ChordProAbc) && !firstLine.isGrid) {
+            for (const chord of firstLine.chords) {
+              chord.pos += cursorPos;
+              chord.line = line_obj;
+            }
+            line_obj.insertString(cursorPos, firstLine.lyrics);
+            line_obj.chords.push(...firstLine.chords);
+            this.cursorPos = cursorPos + firstLine.lyrics.length;
+            line_obj.genText();
+          }
+
+          // Insert remaining lines as new document lines after the current one
+          if (pastedLines.length > 1) {
+            const insertIdx = this.chordPro.lines.indexOf(line_obj);
+            if (insertIdx >= 0) {
+              for (let i = 1; i < pastedLines.length; ++i) {
+                const newLine = pastedLines[i].clone();
+                newLine.doc = this.chordPro;
+                this.chordPro.lines.splice(insertIdx + i, 0, newLine);
+              }
+              // Move cursor to end of last inserted line
+              const lastLine = this.chordPro.lines[insertIdx + pastedLines.length - 1];
+              if (lastLine instanceof ChordProLine) {
+                this.changeActionTarget(lastLine);
+                this.cursorPos = lastLine.lyrics.length;
+              }
+            }
+          }
+
+          // Copy metadata from pasted document into current
+          for (const key of ChordProDocument.metaDataDirectives) {
+            const value = tempChordPro.getMeta(key);
+            if (value) this.chordPro.setMeta(key, value);
+          }
+        } else {
+          // ChordPro parse failed: fall through to plain-text logic below
+          isChordPro = false;
+        }
       }
 
-      // Insert plain lyrics text (this shifts existing chords accordingly)
-      line_obj.insertString(cursorPos, plainText);
-      this.cursorPos = cursorPos + plainText.length;
+      if (!isChordPro) {
+        // Plain-text: extract inline [chord] markers from the pasted text
+        const chords: { text: string; pos: number }[] = [];
+        let plainText = "";
+        let i = 0;
+        while (i < str.length) {
+          if (str[i] === "[") {
+            const closeIdx = str.indexOf("]", i + 1);
+            if (closeIdx >= 0) {
+              const chordText = str.substring(i + 1, closeIdx);
+              if (chordText) chords.push({ text: chordText, pos: cursorPos + plainText.length });
+              i = closeIdx + 1;
+              continue;
+            }
+          }
+          plainText += str[i];
+          ++i;
+        }
 
-      // Insert parsed chords from pasted content
-      for (const c of chords) {
-        const chord = new ChordProChord(line_obj, c.text, c.pos);
-        line_obj.insertChord(chord);
-      }
-      line_obj.genText();
+        // Insert plain lyrics text (shifts existing chords accordingly)
+        line_obj.insertString(cursorPos, plainText);
+        this.cursorPos = cursorPos + plainText.length;
 
-      // Split at newlines
-      let idx: number;
-      while ((idx = line_obj.lyrics.indexOf("\n")) >= 0) {
-        line_obj.deleteString(idx, 1);
-        --this.cursorPos;
-        const lo = line_obj.splitAt(idx);
-        if (!lo) break;
-        line_obj = lo;
-        this.changeActionTarget(line_obj);
-        this.cursorPos -= idx;
+        // Insert parsed chords
+        for (const c of chords) {
+          const chord = new ChordProChord(line_obj, c.text, c.pos);
+          line_obj.insertChord(chord);
+        }
+        line_obj.genText();
+
+        // Split at embedded newlines
+        let idx: number;
+        while ((idx = line_obj.lyrics.indexOf("\n")) >= 0) {
+          line_obj.deleteString(idx, 1);
+          --this.cursorPos;
+          const lo = line_obj.splitAt(idx);
+          if (!lo) break;
+          line_obj = lo;
+          this.changeActionTarget(line_obj);
+          this.cursorPos -= idx;
+        }
       }
     } else if (this.actionTarget instanceof ChordProChord) {
       str = str.replace(/\[|\]/g, "");
@@ -2545,13 +2605,14 @@ export class ChordProEditor {
   }
 
   async copySelected() {
-    const str = this.getSelectedText();
-    if (!str) return;
+    const chordpro = this.getSelectedText();
+    if (!chordpro) return;
+    const plain = this.getSelectedText(true);
 
-    if (this.onCopy) this.onCopy(str);
+    if (this.onCopy) this.onCopy(plain, chordpro);
     else {
       try {
-        await clipboard.writeText(str);
+        await clipboard.writeItems(plain, chordpro);
       } catch (error) {
         this.log(String(error));
       }
@@ -2559,13 +2620,14 @@ export class ChordProEditor {
   }
 
   async copyAll() {
-    const str = this.genDoc();
-    if (!str) return;
+    const chordpro = this.genDoc();
+    if (!chordpro) return;
+    const plain = this.chordPro?.lines.map((l) => l.lyrics).join("\n") || "";
 
-    if (this.onCopy) this.onCopy(str);
+    if (this.onCopy) this.onCopy(plain, chordpro);
     else {
       try {
-        await clipboard.writeText(str);
+        await clipboard.writeItems(plain, chordpro);
       } catch (error) {
         this.log(String(error));
       }

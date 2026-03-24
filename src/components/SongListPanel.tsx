@@ -924,9 +924,10 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   };
 
   private async checkClipboardForImportableData(): Promise<void> {
+    const CHORDPRO_TYPES = ["web text/chordpro", "text/chordpro", "text/html", "text/plain"];
     try {
       const items = await navigator.clipboard.read();
-      const available = items.some((item) => item.types.includes("text/html") || item.types.includes("text/plain"));
+      const available = items.some((item) => CHORDPRO_TYPES.some((t) => item.types.includes(t)));
       this.setState({ clipboardImportAvailable: available });
     } catch {
       // Fallback: try readText for browsers that don't support read()
@@ -944,6 +945,18 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     try {
       const items = await navigator.clipboard.read();
       for (const item of items) {
+        // Prefer ChordPro custom MIME — import directly as .chp
+        for (const chpMime of ["web text/chordpro", "text/chordpro"]) {
+          if (item.types.includes(chpMime)) {
+            const blob = await item.getType(chpMime);
+            const text = await blob.text();
+            if (text?.trim()) {
+              const file = new File([text], "clipboard-text.chp", { type: "text/plain" });
+              this.props.onExternalFilesDropped?.([file]);
+              return;
+            }
+          }
+        }
         if (item.types.includes("text/html")) {
           const blob = await item.getType("text/html");
           const html = await blob.text();

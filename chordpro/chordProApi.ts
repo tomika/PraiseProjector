@@ -118,11 +118,11 @@ function setupEditorCallbacks() {
     forwardToExternal("OnLineDblclk", line);
   };
 
-  editor.onCopy = (text) => {
-    // Write to system clipboard (the editor skips this when onCopy is set)
-    clipboard.writeText(text).catch(() => {});
-    // Also forward to external C# host if present
-    forwardToExternal("OnCopy", text ?? "");
+  editor.onCopy = (plain, chordpro) => {
+    // Write both MIME types to system clipboard (editor skips this when onCopy is set)
+    clipboard.writeItems(plain, chordpro).catch(() => {});
+    // Also forward chordpro text to external C# host if present
+    forwardToExternal("OnCopy", chordpro ?? "");
   };
 
   // Don't set editor.onPaste — when onPaste is set the editor calls it and
