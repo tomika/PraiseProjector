@@ -352,7 +352,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const value = {
     authStatus,
     isAuthenticated: authStatus === "authenticated",
-    isGuest: authStatus === "guest",
+    isGuest: !username,
     username,
     user,
     token,
