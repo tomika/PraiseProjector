@@ -906,6 +906,13 @@ export class ChordProEditor {
     }
   }
 
+  refreshDisplayProps() {
+    this.displayProps = defaultDisplayProperties(this.isDark);
+    this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, this.isDark);
+    this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    this.draw();
+  }
+
   isDiff() {
     return this.differentialDisplay;
   }

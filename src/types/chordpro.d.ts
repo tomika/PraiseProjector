@@ -23,6 +23,7 @@ interface ChordProAPI {
   dispose?(): void;
   installLocaleHandler?(handler: (s: string) => string): void;
   darkMode?(dark: boolean): void;
+  refreshDisplayProps?(): void;
 }
 
 declare interface Window {

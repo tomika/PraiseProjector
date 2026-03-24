@@ -131,6 +131,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private skipNextWysiwygSync = false;
   private pendingHighlight: { from: number; to: number } | null = null;
   private themeObserver: MutationObserver | null = null;
+  private fontSizeObserver: MutationObserver | null = null;
+  private lastObservedFontSize: string | null = null;
   private titleInputRef: HTMLInputElement | null = null;
 
   constructor(props: ChordProEditorProps) {
@@ -147,6 +149,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.loadSong();
     this.prepareWysiwygHost();
     this.setupThemeObserver();
+    this.setupFontSizeObserver();
   }
 
   componentDidUpdate(prevProps: ChordProEditorProps) {
@@ -184,6 +187,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   componentWillUnmount() {
     this.restoreExternalCallbacks();
     this.cleanupThemeObserver();
+    this.cleanupFontSizeObserver();
     const api = this.getChordProAPI();
     api?.dispose?.();
   }
@@ -206,6 +210,26 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     if (this.themeObserver) {
       this.themeObserver.disconnect();
       this.themeObserver = null;
+    }
+  }
+
+  private setupFontSizeObserver() {
+    this.lastObservedFontSize = document.documentElement.style.fontSize;
+    this.fontSizeObserver = new MutationObserver(() => {
+      const current = document.documentElement.style.fontSize;
+      if (current !== this.lastObservedFontSize) {
+        this.lastObservedFontSize = current;
+        const api = this.getChordProAPI();
+        api?.refreshDisplayProps?.();
+      }
+    });
+    this.fontSizeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+  }
+
+  private cleanupFontSizeObserver() {
+    if (this.fontSizeObserver) {
+      this.fontSizeObserver.disconnect();
+      this.fontSizeObserver = null;
     }
   }
 

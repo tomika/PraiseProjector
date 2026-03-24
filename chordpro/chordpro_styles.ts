@@ -1,18 +1,24 @@
 export function defaultDisplayProperties(darkMode?: boolean) {
+  // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px)
+  const rootPx = typeof document !== "undefined" ? parseFloat(document.documentElement.style.fontSize || "16") || 16 : 16;
+  const scale = rootPx / 16;
+  const px = (base: number) => `${Math.round(base * scale)}px`;
+  const lineH = (base: number) => Math.round(base * scale);
+
   const def = {
     horizontalMargin: 5,
     verticalMargin: 5,
-    tagFont: "bold 14px arial",
+    tagFont: `bold ${px(14)} arial`,
     tagColor: "black",
-    chordFont: "14px arial",
-    chordLineHeight: 16,
+    chordFont: `${px(14)} arial`,
+    chordLineHeight: lineH(16),
     chordTextColor: "red",
     unknownChordTextColor: "orange",
     chordBorder: 2,
-    lyricsFont: "14px sherif",
-    lyricsLineHeight: 16,
+    lyricsFont: `${px(14)} sherif`,
+    lyricsLineHeight: lineH(16),
     lyricsTextColor: "#808080",
-    chordLyricSep: 7,
+    chordLyricSep: lineH(7),
     sectionBreakColor: "blue",
     highlightColor: "#e5e781",
     chordBoxColor: "black",

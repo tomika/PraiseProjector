@@ -166,6 +166,7 @@
 
 .wysiwyg-host canvas.chordpro-editor-canvas {
   display: block;
+  margin: 0 auto;
 }
 /* ========================================
    DARK MODE OVERRIDES - EditorPanel.css

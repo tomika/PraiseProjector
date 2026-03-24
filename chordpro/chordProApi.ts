@@ -216,6 +216,11 @@ export const chordProAPI = {
       editor.darkMode(dark);
     }
   },
+  refreshDisplayProps() {
+    if (editor) {
+      editor.refreshDisplayProps();
+    }
+  },
 };
 
 type ChordProAPI = typeof chordProAPI;
