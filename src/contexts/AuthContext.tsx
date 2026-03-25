@@ -233,6 +233,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsLoading(false);
         return false;
       }
+      // Explicit user switch/login: clear fixed expected-user header so the
+      // session request is not constrained by the previous authenticated user.
+      cloudApi.setFixedHeader("X-PP-Expected-User", "");
       // Clear proxy cookie jar before explicit login so stale session cookies
       // from a previous user don't shadow the Basic auth credentials.
       await window.electronAPI?.clearPersistedCookies?.();

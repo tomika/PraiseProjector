@@ -4752,6 +4752,7 @@ export class App extends AppBase {
         try {
           if (store?.checked) this.verifyClientId();
           const clientId = this.clientId ?? "";
+          cloudApi.setFixedHeader("X-PP-Expected-User", "");
           const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true })) as SessionResponse;
           if (res && isErrorResponse(res)) throw res.error;
           this.login = res.login;
