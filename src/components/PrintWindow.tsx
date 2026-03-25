@@ -55,6 +55,36 @@ const PrintWindow: React.FC = () => {
     document.title = t("PrintWindowTitle");
   }, [t]);
 
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+
+  // Position dropdown intelligently to keep it within viewport bounds
+  useEffect(() => {
+    if (!showSettings || !settingsButtonRef.current || !settingsPanelRef.current) return;
+
+    const buttonRect = settingsButtonRef.current.getBoundingClientRect();
+    const panelWidth = settingsPanelRef.current.offsetWidth;
+    const gap = 6;
+
+    const top = buttonRect.bottom + gap;
+    const rightAlignLeft = buttonRect.right - panelWidth;
+    const leftAlignLeft = buttonRect.left;
+
+    // Check if right-aligned version fits without clipping
+    if (rightAlignLeft >= 16) {
+      setDropdownPos({ top, right: window.innerWidth - buttonRect.right });
+    } else {
+      // Fall back to left alignment if it fits better
+      setDropdownPos({ top, left: Math.max(16, leftAlignLeft) });
+    }
+  }, [showSettings]);
+
+  // Clear position when dropdown closes
+  useEffect(() => {
+    if (!showSettings) {
+      setDropdownPos(null);
+    }
+  }, [showSettings]);
+
   // Close settings panel when clicking outside
   useEffect(() => {
     if (!showSettings) return;
@@ -212,7 +242,11 @@ const PrintWindow: React.FC = () => {
 
             {/* Settings dropdown panel */}
             {showSettings && (
-              <div className="print-settings-panel" ref={settingsPanelRef}>
+              <div
+                className="print-settings-panel"
+                ref={settingsPanelRef}
+                style={dropdownPos ?? undefined}
+              >
                 <div className="print-settings-item">
                   <div className="form-check">
                     <input
