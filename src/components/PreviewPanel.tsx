@@ -135,6 +135,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const rendererRef = useRef<SectionRenderer | null>(null);
     const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
     const sectionListRef = useRef<HTMLDivElement | null>(null);
+    // Set to true by keyboard navigation so the scroll effect follows next, not current.
+    const nextNavigatedByKeyRef = useRef(false);
     const projectorChannelRef = useRef<BroadcastChannel | null>(null);
     const previewDataUrlRef = useRef<string | null>(null); // Ref to access latest preview in callbacks
 
@@ -629,17 +631,80 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       }
     }, [selectedSectionIndex, sections, settings?.sectionHighlightInEditor, editorRef, enableHighlight]);
 
-    // Scroll selected section into view, or scroll to top when no selection (new song loaded)
+    // Scroll the section list when selection or next changes.
+    // - Arrow-key navigation (nextNavigatedByKeyRef=true): freely follow the next item.
+    // - Any other trigger (selection changed, new song): keep current visible, show next if it fits.
     useEffect(() => {
-      if (selectedSectionIndex >= 0 && sectionRefs.current[selectedSectionIndex]) {
-        sectionRefs.current[selectedSectionIndex]?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      } else if (selectedSectionIndex < 0 && sectionListRef.current) {
-        sectionListRef.current.scrollTop = 0;
+      const sectionListEl = sectionListRef.current;
+      if (!sectionListEl) return;
+
+      if (selectedSectionIndex < 0) {
+        nextNavigatedByKeyRef.current = false;
+        sectionListEl.scrollTop = 0;
+        return;
       }
-    }, [selectedSectionIndex, sections]);
+
+      const viewportHeight = sectionListEl.clientHeight;
+      const maxScrollTop = Math.max(0, sectionListEl.scrollHeight - viewportHeight);
+
+      // When only next changed via keyboard, just scroll next into view.
+      if (nextNavigatedByKeyRef.current) {
+        nextNavigatedByKeyRef.current = false;
+        const nextEl = nextSectionIndex >= 0 ? sectionRefs.current[nextSectionIndex] : null;
+        if (nextEl) {
+          const nextTop = nextEl.offsetTop;
+          const nextBottom = nextTop + nextEl.offsetHeight;
+          let t = sectionListEl.scrollTop;
+          if (nextTop < t) t = nextTop;
+          else if (nextBottom > t + viewportHeight) t = nextBottom - viewportHeight;
+          t = Math.max(0, Math.min(maxScrollTop, t));
+          if (Math.abs(sectionListEl.scrollTop - t) > 1) sectionListEl.scrollTo({ top: t, behavior: "smooth" });
+        }
+        return;
+      }
+
+      // Selection changed: keep current visible, include next if possible.
+      const selectedEl = sectionRefs.current[selectedSectionIndex];
+      if (!selectedEl) return;
+
+      let targetScrollTop = sectionListEl.scrollTop;
+      const selectedTop = selectedEl.offsetTop;
+      const selectedBottom = selectedTop + selectedEl.offsetHeight;
+
+      // Step 1: ensure selected item is visible.
+      if (selectedTop < targetScrollTop) {
+        targetScrollTop = selectedTop;
+      } else if (selectedBottom > targetScrollTop + viewportHeight) {
+        targetScrollTop = selectedBottom - viewportHeight;
+      }
+
+      // Step 2: try to include next item without breaking selected visibility.
+      const nextEl = nextSectionIndex >= 0 && nextSectionIndex < sectionRefs.current.length ? sectionRefs.current[nextSectionIndex] : null;
+
+      if (nextEl && nextEl !== selectedEl) {
+        const nextTop = nextEl.offsetTop;
+        const nextBottom = nextTop + nextEl.offsetHeight;
+
+        let desiredScrollTop = targetScrollTop;
+        if (nextTop < desiredScrollTop) {
+          desiredScrollTop = nextTop;
+        } else if (nextBottom > desiredScrollTop + viewportHeight) {
+          desiredScrollTop = nextBottom - viewportHeight;
+        }
+
+        // Clamp to range that keeps selected visible. If impossible, selected keeps priority.
+        const minForSelected = selectedBottom - viewportHeight;
+        const maxForSelected = selectedTop;
+        const clampedForSelected = Math.min(maxForSelected, Math.max(minForSelected, desiredScrollTop));
+        targetScrollTop = clampedForSelected;
+      }
+
+      targetScrollTop = Math.max(0, Math.min(maxScrollTop, targetScrollTop));
+
+      if (Math.abs(sectionListEl.scrollTop - targetScrollTop) > 1) {
+        sectionListEl.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+      }
+    }, [selectedSectionIndex, nextSectionIndex, sections]);
 
     // Observe the CONTAINER to compute the correct letterboxed image dimensions.
     // The container's size is constrained by the flex layout, so it's the reliable reference.
@@ -876,8 +941,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             // Move nextIndex forward (matching C# OnKeyDown Keys.Down/Right)
             const newNext = getNextCheckedIndex(nextSectionIndex, sections);
             if (newNext >= 0) {
+              nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(newNext);
-              ensureVisible(newNext);
             }
             e.preventDefault();
             break;
@@ -889,8 +954,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             // Find item whose next would be current nextIndex
             for (let i = 0; i < sections.length; i++) {
               if (i !== selectedSectionIndex && sections[i].checked && getNextCheckedIndex(i, sections) === nextSectionIndex) {
+                nextNavigatedByKeyRef.current = true;
                 setNextSectionIndex(i);
-                ensureVisible(i);
                 break;
               }
             }
@@ -903,8 +968,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             let i = 0;
             while (i < sections.length && !isValidNextIndex(i)) i++;
             if (i < sections.length) {
+              nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(i);
-              ensureVisible(i);
             }
             e.preventDefault();
             break;
@@ -915,8 +980,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             let i = sections.length - 1;
             while (i >= 0 && !isValidNextIndex(i)) i--;
             if (i >= 0) {
+              nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(i);
-              ensureVisible(i);
             }
             e.preventDefault();
             break;
@@ -930,8 +995,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               while (i < sections.length && sections[i].block === block) i++;
               while (i < sections.length && !isValidNextIndex(i)) i++;
               if (i < sections.length) {
+                nextNavigatedByKeyRef.current = true;
                 setNextSectionIndex(i);
-                ensureVisible(i);
               }
             }
             e.preventDefault();
@@ -947,8 +1012,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               for (; i >= 0 && sections[i].block === block; i--) {
                 if (isValidNextIndex(i)) {
                   found = true;
+                  nextNavigatedByKeyRef.current = true;
                   setNextSectionIndex(i);
-                  ensureVisible(i);
                 }
               }
             }
