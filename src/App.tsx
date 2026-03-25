@@ -1348,9 +1348,20 @@ const AppContent: React.FC = () => {
     };
     localStorage.setItem("pp-print-data", JSON.stringify(printData));
 
-    // Open print window with #/print hash (same pattern as #/logs for LogViewer)
-    const baseUrl = window.location.origin + window.location.pathname;
-    window.open(`${baseUrl}#/print`, "_blank", "noopener");
+    const openWebPrintWindow = () => {
+      const printUrl = new URL(window.location.href);
+      printUrl.hash = "/print";
+      window.open(printUrl.toString(), "_blank", "noopener,noreferrer");
+    };
+
+    if (window.electronAPI?.print?.openWindow) {
+      void window.electronAPI.print.openWindow().catch(() => {
+        openWebPrintWindow();
+      });
+      return;
+    }
+
+    openWebPrintWindow();
   }, [currentSongText]);
 
   const handleImportClick = () => {

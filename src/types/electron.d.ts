@@ -160,6 +160,11 @@ export interface IElectronAPI {
     onEntry: (callback: (entry: LogEntry) => void) => () => void;
     sendEntry: (entry: { timestamp: number; level: string; message: string; args?: unknown[] }) => void;
   };
+
+  // Print preview window
+  print?: {
+    openWindow: () => Promise<boolean>;
+  };
 }
 
 /**

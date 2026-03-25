@@ -85,8 +85,6 @@ const PrintWindow: React.FC = () => {
       } catch (e) {
         console.error("PrintWindow: failed to parse print data", e);
       }
-      // Clean up so it doesn't linger
-      localStorage.removeItem(PRINT_DATA_KEY);
     }
 
     // 2. Load stored settings to restore printer settings
@@ -300,21 +298,25 @@ const PrintWindow: React.FC = () => {
                     <option value="english">{t("English")}</option>
                   </select>
                 </div>
+
+                <div className="print-settings-divider" />
+
+                <div className="print-settings-item">
+                  <div className="form-check">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="useAsDefault"
+                      checked={useAsDefault}
+                      onChange={(e) => setUseAsDefault(e.target.checked)}
+                    />
+                    <label className="form-check-label" htmlFor="useAsDefault">
+                      {t("PrintUseAsDefault")}
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-
-          <div className="form-check">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="useAsDefault"
-              checked={useAsDefault}
-              onChange={(e) => setUseAsDefault(e.target.checked)}
-            />
-            <label className="form-check-label" htmlFor="useAsDefault">
-              {t("PrintUseAsDefault")}
-            </label>
           </div>
 
           <button className="btn btn-sm btn-primary" onClick={handlePrint}>

@@ -71,6 +71,7 @@ process.on("uncaughtException", (error) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+let printWindow: BrowserWindow | null = null;
 
 // Localization strings loaded from JSON files, keyed by language code.
 const mainLocStrings: Record<string, Record<string, string>> = {};
@@ -260,6 +261,49 @@ export function getMainWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
 }
 
+function openPrintWindow(): void {
+  if (printWindow && !printWindow.isDestroyed()) {
+    printWindow.focus();
+    return;
+  }
+
+  printWindow = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 420,
+    minHeight: 500,
+    title: "Print Preview",
+    autoHideMenuBar: true,
+    parent: mainWindow ?? undefined,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    printWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/print`);
+  } else {
+    printWindow.loadFile(path.join(__dirname, "../webapp/index.html"), { hash: "/print" });
+  }
+
+  printWindow.setMenu(null);
+  printWindow.setMenuBarVisibility(false);
+
+  printWindow.on("closed", () => {
+    printWindow = null;
+  });
+
+  printWindow.webContents.on("before-input-event", (_event, input) => {
+    if (input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i")) {
+      printWindow?.webContents.toggleDevTools();
+    }
+  });
+}
+
 // Configure auto-updater
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -342,6 +386,11 @@ ipcMain.handle("get-app-version", () => {
   return app.getVersion();
 });
 
+ipcMain.handle("print:open-window", () => {
+  openPrintWindow();
+  return true;
+});
+
 const createWindow = () => {
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -406,6 +455,10 @@ const createWindow = () => {
   mainWindow.on("closed", () => {
     // Close the log viewer window when main window closes
     closeLogViewerWindow();
+    if (printWindow && !printWindow.isDestroyed()) {
+      printWindow.close();
+      printWindow = null;
+    }
     // Close the projector display window when main window closes
     if (displayWindow && !displayWindow.isDestroyed()) {
       displayWindow.close();

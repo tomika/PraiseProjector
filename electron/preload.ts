@@ -256,4 +256,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.send("logs:frontend-entry", entry);
     },
   },
+
+  // Print preview window management
+  print: {
+    openWindow: () => ipcRenderer.invoke("print:open-window"),
+  },
 });

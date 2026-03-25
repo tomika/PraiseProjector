@@ -8,16 +8,16 @@
   background-color: #f8f9fa;
 }
 
-/* ── Compact single-line toolbar ── */
+/* ── Toolbar – wraps onto multiple lines when narrow ── */
 .print-toolbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 16px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
   background-color: #ffffff;
   border-bottom: 1px solid #dee2e6;
-  gap: 12px;
+  gap: 8px;
   z-index: 10;
 }
 
@@ -25,12 +25,14 @@
   font-weight: 600;
   font-size: 0.95rem;
   white-space: nowrap;
+  flex: 1 1 auto;
 }
 
 .print-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .print-toolbar-actions .form-check {
@@ -67,6 +69,12 @@
 
 .print-settings-item:hover {
   background-color: #f0f0f0;
+}
+
+.print-settings-divider {
+  height: 1px;
+  background-color: #dee2e6;
+  margin: 4px 0;
 }
 
 .print-settings-item .form-check {
