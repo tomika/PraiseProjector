@@ -113,7 +113,10 @@ export class DiffTextPreProcessor {
   private readonly table: string[] = [];
 
   private static normalizeChordToken(token: string) {
-    const inner = token.substring(1, token.length - 1).trim().replace(/[ \t]+/g, " ");
+    const inner = token
+      .substring(1, token.length - 1)
+      .trim()
+      .replace(/[ \t]+/g, " ");
     return `[${inner}]`;
   }
 

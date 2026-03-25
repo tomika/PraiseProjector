@@ -242,11 +242,7 @@ const PrintWindow: React.FC = () => {
 
             {/* Settings dropdown panel */}
             {showSettings && (
-              <div
-                className="print-settings-panel"
-                ref={settingsPanelRef}
-                style={dropdownPos ?? undefined}
-              >
+              <div className="print-settings-panel" ref={settingsPanelRef} style={dropdownPos ?? undefined}>
                 <div className="print-settings-item">
                   <div className="form-check">
                     <input
