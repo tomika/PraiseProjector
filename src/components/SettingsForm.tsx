@@ -271,15 +271,17 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
         <div className="settings-modal-header" onMouseDown={handleMouseDown}>
           <h5 className="settings-modal-title">{t("Settings")}</h5>
           <div className="settings-header-buttons">
-            <button
-              type="button"
-              className={`btn-header-maximize${isMaximized ? " active" : ""}`}
-              onClick={() => setIsMaximized(!isMaximized)}
-              aria-label={isMaximized ? "Restore" : "Maximize"}
-              title={isMaximized ? "Restore" : "Maximize"}
-            >
-              <i className={`fa ${isMaximized ? "fa-window-restore" : "fa-window-maximize"}`}></i>
-            </button>
+            {!isMobile && (
+              <button
+                type="button"
+                className={`btn-header-maximize${isMaximized ? " active" : ""}`}
+                onClick={() => setIsMaximized(!isMaximized)}
+                aria-label={isMaximized ? "Restore" : "Maximize"}
+                title={isMaximized ? "Restore" : "Maximize"}
+              >
+                <i className={`fa ${isMaximized ? "fa-window-restore" : "fa-window-maximize"}`}></i>
+              </button>
+            )}
             <button type="button" className="btn-close" onClick={onClose} aria-label="Close"></button>
           </div>
         </div>
