@@ -2080,6 +2080,7 @@ const AppContent: React.FC = () => {
                   previewSplitSize={previewSplitSize}
                   onPreviewSplitSizeChange={setPreviewSplitSize}
                   onSettingsClick={openSettings}
+                  showSettingsButton={false}
                   initialTab={previewTab}
                   onActiveTabChange={setPreviewTab}
                 />

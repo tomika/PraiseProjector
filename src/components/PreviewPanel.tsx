@@ -39,6 +39,7 @@ interface PreviewPanelProps {
   previewSplitSize?: number;
   onPreviewSplitSizeChange?: (size: number) => void;
   onSettingsClick?: (initialTab?: string) => void;
+  showSettingsButton?: boolean;
   initialTab?: PreviewTab;
   onActiveTabChange?: (tab: PreviewTab) => void;
 }
@@ -77,6 +78,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       previewSplitSize,
       onPreviewSplitSizeChange,
       onSettingsClick,
+      showSettingsButton = true,
       initialTab = "format",
       onActiveTabChange,
     },
@@ -1804,7 +1806,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               </div>
               <div className="d-flex flex-column ml-2 flex-shrink-0 preview-button-column">
                 <div className="btn-group-vertical">
-                  {onSettingsClick && (
+                  {showSettingsButton && onSettingsClick && (
                     <button className="btn btn-light" aria-label="Settings" title={tt("toolbar_settings")} onClick={() => onSettingsClick()}>
                       <Icon type={IconType.SETTINGS} />
                     </button>
