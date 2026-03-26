@@ -58,6 +58,7 @@ interface SongListPanelState {
   historyVersions: Song[];
   showHistoryDialog: boolean;
   clipboardImportAvailable: boolean;
+  showInlineSearchOptions: boolean;
 }
 
 // Draggable Song Item Component (also a drop target for grouping)
@@ -311,6 +312,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   private selectedItemElement: HTMLDivElement | null = null;
   // Store reference to the scrollable container for scroll-to-top
   private scrollContainerRef: HTMLDivElement | null = null;
+  private filterBarRef: HTMLDivElement | null = null;
   // Store reference to current database for cleanup
   private currentDb: ReturnType<typeof Database.getInstance> | null = null;
 
@@ -369,6 +371,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       historyVersions: [],
       showHistoryDialog: false,
       clipboardImportAvailable: false,
+      showInlineSearchOptions: false,
     };
 
     this.handleFilterChange = this.handleFilterChange.bind(this);
@@ -389,6 +392,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.handleUngroupSong = this.handleUngroupSong.bind(this);
     this.toggleGroupFolder = this.toggleGroupFolder.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.updateInlineSearchOptionsVisibility = this.updateInlineSearchOptionsVisibility.bind(this);
+    this.handleWindowResize = this.handleWindowResize.bind(this);
   }
 
   componentDidMount() {
@@ -400,6 +405,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     void this.checkClipboardForImportableData();
     window.addEventListener("focus", this.handleWindowFocus);
+    window.addEventListener("resize", this.handleWindowResize);
+    this.updateInlineSearchOptionsVisibility();
   }
 
   componentWillUnmount() {
@@ -408,6 +415,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       this.currentDb.emitter.off("db-updated", this.updateCategories);
     }
     window.removeEventListener("focus", this.handleWindowFocus);
+    window.removeEventListener("resize", this.handleWindowResize);
   }
 
   componentDidUpdate(prevProps: SongListPanelProps, prevState: SongListPanelState) {
@@ -448,6 +456,17 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       this.updateCategories();
     }
 
+    const prevSettings = prevProps.settings;
+    const nextSettings = this.props.settings;
+    if (
+      prevSettings.searchMethod !== nextSettings.searchMethod ||
+      prevSettings.useTextSimilarities !== nextSettings.useTextSimilarities ||
+      prevSettings.traditionalSearchCaseSensitive !== nextSettings.traditionalSearchCaseSensitive ||
+      prevSettings.traditionalSearchWholeWords !== nextSettings.traditionalSearchWholeWords
+    ) {
+      this.updateCategories();
+    }
+
     // Sync with external selectedSong prop and scroll into view
     if (prevProps.selectedSong !== this.props.selectedSong && this.props.selectedSong) {
       const newSong = this.props.selectedSong;
@@ -473,7 +492,39 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
         }
       }, 50);
     }
+
+    this.updateInlineSearchOptionsVisibility();
   }
+
+  private handleWindowResize() {
+    this.updateInlineSearchOptionsVisibility();
+  }
+
+  private updateInlineSearchOptionsVisibility() {
+    const width = this.filterBarRef?.getBoundingClientRect().width ?? 0;
+    const showInlineSearchOptions = width >= 32 * 16; // ~512px
+    if (showInlineSearchOptions !== this.state.showInlineSearchOptions) {
+      this.setState({ showInlineSearchOptions });
+    }
+  }
+
+  private toggleTraditionalSimilarity = () => {
+    const updater = this.props.updateSettingWithAutoSave;
+    if (!updater) return;
+    updater("useTextSimilarities", !(this.props.settings.useTextSimilarities ?? true));
+  };
+
+  private toggleTraditionalCaseSensitive = () => {
+    const updater = this.props.updateSettingWithAutoSave;
+    if (!updater) return;
+    updater("traditionalSearchCaseSensitive", !(this.props.settings.traditionalSearchCaseSensitive ?? false));
+  };
+
+  private toggleTraditionalWholeWords = () => {
+    const updater = this.props.updateSettingWithAutoSave;
+    if (!updater) return;
+    updater("traditionalSearchWholeWords", !(this.props.settings.traditionalSearchWholeWords ?? false));
+  };
 
   // Expand the category containing the given song
   expandCategoryForSong(song: Song) {
@@ -1160,12 +1211,20 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   render() {
-    const { filter, categories, selectedSong, showPreferredOnly } = this.state;
+    const { filter, categories, selectedSong, showPreferredOnly, showInlineSearchOptions } = this.state;
     const hasLeader = !!this.props.selectedLeader;
+    const searchMethod = this.props.settings.searchMethod;
+    const isTraditionalSearch = searchMethod === "traditional";
+    const settingsUpdaterAvailable = !!this.props.updateSettingWithAutoSave;
 
     return (
       <div className="song-list-panel d-flex flex-column h-100" onClick={this.hideContextMenu}>
-        <div className="input-group mb-2">
+        <div
+          className="input-group mb-2"
+          ref={(el) => {
+            this.filterBarRef = el;
+          }}
+        >
           {hasLeader && (
             <div className="input-group-prepend">
               <button
@@ -1188,6 +1247,40 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             onChange={this.handleFilterChange}
           />
           <div className="input-group-append">
+            {showInlineSearchOptions && isTraditionalSearch && (
+              <>
+                <button
+                  className={`btn btn-outline-secondary song-search-toggle-btn ${this.props.settings.useTextSimilarities ? "active" : ""}`}
+                  type="button"
+                  aria-label="Toggle fuzzy search"
+                  title={this.props.t?.("EnableSimilarTextSearch") || "Enable similar text search"}
+                  onClick={this.toggleTraditionalSimilarity}
+                  disabled={!settingsUpdaterAvailable}
+                >
+                  <Icon type={IconType.SEARCH_FUZZY} />
+                </button>
+                <button
+                  className={`btn btn-outline-secondary song-search-toggle-btn ${this.props.settings.traditionalSearchCaseSensitive ? "active" : ""}`}
+                  type="button"
+                  aria-label="Toggle case sensitive"
+                  title={this.props.t?.("CaseSensitiveSearch") || "Case sensitive search"}
+                  onClick={this.toggleTraditionalCaseSensitive}
+                  disabled={!settingsUpdaterAvailable}
+                >
+                  <Icon type={IconType.SEARCH_CASE} />
+                </button>
+                <button
+                  className={`btn btn-outline-secondary song-search-toggle-btn ${this.props.settings.traditionalSearchWholeWords ? "active" : ""}`}
+                  type="button"
+                  aria-label="Toggle whole words"
+                  title={this.props.t?.("MatchWholeWordsOnly") || "Match whole words only"}
+                  onClick={this.toggleTraditionalWholeWords}
+                  disabled={!settingsUpdaterAvailable}
+                >
+                  <Icon type={IconType.SEARCH_WHOLE_WORD} />
+                </button>
+              </>
+            )}
             <button
               className="btn btn-outline-secondary"
               type="button"

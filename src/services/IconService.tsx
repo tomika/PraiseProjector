@@ -67,6 +67,11 @@ export enum IconType {
   BIG_HEART_EMPTY = "big_heart_empty",
   BIG_HEART_FILLED = "big_heart_filled",
   CLOUD_AUTH_FAILED = "cloud_auth_failed",
+
+  // Inline search option icons
+  SEARCH_FUZZY = "search_fuzzy",
+  SEARCH_CASE = "search_case",
+  SEARCH_WHOLE_WORD = "search_whole_word",
 }
 
 interface IconConfig {
@@ -372,6 +377,64 @@ const iconMap: Record<IconType, IconConfig> = {
     faContentAlways: true,
     imagePath: "assets/cloud.png",
     alt: "Cloud Auth Failed",
+  },
+  [IconType.SEARCH_FUZZY]: {
+    faContent: (
+      <svg
+        className="pp-svg-icon pp-svg-icon-dense"
+        viewBox="0 0 40 40"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {/* wand */}
+        <path d="M9 30 L27 12" />
+        <path d="M6.5 32.5 L10.5 28.5" />
+        {/* sparkles */}
+        <path d="M29 7 L29 12" />
+        <path d="M26.5 9.5 L31.5 9.5" />
+        <path d="M34 13 L34 17" />
+        <path d="M32 15 L36 15" />
+      </svg>
+    ),
+    faContentAlways: true,
+    imagePath: "assets/settings.png",
+    alt: "Fuzzy Search",
+  },
+  [IconType.SEARCH_CASE]: {
+    faContent: (
+      <svg className="pp-svg-icon pp-svg-icon-dense" viewBox="0 0 40 40" fill="currentColor">
+        <text x="5" y="26" fontSize="18" fontWeight="700" fontFamily="system-ui, sans-serif" fill="currentColor">
+          Aa
+        </text>
+      </svg>
+    ),
+    faContentAlways: true,
+    imagePath: "assets/text.png",
+    alt: "Case Sensitive",
+  },
+  [IconType.SEARCH_WHOLE_WORD]: {
+    faContent: (
+      <svg
+        className="pp-svg-icon pp-svg-icon-dense"
+        viewBox="0 0 40 40"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <text x="13" y="18" fontSize="12" fontWeight="700" fontFamily="system-ui, sans-serif" fill="currentColor" stroke="none">
+          ab
+        </text>
+        {/* Grouping bracket with visible vertical end caps */}
+        <path d="M11 22 V28 H29 V22" strokeWidth="2.4" />
+      </svg>
+    ),
+    faContentAlways: true,
+    imagePath: "assets/text.png",
+    alt: "Whole Words",
   },
 };
 

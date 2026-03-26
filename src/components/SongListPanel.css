@@ -277,6 +277,74 @@
   color: #e74c3c;
 }
 
+.song-search-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  min-width: 2.5rem;
+  max-width: 2.5rem;
+  height: var(--song-filter-control-height);
+  min-height: var(--song-filter-control-height) !important;
+  max-height: var(--song-filter-control-height);
+  padding: 0;
+  line-height: 1;
+  overflow: hidden;
+  --button-icon-size: 2rem;
+  transition: none !important;
+  padding: 0.25rem !important;
+}
+
+.song-list-panel .input-group {
+  --song-filter-control-height: calc(var(--input-line-height) * 1em + (var(--input-padding-y) * 2) + 2px);
+}
+
+.song-list-panel .song-filter-input {
+  height: var(--song-filter-control-height);
+  min-height: var(--song-filter-control-height);
+  max-height: var(--song-filter-control-height);
+}
+
+.song-list-panel .input-group > .input-group-prepend > .btn,
+.song-list-panel .input-group > .input-group-append > .btn {
+  height: var(--song-filter-control-height);
+  min-height: var(--song-filter-control-height) !important;
+  max-height: var(--song-filter-control-height);
+}
+
+.song-search-toggle-btn .pp-svg-icon,
+.song-search-toggle-btn .button-icon,
+.song-search-toggle-btn i {
+  width: var(--button-icon-size);
+  height: var(--button-icon-size);
+  font-size: var(--button-icon-size);
+  display: block;
+  transition: none !important;
+}
+
+.song-search-toggle-btn .pp-svg-icon.pp-svg-icon-dense {
+  width: var(--button-icon-size) !important;
+  height: var(--button-icon-size) !important;
+}
+
+.song-search-toggle-btn.active {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+  color: #0b5ed7;
+}
+
+.song-search-toggle-btn.active:hover {
+  background-color: #bfdbfe;
+  border-color: #2563eb;
+  color: #0a58ca;
+}
+
+.song-search-toggle-btn:not(.active):hover {
+  background-color: #f1f3f5;
+  border-color: #8c97a3;
+  color: #495057;
+}
+
 /* Ensure selected items always have readable text - override cost colors */
 .song-item.selected,
 .song-item.selected.cost-high,
@@ -420,6 +488,29 @@
   background-color: var(--pp-input-bg);
   border-color: var(--pp-input-border);
   color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .song-search-toggle-btn {
+  background-color: var(--pp-input-bg);
+  border-color: var(--pp-input-border);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .song-search-toggle-btn.active {
+  background-color: rgba(77, 163, 255, 0.28);
+  border-color: #58a8ff;
+  color: #d6ebff;
+}
+
+[data-theme="dark"] .song-search-toggle-btn.active:hover {
+  background-color: rgba(77, 163, 255, 0.38);
+  border-color: #7bbcff;
+  color: #e8f4ff;
+}
+
+[data-theme="dark"] .song-search-toggle-btn:not(.active):hover {
+  background-color: var(--pp-bg-tertiary);
+  border-color: #788496;
 }
 
 [data-theme="dark"] .song-tree-container {
