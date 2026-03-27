@@ -55,44 +55,186 @@ export class ChordMap {
   }
 }
 
+export type ChordDetectionMode = -1 | 0 | 1;
+
+export type ChordMapBuildResult = {
+  map: ChordMap | null;
+  hMode: ChordDetectionMode;
+  lcMollMode: ChordDetectionMode;
+};
+
 /**
  * Chord normalization utilities
  */
 export class ChordNormalizer {
+  private static readonly mollPattern = /m(?!aj)(?:oll)?/i;
+  private static readonly chordPattern = /^(#?)([a-h])(#|b|[ei]?sz?)?(m|moll?)?((?:maj|sus|add|b|#|[0-9])*)$/i;
+  private static readonly chordTrimmingPattern = /^[ \n\t\r,|.]+|[ \n\t\r,|.]+$/g;
+
+  static extractMainNotes(chord: string): string[] {
+    const notes: string[] = [];
+
+    for (const segment of chord.split("/")) {
+      let token = segment.trim();
+      if (token.startsWith("(")) token = token.substring(1).trim();
+      if (token.startsWith("#")) token = token.substring(1).trim();
+
+      if (token.length > 1) {
+        const second = token.substring(1, 2);
+        notes.push(second === "b" || second === "#" ? token.substring(0, 2) : token.substring(0, 1));
+      } else if (token.length === 1) {
+        notes.push(token);
+      }
+    }
+
+    return notes;
+  }
+
+  static tryDetermineHMode(chords: Iterable<string>): ChordDetectionMode {
+    let hasH = false;
+    let hasB = false;
+    let hasBb = false;
+
+    for (const chord of chords) {
+      for (const segment of this.extractMainNotes(chord)) {
+        const token = segment.trim().toLowerCase();
+        if (token === "bb") hasBb = true;
+        else if (token === "b") hasB = true;
+        if (token === "h") hasH = true;
+      }
+    }
+
+    if ((hasBb && hasH) || hasB) return -1;
+    if (hasH || !hasB) return 1;
+    if (hasBb) return 0;
+    return -1;
+  }
+
+  static tryDetermineLCMollMode(chords: Iterable<string>): ChordDetectionMode {
+    let hasUpper = false;
+    let hasLower = false;
+    let hasExplicitMoll = false;
+
+    for (const chord of chords) {
+      const explicitMoll = this.mollPattern.test(chord);
+      if (explicitMoll) hasExplicitMoll = true;
+
+      for (const segment of this.extractMainNotes(chord)) {
+        const token = segment.trim();
+        if (!token) continue;
+
+        const firstChar = token.substring(0, 1);
+        if (firstChar.toUpperCase() === firstChar) hasUpper = true;
+        else if (!explicitMoll) hasLower = true;
+      }
+    }
+
+    if (hasUpper && hasLower) {
+      return hasExplicitMoll ? -1 : 1;
+    }
+
+    return 0;
+  }
+
+  private static trimChordToken(chord: string): string {
+    return chord.replace(this.chordTrimmingPattern, "");
+  }
+
+  private static normalizeSingleChord(chord: string, sourceUsesH: boolean, lowercaseMoll: boolean, bassOnly: boolean): string {
+    const match = this.chordPattern.exec(this.trimChordToken(chord));
+    if (!match) return "";
+
+    const accidentalPrefix = match[1] ?? "";
+    const note = match[2] ?? "";
+    const shift = match[3] ?? "";
+    let mode = match[4] ?? "";
+    const modifiers = match[5] ?? "";
+
+    let normalized = note.toUpperCase();
+    const shiftValue = shift.toLowerCase();
+
+    if (accidentalPrefix || shiftValue === "#" || shiftValue.startsWith("is")) normalized += "#";
+    else if (shiftValue === "b" || shiftValue.startsWith("es") || shiftValue.startsWith("s")) normalized += "b";
+
+    if (!sourceUsesH) {
+      if (normalized === "Bb") normalized = "B";
+      else if (normalized === "B") normalized = "H";
+    }
+
+    if (/^moll?/i.test(mode)) mode = "m";
+    else if (lowercaseMoll && note === note.toLowerCase()) mode = `m${mode}`;
+
+    return bassOnly ? normalized : `${normalized}${mode}${modifiers}`;
+  }
+
   /**
-   * Normalize chord: H -> B, apply lowercase moll option
+   * Normalize chord according to the original importer rules.
    */
-  static normalize(chord: string, useH: boolean, lcMoll: boolean): string {
-    let normalized = chord.trim();
+  static normalize(chord: string, sourceUsesH: boolean, lowercaseMoll: boolean): string {
+    let workingChord = chord;
+    let prefix = "";
+    let suffix = "";
 
-    // H -> B conversion (German to English notation)
-    if (!useH) {
-      normalized = normalized.replace(/\bH\b/g, "B");
-      normalized = normalized.replace(/\bHm\b/g, "Bm");
-      normalized = normalized.replace(/\bH([/#])/g, "B$1");
+    if (workingChord.startsWith("(")) {
+      prefix = "(";
+      workingChord = workingChord.substring(1);
     }
 
-    // Lowercase 'moll' conversion
-    if (lcMoll) {
-      // Convert 'Moll', 'MOLL', etc. to 'moll'
-      normalized = normalized.replace(/\b[Mm][Oo][Ll][Ll]\b/g, "moll");
+    if (workingChord.endsWith(")")) {
+      suffix = ")";
+      workingChord = workingChord.substring(0, workingChord.length - 1);
     }
 
-    return normalized;
+    let result = "";
+    let bassOnly = false;
+
+    for (const segment of workingChord.split("/")) {
+      if (result) result += "/";
+      const normalizedSegment = this.normalizeSingleChord(segment, sourceUsesH, lowercaseMoll, bassOnly);
+      if (!normalizedSegment) return "";
+      result += normalizedSegment;
+      bassOnly = true;
+    }
+
+    return `${prefix}${result}${suffix}`;
   }
 
   /**
    * Build chord map from a set of chords
    */
   static buildChordMap(chords: Set<string>, useH: boolean, lcMoll: boolean): ChordMap {
+    const result = this.createChordMap(chords, useH ? 1 : 0, lcMoll ? 1 : 0);
+    return result.map ?? new ChordMap();
+  }
+
+  static createChordMap(chords: Set<string>, hMode: ChordDetectionMode, lcMollMode: ChordDetectionMode): ChordMapBuildResult {
+    const resolvedHMode = hMode < 0 ? this.tryDetermineHMode(chords) : hMode;
+    const resolvedLcMollMode = lcMollMode < 0 ? this.tryDetermineLCMollMode(chords) : lcMollMode;
+
     const map = new ChordMap();
 
+    if (resolvedHMode < 0 || resolvedLcMollMode < 0) {
+      for (const chord of chords) {
+        map.set(chord, chord);
+      }
+
+      return {
+        map,
+        hMode: resolvedHMode,
+        lcMollMode: resolvedLcMollMode,
+      };
+    }
+
     for (const chord of chords) {
-      const normalized = ChordNormalizer.normalize(chord, useH, lcMoll);
+      const normalized = this.normalize(chord, resolvedHMode > 0, resolvedLcMollMode > 0);
       map.set(chord, normalized);
     }
 
-    return map;
+    return {
+      map,
+      hMode: resolvedHMode,
+      lcMollMode: resolvedLcMollMode,
+    };
   }
 
   /**

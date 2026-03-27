@@ -5,14 +5,14 @@ import {
   CHORDFORMAT_NOCHORDS,
   CHORDFORMAT_SUBSCRIPT,
   ChordProEditor,
-  ChordBoxType,
-  NoteHitBox,
 } from "./chordpro_editor";
 import { getChordSystem, ChordSystem, ChordProDocument } from "./chordpro_base";
 import { ChordSelector } from "./chord_selector";
 import { getAllKnownChordModifier as collectKnownChordModifiers, getChordFindAndSplitPattern as collectChordPattern } from "./praiseprojector";
 import { ChordDetails, NoteSystemCode } from "./note_system";
 import * as clipboard from "./clipboard";
+import { ChordBoxType } from "./chord_drawer";
+import { NoteHitBox } from "./ui_base";
 
 const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
 

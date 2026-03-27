@@ -207,6 +207,28 @@ export const chordRegexPattern = (() => {
     }
     return result;
   }
+
+  getChordDetails(chord: string | ChordProChordBase, simplify: boolean) {
+    if (typeof chord === "string") chord = new ChordProChordBase(this, chord);
+    if (!chord.chordInfo) return null;
+
+    const symbol = /*simplify ? getMaxFourNoteVariant(chord, true, true) :*/ chord.symbol;
+    const retval = {
+      prefix: chord.baseNote ? chord.prefix : chord.text,
+      baseNote: chord.baseNote,
+      modifier: symbol,
+      normalized: symbol,
+      bassNote: chord.bassNote,
+      suffix: chord.suffix,
+      minor: false,
+    };
+    if (retval.normalized && chord.chordInfo) {
+      retval.normalized = chord.chordInfo.symbols[0];
+      retval.minor = ChordSystem.isMinor(chord.chordInfo);
+    }
+    if (simplify) retval.modifier = retval.minor ? "m" : "";
+    return retval;
+  }
 }
 
 export class ChordProProperties {
@@ -1038,28 +1060,6 @@ export class ChordProDocument {
         this.setMeta("key", key ? key.transposedKey(shift) : "");
       }
     }
-  }
-
-  getChordDetails(chord: string | ChordProChordBase, simplify: boolean) {
-    if (typeof chord === "string") chord = new ChordProChordBase(this.system, chord);
-    if (!chord.chordInfo) return null;
-
-    const symbol = /*simplify ? getMaxFourNoteVariant(chord, true, true) :*/ chord.symbol;
-    const retval = {
-      prefix: chord.baseNote ? chord.prefix : chord.text,
-      baseNote: chord.baseNote,
-      modifier: symbol,
-      normalized: symbol,
-      bassNote: chord.bassNote,
-      suffix: chord.suffix,
-      minor: false,
-    };
-    if (retval.normalized && chord.chordInfo) {
-      retval.normalized = chord.chordInfo.symbols[0];
-      retval.minor = ChordSystem.isMinor(chord.chordInfo);
-    }
-    if (simplify) retval.modifier = retval.minor ? "m" : "";
-    return retval;
   }
 
   get sectionInfo() {

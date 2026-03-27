@@ -1,9 +1,10 @@
 import { allChordInfo, all_modifiers, ChordLayoutGenerator, createChordInfo, stepsToModifier } from "./allchords";
 import { ChordProChordBase, ChordSystem, getChordSystem } from "./chordpro_base";
-import { ChordBoxType, NoteHitBox } from "./chordpro_editor";
 import { ChordDetails, NoteSystemCode } from "./note_system";
 import { makeReadonly, makeVisible } from "../common/utils";
 import { renderAbc } from "abcjs";
+import { NoteHitBox } from "./ui_base";
+import { ChordBoxType } from "./chord_drawer";
 
 const universalNoteCodes = ["a", "a#", "b", "c", "c#", "d", "d#", "e", "f", "f#", "g", "g#"];
 
@@ -60,6 +61,7 @@ export class ChordSelector {
   private readOnly = false;
   private onCloseCallback?: (chord?: string) => void;
   private applyButton: HTMLInputElement | null = null;
+  private musicChordBoxDivName = "musicChordBox";
 
   private static findOrCreateElement(name: string | null | undefined, type: string, parent: HTMLElement) {
     let element = name ? document.getElementById(name) : null;
@@ -89,6 +91,9 @@ export class ChordSelector {
     private readonly chordBoxDrawer?: (type: ChordBoxType, chord: string | ChordDetails, canvas: HTMLCanvasElement, variant: number) => NoteHitBox[]
   ) {
     let guitarTuning = [24 + 7, 24 + 2, 12 + 10, 12 + 5, 12, 7];
+    if (options.musicChordBox) {
+      this.musicChordBoxDivName = options.musicChordBox;
+    }
     if (options.tuning) {
       const rxFindNote = new RegExp(system.noteRegexPattern, "g");
       let m: RegExpExecArray | null,
@@ -484,7 +489,7 @@ export class ChordSelector {
         const suffix = hasLowRegNote ? "," : "";
         keys.push(abcformat(universalNoteCode(chord.bassNote)).toUpperCase() + suffix);
       }
-      renderAbc("musicChordBox", "[" + keys.join("") + "]2");
+      renderAbc(this.musicChordBoxDivName, "[" + keys.join("") + "]2");
     }
     if (this.guitarChordBox && this.chordBoxDrawer)
       this.guitarHitBoxes = this.chordBoxDrawer("GUITAR", chord, this.guitarChordBox, this.guitarVariant);

@@ -2,7 +2,6 @@ import "core-js/es";
 import { allChordInfo, all_modifiers, chordMap } from "../chordpro/allchords";
 import { ChordProDocument, ChordSystem, ChordSystemCode, getChordSystem } from "../chordpro/chordpro_base";
 import {
-  ChordBoxType,
   CHORDFORMAT_BB,
   CHORDFORMAT_INKEY,
   CHORDFORMAT_NOCHORDS,
@@ -11,7 +10,6 @@ import {
   CHORDFORMAT_SUBSCRIPT,
   ChordProEditor,
   HighlightingParams,
-  NoteHitBox,
 } from "../chordpro/chordpro_editor";
 import { ChordSelector } from "../chordpro/chord_selector";
 import { getKeyCodeString, isNumLockEnabled } from "../chordpro/keycodes";
@@ -68,6 +66,8 @@ import { DeviceMessage, PpdPacket, HostDevice, Nearby, NearbyMessageParam, HostD
 import { Settings } from "../common/settings";
 import { formatLocalDateLabel } from "../common/date-only";
 import { entryIsFound, getEmptyDisplay, verifyPlaylist } from "../common/pp-utils";
+import { ChordBoxType } from "../chordpro/chord_drawer";
+import { NoteHitBox } from "../chordpro/ui_base";
 
 export const praiseProjectorOrigin = "https://praiseprojector.com";
 

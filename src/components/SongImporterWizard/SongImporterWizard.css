@@ -250,6 +250,12 @@
   flex-shrink: 0;
 }
 
+.line-type-badge-clickable {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .line-type-badge.title {
   background: #ffd700;
   color: #333;
@@ -298,6 +304,38 @@
   cursor: pointer;
 }
 
+.chord-reset-button {
+  margin-left: auto;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--pp-border-color, #ccc);
+  border-radius: 4px;
+  background: var(--pp-modal-bg, #fff);
+  cursor: pointer;
+}
+
+.chord-reset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chord-options-warning {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e0b200;
+  border-radius: 4px;
+  background: #fff7d6;
+  color: #5c4700;
+}
+
+.chord-table-hint {
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 4px solid #2f6db3;
+  background: #edf4ff;
+  color: #1f3f66;
+  font-size: 0.92rem;
+}
+
 .chord-list {
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -338,6 +376,254 @@
   border: 1px solid #ccc;
   border-radius: 3px;
   font-family: monospace;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+.chord-edit-control {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.chord-edit-control input[type="text"] {
+  flex: 1;
+}
+
+.open-chord-selector-button {
+  padding: 0.26rem 0.5rem;
+  border: 1px solid #8ca2bc;
+  border-radius: 4px;
+  background: #eef3f9;
+  color: #263746;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.open-chord-selector-button:hover {
+  background: #dde8f4;
+}
+
+.chord-list input[type="text"].manual-override-input {
+  border-color: #d08a00;
+  border-width: 2px;
+  background: linear-gradient(90deg, rgba(255, 208, 102, 0.28) 0, rgba(255, 208, 102, 0.12) 20px, #fff 20px);
+  box-shadow: inset 4px 0 0 #d08a00;
+}
+
+.chord-list input[type="text"].unknown-chord-input {
+  border-color: #c62828;
+  border-width: 2px;
+  background: linear-gradient(90deg, rgba(255, 138, 128, 0.3) 0, rgba(255, 138, 128, 0.14) 20px, #fff 20px);
+  box-shadow: inset 4px 0 0 #c62828;
+}
+
+.chord-list input[type="text"].manual-override-input.unknown-chord-input {
+  background: linear-gradient(90deg, rgba(198, 40, 40, 0.34) 0, rgba(208, 138, 0, 0.22) 20px, #fff 40px);
+  box-shadow:
+    inset 4px 0 0 #c62828,
+    inset 8px 0 0 #d08a00;
+}
+
+.chord-list input[type="text"].chord-auto-flash {
+  animation: chord-auto-flash 0.7s ease-out;
+}
+
+.song-importer-chord-selector-host {
+  display: none;
+}
+
+.song-importer-chord-selector-host.chordSelector {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+  width: 800px;
+  height: 286px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  box-sizing: border-box;
+  overflow: hidden;
+  min-width: 330px;
+  font-size: 16px;
+  border-radius: 6px;
+  background: var(--pp-modal-bg);
+  color: var(--pp-text-color);
+  border: 2px solid var(--pp-border-color);
+  padding: 12px 34px 10px 10px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.24),
+    0 0 0 100vmax rgba(0, 0, 0, 0.18);
+}
+
+.song-importer-chord-selector-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-table:first-of-type {
+  margin-top: 2px;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--pp-text-color);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.9;
+  z-index: 1;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-close:hover {
+  opacity: 1;
+}
+
+.song-importer-chord-selector-host.chordSelector input[type="button"] {
+  font-size: 16px;
+  max-width: 100px;
+  align-self: center;
+}
+
+.song-importer-chord-selector-host.chordSelector label {
+  font-size: 16px;
+  height: 24px;
+  display: table-cell;
+}
+
+.song-importer-chord-selector-host.chordSelector select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  font-size: 16px;
+  display: table-cell;
+  touch-action: manipulation;
+}
+
+.song-importer-chord-selector-host.chordSelector input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  font-size: 16px;
+  display: table-cell;
+  touch-action: manipulation;
+}
+
+.song-importer-chord-selector-host.chordSelector canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.song-importer-chord-selector-host.chordSelector > table tr > td > div,
+.song-importer-chord-selector-host.chordSelector td[colspan] > div {
+  display: table;
+  width: 100%;
+}
+
+.song-importer-chord-selector-host.chordSelector td {
+  width: 25%;
+  border-collapse: collapse;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-table:last-of-type {
+  table-layout: fixed;
+}
+
+.song-importer-chord-selector-panel {
+  height: 100px;
+  vertical-align: top;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-panel-main {
+  width: 30%;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-panel-piano {
+  width: 42%;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-panel-guitar {
+  width: 28%;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-music-box {
+  max-width: 100px;
+  width: 100%;
+  height: 84px;
+  min-height: 84px;
+  display: block;
+  background: var(--pp-modal-bg);
+  border: 0;
+  padding: 0;
+}
+
+.song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-panel canvas {
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+}
+
+[data-theme="dark"] .chord-list input[type="text"].manual-override-input {
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.28) 0, rgba(255, 193, 7, 0.12) 20px, rgba(30, 30, 30, 0.95) 20px);
+  color: #fff4d1;
+}
+
+[data-theme="dark"] .chord-table-hint {
+  border-left-color: #7ab2ff;
+  background: #172233;
+  color: #c5dcff;
+}
+
+[data-theme="dark"] .open-chord-selector-button {
+  border-color: #6d88a6;
+  background: #253246;
+  color: #dce9f7;
+}
+
+[data-theme="dark"] .open-chord-selector-button:hover {
+  background: #33445c;
+}
+
+[data-theme="dark"] .chord-list input[type="text"].unknown-chord-input {
+  background: linear-gradient(90deg, rgba(244, 67, 54, 0.34) 0, rgba(244, 67, 54, 0.14) 20px, rgba(30, 30, 30, 0.95) 20px);
+  color: #ffe4e4;
+}
+
+[data-theme="dark"] .chord-list input[type="text"].manual-override-input.unknown-chord-input {
+  background: linear-gradient(90deg, rgba(244, 67, 54, 0.36) 0, rgba(255, 193, 7, 0.2) 20px, rgba(30, 30, 30, 0.95) 40px);
+}
+
+[data-theme="dark"] .song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-close {
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-music-box,
+[data-theme="dark"] .song-importer-chord-selector-host.chordSelector .song-importer-chord-selector-panel canvas {
+  background: transparent;
+}
+
+@keyframes chord-auto-flash {
+  0% {
+    border-color: #ffb000;
+    box-shadow: 0 0 0 0.18rem rgba(255, 176, 0, 0.35);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 176, 0, 0);
+  }
 }
 
 /* Tab 3: ChordPro Editor */

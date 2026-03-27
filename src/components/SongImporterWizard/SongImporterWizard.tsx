@@ -2,9 +2,11 @@ import React, { useState, useCallback, useRef, useEffect, Suspense, lazy } from 
 import { DocumentImporter } from "../../services/DocumentImporter";
 import { ChordProConverter } from "../../services/ChordProConverter";
 import { ImportLines } from "../../classes/ImportLine";
-import { ChordMap, ChordNormalizer } from "../../classes/ChordMap";
+import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../classes/ChordMap";
 import { Song } from "../../classes/Song";
 import { ChordProDocument, getChordSystem } from "../../../chordpro/chordpro_base";
+import { ChordSelector } from "../../../chordpro/chord_selector";
+import { ChordDetails } from "../../../chordpro/note_system";
 import { Database } from "../../classes/Database";
 import ChordProEditorComponent from "../ChordProEditor/ChordProEditor";
 import { ChordProEditor } from "../ChordProEditor/ChordProEditor";
@@ -12,18 +14,38 @@ import { setEditedSong } from "../../state/CurrentSongStore";
 import MessageBox from "../MessageBox";
 import { ContextMenu, ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { useLocalization, StringKey } from "../../localization/LocalizationContext";
+import { ensureChordProAssets } from "../../utils/loadChordProAssets";
 import type { ImportDecision } from "../CompareDialog";
 import "./SongImporterWizard.css";
+import { ChordBoxType, ChordDrawer } from "../../../chordpro/chord_drawer";
+import { defaultDisplayProperties } from "../../../chordpro/chordpro_styles";
+import { NoteHitBox } from "../../../chordpro/ui_base";
 
 const CompareDialog = lazy(() => import("../CompareDialog"));
+
+const IMPORT_CHORD_SELECTOR_IDS = {
+  baseNoteSelector: "song-import-baseNoteSel",
+  bassNoteSelector: "song-import-bassNoteSel",
+  modifierSelector: "song-import-modifier",
+  customSpan: "song-import-customSpan",
+  subscript: "song-import-subscript",
+  baseNoteSpan: "song-import-baseNoteSpan",
+  steps: "song-import-steps",
+  notes: "song-import-notes",
+  guitarChordBox: "song-import-guitarChordBox",
+  pianoChordBox: "song-import-pianoChordBox",
+  musicChordBox: "song-import-musicChordBox",
+  closeSelector: "song-import-closeSelector",
+  applySelector: "song-import-applySelector",
+} as const;
 
 function looksLikeChordPro(text: string): boolean {
   const doc = new ChordProDocument(getChordSystem("G"), text);
   for (const key of ChordProDocument.metaDataDirectives) {
-    if (doc.getMeta(key) != null) return true;
+    if (doc.getMeta(key)) return true;
   }
   for (const line of doc.lines) {
-    if (line.chords.length > 0) return true;
+    if (line.chords.length) return true;
   }
   return false;
 }
@@ -41,6 +63,7 @@ interface SongImporterWizardProps {
  */
 export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database, onClose, onSongImported, initialFiles }) => {
   const { t } = useLocalization();
+  const normalizedChordSystem = getChordSystem("G");
 
   const format = useCallback((key: StringKey, ...args: string[]) => args.reduce((text, arg, index) => text.replace(`{${index}}`, arg), t(key)), [t]);
 
@@ -79,12 +102,17 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   // Chord normalization state (Tab 2)
   const [chordMap, setChordMap] = useState<ChordMap>(new ChordMap());
-  const [useH, setUseH] = useState(false);
-  const [lcMoll, setLcMoll] = useState(false);
-  const [selectedChord, setSelectedChord] = useState<string | null>(null);
+  const [autoChordMap, setAutoChordMap] = useState<ChordMap>(new ChordMap());
+  const [manualEditedChords, setManualEditedChords] = useState<Set<string>>(new Set());
+  const [flashingChords, setFlashingChords] = useState<Set<string>>(new Set());
+  const [useHMode, setUseHMode] = useState<ChordDetectionMode>(-1);
+  const [lcMollMode, setLcMollMode] = useState<ChordDetectionMode>(-1);
+  const [selectedChord] = useState<string | null>(null);
 
   // ChordPro editor state (Tab 3)
   const [generatedChordPro, setGeneratedChordPro] = useState("");
+  const [isChordProDirectFlow, setIsChordProDirectFlow] = useState(false);
+  const [editorSong, setEditorSong] = useState<Song | null>(null);
 
   // MessageBox state
   const [messageBox, setMessageBox] = useState<{
@@ -92,6 +120,8 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     message: string;
     onConfirm: () => void;
     onCancel: () => void;
+    confirmText?: string;
+    showCancel?: boolean;
   } | null>(null);
 
   // ContextMenu state
@@ -110,10 +140,140 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   // Refs
   const chordProEditorRef = useRef<ChordProEditor>(null);
-  const editorSongRef = useRef<Song | null>(null);
+  const useHInputRef = useRef<HTMLInputElement>(null);
+  const lcMollInputRef = useRef<HTMLInputElement>(null);
+  const chordFlashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const chordSelectorHostRef = useRef<HTMLDivElement>(null);
+  const chordSelectorRef = useRef<ChordSelector | null>(null);
+  const chordDrawerRef = useRef<ChordDrawer | null>(null);
+  const activeChordSelectorTargetRef = useRef<string | null>(null);
 
   // Services
   const documentImporter = useRef(new DocumentImporter());
+
+  const collectChordsFromChordPro = useCallback((text: string): Set<string> => {
+    const chords = new Set<string>();
+    const chordRegex = /\[([^\]\r\n]+)\]/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = chordRegex.exec(text)) !== null) {
+      const chord = (match[1] || "").trim();
+      if (chord) chords.add(chord);
+    }
+
+    return chords;
+  }, []);
+
+  const normalizeChordProChords = useCallback((text: string, map: ChordMap): string => {
+    return text.replace(/\[([^\]\r\n]+)\]/g, (full, rawChord: string) => {
+      const chord = (rawChord || "").trim();
+      const normalized = map.get(chord);
+      return `[${normalized ?? chord}]`;
+    });
+  }, []);
+
+  const triggerChordFlash = useCallback((changedKeys: Iterable<string>) => {
+    const next = new Set(changedKeys);
+    if (next.size === 0) return;
+
+    setFlashingChords(next);
+    if (chordFlashTimeoutRef.current) {
+      clearTimeout(chordFlashTimeoutRef.current);
+    }
+    chordFlashTimeoutRef.current = setTimeout(() => {
+      setFlashingChords(new Set());
+      chordFlashTimeoutRef.current = null;
+    }, 700);
+  }, []);
+
+  const getUnknownNormalizedChords = useCallback(() => {
+    return chordMap
+      .getEntries()
+      .filter(([, normalized]) => {
+        const value = normalized.trim();
+        return value.length > 0 && normalizedChordSystem.identifyChord(value) == null;
+      })
+      .map(([original, normalized]) => ({ original, normalized: normalized.trim() }));
+  }, [chordMap, normalizedChordSystem]);
+
+  const buildChordNormalizationState = useCallback(
+    (
+      chords: Set<string>,
+      requestedHMode: ChordDetectionMode,
+      requestedLcMollMode: ChordDetectionMode,
+      preserveExistingValues: boolean,
+      flashChanges: boolean
+    ) => {
+      const result = ChordNormalizer.createChordMap(chords, requestedHMode, requestedLcMollMode);
+
+      setUseHMode(result.hMode);
+      setLcMollMode(result.lcMollMode);
+      const nextAutoMap = result.map ?? new ChordMap();
+      const nextManuals = preserveExistingValues
+        ? new Set(Array.from(manualEditedChords).filter((key) => nextAutoMap.get(key) !== undefined))
+        : new Set<string>();
+      const nextChordMap = new ChordMap();
+      const preservedValues = preserveExistingValues ? new Map(chordMap.getEntries()) : new Map<string, string>();
+
+      for (const [key, value] of nextAutoMap.getEntries()) {
+        nextChordMap.set(key, nextManuals.has(key) ? (preservedValues.get(key) ?? value) : value);
+      }
+
+      setAutoChordMap(nextAutoMap);
+      setManualEditedChords(nextManuals);
+      setChordMap(nextChordMap);
+
+      if (flashChanges) {
+        const changedKeys = new Set<string>();
+        for (const [key, value] of nextChordMap.getEntries()) {
+          if ((chordMap.get(key) ?? "") !== value) {
+            changedKeys.add(key);
+          }
+        }
+
+        triggerChordFlash(changedKeys);
+      }
+    },
+    [chordMap, manualEditedChords, triggerChordFlash]
+  );
+
+  const getCurrentChordSet = useCallback(() => {
+    return isChordProDirectFlow ? collectChordsFromChordPro(generatedChordPro) : ChordProConverter.collectChords(filteredLines);
+  }, [collectChordsFromChordPro, filteredLines, generatedChordPro, isChordProDirectFlow]);
+
+  const startChordProNormalizationFlow = useCallback(
+    (rawChordPro: string) => {
+      const chords = collectChordsFromChordPro(rawChordPro);
+      setGeneratedChordPro(rawChordPro);
+      setIsChordProDirectFlow(true);
+      buildChordNormalizationState(chords, -1, -1, false, false);
+      setCurrentTab(2);
+    },
+    [buildChordNormalizationState, collectChordsFromChordPro]
+  );
+
+  const minTabIndex = isChordProDirectFlow ? 2 : 0;
+  const chordModesResolved = useHMode >= 0 && lcMollMode >= 0;
+
+  useEffect(() => {
+    if (useHInputRef.current) {
+      useHInputRef.current.indeterminate = useHMode < 0;
+    }
+  }, [useHMode]);
+
+  useEffect(() => {
+    if (lcMollInputRef.current) {
+      lcMollInputRef.current.indeterminate = lcMollMode < 0;
+    }
+  }, [lcMollMode]);
+
+  useEffect(() => {
+    return () => {
+      if (chordFlashTimeoutRef.current) {
+        clearTimeout(chordFlashTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // === Tab 0: File Selection ===
 
@@ -131,24 +291,24 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
       setSelectedFile(file);
       setImportedFiles([file]);
+      setIsChordProDirectFlow(false);
 
       // Auto-load if it's a .chp file
       const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
       if (ext === ".chp") {
         const text = await file.text();
-        setGeneratedChordPro(text);
-        editorSongRef.current = new Song(text);
-        setCurrentTab(3); // Jump to editor
+        startChordProNormalizationFlow(text);
         return;
       }
     },
-    [format, t]
+    [format, startChordProNormalizationFlow, t]
   );
 
   const parseFileAndAdvance = useCallback(
     async (file: File) => {
       const proceedToTab1 = async () => {
         try {
+          setIsChordProDirectFlow(false);
           const lines = await documentImporter.current.parseDocument(file);
           setAllLines(lines);
 
@@ -200,12 +360,11 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
             message: t("SongImportDetectedChordProMessage"),
             onConfirm: () => {
               setMessageBox(null);
-              setGeneratedChordPro(rawText);
-              editorSongRef.current = new Song(rawText);
-              setCurrentTab(3);
+              startChordProNormalizationFlow(rawText);
             },
             onCancel: () => {
               setMessageBox(null);
+              setIsChordProDirectFlow(false);
               void proceedToTab1();
             },
           });
@@ -215,7 +374,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
       await proceedToTab1();
     },
-    [format, t]
+    [format, startChordProNormalizationFlow, t]
   );
 
   const handleFileUpload = useCallback(
@@ -264,15 +423,14 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     const ext = firstFile.name.substring(firstFile.name.lastIndexOf(".")).toLowerCase();
     if (ext === ".chp") {
       void firstFile.text().then((text) => {
-        setGeneratedChordPro(text);
-        editorSongRef.current = new Song(text);
-        setCurrentTab(3);
+        startChordProNormalizationFlow(text);
       });
       return;
     }
 
+    setIsChordProDirectFlow(false);
     void parseFileAndAdvance(firstFile);
-  }, [format, initialFiles, parseFileAndAdvance, t]);
+  }, [format, initialFiles, parseFileAndAdvance, startChordProNormalizationFlow, t]);
 
   // === Tab 1: Line Classification ===
 
@@ -335,10 +493,10 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         },
       });
     },
-    [allLines, t]
+    [allLines, setContextMenu, t]
   );
 
-  const handleLineTypeChange = useCallback(
+  const _handleLineTypeChange = useCallback(
     (lineType: string) => {
       // Apply to selected lines
       for (const index of selectedLines) {
@@ -392,57 +550,183 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     const filtered = new ImportLines(selectedLinesArray);
     setFilteredLines(filtered);
 
-    // Collect chords and build chord map from selected lines only
+    // Collect chords and auto-detect normalization modes from selected lines only
     const chords = ChordProConverter.collectChords(filtered);
-    const map = ChordNormalizer.buildChordMap(chords, useH, lcMoll);
-    setChordMap(map);
+    buildChordNormalizationState(chords, -1, -1, false, false);
     setCurrentTab(2);
-  }, [allLines, selectedLines, useH, lcMoll]);
+  }, [allLines, buildChordNormalizationState, selectedLines]);
 
   // === Tab 2: Chord Normalization ===
 
   const handleUseHChange = useCallback(
     (checked: boolean) => {
-      setUseH(checked);
-      // Rebuild chord map with new setting
-      const chords = ChordProConverter.collectChords(filteredLines);
-      const map = ChordNormalizer.buildChordMap(chords, checked, lcMoll);
-      setChordMap(map);
+      buildChordNormalizationState(getCurrentChordSet(), checked ? 1 : 0, lcMollMode, true, true);
     },
-    [filteredLines, lcMoll]
+    [buildChordNormalizationState, getCurrentChordSet, lcMollMode]
   );
 
   const handleLcMollChange = useCallback(
     (checked: boolean) => {
-      setLcMoll(checked);
-      // Rebuild chord map with new setting
-      const chords = ChordProConverter.collectChords(filteredLines);
-      const map = ChordNormalizer.buildChordMap(chords, useH, checked);
-      setChordMap(map);
+      buildChordNormalizationState(getCurrentChordSet(), useHMode, checked ? 1 : 0, true, true);
     },
-    [filteredLines, useH]
+    [buildChordNormalizationState, getCurrentChordSet, useHMode]
   );
 
   const handleChordEdit = useCallback(
     (original: string, newValue: string) => {
-      chordMap.set(original, newValue);
-      setChordMap(new ChordMap()); // Trigger re-render
-      // Copy entries
-      for (const [k, v] of chordMap.getEntries()) {
-        chordMap.set(k, v);
-      }
+      const automaticValue = autoChordMap.get(original) ?? original;
+
+      setManualEditedChords((prev) => {
+        const next = new Set(prev);
+        if (newValue === automaticValue) next.delete(original);
+        else next.add(original);
+        return next;
+      });
+
+      setChordMap((prev) => {
+        const updated = new ChordMap();
+        for (const [k, v] of prev.getEntries()) {
+          updated.set(k, v);
+        }
+        updated.set(original, newValue);
+        return updated;
+      });
     },
-    [chordMap]
+    [autoChordMap]
   );
 
+  const handleResetChordNormalization = useCallback(() => {
+    const reset = new ChordMap();
+    const changedKeys = new Set<string>();
+    for (const [key, value] of autoChordMap.getEntries()) {
+      reset.set(key, value);
+      if ((chordMap.get(key) ?? "") !== value) {
+        changedKeys.add(key);
+      }
+    }
+
+    setManualEditedChords(new Set());
+    setChordMap(reset);
+    triggerChordFlash(changedKeys);
+  }, [autoChordMap, chordMap, triggerChordFlash]);
+
+  const handleOpenChordSelector = useCallback(
+    (original: string) => {
+      const selector = chordSelectorRef.current;
+      if (!selector) return;
+
+      activeChordSelectorTargetRef.current = original;
+      selector.setNoteSystem(normalizedChordSystem);
+      selector.showDialog(chordMap.get(original) ?? original, false, false);
+    },
+    [chordMap, normalizedChordSystem]
+  );
+
+  useEffect(() => {
+    let disposed = false;
+
+    void ensureChordProAssets().then(() => {
+      if (disposed || chordSelectorRef.current || !chordSelectorHostRef.current) return;
+
+      const hostStyle = getComputedStyle(chordSelectorHostRef.current);
+      const darkMode = document.documentElement.getAttribute("data-theme") === "dark";
+      const displayProps = defaultDisplayProperties(darkMode);
+      displayProps.backgroundColor = hostStyle.backgroundColor;
+      displayProps.chordBoxColor = hostStyle.color;
+      displayProps.lineColor = hostStyle.color;
+      displayProps.tagColor = hostStyle.color;
+      displayProps.cursorColor = hostStyle.color;
+
+      const selector = new ChordSelector(
+        normalizedChordSystem,
+        chordSelectorHostRef.current,
+        {
+          onClose: (chord?: string) => {
+            const target = activeChordSelectorTargetRef.current;
+            activeChordSelectorTargetRef.current = null;
+            if (target && chord) handleChordEdit(target, chord);
+          },
+          baseNoteSelector: IMPORT_CHORD_SELECTOR_IDS.baseNoteSelector,
+          bassNoteSelector: IMPORT_CHORD_SELECTOR_IDS.bassNoteSelector,
+          modifierSelector: IMPORT_CHORD_SELECTOR_IDS.modifierSelector,
+          customSpan: IMPORT_CHORD_SELECTOR_IDS.customSpan,
+          subscript: IMPORT_CHORD_SELECTOR_IDS.subscript,
+          baseNoteSpan: IMPORT_CHORD_SELECTOR_IDS.baseNoteSpan,
+          steps: IMPORT_CHORD_SELECTOR_IDS.steps,
+          notes: IMPORT_CHORD_SELECTOR_IDS.notes,
+          guitarChordBox: IMPORT_CHORD_SELECTOR_IDS.guitarChordBox,
+          pianoChordBox: IMPORT_CHORD_SELECTOR_IDS.pianoChordBox,
+          musicChordBox: IMPORT_CHORD_SELECTOR_IDS.musicChordBox,
+          closeSelector: IMPORT_CHORD_SELECTOR_IDS.closeSelector,
+          applySelector: IMPORT_CHORD_SELECTOR_IDS.applySelector,
+        },
+        (type: ChordBoxType, chord: string | ChordDetails, canvas: HTMLCanvasElement, variant: number) => {
+          const drawer = chordDrawerRef.current;
+          if (!drawer) return [];
+          const hits: NoteHitBox[] = [];
+          drawer.chordBoxDraw(type, chord, canvas, variant, undefined, hits);
+          return hits;
+        }
+      );
+      chordSelectorRef.current = selector;
+      chordDrawerRef.current = new ChordDrawer(normalizedChordSystem, selector, false, displayProps);
+    });
+
+    return () => {
+      disposed = true;
+      if (chordSelectorRef.current?.inModal) chordSelectorRef.current.closeDialog();
+      chordSelectorRef.current = null;
+      chordDrawerRef.current = null;
+    };
+  }, [handleChordEdit, normalizedChordSystem]);
+
   const handleNextFromChordNormalization = useCallback(() => {
-    // Generate ChordPro from selected lines only
-    const chordPro = ChordProConverter.convertToChordPro(filteredLines, chordMap);
-    // Create preview song for ChordProEditor
-    setGeneratedChordPro(chordPro);
-    editorSongRef.current = new Song(chordPro);
-    setCurrentTab(3);
-  }, [filteredLines, chordMap]);
+    if (!chordModesResolved) return;
+
+    const unknownChords = getUnknownNormalizedChords();
+
+    const proceedToEditor = () => {
+      if (isChordProDirectFlow) {
+        const normalizedChordPro = normalizeChordProChords(generatedChordPro, chordMap);
+        setGeneratedChordPro(normalizedChordPro);
+        setEditorSong(new Song(normalizedChordPro));
+        setCurrentTab(3);
+        return;
+      }
+
+      const chordPro = ChordProConverter.convertToChordPro(filteredLines, chordMap);
+      setGeneratedChordPro(chordPro);
+      setEditorSong(new Song(chordPro));
+      setCurrentTab(3);
+    };
+
+    if (unknownChords.length > 0) {
+      setMessageBox({
+        title: t("SongImportUnknownChordConfirmTitle"),
+        message: format("SongImportUnknownChordConfirmMessage", unknownChords.map(({ normalized }) => normalized).join(", ")),
+        confirmText: t("Continue"),
+        showCancel: true,
+        onConfirm: () => {
+          setMessageBox(null);
+          proceedToEditor();
+        },
+        onCancel: () => setMessageBox(null),
+      });
+      return;
+    }
+
+    proceedToEditor();
+  }, [
+    chordMap,
+    chordModesResolved,
+    filteredLines,
+    format,
+    generatedChordPro,
+    getUnknownNormalizedChords,
+    isChordProDirectFlow,
+    normalizeChordProChords,
+    t,
+  ]);
 
   // === Tab 3: ChordPro Editor ===
 
@@ -534,15 +818,15 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         onCancel: () => setMessageBox(null),
       });
     }
-  }, [database, format, generatedChordPro, importedFiles, onClose, onSongImported, selectedFile, t]);
+  }, [database, format, generatedChordPro, importedFiles, onClose, onSongImported, selectedFile, setCompareDialogState, t]);
 
   // === Navigation ===
 
   const handlePrevious = useCallback(() => {
-    if (currentTab > 0) {
-      setCurrentTab(currentTab - 1);
+    if (currentTab > minTabIndex) {
+      setCurrentTab(Math.max(minTabIndex, currentTab - 1));
     }
-  }, [currentTab]);
+  }, [currentTab, minTabIndex]);
 
   const handleNext = useCallback(() => {
     switch (currentTab) {
@@ -657,7 +941,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
                   aria-label={format("SongImportSelectLineAria", String(i + 1))}
                 />
                 <span
-                  className={`line-type-badge ${line.line_type || "unset"}`}
+                  className={`line-type-badge line-type-badge-clickable ${line.line_type || "unset"}`}
                   onMouseDown={(e) => handleBadgeMouseDown(i, e)}
                   onMouseUp={() => handleBadgeMouseUp(i)}
                   onMouseLeave={() => {
@@ -674,7 +958,6 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
                       longPressTimerRef.current = null;
                     }
                   }}
-                  style={{ cursor: "pointer", userSelect: "none" }}
                   title={t("SongImportLineTypeToggleTitle")}
                 >
                   {getLineTypeLabel(line.line_type)}
@@ -693,36 +976,128 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       <h2>{t("SongImportNormalizeChordsTitle")}</h2>
       <div className="chord-options">
         <label>
-          <input type="checkbox" checked={useH} onChange={(e) => handleUseHChange(e.target.checked)} />
+          <input ref={useHInputRef} type="checkbox" checked={useHMode > 0} onChange={(e) => handleUseHChange(e.target.checked)} />
           {t("SongImportUseH")}
         </label>
         <label>
-          <input type="checkbox" checked={lcMoll} onChange={(e) => handleLcMollChange(e.target.checked)} />
+          <input ref={lcMollInputRef} type="checkbox" checked={lcMollMode > 0} onChange={(e) => handleLcMollChange(e.target.checked)} />
           {t("SongImportLowercaseMoll")}
         </label>
+        <button type="button" className="chord-reset-button" onClick={handleResetChordNormalization} disabled={manualEditedChords.size === 0}>
+          {t("SongImportResetNormalizedChords")}
+        </button>
       </div>
+      {!chordModesResolved && <div className="chord-options-warning">{t("SongImportResolveChordModesMessage")}</div>}
+      <div className="chord-table-hint">{t("SongImportChordSelectorHint")}</div>
       <div className="chord-list">
         <table>
           <thead>
             <tr>
-              <th>{t("SongImportNormalizedHeader")}</th>
               <th>{t("SongImportOriginalHeader")}</th>
+              <th>{t("SongImportNormalizedHeader")}</th>
             </tr>
           </thead>
           <tbody>
-            {chordMap.getEntries().map(([original, normalized]) => (
-              <tr key={original} className={selectedChord === original ? "selected" : ""}>
-                <td>
-                  <input
-                    type="text"
-                    value={normalized}
-                    onChange={(e) => handleChordEdit(original, e.target.value)}
-                    aria-label={format("SongImportNormalizedChordAria", original)}
-                  />
-                </td>
-                <td>{original}</td>
-              </tr>
-            ))}
+            {chordMap.getEntries().map(([original, normalized]) => {
+              const isUnknownChord = normalized.trim().length > 0 && normalizedChordSystem.identifyChord(normalized.trim()) == null;
+
+              return (
+                <tr
+                  key={original}
+                  className={`${selectedChord === original ? "selected" : ""} ${manualEditedChords.has(original) ? "manual-override" : ""}`.trim()}
+                >
+                  <td>{original}</td>
+                  <td>
+                    <div className="chord-edit-control">
+                      <input
+                        className={`${manualEditedChords.has(original) ? "manual-override-input" : ""} ${flashingChords.has(original) ? "chord-auto-flash" : ""} ${isUnknownChord ? "unknown-chord-input" : ""}`.trim()}
+                        type="text"
+                        value={normalized}
+                        onChange={(e) => handleChordEdit(original, e.target.value)}
+                        onDoubleClick={() => handleOpenChordSelector(original)}
+                        aria-label={format("SongImportNormalizedChordAria", original)}
+                      />
+                      <button
+                        type="button"
+                        className="open-chord-selector-button"
+                        onClick={() => handleOpenChordSelector(original)}
+                        aria-label={t("SongImportOpenChordSelector")}
+                      >
+                        {t("SongImportOpenChordSelector")}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="song-importer-chord-selector-host chordSelector" ref={chordSelectorHostRef}>
+        <div id={IMPORT_CHORD_SELECTOR_IDS.closeSelector} className="song-importer-chord-selector-close">
+          X
+        </div>
+        <table className="song-importer-chord-selector-table">
+          <tbody>
+            <tr>
+              <td>Base note</td>
+              <td>
+                <select id={IMPORT_CHORD_SELECTOR_IDS.baseNoteSelector}></select>
+              </td>
+              <td>Bass note</td>
+              <td>
+                <select id={IMPORT_CHORD_SELECTOR_IDS.bassNoteSelector}></select>
+              </td>
+            </tr>
+            <tr>
+              <td>Chord</td>
+              <td colSpan={3}>
+                <div>
+                  <label id={IMPORT_CHORD_SELECTOR_IDS.customSpan} htmlFor={IMPORT_CHORD_SELECTOR_IDS.modifierSelector}></label>
+                  <select id={IMPORT_CHORD_SELECTOR_IDS.modifierSelector}></select>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>Symbol</td>
+              <td colSpan={3}>
+                <input id={IMPORT_CHORD_SELECTOR_IDS.subscript} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td>Steps</td>
+              <td colSpan={3}>
+                <div>
+                  <label htmlFor={IMPORT_CHORD_SELECTOR_IDS.steps}>1-</label>
+                  <input id={IMPORT_CHORD_SELECTOR_IDS.steps} type="text" />
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>Notes</td>
+              <td colSpan={3}>
+                <div>
+                  <label id={IMPORT_CHORD_SELECTOR_IDS.baseNoteSpan}></label>
+                  <input id={IMPORT_CHORD_SELECTOR_IDS.notes} type="text" />
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <table className="song-importer-chord-selector-table">
+          <tbody>
+            <tr>
+              <td className="song-importer-chord-selector-panel song-importer-chord-selector-panel-main">
+                <div id={IMPORT_CHORD_SELECTOR_IDS.musicChordBox} className="song-importer-chord-selector-music-box"></div>
+                <input type="button" id={IMPORT_CHORD_SELECTOR_IDS.applySelector} value="OK" />
+              </td>
+              <td className="song-importer-chord-selector-panel song-importer-chord-selector-panel-piano">
+                <canvas id={IMPORT_CHORD_SELECTOR_IDS.pianoChordBox}></canvas>
+              </td>
+              <td className="song-importer-chord-selector-panel song-importer-chord-selector-panel-guitar">
+                <canvas id={IMPORT_CHORD_SELECTOR_IDS.guitarChordBox}></canvas>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -733,7 +1108,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     <div className="wizard-tab chordpro-editor-tab">
       <h2>{t("SongImportEditChordProTitle")}</h2>
       <div className="chordpro-editor-wrapper">
-        <ChordProEditorComponent ref={chordProEditorRef} song={editorSongRef.current!} onTextChange={handleChordProChange} initialEditMode={true} />
+        <ChordProEditorComponent ref={chordProEditorRef} song={editorSong} onTextChange={handleChordProChange} initialEditMode={true} />
       </div>
     </div>
   );
@@ -750,10 +1125,10 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         </div>
 
         <div className="wizard-tabs">
-          <button className={currentTab === 0 ? "active" : ""} onClick={() => setCurrentTab(0)} disabled={currentTab < 0}>
+          <button className={currentTab === 0 ? "active" : ""} onClick={() => setCurrentTab(0)}>
             {t("SongImportTabFileSelection")}
           </button>
-          <button className={currentTab === 1 ? "active" : ""} onClick={() => setCurrentTab(1)} disabled={currentTab < 1}>
+          <button className={currentTab === 1 ? "active" : ""} onClick={() => setCurrentTab(1)} disabled={isChordProDirectFlow || currentTab < 1}>
             {t("SongImportTabLineClassification")}
           </button>
           <button className={currentTab === 2 ? "active" : ""} onClick={() => setCurrentTab(2)} disabled={currentTab < 2}>
@@ -772,16 +1147,23 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         </div>
 
         <div className="wizard-footer">
-          <button onClick={handlePrevious} disabled={currentTab === 0} className="prev-button">
+          <button onClick={handlePrevious} disabled={currentTab <= minTabIndex} className="prev-button">
             {t("SongImportPrevious")}
           </button>
-          <button onClick={handleNext} className="next-button">
+          <button onClick={handleNext} className="next-button" disabled={currentTab === 2 && !chordModesResolved}>
             {currentTab === 3 ? t("SongImportSaveClose") : t("SongImportNext")}
           </button>
         </div>
 
         {messageBox && (
-          <MessageBox title={messageBox.title} message={messageBox.message} onConfirm={messageBox.onConfirm} onCancel={messageBox.onCancel} />
+          <MessageBox
+            title={messageBox.title}
+            message={messageBox.message}
+            onConfirm={messageBox.onConfirm}
+            onCancel={messageBox.onCancel}
+            confirmText={messageBox.confirmText}
+            showCancel={messageBox.showCancel}
+          />
         )}
 
         {contextMenu && (
