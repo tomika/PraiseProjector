@@ -134,6 +134,8 @@
   "ImportSuccess": "Adatbázis sikeresen importálva. Az alkalmazás újratöltődik.",
   "ExportFailed": "Nem sikerült az adatbázis exportálása.",
   "ImportInvalidData": "A kiválasztott fájl nem érvényes PraiseProjector adatbázis export állomány.",
+  "ImportUserMetadataMissing": "Az export fájl nem tartalmaz tulajdonos felhasználónevet. Importálás csak vendég módban engedélyezett.",
+  "ImportUserMismatch": "Az export a(z) \"{0}\" felhasználóhoz tartozik, és nem importálható a jelenlegi \"{1}\" felhasználóhoz.",
   "ImportFailed": "Nem sikerült az adatbázis importálása.",
   "StorageSaveErrorTitle": "Tárolási hiba",
   "StorageSaveErrorMessage": "Az adatok nem menthetők. Kérjük, exportálja az adatbázist most, hogy elkerülje az adatvesztést.",

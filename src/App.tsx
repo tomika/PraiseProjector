@@ -66,10 +66,10 @@ import { enqueue } from "./utils/asyncQueue";
 import { Database, FormatFoundReason } from "./classes/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "./services/DatabaseStorage";
-import { normalizeImportedDatabase, compressDatabaseToZip } from "./services/DatabaseImportNormalizer";
+import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
 import { formatLocalDateLabel } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
-import { decode } from "../common/io-utils";
+import { parseAndDecode } from "../common/io-utils";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -1705,10 +1705,18 @@ const AppContent: React.FC = () => {
         return;
       }
 
+      const username = Database.getCurrentUsername();
+      const exportEnvelope: DatabaseExportEnvelope = {
+        format: "ppdb-export-v2.1",
+        username,
+        exportedAt: new Date().toISOString(),
+        database: import.meta.env.DEV ? parseAndDecode(Database.importExportCodec, dbContent) : JSON.parse(dbContent),
+      };
+      const exportJson = JSON.stringify(exportEnvelope);
       const fileName = `ppdb_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.ppdb`;
+      const blob = compressDatabaseToZip(exportJson);
 
       if (window.electronAPI?.saveDatabaseFile) {
-        const blob = compressDatabaseToZip(dbContent);
         const data = await blob.arrayBuffer();
         const result = await window.electronAPI.saveDatabaseFile(data, fileName);
         if (result.success) {
@@ -1719,7 +1727,6 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      const blob = compressDatabaseToZip(dbContent);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1745,43 +1752,62 @@ const AppContent: React.FC = () => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      showConfirm(
-        t("ImportDatabaseTitle"),
-        t("AskImportDatabase"),
-        async () => {
-          setIsImporting(true);
-          try {
-            // Accept current JSON exports and legacy C# XML .ppdb files
-            // (plain text or ZIP-compressed).
-            const normalizedJson = await normalizeImportedDatabase(file);
+      try {
+        // Accept current JSON exports and legacy C# XML .ppdb files (plain text or ZIP-compressed).
+        // Load and verify the data before showing confirmation dialog
+        const envelope = await normalizeImportedDatabase(file);
 
-            try {
-              // Validate import shape before replacing stored database content.
-              decode(Database.importExportCodec, JSON.parse(normalizedJson));
-            } catch (validationError) {
-              setIsImporting(false);
-              console.error("App", "Import validation failed", validationError);
-              showMessage(t("Error"), t("ImportInvalidData"));
-              return;
-            }
+        if (!envelope) {
+          showMessage(t("Error"), t("ImportInvalidData"));
+          return;
+        }
 
-            // Import to IndexedDB storage
-            await databaseStorage.setRaw(normalizedJson, Database.getCurrentUsername());
+        const currentUsername = Database.getCurrentUsername();
+        const isGuestMode = !currentUsername;
+        const username = envelope?.username.trim() ?? "";
 
-            setIsImporting(false);
-            showMessage(t("ImportDatabaseTitle"), t("ImportSuccess"), () => {
-              // Reload the page to load the new database
-              window.location.reload();
-            });
-          } catch (error) {
-            setIsImporting(false);
-            console.error("App", "Failed to import database", error);
-            showMessage(t("Error"), t("ImportFailed"));
+        // Validate username matches (if not in guest mode)
+        if (!isGuestMode) {
+          if (!username) {
+            showMessage(t("ImportDatabaseTitle"), t("ImportUserMetadataMissing"));
+            return;
           }
-        },
-        undefined,
-        { confirmText: t("ClearAndReplace"), confirmDanger: true }
-      );
+          if (username !== currentUsername) {
+            showMessage(t("ImportDatabaseTitle"), t("ImportUserMismatch").replace("{0}", username).replace("{1}", currentUsername));
+            return;
+          }
+        }
+
+        // Data is valid - now show confirmation dialog
+        showConfirm(
+          t("ImportDatabaseTitle"),
+          t("AskImportDatabase"),
+          async () => {
+            setIsImporting(true);
+            try {
+              const normalizedDatabaseJson = JSON.stringify(envelope.database);
+
+              // Import to IndexedDB storage
+              await databaseStorage.setRaw(normalizedDatabaseJson, currentUsername);
+
+              setIsImporting(false);
+              showMessage(t("ImportDatabaseTitle"), t("ImportSuccess"), () => {
+                // Reload the page to load the new database
+                window.location.reload();
+              });
+            } catch (error) {
+              setIsImporting(false);
+              console.error("App", "Failed to import database", error);
+              showMessage(t("Error"), t("ImportFailed"));
+            }
+          },
+          undefined,
+          { confirmText: t("ClearAndReplace"), confirmDanger: true }
+        );
+      } catch (error) {
+        console.error("App", "Failed to load import file", error);
+        showMessage(t("Error"), t("ImportFailed"));
+      }
     };
     input.click();
   }, [showConfirm, showMessage, t]);

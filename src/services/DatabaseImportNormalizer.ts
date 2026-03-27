@@ -1,39 +1,9 @@
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import type { SongStoreRecord } from "../classes/Song";
-
-type CurrentPlaylistEntry = {
-  songId: string;
-  title: string;
-  transpose: number;
-  capo: number;
-  instructions: string;
-};
-
-type CurrentLeaderRecord = {
-  leaderId: string;
-  leaderName: string;
-  version: number;
-  preferences: Array<{
-    songId: string;
-    title?: string;
-    transpose?: number;
-    capo?: number;
-    instructions?: string;
-    type?: "Ignore" | "Preferred";
-  }>;
-  playlists: Array<{
-    label: string;
-    songs: CurrentPlaylistEntry[];
-    scheduled?: string;
-  }>;
-};
-
-type CurrentDbState = {
-  version: number;
-  songs: SongStoreRecord[];
-  leaders: CurrentLeaderRecord[];
-  songPreferences: Array<[string, unknown]>;
-};
+import * as t from "io-ts";
+import { decode } from "../../common/io-utils";
+import { Database } from "../classes/Database";
+import { LeadersResponse, PlayList, PlaylistEntry, SongPreferenceEntry } from "../../common/pp-types";
 
 const DB_VERSION_PREFIX = "# db_version:";
 const GROUP_ID_PREFIX = "# group_id:";
@@ -75,13 +45,13 @@ function mapLegacyMode(modeValue: string): "Ignore" | "Preferred" | undefined {
   }
 }
 
-function parseLegacyPlaylistLine(line: string): CurrentPlaylistEntry | null {
+function parseLegacyPlaylistLine(line: string): PlaylistEntry | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
   if (trimmed.startsWith("{")) {
     try {
-      const raw = JSON.parse(trimmed) as Partial<CurrentPlaylistEntry>;
+      const raw = JSON.parse(trimmed) as Partial<PlaylistEntry>;
       if (!raw.songId || typeof raw.songId !== "string") return null;
       return {
         songId: raw.songId,
@@ -107,11 +77,11 @@ function parseLegacyPlaylistLine(line: string): CurrentPlaylistEntry | null {
   };
 }
 
-function parseLegacyPlaylist(text: string): CurrentPlaylistEntry[] {
+function parseLegacyPlaylist(text: string): PlaylistEntry[] {
   return text
     .split(/\r?\n/)
     .map(parseLegacyPlaylistLine)
-    .filter((entry): entry is CurrentPlaylistEntry => !!entry);
+    .filter((entry): entry is PlaylistEntry => !!entry);
 }
 
 function parseSongTextAndHeaders(songText: string): { text: string; version: number; groupId: string } {
@@ -161,7 +131,7 @@ function parseHexOrDec(value: string): number | null {
   return null;
 }
 
-function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
+function parseLegacyXmlDatabase(xmlText: string): { database: t.TypeOf<typeof Database.importExportCodec>; username: string; exported: string } {
   const parser = getDOMParser();
   // Filter invalid XML 1.0 character references that would cause the parser to
   // fail; these may be present in older PP XML exports and are not meaningful.
@@ -213,7 +183,7 @@ function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
     });
   }
 
-  const leaders: CurrentLeaderRecord[] = [];
+  const leaders: LeadersResponse = [];
   const leaderNodes = root.getElementsByTagName("leader");
   for (let i = 0; i < leaderNodes.length; i += 1) {
     const leaderNode = leaderNodes.item(i);
@@ -224,7 +194,7 @@ function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
     if (!leaderId || !leaderName) continue;
 
     const version = parseNumber(leaderNode.getAttribute("version"), 0);
-    const preferences: CurrentLeaderRecord["preferences"] = [];
+    const preferences: SongPreferenceEntry[] = [];
     const prefNodes = leaderNode.getElementsByTagName("preference");
     for (let p = 0; p < prefNodes.length; p += 1) {
       const prefNode = prefNodes.item(p);
@@ -250,7 +220,7 @@ function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
       });
     }
 
-    const playlists: CurrentLeaderRecord["playlists"] = [];
+    const playlists: PlayList[] = [];
     const scheduleNodes = leaderNode.getElementsByTagName("schedule");
     for (let s = 0; s < scheduleNodes.length; s += 1) {
       const scheduleNode = scheduleNodes.item(s);
@@ -261,7 +231,7 @@ function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
       playlists.push({
         label: formatLegacyScheduleLabel(dateRaw) || "Imported",
         songs: songsInPlaylist,
-        ...(dateRaw ? { scheduled: dateRaw } : {}),
+        ...(dateRaw ? { scheduled: new Date(dateRaw) } : {}),
       });
     }
 
@@ -279,29 +249,71 @@ function parseLegacyXmlDatabase(xmlText: string): CurrentDbState {
   }
 
   return {
-    version: parseNumber(root.getAttribute("version"), 0),
-    songs,
-    leaders,
-    songPreferences: [],
+    database: {
+      version: parseNumber(root.getAttribute("version"), 0),
+      songs,
+      leaders,
+    },
+    username: root.getAttribute("username") || "",
+    exported: root.getAttribute("exported") || "",
   };
 }
+
+export const databaseExportEnvelopeCodec = t.type({
+  format: t.union([t.literal("ppdb-export-v1"), t.literal("ppdb-export-v2"), t.literal("ppdb-export-v2.1")]),
+  username: t.string,
+  exportedAt: t.string,
+  database: Database.importExportCodec,
+});
+
+export type DatabaseExportEnvelope = t.TypeOf<typeof databaseExportEnvelopeCodec>;
 
 export function compressDatabaseToZip(jsonContent: string): Blob {
   const compressed = zipSync({ "database.json": strToU8(jsonContent) });
   return new Blob([compressed.buffer as ArrayBuffer], { type: "application/zip" });
 }
 
-export async function normalizeImportedDatabase(input: File): Promise<string> {
+export async function normalizeImportedDatabase(input: File): Promise<DatabaseExportEnvelope | null> {
   const buffer = await input.arrayBuffer();
   const text = prepareImportBuffer(buffer);
 
+  let parsed: unknown;
+  let envelope: DatabaseExportEnvelope | null = null;
+
   try {
-    const parsed = JSON.parse(text);
-    return JSON.stringify(parsed);
-  } catch {
-    const converted = parseLegacyXmlDatabase(text);
-    return JSON.stringify(converted);
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch (error) {
+      console.error("App", "Failed to parse JSON, attempting XML fallback", error);
+      const fromXML = parseLegacyXmlDatabase(text);
+      envelope = {
+        format: "ppdb-export-v1",
+        username: fromXML.username,
+        exportedAt: fromXML.exported,
+        database: fromXML.database,
+      };
+    }
+
+    if (!envelope) {
+      try {
+        // For JSON imports, the envelope is expected to be part of the imported data.
+        envelope = decode(databaseExportEnvelopeCodec, parsed);
+      } catch {
+        // If parsing as an envelope fails, treat the entire JSON as the database payload for legacy support.
+        envelope = {
+          format: "ppdb-export-v2",
+          username: "",
+          exportedAt: "",
+          database: decode(Database.importExportCodec, parsed),
+        };
+      }
+    }
+  } catch (error) {
+    console.error("App", "Failed to parse database export", error);
+    return null;
   }
+
+  return envelope;
 }
 
 /**

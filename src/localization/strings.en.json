@@ -134,6 +134,8 @@
   "ImportSuccess": "Database imported successfully. The application will reload.",
   "ExportFailed": "Failed to export database.",
   "ImportInvalidData": "The selected file is not a valid PraiseProjector database export file.",
+  "ImportUserMetadataMissing": "This export file does not include an owner username. Import is only allowed in guest mode.",
+  "ImportUserMismatch": "This export belongs to user \"{0}\" and cannot be imported for current user \"{1}\".",
   "ImportFailed": "Failed to import database.",
   "StorageSaveErrorTitle": "Storage Error",
   "StorageSaveErrorMessage": "Your data could not be saved. Please export your database now to avoid data loss.",

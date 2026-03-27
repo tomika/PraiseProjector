@@ -112,7 +112,7 @@ export type ProfileData = t.TypeOf<typeof profileDataCodec>;
 export type LeaderProfile = t.TypeOf<typeof leaderProfileCodec>;
 export type LeaderDBProfile = LeaderProfile & { version: number };
 
-export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>[];
+export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Display
