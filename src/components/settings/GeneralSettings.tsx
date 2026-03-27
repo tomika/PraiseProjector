@@ -60,6 +60,23 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
             </label>
           </div>
           <div className="form-group">
+            <label htmlFor="fontSizeMode">{t("SettingsUIFontSizeMode")}</label>
+            <select
+              id="fontSizeMode"
+              className="form-control"
+              value={settings.fontSizeMode}
+              onChange={(e) => {
+                const mode = e.target.value as Settings["fontSizeMode"];
+                updateSetting("fontSizeMode", mode);
+              }}
+            >
+              <option value="manual">{t("SettingsUIFontSizeModeManual")}</option>
+              <option value="auto-resolution">{t("SettingsUIFontSizeModeAutoResolution")}</option>
+              <option value="auto-resolution-dpi">{t("SettingsUIFontSizeModeAutoResolutionDpi")}</option>
+            </select>
+            <small className="form-text text-muted">{t("SettingsUIFontSizeModeDescription")}</small>
+          </div>
+          <div className={`form-group ${isManualFontSize ? "" : "disabled"}`}>
             <label htmlFor="baseFontSize">{t("SettingsUIFontSize")}</label>
             <select
               id="baseFontSize"
@@ -77,23 +94,6 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               <option value="22">{t("SettingsFontSizeXXLarge")}</option>
             </select>
             <small className="form-text text-muted">{t("SettingsUIFontSizeDescription")}</small>
-          </div>
-          <div className="form-group">
-            <label htmlFor="fontSizeMode">{t("SettingsUIFontSizeMode")}</label>
-            <select
-              id="fontSizeMode"
-              className="form-control"
-              value={settings.fontSizeMode}
-              onChange={(e) => {
-                const mode = e.target.value as Settings["fontSizeMode"];
-                updateSetting("fontSizeMode", mode);
-              }}
-            >
-              <option value="manual">{t("SettingsUIFontSizeModeManual")}</option>
-              <option value="auto-resolution">{t("SettingsUIFontSizeModeAutoResolution")}</option>
-              <option value="auto-resolution-dpi">{t("SettingsUIFontSizeModeAutoResolutionDpi")}</option>
-            </select>
-            <small className="form-text text-muted">{t("SettingsUIFontSizeModeDescription")}</small>
           </div>
           <div className="form-group">
             <label htmlFor="defaultChordSystem">{t("SettingsChordSystem")}</label>
