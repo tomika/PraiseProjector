@@ -305,7 +305,9 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
               )}
             </div>
             <div className="form-group">
-              <label htmlFor="serverPath" className={settings.iWebEnabled ? "" : "text-muted"}>{t("RootPath")}</label>
+              <label htmlFor="serverPath" className={settings.iWebEnabled ? "" : "text-muted"}>
+                {t("RootPath")}
+              </label>
               <div className="input-group">
                 <input
                   type="text"
@@ -322,7 +324,9 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
               </div>
             </div>
             <div className="form-group">
-              <label htmlFor="serverDomain" className={settings.iWebEnabled ? "" : "text-muted"}>{t("Domain")}</label>
+              <label htmlFor="serverDomain" className={settings.iWebEnabled ? "" : "text-muted"}>
+                {t("Domain")}
+              </label>
               <div className="d-flex gap-2 align-items-stretch" ref={domainContainerRef}>
                 <div className="flex-grow-1 position-relative">
                   <div className="input-group">
@@ -392,7 +396,9 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
               </div>
             </div>
             <div className="form-group">
-              <label htmlFor="maxResponseTime" className={settings.iWebEnabled ? "" : "text-muted"}>{t("MaxResponseTime")}</label>
+              <label htmlFor="maxResponseTime" className={settings.iWebEnabled ? "" : "text-muted"}>
+                {t("MaxResponseTime")}
+              </label>
               <input
                 type="number"
                 className="form-control"
@@ -433,7 +439,9 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
         <hr />
 
         <div className="form-group">
-          <label htmlFor="netDisplayJpegQuality" className={settings.iWebEnabled ? "" : "text-muted"}>{t("NetDisplayJpegQuality")}</label>
+          <label htmlFor="netDisplayJpegQuality" className={settings.iWebEnabled ? "" : "text-muted"}>
+            {t("NetDisplayJpegQuality")}
+          </label>
           <div className="d-flex align-items-center gap-2">
             <input
               type="range"
@@ -450,7 +458,9 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
           <small className="form-text text-muted">{t("NetDisplayJpegQualityHelp")}</small>
         </div>
         <div className="form-group">
-          <label htmlFor="netDisplayImageScale" className={settings.iWebEnabled ? "" : "text-muted"}>{t("NetDisplayImageScale")}</label>
+          <label htmlFor="netDisplayImageScale" className={settings.iWebEnabled ? "" : "text-muted"}>
+            {t("NetDisplayImageScale")}
+          </label>
           <div className="d-flex align-items-center gap-2">
             <input
               type="range"
