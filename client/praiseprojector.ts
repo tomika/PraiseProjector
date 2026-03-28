@@ -308,7 +308,7 @@ function hasTouchScreen() {
 }
 
 export class App extends AppBase {
-  private capoVal = 0;
+  private capoVal = -1;
   private preferredCapo = 0;
   private offlineTimeout: number | null = null;
   private highLightClickDownTime: number | null = null;
@@ -2053,7 +2053,7 @@ export class App extends AppBase {
 
   private resetCapo(val: number = 0) {
     this.capoVal = val;
-    if (this.selCapo) this.selCapo.selectedIndex = this.capoVal;
+    if (this.selCapo) this.selCapo.selectedIndex = this.capoVal + 1;
     this.updateCapoLabel();
   }
 
@@ -2387,7 +2387,7 @@ export class App extends AppBase {
     if (!this.selCapo) return;
     if (this.capoVal !== this.selCapo.selectedIndex) {
       if (this.editor) this.editor.transpose(this.capoVal - this.selCapo.selectedIndex);
-      this.capoVal = this.selCapo.selectedIndex;
+      this.capoVal = this.selCapo.selectedIndex - 1;
       if (this.chkAdmin?.checked) {
         if (this.chkUseCapo) this.chkUseCapo.checked = true;
         if (this.capoVal >= 0) this.capoRequest(this.capoVal);
@@ -3779,7 +3779,7 @@ export class App extends AppBase {
     }
 
     if (settings.capo !== undefined && this.selCapo && settings.capo !== this.selCapo.selectedIndex) {
-      this.selCapo.selectedIndex = settings.capo;
+      this.selCapo.selectedIndex = settings.capo + 1;
       this.capoChanged();
     }
     if (settings.transpose !== undefined && settings.transpose !== this.currentDisplay.transpose) {
