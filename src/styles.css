@@ -107,6 +107,10 @@
   width: 100%;
 }
 
+.user-login-input-clickable {
+  cursor: pointer;
+}
+
 .user-leader-select-wrapper {
   margin-right: 0.5rem;
 }

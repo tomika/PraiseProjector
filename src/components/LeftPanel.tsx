@@ -37,6 +37,7 @@ interface LeftPanelProps {
   remotePlaylist?: Playlist | null; // Remote playlist when watching another session
   onOpenLeaderSettings?: (leaderId: string | null) => void;
   onSyncClick?: () => void;
+  onRemoteChangeCountChange?: (count: number) => void;
   onSettingsClick?: () => void;
   onExportDatabase?: () => void;
   onImportDatabase?: () => void;
@@ -72,6 +73,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       remotePlaylist,
       onOpenLeaderSettings,
       onSyncClick,
+      onRemoteChangeCountChange,
       onSettingsClick,
       onExportDatabase,
       onImportDatabase,
@@ -219,6 +221,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         <UserPanel
           onOpenLeaderSettings={onOpenLeaderSettings}
           onSyncClick={onSyncClick}
+          onRemoteChangeCountChange={onRemoteChangeCountChange}
           onSettingsClick={onSettingsClick}
           onExportDatabase={onExportDatabase}
           onImportDatabase={onImportDatabase}

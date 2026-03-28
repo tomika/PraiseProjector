@@ -16,6 +16,7 @@ const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
 interface UserPanelProps {
   onOpenLeaderSettings?: (leaderId: string | null) => void;
   onSyncClick?: () => void;
+  onRemoteChangeCountChange?: (count: number) => void;
   onExportDatabase?: () => void;
   onImportDatabase?: () => void;
   onReplaceDatabase?: () => void;
@@ -26,6 +27,7 @@ interface UserPanelProps {
 const UserPanel: React.FC<UserPanelProps> = ({
   onOpenLeaderSettings,
   onSyncClick,
+  onRemoteChangeCountChange,
   onExportDatabase,
   onImportDatabase,
   onReplaceDatabase,
@@ -298,6 +300,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const remoteChangeCount = isAuthenticated && cloudDbVersion !== null ? cloudDbVersion - localDbVersion : 0;
   const showCloudAuthFailed = cloudAuthFailed || (!isGuest && authStatus === "offline");
 
+  useEffect(() => {
+    onRemoteChangeCountChange?.(remoteChangeCount);
+  }, [onRemoteChangeCountChange, remoteChangeCount]);
+
   return (
     <div>
       <div className="form-group d-flex align-items-center mb-1">
@@ -308,11 +314,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
           <input
             type="text"
             readOnly
-            className="form-control user-login-input"
+            className="form-control user-login-input user-login-input-clickable"
             value={userDisplayName ?? ""}
             aria-label="User Name"
             onClick={handleUserButtonClick}
-            style={{ cursor: "pointer" }}
           />
         </div>
         {showSyncControls && (

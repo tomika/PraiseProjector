@@ -271,6 +271,7 @@ const AppContent: React.FC = () => {
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [importWizardInitialFiles, setImportWizardInitialFiles] = useState<File[] | null>(null);
   const [showDBSync, setShowDBSync] = useState(false);
+  const [remoteChangeCount, setRemoteChangeCount] = useState(0);
   // CompareDialog state for similarity check when saving new songs
   const [compareDialogState, setCompareDialogState] = useState<{
     song: Song;
@@ -1089,6 +1090,10 @@ const AppContent: React.FC = () => {
 
   // Called before entering edit mode - check if sync is needed (matching C# Editor_EnterEditMode)
   const handleBeforeEnterEditMode = useCallback(async (): Promise<boolean> => {
+    if (remoteChangeCount <= 0) {
+      return true;
+    }
+
     // Check if more than 1 hour has passed since last sync (matching C# TimeSpan(1, 0, 0))
     if (isAuthenticated && settings?.lastSyncDate) {
       const lastSync = new Date(settings.lastSyncDate);
@@ -1122,7 +1127,7 @@ const AppContent: React.FC = () => {
       }
     }
     return true;
-  }, [isAuthenticated, settings?.lastSyncDate, settings?.syncDeclineTimeoutMinutes, showConfirm, t]);
+  }, [isAuthenticated, remoteChangeCount, settings?.lastSyncDate, settings?.syncDeclineTimeoutMinutes, showConfirm, t]);
 
   // Called after leaving edit mode with changed text - prompt to save (matching C# Editor_LeaveEditMode)
   const handleAfterLeaveEditMode = useCallback(
@@ -1938,6 +1943,7 @@ const AppContent: React.FC = () => {
                     onSongSelected={handleSongSelected}
                     onOpenLeaderSettings={openLeaderSettings}
                     onSyncClick={handleSyncClick}
+                    onRemoteChangeCountChange={setRemoteChangeCount}
                     onSettingsClick={openSettings}
                     onExportDatabase={handleExportDatabase}
                     onImportDatabase={handleImportDatabase}
@@ -2035,6 +2041,7 @@ const AppContent: React.FC = () => {
                       onSongSelected={handleSongSelected}
                       onOpenLeaderSettings={openLeaderSettings}
                       onSyncClick={handleSyncClick}
+                      onRemoteChangeCountChange={setRemoteChangeCount}
                       onExportDatabase={handleExportDatabase}
                       onImportDatabase={handleImportDatabase}
                       onReplaceDatabase={handleReplaceDatabase}
