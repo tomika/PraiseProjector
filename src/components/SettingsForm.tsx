@@ -44,13 +44,13 @@ function normalizeSettingsTab(tab: string | undefined): string {
 }
 
 const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initialLeaderId, onOpenLogs }) => {
-  const { settings, initialSettings, updateSetting, saveSettings, revertSettings } = useSettings();
+  const { settings, initialSettings, updateSetting, saveSettings, revertSettings, resetSettingsToDefaults } = useSettings();
   const { leaders, setLeaders, saveLeaders, revertLeaders } = useDatabase();
   const { tt } = useTooltips();
   const { t } = useLocalization();
   const { isGuest } = useAuth();
   const { hasUpdate } = useUpdate();
-  const { showMessage } = useMessageBox();
+  const { showMessage, showConfirmAsync } = useMessageBox();
   const [activeTab, setActiveTab] = useState(() => normalizeSettingsTab(initialTab));
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(initialLeaderId ?? null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -198,6 +198,15 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
     revertSettings();
     revertLeaders();
     onClose();
+  };
+
+  const handleResetToDefaults = async () => {
+    const confirmed = await showConfirmAsync(t("ResetSettingsConfirmTitle"), t("ResetSettingsConfirm"), {
+      confirmText: t("ResetToDefaults"),
+      confirmDanger: true,
+    });
+    if (!confirmed) return;
+    resetSettingsToDefaults();
   };
 
   const handleAddLeader = (name: string) => {
@@ -352,6 +361,10 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
               {t("Logs")}
             </button>
           )}
+          <button type="button" className="btn btn-outline-danger settings-reset-button" onClick={handleResetToDefaults} title={t("ResetToDefaults")}>
+            <i className="fa fa-undo me-1"></i>
+            {t("ResetToDefaults")}
+          </button>
           <div className="settings-footer-spacer"></div>
           <button type="button" className="btn btn-secondary" title={tt("settings_cancel")} onClick={handleCancel}>
             {t("Cancel")}

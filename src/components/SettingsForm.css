@@ -204,6 +204,12 @@
   gap: 0.5rem;
 }
 
+.settings-modal-footer .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .settings-log-button {
   margin-right: auto;
 }

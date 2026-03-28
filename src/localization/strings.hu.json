@@ -638,6 +638,9 @@
   "OverwriteScheduleConfirm": "Ütemterv felülírása",
   "KeepLocalVersions": "Helyi verziók megtartása",
   "DiscardAndRestore": "Elvetés és visszaállítás",
+  "ResetToDefaults": "Alapértelmezett beállítások",
+  "ResetSettingsConfirmTitle": "Beállítások visszaállítása",
+  "ResetSettingsConfirm": "Biztosan vissza szeretné állítani az összes beállítást az alapértelmezett értékekre?",
   "UpdatePlaylistConfirm": "Lejátszási lista frissítése",
   "LoadPlaylistConfirm": "Lejátszási lista betöltése",
 

@@ -637,6 +637,9 @@
   "OverwriteScheduleConfirm": "Overwrite Schedule",
   "KeepLocalVersions": "Keep Local Versions",
   "DiscardAndRestore": "Discard & Restore",
+  "ResetToDefaults": "Reset to Defaults",
+  "ResetSettingsConfirmTitle": "Reset Settings",
+  "ResetSettingsConfirm": "Are you sure you want to reset all settings to their default values?",
   "UpdatePlaylistConfirm": "Update Playlist",
   "LoadPlaylistConfirm": "Load Playlist",
 

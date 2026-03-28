@@ -32,6 +32,7 @@ interface SettingsContextType {
   initialSettings: Settings | null;
   updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   updateSettingWithAutoSave: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  resetSettingsToDefaults: () => void;
   saveSettings: () => Promise<void>;
   revertSettings: () => Promise<void>;
   syncToBackend: () => void;
@@ -43,8 +44,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [settings, setSettings] = useState<Settings | null>(null);
   const [initialSettings, setInitialSettings] = useState<Settings | null>(null);
 
-  useEffect(() => {
-    const defaultSettings: Settings = {
+  const createDefaultSettings = useCallback((): Settings => {
+    return {
       displayBorderRect: { left: 0, top: 0, width: 0, height: 0 },
       // Display/Preview settings (matching C# Settings.settings defaults)
       displayFontName: "Time New Roman",
@@ -145,6 +146,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       showTextInPreview: true,
       showImageInPreview: true,
     };
+  }, []);
+
+  useEffect(() => {
+    const defaultSettings = createDefaultSettings();
 
     storeApi
       .loadSettings()
@@ -160,7 +165,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setSettings(defaultSettings);
         setInitialSettings(defaultSettings);
       });
-  }, []);
+  }, [createDefaultSettings]);
 
   // Listen for theme and language changes from other contexts and update our settings
   useEffect(() => {
@@ -207,6 +212,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const resetSettingsToDefaults = useCallback(() => {
+    setSettings(createDefaultSettings());
+  }, [createDefaultSettings]);
+
   // Sync current settings to backend via IPC
   const syncToBackend = () => {
     if (settings && window.electronAPI?.syncSettings) {
@@ -246,7 +255,16 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   return (
     <SettingsContext.Provider
-      value={{ settings, initialSettings, updateSetting, updateSettingWithAutoSave, saveSettings, revertSettings, syncToBackend }}
+      value={{
+        settings,
+        initialSettings,
+        updateSetting,
+        updateSettingWithAutoSave,
+        resetSettingsToDefaults,
+        saveSettings,
+        revertSettings,
+        syncToBackend,
+      }}
     >
       {children}
     </SettingsContext.Provider>
