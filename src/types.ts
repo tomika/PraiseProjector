@@ -35,7 +35,7 @@ export interface Settings {
   showTooltips: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
-  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";
   // Search settings
   useTextSimilarities: boolean;
 

@@ -19,7 +19,7 @@ export interface RenderSettings {
   textShadowOpacity: number;
   renderWidth: number;
   renderHeight: number;
-  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";
   // Render margins (percentage)
   marginLeft: number;
   marginRight: number;
@@ -151,15 +151,37 @@ export class SectionRenderer {
         case "stretch":
           this.ctx.drawImage(bgImage, 0, 0, this.canvas.width, this.canvas.height);
           break;
+        case "stretchMargins": {
+          const renderRect = this.calculateRenderRect(settings);
+          if (renderRect.width > 0 && renderRect.height > 0) {
+            this.ctx.drawImage(bgImage, renderRect.x, renderRect.y, renderRect.width, renderRect.height);
+          }
+          break;
+        }
         case "touchOuter": {
           const crop = this.calculateCoverSourceRect(bgImage.width, bgImage.height, this.canvas.width, this.canvas.height);
           this.ctx.drawImage(bgImage, crop.x, crop.y, crop.width, crop.height, 0, 0, this.canvas.width, this.canvas.height);
           break;
         }
+        case "touchOuterMargins": {
+          const renderRect = this.calculateRenderRect(settings);
+          if (renderRect.width > 0 && renderRect.height > 0) {
+            const crop = this.calculateCoverSourceRect(bgImage.width, bgImage.height, renderRect.width, renderRect.height);
+            this.ctx.drawImage(bgImage, crop.x, crop.y, crop.width, crop.height, renderRect.x, renderRect.y, renderRect.width, renderRect.height);
+          }
+          break;
+        }
         case "touchInner":
+        case "touchInnerMargins":
         default: {
-          const letterbox = this.calculateLetterboxRect(bgImage.width, bgImage.height, this.canvas.width, this.canvas.height);
-          this.ctx.drawImage(bgImage, letterbox.x, letterbox.y, letterbox.width, letterbox.height);
+          const renderRect =
+            settings.backgroundImageFit === "touchInnerMargins"
+              ? this.calculateRenderRect(settings)
+              : { x: 0, y: 0, width: this.canvas.width, height: this.canvas.height };
+          if (renderRect.width > 0 && renderRect.height > 0) {
+            const letterbox = this.calculateLetterboxRect(bgImage.width, bgImage.height, renderRect.width, renderRect.height);
+            this.ctx.drawImage(bgImage, renderRect.x + letterbox.x, renderRect.y + letterbox.y, letterbox.width, letterbox.height);
+          }
           break;
         }
       }

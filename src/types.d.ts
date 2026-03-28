@@ -28,7 +28,7 @@ export interface Settings {
   keepAwake: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
-  backgroundImageFit: "touchInner" | "touchOuter" | "stretch";
+  backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";
   useTextSimilarities: boolean;
   searchMaxResults: number;
   traditionalSearchCaseSensitive: boolean;
