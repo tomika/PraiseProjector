@@ -79,6 +79,8 @@ interface WindowWithScreenDetails extends Window {
   getScreenDetails?: () => Promise<ScreenDetailsResult>;
 }
 
+const remoteIndicatorOverlaySrc = `${import.meta.env.BASE_URL}assets/smartphone-tablet.png`;
+
 const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
   (
     {
@@ -1814,9 +1816,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             <div className="d-flex flex-grow-1 min-height-0 h-100">
               <div className={`flex-grow-1 preview-sections-container ${remoteHighlightController ? "remote-controlled" : ""}`}>
                 {/* Remote control indicator overlay - matching C# SectionListBox.Remote */}
-                {remoteHighlightController && (
-                  <img src="/assets/smartphone-tablet.png" alt="" className="remote-indicator-overlay" aria-hidden="true" />
-                )}
+                {remoteHighlightController && <img src={remoteIndicatorOverlaySrc} alt="" className="remote-indicator-overlay" aria-hidden="true" />}
                 <div ref={sectionListRef} className="list-group preview-sections-list" tabIndex={0} onKeyDown={handleSectionListKeyDown}>
                   {sections.length === 0 ? (
                     <div className="text-muted text-center p-3">{t("NoSongSelected")}</div>
