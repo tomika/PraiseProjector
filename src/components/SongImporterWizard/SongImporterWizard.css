@@ -442,8 +442,8 @@
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2000;
-  width: 800px;
-  height: 286px;
+  width: fit-content;
+  height: auto;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
   box-sizing: border-box;
@@ -461,7 +461,7 @@
 }
 
 .song-importer-chord-selector-table {
-  width: 100%;
+  width: auto;
   border-collapse: collapse;
 }
 
