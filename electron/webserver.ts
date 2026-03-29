@@ -602,10 +602,8 @@ export class WebServer {
     this.app.get("/image", (req, res) => {
       this.setCommonHeaders(res);
 
-      const imgid = (req.query.id as string) || "";
-
       // No id param (browser image load via ?c=...): serve actual image data
-      if (!imgid && req.query.c) {
+      if (req.query.c) {
         if (this.currentImageData) {
           res.type("image/jpeg").send(this.currentImageData);
         } else {
@@ -614,8 +612,10 @@ export class WebServer {
         return;
       }
 
+      const imgid = (req.query.id as string) || "";
+
       // If client's id doesn't match current: respond immediately with new id
-      if (!this.currentImageId || imgid !== this.currentImageId) {
+      if (imgid !== this.currentImageId) {
         res.json(this.currentImageId);
         return;
       }

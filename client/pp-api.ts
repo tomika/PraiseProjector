@@ -216,9 +216,7 @@ export function imageApp(url: string) {
   const requestImage = () => {
     app.requestImage(
       (id) => {
-        if (id && id !== "NULL") {
-          document.body.style.backgroundImage = "url(" + url + "image?c=" + encodeURIComponent(id) + ")";
-        }
+        document.body.style.backgroundImage = id && id !== "NULL" ? "url(" + url + "image?c=" + encodeURIComponent(id) + ")" : "";
         setTimeout(requestImage, 100);
         init();
       },
