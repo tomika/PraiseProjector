@@ -4,6 +4,7 @@ import { SongPreference } from "../classes/SongPreference";
 import { Playlist } from "../classes/Playlist";
 import { PlaylistEntry } from "../classes/PlaylistEntry";
 import { Database } from "../classes/Database";
+import { Icon, IconType } from "../services/IconService";
 import { useLocalization } from "../localization/LocalizationContext";
 import "./LeaderDataMergeDialog.css";
 
@@ -332,7 +333,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
         <span className="pref-transpose">{pref.formatTranspose() || "—"}</span>
         <span className="pref-capo">{pref.formatCapo() || "—"}</span>
         <span className="pref-mode">{pref.type || "—"}</span>
-        <span className="pref-instr">{pref.instructions ? "☑" : "—"}</span>
+        <span className="pref-instr">{pref.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}</span>
       </div>
     );
   };
@@ -341,7 +342,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   const renderPlaylistEntrySettings = (entry: PlaylistEntry): React.ReactNode => {
     const transposeStr = entry.transpose !== 0 ? (entry.transpose > 0 ? `+${entry.transpose}` : `${entry.transpose}`) : "—";
     const capoStr = entry.capo >= 0 ? `${entry.capo}` : "—";
-    const instrStr = entry.instructions ? "☑" : "—";
+    const instrStr = entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—";
 
     return (
       <div className="playlist-entry-settings">
@@ -488,7 +489,9 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                         </td>
                         <td className={`col-entry-transpose ${fieldDiff.transpose}`}>{formatTranspose(entry.transpose)}</td>
                         <td className={`col-entry-capo ${fieldDiff.capo}`}>{formatCapo(entry.capo)}</td>
-                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>{entry.instructions ? "☑" : "—"}</td>
+                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>
+                          {entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -529,7 +532,9 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                         </td>
                         <td className={`col-entry-transpose ${fieldDiff.transpose}`}>{formatTranspose(entry.transpose)}</td>
                         <td className={`col-entry-capo ${fieldDiff.capo}`}>{formatCapo(entry.capo)}</td>
-                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>{entry.instructions ? "☑" : "—"}</td>
+                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>
+                          {entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -672,7 +677,9 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                         </td>
                         <td className={`col-entry-transpose ${fieldDiff.transpose}`}>{formatTranspose(entry.transpose)}</td>
                         <td className={`col-entry-capo ${fieldDiff.capo}`}>{formatCapo(entry.capo)}</td>
-                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>{entry.instructions ? "☑" : "—"}</td>
+                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>
+                          {entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -707,7 +714,9 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                         </td>
                         <td className={`col-entry-transpose ${fieldDiff.transpose}`}>{formatTranspose(entry.transpose)}</td>
                         <td className={`col-entry-capo ${fieldDiff.capo}`}>{formatCapo(entry.capo)}</td>
-                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>{entry.instructions ? "☑" : "—"}</td>
+                        <td className={`col-entry-instr ${fieldDiff.instructions}`}>
+                          {entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}
+                        </td>
                       </tr>
                     );
                   })}

@@ -72,6 +72,10 @@ export enum IconType {
   SEARCH_FUZZY = "search_fuzzy",
   SEARCH_CASE = "search_case",
   SEARCH_WHOLE_WORD = "search_whole_word",
+
+  // Monochrome indicators
+  CHECKBOX_CHECKED = "checkbox_checked",
+  CHECKBOX_EMPTY = "checkbox_empty",
 }
 
 interface IconConfig {
@@ -428,6 +432,18 @@ const iconMap: Record<IconType, IconConfig> = {
     faContentAlways: true,
     imagePath: "assets/text.png",
     alt: "Whole Words",
+  },
+  [IconType.CHECKBOX_CHECKED]: {
+    faIcon: "fa fa-check-square-o",
+    faContentAlways: true,
+    imagePath: "assets/text.png",
+    alt: "Checked",
+  },
+  [IconType.CHECKBOX_EMPTY]: {
+    faIcon: "fa fa-square-o",
+    faContentAlways: true,
+    imagePath: "assets/text.png",
+    alt: "Unchecked",
   },
 };
 

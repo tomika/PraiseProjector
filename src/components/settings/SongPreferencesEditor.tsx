@@ -703,7 +703,7 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
                           }
                         }}
                       >
-                        {row.preference.instructions ? "☑" : ""}
+                        {row.preference.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : ""}
                       </td>
                       <td
                         className={isMergeMode ? "pref-mode-cell-readonly" : "pref-mode-cell"}

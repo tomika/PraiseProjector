@@ -2140,7 +2140,11 @@ const PlaylistItemRow: React.FC<{
               onInstructionsClick();
             }}
           >
-            {(hasInstructions || isInstructionsHovered) && <span className="instructions-icon">{hasInstructions ? "☑" : "☐"}</span>}
+            {(hasInstructions || isInstructionsHovered) && (
+              <span className="instructions-icon">
+                <Icon type={hasInstructions ? IconType.CHECKBOX_CHECKED : IconType.CHECKBOX_EMPTY} />
+              </span>
+            )}
           </td>
           {}
         </>
