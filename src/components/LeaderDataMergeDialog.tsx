@@ -54,8 +54,13 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   const { t } = useLocalization();
   const effectiveLocalLabel = localLabel || t("LeaderMergeLocal");
   const effectiveRemoteLabel = remoteLabel || t("LeaderMergeRemote");
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [preferenceConflicts, setPreferenceConflicts] = useState<PreferenceConflict[]>([]);
   const [scheduleConflicts, setScheduleConflicts] = useState<ScheduleConflict[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Track single expanded schedule conflict (by date timestamp, null = none expanded)
   const [expandedSchedule, setExpandedSchedule] = useState<number | null>(null);
@@ -63,6 +68,79 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   // Track hover popup for schedule conflicts
   const [hoverPopup, setHoverPopup] = useState<HoverPopupState | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  useEffect(() => {
+    if (!dialogRef.current || isMobile || isMaximized) return;
+
+    const centerDialog = () => {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      const dialogWidth = dialog.offsetWidth;
+      const dialogHeight = dialog.offsetHeight;
+
+      dialog.style.left = `${Math.max(0, (windowWidth - dialogWidth) / 2)}px`;
+      dialog.style.top = `${Math.max(0, (windowHeight - dialogHeight) / 2)}px`;
+    };
+
+    centerDialog();
+    window.addEventListener("resize", centerDialog);
+
+    return () => window.removeEventListener("resize", centerDialog);
+  }, [isMobile, isMaximized]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isMobile || isMaximized || !dialogRef.current) return;
+
+    const rect = dialogRef.current.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging || isMobile || isMaximized) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dialogRef.current) return;
+
+      const newLeft = e.clientX - dragOffset.x;
+      const newTop = e.clientY - dragOffset.y;
+
+      const maxLeft = window.innerWidth - dialogRef.current.offsetWidth;
+      const maxTop = window.innerHeight - dialogRef.current.offsetHeight;
+
+      dialogRef.current.style.left = `${Math.max(0, Math.min(maxLeft, newLeft))}px`;
+      dialogRef.current.style.top = `${Math.max(0, Math.min(maxTop, newTop))}px`;
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, dragOffset, isMobile, isMaximized]);
 
   const toggleScheduleExpanded = (dateTs: number) => {
     setExpandedSchedule((prev) => (prev === dateTs ? null : dateTs));
@@ -645,11 +723,24 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   return (
     <div className="modal-backdrop show leader-merge-dialog-backdrop">
       <div className="modal d-block">
-        <div className="modal-dialog modal-xl">
+        <div ref={dialogRef} className={`leader-merge-modal-dialog${isMaximized ? " maximized" : ""}`} onClick={(e) => e.stopPropagation()}>
           <div className="modal-content">
-            <div className="modal-header">
+            <div className="modal-header" onMouseDown={handleMouseDown}>
               <h5 className="modal-title">{t("LeaderMergeTitle")}</h5>
-              <button type="button" className="btn-close" onClick={onCancel} title={t("CloseDialog")} aria-label={t("Close")}></button>
+              <div className="settings-header-buttons">
+                {!isMobile && (
+                  <button
+                    type="button"
+                    className={`btn-header-maximize${isMaximized ? " active" : ""}`}
+                    onClick={() => setIsMaximized(!isMaximized)}
+                    aria-label={isMaximized ? "Restore" : "Maximize"}
+                    title={isMaximized ? "Restore" : "Maximize"}
+                  >
+                    <i className={`fa ${isMaximized ? "fa-window-restore" : "fa-window-maximize"}`}></i>
+                  </button>
+                )}
+                <button type="button" className="btn-close" onClick={onCancel} title={t("CloseDialog")} aria-label={t("Close")}></button>
+              </div>
             </div>
             <div className="modal-body leader-merge-body">
               {!readOnly && (
