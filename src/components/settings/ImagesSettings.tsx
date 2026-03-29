@@ -29,13 +29,13 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
   const [isLoading, setIsLoading] = useState(true);
   const [storageUsage, setStorageUsage] = useState(0);
   const [isImporting, setIsImporting] = useState(false);
-  const [useImportCompression, setUseImportCompression] = useState(true);
-  const [useImportResize, setUseImportResize] = useState(false);
-  const [importResolutionWidth, setImportResolutionWidth] = useState(1920);
-  const [importResolutionHeight, setImportResolutionHeight] = useState(1080);
-  const [importResolutionPreset, setImportResolutionPreset] = useState<ResolutionPreset>("1920x1080");
-  const [importFit, setImportFit] = useState<"touchInner" | "touchOuter" | "stretch">("touchInner");
-  const [importQuality, setImportQuality] = useState(85);
+  const useImportCompression = settings.importImageUseCompression ?? false;
+  const useImportResize = settings.importImageUseResize ?? false;
+  const importResolutionWidth = settings.importImageResolutionWidth ?? 1920;
+  const importResolutionHeight = settings.importImageResolutionHeight ?? 1080;
+  const importResolutionPreset = (settings.importImageResolutionPreset as ResolutionPreset) ?? "1920x1080";
+  const importFit = settings.importImageFit ?? "touchInner";
+  const importQuality = settings.importImageJpegQuality ?? 85;
   const [showQualityPreview, setShowQualityPreview] = useState(false);
   const [importProgress, setImportProgress] = useState<ImageImportProgress | null>(null);
   const beforePreviewCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -169,22 +169,22 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
   };
 
   const handlePresetChange = (preset: ResolutionPreset) => {
-    setImportResolutionPreset(preset);
+    updateSetting("importImageResolutionPreset", preset);
     const selected = RESOLUTION_PRESETS.find((item) => item.value === preset);
     if (selected?.width && selected?.height) {
-      setImportResolutionWidth(selected.width);
-      setImportResolutionHeight(selected.height);
+      updateSetting("importImageResolutionWidth", selected.width);
+      updateSetting("importImageResolutionHeight", selected.height);
     }
   };
 
   const handleWidthChange = (nextValue: number) => {
-    setImportResolutionPreset("custom");
-    setImportResolutionWidth(nextValue);
+    updateSetting("importImageResolutionPreset", "custom");
+    updateSetting("importImageResolutionWidth", nextValue);
   };
 
   const handleHeightChange = (nextValue: number) => {
-    setImportResolutionPreset("custom");
-    setImportResolutionHeight(nextValue);
+    updateSetting("importImageResolutionPreset", "custom");
+    updateSetting("importImageResolutionHeight", nextValue);
   };
 
   // Load images on mount
@@ -397,7 +397,7 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
               type="checkbox"
               id="useImportCompression"
               checked={useImportCompression}
-              onChange={(e) => setUseImportCompression(e.target.checked)}
+              onChange={(e) => updateSetting("importImageUseCompression", e.target.checked)}
             />
             <label className="form-check-label" htmlFor="useImportCompression">
               {t("ImportConvertToJpeg") || "Compress imported images as JPEG"}
@@ -421,7 +421,7 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
                 className="form-range"
                 value={importQuality}
                 onChange={(e) => {
-                  setImportQuality(parseInt(e.target.value || "1", 10));
+                  updateSetting("importImageJpegQuality", parseInt(e.target.value || "1", 10));
                   setShowQualityPreview(true);
                 }}
                 onPointerUp={() => setShowQualityPreview(false)}
@@ -468,7 +468,7 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
                   type="checkbox"
                   id="useImportResize"
                   checked={useImportResize}
-                  onChange={(e) => setUseImportResize(e.target.checked)}
+                  onChange={(e) => updateSetting("importImageUseResize", e.target.checked)}
                 />
                 <label className="form-check-label" htmlFor="useImportResize">
                   {t("ImportResizeImages") || "Resize images"}
@@ -531,7 +531,7 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
                       id="importFit"
                       className="form-select form-select-sm"
                       value={importFit}
-                      onChange={(e) => setImportFit(e.target.value as "touchInner" | "touchOuter" | "stretch")}
+                      onChange={(e) => updateSetting("importImageFit", e.target.value as "touchInner" | "touchOuter" | "stretch")}
                     >
                       <option value="touchInner">{t("BackgroundImageFitTouchInner") || "Touch Inner"}</option>
                       <option value="touchOuter">{t("BackgroundImageFitTouchOuter") || "Touch Outer"}</option>

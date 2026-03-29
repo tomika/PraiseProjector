@@ -78,6 +78,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       pictureFolder: "",
       selectedBackgroundImageId: null,
       backgroundImageFit: "touchInner",
+      importImageUseCompression: false,
+      importImageUseResize: false,
+      importImageResolutionWidth: 1920,
+      importImageResolutionHeight: 1080,
+      importImageResolutionPreset: "1920x1080",
+      importImageFit: "touchInner",
+      importImageJpegQuality: 85,
       baseFontSize: 16, // Base font size for UI scaling
       webServerPath: "/",
       webServerPort: 19740,

@@ -29,6 +29,13 @@ export interface Settings {
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
   backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";
+  importImageUseCompression: boolean;
+  importImageUseResize: boolean;
+  importImageResolutionWidth: number;
+  importImageResolutionHeight: number;
+  importImageResolutionPreset: string;
+  importImageFit: "touchInner" | "touchOuter" | "stretch";
+  importImageJpegQuality: number;
   useTextSimilarities: boolean;
   searchMaxResults: number;
   traditionalSearchCaseSensitive: boolean;
