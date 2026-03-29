@@ -893,7 +893,16 @@ function updateDisplayWindowImage(pngDataUrl: string | null): void {
 }
 
 // Internal Electron display window image update (lossless frame)
-ipcMain.on("set-display-window-image", (_event, imageDataUrl: string | null) => {
+ipcMain.on("set-display-window-image", (_event, imageDataUrl: string | null, options?: { jpegQuality?: number; imageScale?: number }) => {
+  if (options) {
+    if (typeof options.jpegQuality === "number") {
+      netDisplayEncodeSettings.jpegQuality = clamp(Math.round(options.jpegQuality), 1, 100);
+    }
+    if (typeof options.imageScale === "number") {
+      netDisplayEncodeSettings.imageScale = clamp(options.imageScale, 0.1, 1);
+    }
+  }
+
   lastNetDisplaySourceImageDataUrl = imageDataUrl;
 
   updateDisplayWindowImage(imageDataUrl);

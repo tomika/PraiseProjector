@@ -58,8 +58,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // Internal Electron display window update (lossless frame)
-  setDisplayWindowImage: (imageDataUrl: string | null) => {
-    ipcRenderer.send("set-display-window-image", imageDataUrl);
+  setDisplayWindowImage: (imageDataUrl: string | null, options?: { jpegQuality?: number; imageScale?: number }) => {
+    ipcRenderer.send("set-display-window-image", imageDataUrl, options);
   },
 
   // Get connected clients from webserver (for admin client selection)

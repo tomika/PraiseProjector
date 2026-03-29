@@ -860,6 +860,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     // Live QR position: prefer drag position, fall back to persisted settings
     const liveQrX = qrDragPos !== null ? qrDragPos.x : (settings?.qrCodeX ?? 85);
     const liveQrY = qrDragPos !== null ? qrDragPos.y : (settings?.qrCodeY ?? 82);
+    const netDisplayJpegQuality = Math.max(1, Math.min(100, settings?.netDisplayJpegQuality ?? 70));
+    const netDisplayImageScale = Math.max(0.1, Math.min(1, settings?.netDisplayImageScale ?? 1));
     // Clamp QR position when size changes so it stays within the image area
     useEffect(() => {
       if (!settings) return;
@@ -1371,8 +1373,11 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         projectorChannelRef.current.postMessage({ type: "UPDATE_DISPLAY", imageData: previewDataUrl });
       }
       // Send frame once; main process updates both display window and net display clients.
-      window.electronAPI?.setDisplayWindowImage?.(previewDataUrl);
-    }, [previewDataUrl, projectorWindowRef, projectorEnabled]);
+      window.electronAPI?.setDisplayWindowImage?.(previewDataUrl, {
+        jpegQuality: netDisplayJpegQuality,
+        imageScale: netDisplayImageScale,
+      });
+    }, [previewDataUrl, projectorWindowRef, projectorEnabled, netDisplayJpegQuality, netDisplayImageScale]);
 
     // Note: We intentionally do NOT close the projector window on unmount
     // because the PreviewPanel can be conditionally rendered (paging mode vs 3-panel mode)
