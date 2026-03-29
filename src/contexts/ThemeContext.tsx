@@ -119,6 +119,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.style.colorScheme = theme;
     // Also set on body for Bootstrap compatibility
     document.body.setAttribute("data-bs-theme", theme);
   }, [theme]);
