@@ -12,9 +12,112 @@
     <link rel="icon" type="image/png" href="/webapp/assets/projector-icon.png" />
     <link rel="apple-touch-icon" href="/webapp/assets/pp-192.png" />
     <title>PraiseProjector</title>
+    <script>
+      // Apply the stored theme before first paint to avoid light flash in dark mode.
+      (function () {
+        try {
+          var settingsRaw = localStorage.getItem("pp-settings");
+          var setting = "auto";
+          if (settingsRaw) {
+            var parsed = JSON.parse(settingsRaw);
+            if (parsed && (parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "auto")) {
+              setting = parsed.theme;
+            }
+          }
+
+          var systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = setting === "auto" ? (systemDark ? "dark" : "light") : setting;
+
+          document.documentElement.setAttribute("data-theme", resolved);
+          document.documentElement.style.colorScheme = resolved;
+        } catch {
+          // Fall back to CSS defaults if storage is unavailable.
+        }
+      })();
+    </script>
+    <style>
+      :root {
+        --pp-shell-bg: linear-gradient(180deg, #f3f7fb 0%, #e7f0f8 100%);
+        --pp-shell-text: #1f2a36;
+        --pp-shell-card-bg: rgba(255, 255, 255, 0.9);
+        --pp-shell-card-border: rgba(31, 42, 54, 0.12);
+        --pp-shell-card-shadow: rgba(31, 42, 54, 0.08);
+        --pp-shell-spinner-ring: #9db4c7;
+        --pp-shell-spinner-head: #2b6cb0;
+      }
+
+      :root[data-theme="dark"] {
+        --pp-shell-bg: linear-gradient(180deg, #0e141b 0%, #111b24 100%);
+        --pp-shell-text: #d8e2ee;
+        --pp-shell-card-bg: rgba(20, 32, 43, 0.9);
+        --pp-shell-card-border: rgba(216, 226, 238, 0.2);
+        --pp-shell-card-shadow: rgba(0, 0, 0, 0.45);
+        --pp-shell-spinner-ring: #49627a;
+        --pp-shell-spinner-head: #7eb6ff;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: var(--pp-shell-bg);
+        color: var(--pp-shell-text);
+      }
+
+      .pp-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+
+      .pp-shell-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        border-radius: 12px;
+        background: var(--pp-shell-card-bg);
+        border: 1px solid var(--pp-shell-card-border);
+        box-shadow: 0 8px 24px var(--pp-shell-card-shadow);
+      }
+
+      .pp-shell-spinner {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid var(--pp-shell-spinner-ring);
+        border-top-color: var(--pp-shell-spinner-head);
+        animation: pp-spin 0.8s linear infinite;
+      }
+
+      .pp-shell-title {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      @keyframes pp-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="pp-shell" aria-live="polite" aria-busy="true">
+        <div class="pp-shell-card">
+          <div class="pp-shell-spinner" aria-hidden="true"></div>
+          <div class="pp-shell-title">Loading PraiseProjector...</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Register service worker for PWA support (web mode only)

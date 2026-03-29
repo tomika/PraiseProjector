@@ -38,7 +38,6 @@ import { ToastProvider, useToast } from "./contexts/ToastContext";
 import { ResponsiveFontSizeManager } from "./components/ResponsiveFontSizeManager";
 import { UpdateNotification } from "./components/UpdateNotification";
 import "./styles.css";
-import "bootstrap/dist/css/bootstrap.min.css";
 import {
   useEditedSong,
   useProjectedSong,
