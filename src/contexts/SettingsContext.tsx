@@ -112,7 +112,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       typesenseUrl: "http://127.0.0.1:8108",
       typesenseApiKey: "",
 
-      useFontAwesomeIcons: true,
+      useFontAwesomeIcons: false,
       fontSizeMode: "auto-resolution-dpi", // Default to auto-resolution-dpi for better scaling on high-DPI displays
       allClientsCanUseLeaderMode: true, // C# default: True
       leaderModeClients: [],
