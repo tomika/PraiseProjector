@@ -8,17 +8,17 @@ import sharp from "sharp";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use the source SVG from public/app (the single source of truth for web assets)
-const inputSvg = path.join(__dirname, "../public/app/images/pp.svg");
+// Use the source PNG from public/app (single source of truth for icon generation)
+const inputPng = path.join(__dirname, "../public/app/images/pp.png");
 const outputDir = path.join(__dirname, "../dist/build");
 const outputFilename = "icon";
 
 async function generateIcons() {
-  console.log("Reading SVG file:", inputSvg);
+  console.log("Reading PNG file:", inputPng);
 
-  // Convert SVG to PNG at 1024x1024 (required for high-quality icons)
-  console.log("Converting SVG to PNG at 1024x1024...");
-  const pngBuffer = await sharp(inputSvg).resize(1024, 1024).png().toBuffer();
+  // Resize source PNG to 1024x1024 (required for high-quality icons)
+  console.log("Resizing PNG to 1024x1024...");
+  const pngBuffer = await sharp(inputPng).resize(1024, 1024).png().toBuffer();
 
   // Ensure output directory exists
   if (!fs.existsSync(outputDir)) {
@@ -54,12 +54,12 @@ async function generateIcons() {
   console.log("Generating PWA icons...");
   
   // 192x192 for PWA manifest
-  const png192 = await sharp(inputSvg).resize(192, 192).png().toBuffer();
+  const png192 = await sharp(inputPng).resize(192, 192).png().toBuffer();
   fs.writeFileSync(path.join(pwaOutputDir, "pp-192.png"), png192);
   console.log("Created pp-192.png");
   
   // 512x512 for PWA manifest
-  const png512 = await sharp(inputSvg).resize(512, 512).png().toBuffer();
+  const png512 = await sharp(inputPng).resize(512, 512).png().toBuffer();
   fs.writeFileSync(path.join(pwaOutputDir, "pp-512.png"), png512);
   console.log("Created pp-512.png");
 
