@@ -406,6 +406,22 @@ autoUpdater.forceDevUpdateConfig = !isProductionRuntime();
 // Note: channel defaults to "latest" which uses latest.yml
 autoUpdater.logger = console;
 
+// The releases page URL, read from app-update.yml at startup.
+// electron-updater v6's getFeedURL() is deprecated and returns a useless string,
+// so we read the YAML directly instead.
+let releasesBaseUrl: string | null = null;
+
+function loadReleasesUrl(): void {
+  const ymlPath = app.isPackaged ? path.join(process.resourcesPath, "app-update.yml") : path.join(app.getAppPath(), "dev-app-update.yml");
+  try {
+    const content = fs.readFileSync(ymlPath, "utf8");
+    const match = content.match(/^url:\s*(\S.*)/m);
+    if (match) releasesBaseUrl = match[1].trim();
+  } catch {
+    // Will fall back to cloudApiHost in openManualMacUpdateDialog.
+  }
+}
+
 let macAutoInstallSupported: boolean | null = null;
 
 async function isMacAutoInstallSupported(): Promise<boolean> {
@@ -425,61 +441,41 @@ async function isMacAutoInstallSupported(): Promise<boolean> {
 }
 
 async function openManualMacUpdateDialog(reason?: string): Promise<void> {
-  const feedUrl = autoUpdater.getFeedURL();
-  const normalizedFeedUrl = (() => {
-    if (!feedUrl) return null;
-    const raw = feedUrl.trim();
-    if (!raw) return null;
-
-    try {
-      const parsed = new URL(raw);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+  // releasesBaseUrl is loaded from app-update.yml at startup.
+  // Fall back to cloud API host + hardcoded path if the YAML wasn't found.
+  const releasesUrl =
+    releasesBaseUrl ??
+    (() => {
+      const cloudApiHost = getProxyConfigValue("VITE_CLOUD_API_HOST");
+      if (cloudApiHost) {
+        try {
+          return new URL("/releases/electron", cloudApiHost).toString();
+        } catch {
+          console.warn("Invalid cloud API host URL:", cloudApiHost);
+        }
+      }
       return null;
-    } catch {
-      // Some configs may omit scheme; try https fallback.
-      try {
-        const parsed = new URL(`https://${raw.replace(/^\/+/, "")}`);
-        return parsed.toString();
-      } catch {
-        return null;
-      }
-    }
-  })();
+    })();
 
-  if (normalizedFeedUrl) {
-    const result = await showMainMessageBox({
-      type: "info",
-      title: getMainLocalizedString("UpdateManualInstallRequired"),
-      message: getMainLocalizedString("UpdateAutoInstallNotAvailable"),
-      detail: getMainLocalizedString("UpdateAutoInstallDetail") + (reason ? `\n\n${getMainLocalizedString("TechnicalDetail")} ${reason}` : ""),
-      buttons: [getMainLocalizedString("UpdateOpenReleasesPage"), getMainLocalizedString("UpdateLater")],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    });
+  const result = await showMainMessageBox({
+    type: "info",
+    title: getMainLocalizedString("UpdateManualInstallRequired"),
+    message: getMainLocalizedString("UpdateAutoInstallNotAvailable"),
+    detail: getMainLocalizedString("UpdateAutoInstallDetail") + (reason ? `\n\n${getMainLocalizedString("TechnicalDetail")} ${reason}` : ""),
+    buttons: releasesUrl
+      ? [getMainLocalizedString("UpdateOpenReleasesPage"), getMainLocalizedString("UpdateLater")]
+      : [getMainLocalizedString("UpdateLater")],
+    defaultId: 0,
+    cancelId: releasesUrl ? 1 : 0,
+    noLink: true,
+  });
 
-    if (result.response === 0) {
-      try {
-        await shell.openExternal(normalizedFeedUrl);
-      } catch (err) {
-        console.error("Failed to open releases page:", err);
-      }
+  if (releasesUrl && result.response === 0) {
+    try {
+      await shell.openExternal(releasesUrl);
+    } catch (err) {
+      console.error("Failed to open releases page:", err);
     }
-  } else {
-    await showMainMessageBox({
-      type: "info",
-      title: getMainLocalizedString("UpdateManualInstallRequired"),
-      message: getMainLocalizedString("UpdateAutoInstallNotAvailable"),
-      detail:
-        getMainLocalizedString("UpdateAutoInstallDetail") +
-        "\n\n" +
-        getMainLocalizedString("UpdateVisitWebsite") +
-        (reason ? `\n\n${getMainLocalizedString("TechnicalDetail")} ${reason}` : ""),
-      buttons: [getMainLocalizedString("UpdateLater")],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
   }
 }
 
@@ -717,6 +713,7 @@ app.on("ready", () => {
     `[Main] trusted external domains: ${TRUSTED_EXTERNAL_DOMAINS.size > 0 ? Array.from(TRUSTED_EXTERNAL_DOMAINS).join(", ") : "(none configured)"}`
   );
 
+  loadReleasesUrl();
   createWindow();
   initializeProxy();
 
