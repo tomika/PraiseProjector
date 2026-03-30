@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send("sync-settings", settings);
   },
 
+  // Localization sync - frontend pushes language (and optionally string tables) to backend
+  updateLocalization: (payload: { language: "en" | "hu"; strings?: Record<string, Record<string, string>> }) => {
+    ipcRenderer.send("update-localization", payload);
+  },
+
   // Sync leader name (for UDP offer - C# uses cmbLeader.Text which is the name, not ID)
   syncLeaderName: (leaderName: string) => {
     ipcRenderer.send("sync-leader-name", leaderName);

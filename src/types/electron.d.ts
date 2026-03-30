@@ -75,6 +75,9 @@ export interface IElectronAPI {
   // Settings sync - frontend pushes settings to backend
   syncSettings?: (settings: Settings) => void;
 
+  // Localization sync - frontend pushes language change (and string tables on first call) to backend
+  updateLocalization?: (payload: { language: "en" | "hu"; strings?: Record<string, Record<string, string>> }) => void;
+
   // Sync leader name (for UDP offer - C# uses cmbLeader.Text which is the name, not ID)
   syncLeaderName?: (leaderName: string) => void;
 

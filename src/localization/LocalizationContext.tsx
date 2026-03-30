@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 
 // Import language files
 import enStrings from "./strings.en.json";
@@ -74,23 +74,11 @@ export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return getLanguageFromSettings();
   });
 
-  // Compute the actual language to use
-  const [language, setLanguage] = useState<Language>(() => {
-    const setting = getLanguageFromSettings();
-    if (setting === "hu" || setting === "en") {
-      return setting;
-    }
-    return detectSystemLanguage();
-  });
+  // Track whether string tables have already been sent to main process.
+  const locStringsSent = useRef(false);
 
-  // Update actual language when setting changes
-  useEffect(() => {
-    if (languageSetting === "auto") {
-      setLanguage(detectSystemLanguage());
-    } else {
-      setLanguage(languageSetting);
-    }
-  }, [languageSetting]);
+  // Derive the actual language from user setting.
+  const language: Language = languageSetting === "auto" ? detectSystemLanguage() : languageSetting;
 
   // Listen for settings changes from other sources (e.g., SettingsForm, other windows)
   useEffect(() => {
@@ -123,6 +111,17 @@ export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     saveLanguageToSettings(languageSetting);
     // Dispatch event for components that need to react to language changes
     window.dispatchEvent(new CustomEvent("pp-language-changed", { detail: { language, languageSetting } }));
+
+    // Keep Electron main process in sync. Strings are sent only on the first call;
+    // subsequent calls (language change) send language only.
+    if (window.electronAPI?.updateLocalization) {
+      const payload: { language: "en" | "hu"; strings?: typeof translations } = { language };
+      if (!locStringsSent.current) {
+        payload.strings = translations;
+        locStringsSent.current = true;
+      }
+      window.electronAPI.updateLocalization(payload);
+    }
   }, [language, languageSetting]);
 
   const setLanguageSetting = (lang: LanguageSetting) => {

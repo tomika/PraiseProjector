@@ -154,8 +154,10 @@ let printWindow: BrowserWindow | null = null;
 
 // Localization strings loaded from JSON files, keyed by language code.
 const mainLocStrings: Record<string, Record<string, string>> = {};
+let mainCurrentLanguage: string | null = null;
 
 const getMainLanguage = (): string => {
+  if (mainCurrentLanguage) return mainCurrentLanguage;
   const locale = app.getLocale() || "en";
   const match = locale.match(/^([a-zA-Z]{2})/);
   return match ? match[1].toLowerCase() : "en";
@@ -166,18 +168,25 @@ const getMainLocalizedString = (key: string): string => {
   return mainLocStrings[lang]?.[key] || mainLocStrings["en"]?.[key] || key;
 };
 
-const loadMainLocalizationStrings = (): void => {
-  const locDir = app.isPackaged ? path.join(process.resourcesPath, "localization") : path.join(__dirname, "..", "..", "src", "localization");
-  for (const lang of ["en", "hu"]) {
-    try {
-      const filePath = path.join(locDir, `strings.${lang}.json`);
-      const content = fs.readFileSync(filePath, "utf8");
-      mainLocStrings[lang] = JSON.parse(content);
-    } catch (err) {
-      console.warn(`[Main] Could not load localization for '${lang}':`, err);
+ipcMain.on("update-localization", (_event, payload: { language?: string; strings?: Record<string, Record<string, string>> }) => {
+  const language = payload?.language?.toLowerCase();
+  if (language === "en" || language === "hu") {
+    mainCurrentLanguage = language;
+  }
+
+  const tables = payload?.strings;
+  if (!tables || typeof tables !== "object") return;
+
+  for (const [lang, table] of Object.entries(tables)) {
+    if ((lang === "en" || lang === "hu") && table && typeof table === "object") {
+      const safe: Record<string, string> = {};
+      for (const [k, v] of Object.entries(table)) {
+        if (typeof v === "string") safe[k] = v;
+      }
+      mainLocStrings[lang] = safe;
     }
   }
-};
+});
 
 const parseHostList = (rawValue: string): Set<string> => {
   return new Set(
@@ -307,7 +316,9 @@ const openExternalUrlSafely = async (value: string): Promise<void> => {
 
 const showMainMessageBox = (options: MessageBoxOptions): Promise<MessageBoxReturnValue> => {
   const parentWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  return parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options);
+  const iconPath = resolveAppIcon();
+  const withIcon = !options.icon && iconPath ? { ...options, icon: nativeImage.createFromPath(iconPath) } : options;
+  return parentWindow ? dialog.showMessageBox(parentWindow, withIcon) : dialog.showMessageBox(withIcon);
 };
 
 const resolveAppIcon = (): string | undefined => {
@@ -318,6 +329,9 @@ const resolveAppIcon = (): string | undefined => {
     candidates.push(path.join(appPath, "dist/build/icon.ico"));
     candidates.push(path.join(appPath, "public/assets/projector.ico"));
   } else if (process.platform === "darwin") {
+    if (app.isPackaged) {
+      candidates.push(path.join(process.resourcesPath, "public", "assets", "pp-512.png"));
+    }
     candidates.push(path.join(appPath, "dist/build/icon.icns"));
   } else {
     // Linux: in a packaged AppImage, dist/build/ is not bundled; public/ lands in extraResources
@@ -412,8 +426,27 @@ async function isMacAutoInstallSupported(): Promise<boolean> {
 
 async function openManualMacUpdateDialog(reason?: string): Promise<void> {
   const feedUrl = autoUpdater.getFeedURL();
+  const normalizedFeedUrl = (() => {
+    if (!feedUrl) return null;
+    const raw = feedUrl.trim();
+    if (!raw) return null;
 
-  if (feedUrl) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+      return null;
+    } catch {
+      // Some configs may omit scheme; try https fallback.
+      try {
+        const parsed = new URL(`https://${raw.replace(/^\/+/, "")}`);
+        return parsed.toString();
+      } catch {
+        return null;
+      }
+    }
+  })();
+
+  if (normalizedFeedUrl) {
     const result = await showMainMessageBox({
       type: "info",
       title: getMainLocalizedString("UpdateManualInstallRequired"),
@@ -426,7 +459,11 @@ async function openManualMacUpdateDialog(reason?: string): Promise<void> {
     });
 
     if (result.response === 0) {
-      await shell.openExternal(feedUrl);
+      try {
+        await shell.openExternal(normalizedFeedUrl);
+      } catch (err) {
+        console.error("Failed to open releases page:", err);
+      }
     }
   } else {
     await showMainMessageBox({
@@ -519,7 +556,11 @@ ipcMain.handle("download-update", async () => {
 ipcMain.handle("install-update", () => {
   const install = async () => {
     if (process.platform === "darwin" && !(await isMacAutoInstallSupported())) {
-      await openManualMacUpdateDialog();
+      try {
+        await openManualMacUpdateDialog();
+      } catch (err) {
+        console.error("Failed to show/open manual macOS update dialog:", err);
+      }
       return { success: false, manualRequired: true };
     }
 
@@ -675,8 +716,6 @@ app.on("ready", () => {
   console.log(
     `[Main] trusted external domains: ${TRUSTED_EXTERNAL_DOMAINS.size > 0 ? Array.from(TRUSTED_EXTERNAL_DOMAINS).join(", ") : "(none configured)"}`
   );
-
-  loadMainLocalizationStrings();
 
   createWindow();
   initializeProxy();
