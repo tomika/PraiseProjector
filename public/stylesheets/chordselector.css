@@ -71,22 +71,6 @@
     text-align: center;    
 }
 
-.headerCell {
-    background-image: url('images/fretboard.jpg');
-    background-repeat: no-repeat;
-    padding: 0px;
-    font-weight: bold;
-}
-
-.fretCell {
-    background-image: url('images/fretboard.jpg');
-    background-repeat: no-repeat;
-    padding: 0px;
-    text-align: center;
-    font-weight: bold;
-    color: red;
-}
-
 .invalidInput {
     background-color: red;
 }
