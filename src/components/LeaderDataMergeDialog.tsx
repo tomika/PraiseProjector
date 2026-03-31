@@ -34,6 +34,8 @@ interface LeaderDataMergeDialogProps {
   remoteLabel?: string;
   /** Read-only compare mode: hides decision actions and save button */
   readOnly?: boolean;
+  /** Optional default side for conflicts: when true, preselect remote side. */
+  preferRemoteByDefault?: boolean;
 }
 
 // Interface for hover popup state
@@ -51,6 +53,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   localLabel,
   remoteLabel,
   readOnly = false,
+  preferRemoteByDefault = false,
 }) => {
   const { t } = useLocalization();
   const effectiveLocalLabel = localLabel || t("LeaderMergeLocal");
@@ -173,7 +176,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
             songTitle: song?.Title || songId,
             localPref: localPref.clone(),
             remotePref: remotePref?.clone() || null,
-            useRemote: false, // Default to local
+            useRemote: preferRemoteByDefault,
           });
         }
         return true;
@@ -228,7 +231,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
             date,
             localPlaylist: localPlaylist?.clone() || null,
             remotePlaylist: remotePlaylist?.clone() || null,
-            useRemote: false,
+            useRemote: preferRemoteByDefault,
           });
         }
       }
@@ -252,7 +255,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
     };
 
     initConflicts();
-  }, [localLeader, remoteLeader]);
+  }, [localLeader, remoteLeader, preferRemoteByDefault]);
 
   const handlePreferenceToggle = (index: number) => {
     setPreferenceConflicts((prev) => {
