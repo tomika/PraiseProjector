@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Leader } from "../classes/Leader";
 import { SongPreference } from "../classes/SongPreference";
 import { Playlist } from "../classes/Playlist";
@@ -34,6 +34,8 @@ interface LeaderDataMergeDialogProps {
   remoteLabel?: string;
   /** Read-only compare mode: hides decision actions and save button */
   readOnly?: boolean;
+  /** Optional default side for conflicts: when true, preselect remote side. */
+  preferRemoteByDefault?: boolean;
 }
 
 // Interface for hover popup state
@@ -51,6 +53,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   localLabel,
   remoteLabel,
   readOnly = false,
+  preferRemoteByDefault = false,
 }) => {
   const { t } = useLocalization();
   const effectiveLocalLabel = localLabel || t("LeaderMergeLocal");
@@ -173,7 +176,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
             songTitle: song?.Title || songId,
             localPref: localPref.clone(),
             remotePref: remotePref?.clone() || null,
-            useRemote: false, // Default to local
+            useRemote: preferRemoteByDefault,
           });
         }
         return true;
@@ -228,7 +231,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
             date,
             localPlaylist: localPlaylist?.clone() || null,
             remotePlaylist: remotePlaylist?.clone() || null,
-            useRemote: false,
+            useRemote: preferRemoteByDefault,
           });
         }
       }
@@ -252,7 +255,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
     };
 
     initConflicts();
-  }, [localLeader, remoteLeader]);
+  }, [localLeader, remoteLeader, preferRemoteByDefault]);
 
   const handlePreferenceToggle = (index: number) => {
     setPreferenceConflicts((prev) => {
@@ -320,39 +323,30 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
     onSave(mergedLeader);
   };
 
-  const renderPreferenceValue = (pref: SongPreference | null, isSelected: boolean): React.ReactNode => {
+  const renderPreferenceValueCells = (pref: SongPreference | null, beginStyle: string, endStyle: string): React.ReactNode => {
     if (!pref) {
-      return <span className={`merge-value ${isSelected ? "selected" : "unselected"}`}>—</span>;
+      return (
+        <>
+          <td className={`col-pref-value ${beginStyle}`}>—</td>
+          <td className="col-pref-value">—</td>
+          <td className="col-pref-value">—</td>
+          <td className="col-pref-value">—</td>
+          <td className="col-pref-value">—</td>
+          <td className={`col-pref-value ${endStyle}`}>—</td>
+        </>
+      );
     }
 
     return (
-      <div className={`merge-value ${isSelected ? "selected" : "unselected"}`}>
-        <span className="pref-title" title={pref.title || undefined}>
+      <>
+        <td className={`col-pref-value col-pref-title ${beginStyle}`} title={pref.title || undefined}>
           {pref.title || "—"}
-        </span>
-        <span className="pref-transpose">{pref.formatTranspose() || "—"}</span>
-        <span className="pref-capo">{pref.formatCapo() || "—"}</span>
-        <span className="pref-mode">{pref.type || "—"}</span>
-        <span className="pref-instr">{pref.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}</span>
-      </div>
-    );
-  };
-
-  // Render a single playlist entry with settings (reusing preference display style)
-  const renderPlaylistEntrySettings = (entry: PlaylistEntry): React.ReactNode => {
-    const transposeStr = entry.transpose !== 0 ? (entry.transpose > 0 ? `+${entry.transpose}` : `${entry.transpose}`) : "—";
-    const capoStr = entry.capo >= 0 ? `${entry.capo}` : "—";
-    const instrStr = entry.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—";
-
-    return (
-      <div className="playlist-entry-settings">
-        <span className="pref-title" title={entry.title || undefined}>
-          {entry.title || "—"}
-        </span>
-        <span className="pref-transpose">{transposeStr}</span>
-        <span className="pref-capo">{capoStr}</span>
-        <span className="pref-instr">{instrStr}</span>
-      </div>
+        </td>
+        <td className="col-pref-value">{pref.formatTranspose() || "—"}</td>
+        <td className="col-pref-value">{pref.formatCapo() || "—"}</td>
+        <td className="col-pref-value">{pref.type || "—"}</td>
+        <td className={`col-pref-value ${endStyle}`}>{pref.instructions ? <Icon type={IconType.CHECKBOX_CHECKED} /> : "—"}</td>
+      </>
     );
   };
 
@@ -770,60 +764,69 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                   <p className="text-muted">{t("LeaderMergeNoConflicts")}</p>
                 ) : (
                   <div className="merge-table-container">
-                    <table className="table table-sm merge-table">
+                    <table className="table table-sm merge-table merge-table-stacked">
                       <thead>
                         <tr>
                           <th className="col-song">{t("LeaderMergeSongTitle")}</th>
-                          <th className="col-source">{effectiveLocalLabel}</th>
-                          <th className="col-values">
-                            <span>{t("Title")}</span>
-                            <span>{t("LeaderMergeTranspose")}</span>
-                            <span>{t("LeaderMergeCapo")}</span>
-                            <span>{t("LeaderMergeMode")}</span>
-                            <span>{t("LeaderMergeInstructions")}</span>
+                          <th className="col-source" colSpan={2}>
+                            {effectiveLocalLabel}
                           </th>
-                          <th className="col-source">{effectiveRemoteLabel}</th>
-                          <th className="col-values">
-                            <span>{t("Title")}</span>
-                            <span>{t("LeaderMergeTranspose")}</span>
-                            <span>{t("LeaderMergeCapo")}</span>
-                            <span>{t("LeaderMergeMode")}</span>
-                            <span>{t("LeaderMergeInstructions")}</span>
+                          <th className="col-pref-heading">{t("Title")}</th>
+                          <th className="col-pref-heading">{t("LeaderMergeTranspose")}</th>
+                          <th className="col-pref-heading">{t("LeaderMergeCapo")}</th>
+                          <th className="col-pref-heading">{t("LeaderMergeMode")}</th>
+                          <th className="col-pref-heading">{t("LeaderMergeInstructions")}</th>
+                          <th className="col-source" colSpan={2}>
+                            {effectiveRemoteLabel}
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {preferenceConflicts.map((conflict, index) => (
-                          <tr key={conflict.songId} className="merge-row">
-                            <td className="col-song" title={conflict.songTitle}>
-                              {conflict.songTitle}
-                            </td>
-                            <td className="col-source">
-                              <button
-                                type="button"
-                                className={`btn btn-sm merge-source-btn ${!conflict.useRemote ? "btn-primary" : "btn-outline-secondary"}`}
-                                onClick={() => handlePreferenceToggle(index)}
-                                title={effectiveLocalLabel}
-                                disabled={readOnly}
-                              >
-                                {!conflict.useRemote ? "✓" : ""}
-                              </button>
-                            </td>
-                            <td className="col-values">{renderPreferenceValue(conflict.localPref, !conflict.useRemote)}</td>
-                            <td className="col-source">
-                              <button
-                                type="button"
-                                className={`btn btn-sm merge-source-btn ${conflict.useRemote ? "btn-primary" : "btn-outline-secondary"}`}
-                                onClick={() => handlePreferenceToggle(index)}
-                                title={effectiveRemoteLabel}
-                                disabled={readOnly}
-                              >
-                                {conflict.useRemote ? "✓" : ""}
-                              </button>
-                            </td>
-                            <td className="col-values">{renderPreferenceValue(conflict.remotePref, conflict.useRemote)}</td>
-                          </tr>
-                        ))}
+                        {preferenceConflicts.map((conflict, index) => {
+                          const localSelected = !conflict.useRemote;
+                          return (
+                            <React.Fragment key={conflict.songId}>
+                              <tr className={`merge-row merge-row-top ${localSelected ? "merge-row-selected" : "merge-row-unselected"}`}>
+                                <td className="col-song" rowSpan={2} title={conflict.songTitle}>
+                                  {conflict.songTitle}
+                                </td>
+                                <td className={`col-source-half col-source-top col-source-left`}>
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm merge-source-btn merge-source-btn-left ${localSelected ? "btn-primary" : "btn-outline-secondary"}`}
+                                    onClick={() => handlePreferenceToggle(index)}
+                                    title={effectiveLocalLabel}
+                                    disabled={readOnly}
+                                  >
+                                    {localSelected ? "✓" : ""}
+                                  </button>
+                                </td>
+                                <td className={`col-source-half col-source-top col-source-left${localSelected ? " source-half-selected" : ""}`}></td>
+                                {renderPreferenceValueCells(conflict.localPref, "", localSelected ? "col-source-right source-half-selected" : "")}
+                                <td></td>
+                                <td className="col-source-half col-source-top col-source-right">
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm merge-source-btn merge-source-btn-right ${!localSelected ? "btn-primary" : "btn-outline-secondary"}`}
+                                    onClick={() => handlePreferenceToggle(index)}
+                                    title={effectiveRemoteLabel}
+                                    disabled={readOnly}
+                                  >
+                                    {!localSelected ? "✓" : ""}
+                                  </button>
+                                </td>
+                              </tr>
+                              <tr className={`merge-row merge-row-bottom ${!localSelected ? "merge-row-selected" : "merge-row-unselected"}`}>
+                                <td className={`col-source-half col-source-top col-source-left`} colSpan={2}></td>
+                                {renderPreferenceValueCells(conflict.remotePref, !localSelected ? "col-source-left source-half-selected" : "", "")}
+                                <td
+                                  className={`col-source-half col-source-top col-source-right${!localSelected ? " source-half-selected" : ""}`}
+                                ></td>
+                                <td className={`col-source-half col-source-top col-source-right`}></td>
+                              </tr>
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

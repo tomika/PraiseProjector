@@ -1308,8 +1308,8 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         comparePairs: data.pairs.map((pair) => ({ left: pair.left, right: pair.right })),
         initialPairIndex: data.initialPairIndex,
         mode: "ComparePairs" as const,
-        leftLabel: t("OriginalVersion") || "Original Version",
-        rightLabel: t("NewVersionOnServer") || "Downloaded Version",
+        leftLabel: t("SyncPreviousVersion") || "Previous Version",
+        rightLabel: t("SyncUpdatedVersion") || "Updated Version",
       };
     } else if (compareDialogItem.group === SyncItemGroup.Checking) {
       const data = compareDialogItem.data as { song: Song; similar: Song[] };
@@ -1331,6 +1331,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       localLeader: data.local,
       remoteLeader: data.remote,
       readOnly: leaderMergeDialogItem.group === SyncItemGroup.Pulled,
+      localLabel: t("SyncPrevious") || "Previous",
+      remoteLabel: t("SyncUpdatedMarked") || "Updated",
+      preferRemoteByDefault: leaderMergeDialogItem.group === SyncItemGroup.Pulled,
     };
   };
 
@@ -1427,6 +1430,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
           localLeader={leaderMergeProps.localLeader}
           remoteLeader={leaderMergeProps.remoteLeader}
           readOnly={leaderMergeProps.readOnly}
+          localLabel={leaderMergeProps.localLabel}
+          remoteLabel={leaderMergeProps.remoteLabel}
+          preferRemoteByDefault={leaderMergeProps.preferRemoteByDefault}
           onSave={handleLeaderMergeDialogSave}
           onCancel={handleLeaderMergeDialogCancel}
         />

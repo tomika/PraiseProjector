@@ -7,6 +7,18 @@ import "./ProjectingSettings.css";
 const MAX_MARGIN_SUM = 95;
 
 type MarginSide = "top" | "left" | "right" | "bottom";
+type MarginHandle = "top" | "right" | "bottom" | "left" | "top-left" | "top-right" | "bottom-right" | "bottom-left";
+
+const marginHandleToSides: Record<MarginHandle, MarginSide[]> = {
+  top: ["top"],
+  right: ["right"],
+  bottom: ["bottom"],
+  left: ["left"],
+  "top-left": ["top", "left"],
+  "top-right": ["top", "right"],
+  "bottom-right": ["bottom", "right"],
+  "bottom-left": ["bottom", "left"],
+};
 
 interface ProjectingSettingsProps {
   settings: Settings;
@@ -17,7 +29,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
   const { t } = useLocalization();
   const marginPreviewRef = React.useRef<HTMLDivElement | null>(null);
   const marginPreviewInnerRef = React.useRef<HTMLDivElement | null>(null);
-  const [draggingMarginSide, setDraggingMarginSide] = React.useState<MarginSide | null>(null);
+  const [draggingMarginHandle, setDraggingMarginHandle] = React.useState<MarginHandle | null>(null);
   const [draggingBox, setDraggingBox] = React.useState<{
     startX: number;
     startY: number;
@@ -127,10 +139,10 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
     updateDisplayMargin(side, parseInt(e.target.value || "0", 10) || 0);
   };
 
-  const startMarginDrag = (side: MarginSide) => (e: React.PointerEvent<HTMLDivElement>) => {
+  const startMarginDrag = (handle: MarginHandle) => (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setDraggingMarginSide(side);
+    setDraggingMarginHandle(handle);
   };
 
   const startBoxDrag = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -197,9 +209,11 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
   };
 
   React.useEffect(() => {
-    if (!draggingMarginSide) {
+    if (!draggingMarginHandle) {
       return undefined;
     }
+
+    const draggedSides = marginHandleToSides[draggingMarginHandle];
 
     const handlePointerMove = (event: PointerEvent) => {
       const previewBounds = marginPreviewRef.current?.getBoundingClientRect();
@@ -207,23 +221,34 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
         return;
       }
 
-      switch (draggingMarginSide) {
-        case "left":
-          updateDisplayMargin("left", ((event.clientX - previewBounds.left) / previewBounds.width) * 100);
-          return;
-        case "right":
-          updateDisplayMargin("right", ((previewBounds.right - event.clientX) / previewBounds.width) * 100);
-          return;
-        case "top":
-          updateDisplayMargin("top", ((event.clientY - previewBounds.top) / previewBounds.height) * 100);
-          return;
-        case "bottom":
-          updateDisplayMargin("bottom", ((previewBounds.bottom - event.clientY) / previewBounds.height) * 100);
+      const pointerMargins = {
+        left: ((event.clientX - previewBounds.left) / previewBounds.width) * 100,
+        right: ((previewBounds.right - event.clientX) / previewBounds.width) * 100,
+        top: ((event.clientY - previewBounds.top) / previewBounds.height) * 100,
+        bottom: ((previewBounds.bottom - event.clientY) / previewBounds.height) * 100,
+      };
+
+      const currentRect = settings.displayBorderRect;
+      const nextRect = { ...currentRect };
+
+      if (draggedSides.includes("left")) {
+        nextRect.left = clampMarginValue(pointerMargins.left, nextRect.width);
       }
+      if (draggedSides.includes("right")) {
+        nextRect.width = clampMarginValue(pointerMargins.right, nextRect.left);
+      }
+      if (draggedSides.includes("top")) {
+        nextRect.top = clampMarginValue(pointerMargins.top, nextRect.height);
+      }
+      if (draggedSides.includes("bottom")) {
+        nextRect.height = clampMarginValue(pointerMargins.bottom, nextRect.top);
+      }
+
+      updateSetting("displayBorderRect", nextRect);
     };
 
     const handlePointerUp = () => {
-      setDraggingMarginSide(null);
+      setDraggingMarginHandle(null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -233,7 +258,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [draggingMarginSide, settings.displayBorderRect, updateDisplayMargin]);
+  }, [clampMarginValue, draggingMarginHandle, settings.displayBorderRect, updateSetting]);
 
   React.useEffect(() => {
     if (!draggingBox) {
@@ -419,14 +444,18 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
               </div>
 
               <div
-                className={`margin-preview-box${draggingMarginSide || draggingBox ? " is-dragging" : ""}${draggingBox ? " is-moving" : ""}`}
+                className={`margin-preview-box${draggingMarginHandle || draggingBox ? " is-dragging" : ""}${draggingBox ? " is-moving" : ""}`}
                 ref={marginPreviewRef}
               >
                 <div className="margin-preview-inner" ref={marginPreviewInnerRef} onPointerDown={startBoxDrag}>
-                  <div className="margin-drag-handle margin-drag-handle-top" onPointerDown={startMarginDrag("top")} />
-                  <div className="margin-drag-handle margin-drag-handle-right" onPointerDown={startMarginDrag("right")} />
-                  <div className="margin-drag-handle margin-drag-handle-bottom" onPointerDown={startMarginDrag("bottom")} />
-                  <div className="margin-drag-handle margin-drag-handle-left" onPointerDown={startMarginDrag("left")} />
+                  <div className="margin-drag-dot margin-drag-dot-top" onPointerDown={startMarginDrag("top")} />
+                  <div className="margin-drag-dot margin-drag-dot-right" onPointerDown={startMarginDrag("right")} />
+                  <div className="margin-drag-dot margin-drag-dot-bottom" onPointerDown={startMarginDrag("bottom")} />
+                  <div className="margin-drag-dot margin-drag-dot-left" onPointerDown={startMarginDrag("left")} />
+                  <div className="margin-drag-dot margin-drag-dot-top-left" onPointerDown={startMarginDrag("top-left")} />
+                  <div className="margin-drag-dot margin-drag-dot-top-right" onPointerDown={startMarginDrag("top-right")} />
+                  <div className="margin-drag-dot margin-drag-dot-bottom-right" onPointerDown={startMarginDrag("bottom-right")} />
+                  <div className="margin-drag-dot margin-drag-dot-bottom-left" onPointerDown={startMarginDrag("bottom-left")} />
                   <span className="margin-preview-text">Hallelujah!</span>
                 </div>
                 {settings.qrCodeInPreview && (
