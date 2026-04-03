@@ -331,7 +331,6 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
           <td className="col-pref-value">—</td>
           <td className="col-pref-value">—</td>
           <td className="col-pref-value">—</td>
-          <td className="col-pref-value">—</td>
           <td className={`col-pref-value ${endStyle}`}>—</td>
         </>
       );

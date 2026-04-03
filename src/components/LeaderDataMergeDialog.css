@@ -179,6 +179,8 @@
 .merge-table-container {
   max-height: 250px;
   overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
   border: 1px solid var(--pp-border-color, #dee2e6);
   border-radius: 4px;
   background: var(--pp-bg-color, #fff);
@@ -193,7 +195,7 @@
 .merge-table thead {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 5;
   background: var(--pp-table-header-bg, #e9ecef);
 }
 
@@ -275,6 +277,7 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  opacity: 1 !important;
 }
 
 .merge-source-btn.btn-primary {
