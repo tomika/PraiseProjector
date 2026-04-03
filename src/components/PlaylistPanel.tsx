@@ -409,6 +409,18 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private colorUpdateTimer: NodeJS.Timeout | null = null;
   private checkedPlayListItems: Set<number> = new Set();
   private headerRef = React.createRef<HTMLTableSectionElement>();
+  private playlistContainerRef = React.createRef<HTMLDivElement>();
+
+  private getPageNavigationStep(): number {
+    const container = this.playlistContainerRef.current;
+    if (!container) return 10;
+
+    const firstRow = container.querySelector("tbody tr") as HTMLTableRowElement | null;
+    const rowHeight = firstRow?.getBoundingClientRect().height ?? 24;
+    const headerHeight = this.headerRef.current?.offsetHeight ?? 0;
+    const viewportHeight = Math.max(0, container.clientHeight - headerHeight);
+    return Math.max(1, Math.floor(viewportHeight / Math.max(1, rowHeight)));
+  }
 
   handleSettingsChange = () => {
     // Settings changed, trigger color update (matching C# UpdatePlaylistItemStates after settings save)
@@ -1375,7 +1387,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   handleKeyDown(e: KeyboardEvent) {
-    const { selectedItems } = this.state;
+    const { selectedItems, currentPlaylist, focusedIndex } = this.state;
+    const isSpaceKey = e.key === " " || e.key === "Spacebar";
+    const pageStep = this.getPageNavigationStep();
 
     // Navigation keys - ArrowUp/ArrowDown for selection
     if (e.key === "ArrowUp" && !e.ctrlKey && !e.altKey) {
@@ -1385,6 +1399,30 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     } else if (e.key === "ArrowDown" && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       this.scheduleKeyboardArrowNavigation(1, e.shiftKey);
+      return;
+    } else if (e.key === "PageUp" && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      this.scheduleKeyboardArrowNavigation(-pageStep, e.shiftKey);
+      return;
+    } else if (e.key === "PageDown" && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      this.scheduleKeyboardArrowNavigation(pageStep, e.shiftKey);
+      return;
+    } else if (isSpaceKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      this.scheduleKeyboardArrowNavigation(e.shiftKey ? -pageStep : pageStep, e.shiftKey);
+      return;
+    } else if (e.key === "Home" && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      if (currentPlaylist.items.length === 0) return;
+      const baseIndex = focusedIndex >= 0 ? focusedIndex : currentPlaylist.items.length - 1;
+      this.scheduleKeyboardArrowNavigation(-baseIndex, e.shiftKey);
+      return;
+    } else if (e.key === "End" && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      if (currentPlaylist.items.length === 0) return;
+      const baseIndex = focusedIndex >= 0 ? focusedIndex : 0;
+      this.scheduleKeyboardArrowNavigation(currentPlaylist.items.length - 1 - baseIndex, e.shiftKey);
       return;
     }
 
@@ -1808,6 +1846,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               </button>
             </div>
             <div
+              ref={this.playlistContainerRef}
               className={`playlist-items-container flex-grow-1 overflow-auto${isDisabled ? " disabled" : ""}`}
               tabIndex={isDisabled ? -1 : 0}
               onKeyDown={(e) => !isDisabled && this.handleKeyDown(e.nativeEvent)}

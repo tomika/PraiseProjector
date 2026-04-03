@@ -321,6 +321,15 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
   private static readonly KEYBOARD_SELECTION_DEBOUNCE_MS = 180;
 
+  private getPageNavigationStep(): number {
+    const container = this.scrollContainerRef;
+    if (!container) return 10;
+
+    const firstRow = container.querySelector(".song-item") as HTMLDivElement | null;
+    const rowHeight = firstRow?.getBoundingClientRect().height ?? 24;
+    return Math.max(1, Math.floor(container.clientHeight / Math.max(1, rowHeight)));
+  }
+
   private scrollSelectedSongIntoView = () => {
     if (this.selectedItemElement) {
       this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
@@ -607,7 +616,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }, SongListPanel.KEYBOARD_SELECTION_DEBOUNCE_MS);
   }
 
-  private scheduleKeyboardNavigation(direction: -1 | 1) {
+  private scheduleKeyboardNavigation(direction: number) {
     this.pendingKeyboardNavDelta += direction;
 
     if (this.keyboardNavRafId !== null) {
@@ -1123,9 +1132,52 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   handleKeyDown(event: React.KeyboardEvent) {
+    const isSpaceKey = event.key === " " || event.key === "Spacebar";
+    const pageStep = this.getPageNavigationStep();
+
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
       event.preventDefault();
       this.scheduleKeyboardNavigation(event.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+
+    if (event.key === "PageUp" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      this.scheduleKeyboardNavigation(-pageStep);
+      return;
+    }
+
+    if (event.key === "PageDown" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      this.scheduleKeyboardNavigation(pageStep);
+      return;
+    }
+
+    if (isSpaceKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      this.scheduleKeyboardNavigation(event.shiftKey ? -pageStep : pageStep);
+      return;
+    }
+
+    if (event.key === "Home" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      const visibleSongs = this.getFlatVisibleSongs();
+      if (visibleSongs.length === 0) return;
+      const { selectedSong } = this.state;
+      const selectedIndex = selectedSong ? visibleSongs.findIndex((song) => song.Id === selectedSong.Id) : -1;
+      const baseIndex = selectedIndex >= 0 ? selectedIndex : visibleSongs.length - 1;
+      this.scheduleKeyboardNavigation(-baseIndex);
+      return;
+    }
+
+    if (event.key === "End" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      const visibleSongs = this.getFlatVisibleSongs();
+      if (visibleSongs.length === 0) return;
+      const { selectedSong } = this.state;
+      const selectedIndex = selectedSong ? visibleSongs.findIndex((song) => song.Id === selectedSong.Id) : -1;
+      const baseIndex = selectedIndex >= 0 ? selectedIndex : 0;
+      this.scheduleKeyboardNavigation(visibleSongs.length - 1 - baseIndex);
       return;
     }
 
