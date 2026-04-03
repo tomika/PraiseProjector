@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import UserPanel from "./UserPanel";
-import PlaylistPanel, { PlaylistPanelMethods } from "./PlaylistPanel";
+import PlaylistPanel, { PlaylistPanelMethods, PlaylistSelectionEvent } from "./PlaylistPanel";
 import SongListPanel, { SongListPanelMethods } from "./SongListPanel";
 import ResizeHandle from "./ResizeHandle";
 import { Database } from "../classes/Database";
@@ -15,10 +15,17 @@ import { useLocalization } from "../localization/LocalizationContext";
 import { PlaylistEntry as PlaylistEntryData, SongPreference as SongPreferenceData } from "../../common/pp-types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 
+export interface PlaylistSelectionInput {
+  index?: number;
+  item?: PlaylistEntry | null;
+  songId?: string | null;
+  emitChange?: boolean;
+}
+
 // Methods exposed via ref
 export interface LeftPanelMethods {
   // Playlist methods
-  selectPlaylistSongById: (songId: string) => PlaylistEntry | null;
+  setPlaylistSelection: (selection: PlaylistSelectionInput | null) => PlaylistSelectionEvent | null;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
@@ -30,7 +37,7 @@ export interface LeftPanelMethods {
 }
 
 interface LeftPanelProps {
-  onPlaylistItemSelected?: (item: PlaylistEntry | null) => void;
+  onPlaylistSelectionChange?: (selection: PlaylistSelectionEvent) => void;
   onSongSelected?: (song: Song | null) => void;
   selectedSong?: Song | null;
   disabled?: boolean; // Disables playlist editing when in watch mode
@@ -52,9 +59,6 @@ interface LeftPanelProps {
   // Song filter props for persistence
   songFilter?: string;
   onSongFilterChange?: (filter: string) => void;
-  // Playlist selection props for persistence
-  playlistSelectedIndex?: number;
-  onPlaylistSelectedIndexChange?: (index: number) => void;
   // Song tree selection props for persistence
   selectedSongId?: string | null;
   onSelectedSongIdChange?: (songId: string | null) => void;
@@ -66,7 +70,7 @@ interface LeftPanelProps {
 const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
   (
     {
-      onPlaylistItemSelected,
+      onPlaylistSelectionChange,
       onSongSelected,
       selectedSong: externalSelectedSong,
       disabled = false,
@@ -86,8 +90,6 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       onSongListPanelSizeChange,
       songFilter,
       onSongFilterChange,
-      playlistSelectedIndex,
-      onPlaylistSelectedIndexChange,
       onPlaylistLoaded,
       settings,
     },
@@ -106,8 +108,59 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
     useImperativeHandle(
       ref,
       () => ({
-        // Playlist methods
-        selectPlaylistSongById: (songId: string) => playlistPanelRef.current?.selectSongById(songId) ?? null,
+        // Playlist methods — single setter for selection
+        setPlaylistSelection: (selection: PlaylistSelectionInput | null) => {
+          if (!selection) {
+            playlistPanelRef.current?.setSelectedIndex(-1);
+            return null;
+          }
+
+          // Index-based selection
+          if (typeof selection.index === "number") {
+            playlistPanelRef.current?.setSelectedIndex(selection.index);
+            const playlist = playlistPanelRef.current?.getCurrentPlaylist();
+            const item = playlist?.items[selection.index] ?? null;
+            const song = item ? (songs.find((s) => s.Id === item.songId) ?? Database.getInstance().getSongById(item.songId) ?? null) : null;
+            const event: PlaylistSelectionEvent = {
+              index: selection.index,
+              item,
+              song,
+              source: "programmatic",
+              settled: true,
+            };
+            if (selection.emitChange ?? true) {
+              onPlaylistSelectionChange?.(event);
+            }
+            return event;
+          }
+
+          // SongId-based selection
+          const targetSongId = selection.songId ?? selection.item?.songId ?? null;
+          if (!targetSongId) {
+            return null;
+          }
+
+          const result = playlistPanelRef.current?.selectSongById(targetSongId) ?? null;
+          if (!result) {
+            return null;
+          }
+
+          playlistPanelRef.current?.setSelectedIndex(result.index);
+          const song = songs.find((s) => s.Id === result.item.songId) ?? Database.getInstance().getSongById(result.item.songId) ?? null;
+          const event: PlaylistSelectionEvent = {
+            index: result.index,
+            item: result.item,
+            song,
+            source: "programmatic",
+            settled: true,
+          };
+
+          if (selection.emitChange ?? true) {
+            onPlaylistSelectionChange?.(event);
+          }
+
+          return event;
+        },
         getPreferencesForSongId: (songId: string) => playlistPanelRef.current?.getPreferencesForSongId(songId) ?? null,
         updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist),
         updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) =>
@@ -118,7 +171,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         getSelectedSongId: () => songListPanelRef.current?.getSelectedSongId() ?? null,
         setSelectedSongId: (songId: string | null) => songListPanelRef.current?.setSelectedSongId(songId),
       }),
-      []
+      [songs, onPlaylistSelectionChange]
     );
 
     // Use external selected song if provided, otherwise use internal state
@@ -186,28 +239,23 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       }
     };
 
-    // Handle playlist item selection - also select the corresponding song in the song tree
-    const handlePlaylistItemSelected = (item: PlaylistEntry | null) => {
-      if (onPlaylistItemSelected) {
-        onPlaylistItemSelected(item);
-      }
+    // Handle playlist item selection — single onChange output.
+    const handlePlaylistSelection = (selection: PlaylistSelectionEvent) => {
+      const { item, song } = selection;
+
+      // Single output: fire onChange to parent
+      onPlaylistSelectionChange?.(selection);
 
       // Select the corresponding song in the song tree (matching C# behavior)
-      if (item) {
-        const db = Database.getInstance();
-        const song = db.getSongById(item.songId);
-        if (song) {
-          setInternalSelectedSong(song);
-          updateCurrentDisplay({
-            songId: song.Id,
-            song: song.Text,
-            system: song.System,
-            from: 0,
-            to: 0,
-          });
-          // Don't call onSongSelected here - we only want to update the visual selection
-          // The song editing is handled separately by App.tsx through onPlaylistItemSelected
-        }
+      if (item && song) {
+        setInternalSelectedSong(song);
+        updateCurrentDisplay({
+          songId: song.Id,
+          song: song.Text,
+          system: song.System,
+          from: 0,
+          to: 0,
+        });
       }
     };
 
@@ -240,15 +288,12 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
               <PlaylistPanel
                 ref={playlistPanelRef}
                 songs={songs}
-                onSongSelected={handleSongSelected}
                 selectedSongFromList={selectedSong}
-                onPlaylistItemSelected={handlePlaylistItemSelected}
                 selectedLeader={selectedLeader}
-                showMessage={handlePlaylistError}
+                onPlaylistSelectionChange={handlePlaylistSelection}
+                onError={handlePlaylistError}
                 disabled={disabled}
                 remotePlaylist={remotePlaylist}
-                selectedIndex={playlistSelectedIndex}
-                onSelectedIndexChange={onPlaylistSelectedIndexChange}
                 onPlaylistLoaded={onPlaylistLoaded}
                 settings={settings}
               />

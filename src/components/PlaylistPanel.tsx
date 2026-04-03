@@ -67,8 +67,8 @@ function getContrastTextColor(bgColor: string): string {
 
 // Methods exposed for external access
 export interface PlaylistPanelMethods {
-  selectSongById: (songId: string) => PlaylistEntry | null;
-  selectItem: (index: number) => void;
+  selectSongById: (songId: string) => { index: number; item: PlaylistEntry } | null;
+  setSelectedIndex: (index: number) => void;
   getSelectedIndex: () => number;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => void;
@@ -77,25 +77,29 @@ export interface PlaylistPanelMethods {
   getCurrentPlaylist: () => Playlist;
 }
 
+export interface PlaylistSelectionEvent {
+  index: number;
+  item: PlaylistEntry | null;
+  song: Song | null;
+  source: "keyboard" | "mouse" | "programmatic";
+  settled: boolean;
+}
+
 interface PlaylistPanelProps {
   songs: Song[];
-  onSongSelected: (song: Song) => void;
   selectedSongFromList?: Song | null;
-  onPlaylistItemSelected?: (item: PlaylistEntry | null) => void;
+  onPlaylistSelectionChange?: (event: PlaylistSelectionEvent) => void;
   tt: (key: TooltipKey) => string | undefined; // Tooltip function injected by HOC
   t: (key: StringKey) => string; // Localization function injected by HOC
   showConfirm?: (title: string, message: string, onConfirm: () => void, onCancel?: () => void, options?: ConfirmOptions) => void;
-  selectedLeader?: Leader | null;
-  showMessage?: (errorType: "SaveFailed" | "LoadFailed", errorDetails: string) => void;
+  onError?: (errorType: "SaveFailed" | "LoadFailed", errorDetails: string) => void;
   disabled?: boolean; // When true, disables all playlist editing (used in watch mode)
   remotePlaylist?: Playlist | null; // Remote playlist when watching another session
-  // Controlled selection props for state persistence
-  selectedIndex?: number;
-  onSelectedIndexChange?: (index: number) => void;
   // Callback when playlist is loaded from localStorage - for state restoration
   onPlaylistLoaded?: (itemCount: number) => void;
   onPlaylistPreferenceUpdate?: (songIdOrPreference: SongPreferenceEntryData | string) => void;
   settings?: Settings | null; // Settings to check before updating leader profile
+  selectedLeader?: Leader | null; // Current leader context
 }
 
 interface PlaylistPanelState {
@@ -114,10 +118,11 @@ interface PlaylistPanelState {
 }
 
 class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelState> {
+  private pendingSelectedIndex: number = -1;
   constructor(props: PlaylistPanelProps) {
     super(props);
 
-    const initialIndex = props.selectedIndex ?? -1;
+    const initialIndex = -1;
     this.state = {
       currentPlaylist: new Playlist("CurrentPlaylist", []),
       selectedItems: initialIndex >= 0 ? new Set([initialIndex]) : new Set<number>(),
@@ -172,42 +177,17 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   componentDidUpdate(prevProps: PlaylistPanelProps) {
-    // Sync selection from external prop if it changed (controlled mode)
-    // console.debug(
-    //   "Playlist",
-    //   `componentDidUpdate: prevProps.selectedIndex=${prevProps.selectedIndex}, props.selectedIndex=${this.props.selectedIndex}, focusedIndex=${this.state.focusedIndex}, playlistLength=${this.state.currentPlaylist.items.length}`
-    // );
-    if (
-      prevProps.selectedIndex !== this.props.selectedIndex &&
-      this.props.selectedIndex !== undefined &&
-      this.props.selectedIndex !== this.state.focusedIndex
-    ) {
-      const newIndex = this.props.selectedIndex;
-      // console.debug("Playlist", `Applying external selection: ${newIndex}`);
-      if (newIndex >= 0 && newIndex < this.state.currentPlaylist.items.length) {
-        const item = this.state.currentPlaylist.items[newIndex];
-        // console.debug("Playlist", `Selected item: ${item?.title || item?.songId}`);
-        this.setState({
-          selectedItems: new Set([newIndex]),
-          focusedIndex: newIndex,
-          selectionAnchor: newIndex,
-        });
-        // Also trigger the selection callback to load the song
-        if (this.props.onPlaylistItemSelected) {
-          this.props.onPlaylistItemSelected(item);
-        }
-      } //else console.debug("Playlist", `Index ${newIndex} out of bounds (playlist has ${this.state.currentPlaylist.items.length} items)`);
-    }
-
     // Trigger color update when songs change (e.g., database updated)
     if (prevProps.songs !== this.props.songs) {
       this.updatePlaylistItemStates();
     }
 
-    // Clear remembered schedule date when leader changes (but not on initial mount)
-    if (prevProps.selectedLeader && prevProps.selectedLeader !== this.props.selectedLeader) {
-      this.setState({ scheduleDate: null });
-      this.persistScheduleDate(null);
+    // Handle selectedLeader prop changes
+    if (prevProps.selectedLeader !== this.props.selectedLeader) {
+      if (prevProps.selectedLeader && prevProps.selectedLeader !== this.props.selectedLeader) {
+        this.setState({ scheduleDate: null });
+        this.persistScheduleDate(null);
+      }
     }
 
     // Replace local playlist with remote playlist when watching another session
@@ -232,7 +212,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   componentWillUnmount() {
-    // Clean up timer if needed
+    // Clean up keyboard frame timer
+    if (this.keyboardNavRafId !== null) {
+      window.cancelAnimationFrame(this.keyboardNavRafId);
+      this.keyboardNavRafId = null;
+    }
+    // Clean up color timer
     if (this.colorUpdateTimer) {
       clearInterval(this.colorUpdateTimer);
       this.colorUpdateTimer = null;
@@ -240,9 +225,26 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     window.removeEventListener("pp-settings-changed", this.handleSettingsChange);
   }
 
-  // Public methods for external access (PlaylistPanelMethods interface)
-  selectItem(index: number): void {
+  // Public method: single input for driving selection from parent
+  setSelectedIndex(index: number): void {
+    this.pendingSelectedIndex = index;
+    this.applySelectedIndex(index, false);
+  }
+
+  private applySelectedIndex(index: number, emitChange: boolean): PlaylistSelectionEvent | null {
     const { currentPlaylist } = this.state;
+
+    if (index < 0) {
+      this.setState({
+        selectedItems: new Set<number>(),
+        focusedIndex: -1,
+        selectionAnchor: -1,
+      });
+      return emitChange
+        ? this.emitPlaylistSelectionChange(null, -1, "programmatic", true)
+        : this.createPlaylistSelectionEvent(null, -1, "programmatic", true);
+    }
+
     if (index >= 0 && index < currentPlaylist.items.length) {
       const item = currentPlaylist.items[index];
       this.setState({
@@ -250,14 +252,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         focusedIndex: index,
         selectionAnchor: index,
       });
-      // Notify about index change first (before item selection callback)
-      if (this.props.onSelectedIndexChange) {
-        this.props.onSelectedIndexChange(index);
-      }
-      if (this.props.onPlaylistItemSelected) {
-        this.props.onPlaylistItemSelected(item);
-      }
+      return emitChange
+        ? this.emitPlaylistSelectionChange(item, index, "programmatic", true)
+        : this.createPlaylistSelectionEvent(item, index, "programmatic", true);
     }
+
+    return null;
   }
 
   getSelectedIndex(): number {
@@ -297,7 +297,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return this.state.currentPlaylist;
   }
 
-  selectSongById(songId: string): PlaylistEntry | null {
+  selectSongById(songId: string): { index: number; item: PlaylistEntry } | null {
     const { currentPlaylist } = this.state;
     let index = currentPlaylist.items.findIndex((item) => item.songId === songId);
     if (index < 0) {
@@ -309,18 +309,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
     if (index >= 0 && index < currentPlaylist.items.length) {
       const item = currentPlaylist.items[index];
-      // Only update visual selection state — don't fire onPlaylistItemSelected.
-      // The caller (remote handler) is responsible for setting selectedPlaylistItem
-      // without auto-selecting a section.
-      this.setState({
-        selectedItems: new Set([index]),
-        focusedIndex: index,
-        selectionAnchor: index,
-      });
-      if (this.props.onSelectedIndexChange) {
-        this.props.onSelectedIndexChange(index);
-      }
-      return item;
+      // Don't set selection state here — let the selectedIndex prop drive visual selection.
+      // The caller should update the selectedIndex prop to apply the selection.
+      return { index, item };
     }
     return null;
   }
@@ -368,24 +359,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         // Notify parent that playlist is loaded (for state restoration)
         this.props.onPlaylistLoaded?.(playlist.items.length);
 
-        // Apply pending selection from controlled prop after playlist loads
-        // This handles the case where selectedIndex was set before playlist was ready
-        const pendingIndex = this.props.selectedIndex;
-        if (pendingIndex !== undefined && pendingIndex >= 0 && pendingIndex < playlist.items.length) {
-          // Directly trigger selection with the loaded playlist item
-          const item = playlist.items[pendingIndex];
-          this.setState({
-            selectedItems: new Set([pendingIndex]),
-            focusedIndex: pendingIndex,
-            selectionAnchor: pendingIndex,
-          });
-          // Notify parent about the selection
-          if (this.props.onSelectedIndexChange) {
-            this.props.onSelectedIndexChange(pendingIndex);
-          }
-          if (this.props.onPlaylistItemSelected) {
-            this.props.onPlaylistItemSelected(item);
-          }
+        // Apply pending selected index after playlist loads
+        const pendingIndex = this.pendingSelectedIndex;
+        if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
+          this.applySelectedIndex(pendingIndex, true);
         }
       } catch (err) {
         console.error("Playlist", "error in setState callback", err);
@@ -424,6 +401,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
     return null;
   }
+
+  private keyboardNavRafId: number | null = null;
+  private pendingKeyboardNavDelta: number = 0;
+  private pendingKeyboardNavShift: boolean = false;
 
   private colorUpdateTimer: NodeJS.Timeout | null = null;
   private checkedPlayListItems: Set<number> = new Set();
@@ -486,11 +467,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                 focusedIndex: existingIndex,
                 selectionAnchor: existingIndex,
               },
-              () => {
-                if (this.props.onPlaylistItemSelected) {
-                  this.props.onPlaylistItemSelected(existingItem);
-                }
-              }
+              () => this.emitPlaylistSelectionChange(existingItem, existingIndex, "programmatic", true)
             );
           },
           { confirmText: this.props.t("AddAgainConfirm") }
@@ -503,11 +480,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             focusedIndex: existingIndex,
             selectionAnchor: existingIndex,
           },
-          () => {
-            if (this.props.onPlaylistItemSelected) {
-              this.props.onPlaylistItemSelected(existingItem);
-            }
-          }
+          () => this.emitPlaylistSelectionChange(existingItem, existingIndex, "programmatic", true)
         );
       }
       return;
@@ -540,9 +513,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         this.updatePlaylistItemStates();
 
         // Notify parent component to project the newly added song
-        if (this.props.onPlaylistItemSelected) {
-          this.props.onPlaylistItemSelected(newEntry);
-        }
+        this.emitPlaylistSelectionChange(newEntry, newIndex, "programmatic", true);
       }
     );
   }
@@ -652,8 +623,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
       // Notify parent if the updated item is the currently focused/selected item
       // This ensures PreviewPanel gets updated instructions, capo, transpose, etc.
-      if (index === focusedIndex && this.props.onPlaylistItemSelected) {
-        this.props.onPlaylistItemSelected(item);
+      if (index === focusedIndex) {
+        this.emitPlaylistSelectionChange(item, index, "programmatic", true);
       }
     });
   }
@@ -702,15 +673,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       selectionAnchor: newSelectionAnchor,
     });
 
-    // Notify parent of selection index change first (for state persistence)
-    if (this.props.onSelectedIndexChange) {
-      this.props.onSelectedIndexChange(newFocusedIndex);
-    }
-
-    // Notify parent component about selected item
-    if (this.props.onPlaylistItemSelected) {
-      this.props.onPlaylistItemSelected(selectedItem);
-    }
+    // Notify parent component about selected item (index is derived by parent)
+    this.emitPlaylistSelectionChange(selectedItem, selectedItem ? newFocusedIndex : -1, "mouse", true);
   }
 
   handleItemContextMenu(index: number, event: React.MouseEvent) {
@@ -751,8 +715,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       },
       () => {
         if (shouldSelect) {
-          this.props.onSelectedIndexChange?.(index);
-          this.props.onPlaylistItemSelected?.(item);
+          this.emitPlaylistSelectionChange(item, index, "mouse", true);
         }
       }
     );
@@ -774,6 +737,57 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   getLastSelectedIndex(): number {
     const indices = this.getSelectedIndices();
     return indices.length > 0 ? indices[indices.length - 1] : -1;
+  }
+
+  private resolveSongForItem(item: PlaylistEntry | null): Song | null {
+    if (!item) return null;
+    const fromProps = this.props.songs.find((song) => song.Id === item.songId);
+    if (fromProps) return fromProps;
+    const db = Database.getInstance();
+    return db.getSongById(item.songId) || null;
+  }
+
+  private emitPlaylistSelectionChange(item: PlaylistEntry | null, index: number, source: "keyboard" | "mouse" | "programmatic", settled: boolean) {
+    const event = this.createPlaylistSelectionEvent(item, index, source, settled);
+    this.props.onPlaylistSelectionChange?.(event);
+    return event;
+  }
+
+  private createPlaylistSelectionEvent(
+    item: PlaylistEntry | null,
+    index: number,
+    source: "keyboard" | "mouse" | "programmatic",
+    settled: boolean
+  ): PlaylistSelectionEvent {
+    return {
+      index,
+      item,
+      song: this.resolveSongForItem(item),
+      source,
+      settled,
+    };
+  }
+
+  private scheduleKeyboardArrowNavigation(direction: number, shiftKey: boolean) {
+    this.pendingKeyboardNavDelta += direction;
+    this.pendingKeyboardNavShift = shiftKey;
+
+    if (this.keyboardNavRafId !== null) {
+      return;
+    }
+
+    this.keyboardNavRafId = window.requestAnimationFrame(() => {
+      this.keyboardNavRafId = null;
+
+      const navDelta = this.pendingKeyboardNavDelta;
+      const shift = this.pendingKeyboardNavShift;
+      this.pendingKeyboardNavDelta = 0;
+      this.pendingKeyboardNavShift = false;
+
+      if (navDelta === 0) return;
+
+      this.handleArrowNavigation(navDelta, shift);
+    });
   }
 
   handleArrowNavigation(direction: number, shiftKey: boolean) {
@@ -826,14 +840,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
     // Notify parent component
     const item = currentPlaylist.items[targetIndex];
-    if (this.props.onPlaylistItemSelected) {
-      this.props.onPlaylistItemSelected(item);
-    }
-
-    // Notify parent of selection index change (for state persistence)
-    if (this.props.onSelectedIndexChange) {
-      this.props.onSelectedIndexChange(targetIndex);
-    }
+    this.emitPlaylistSelectionChange(item, targetIndex, "keyboard", true);
   }
 
   handleMoveUp() {
@@ -869,7 +876,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       },
       () => {
         this.savePlaylist(updatedPlaylist);
-        this.props.onSelectedIndexChange?.(newFocusedIndex);
       }
     );
   }
@@ -909,7 +915,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       },
       () => {
         this.savePlaylist(updatedPlaylist);
-        this.props.onSelectedIndexChange?.(newFocusedIndex);
       }
     );
   }
@@ -972,8 +977,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       }
 
       // Notify parent if the focused item was one of the modified items
-      if (focusedIndex >= 0 && modifiedSet.has(focusedIndex) && this.props.onPlaylistItemSelected) {
-        this.props.onPlaylistItemSelected(newItems[focusedIndex]);
+      if (focusedIndex >= 0 && modifiedSet.has(focusedIndex)) {
+        this.emitPlaylistSelectionChange(newItems[focusedIndex], focusedIndex, "programmatic", true);
       }
     });
   }
@@ -1115,8 +1120,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         if (newItems.length === 0) this.persistScheduleDate(null);
         this.savePlaylist(updatedPlaylist);
         // Notify parent about new selection so display updates
-        this.props.onSelectedIndexChange?.(newFocusedIndex);
-        this.props.onPlaylistItemSelected?.(newFocusedIndex >= 0 ? newItems[newFocusedIndex] : null);
+        this.emitPlaylistSelectionChange(newFocusedIndex >= 0 ? newItems[newFocusedIndex] : null, newFocusedIndex, "programmatic", true);
       }
     );
   }
@@ -1221,7 +1225,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Save playlist - matching C# OnPlayListSave
   async handleSavePlaylist() {
-    const { selectedLeader } = this.props;
+    const selectedLeader = this.props.selectedLeader;
 
     if (selectedLeader) {
       // Save to leader's schedule
@@ -1237,7 +1241,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Load playlist - matching C# OnPlayListLoad
   async handleLoadPlaylist() {
-    const { selectedLeader } = this.props;
+    const selectedLeader = this.props.selectedLeader;
 
     if (selectedLeader) {
       // Load from leader's schedule
@@ -1253,7 +1257,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Handle schedule dialog date selection
   async handleScheduleDateSelected(date: Date) {
-    const { selectedLeader } = this.props;
+    const selectedLeader = this.props.selectedLeader;
     const { scheduleDialogMode, currentPlaylist } = this.state;
 
     this.setState({
@@ -1303,8 +1307,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         console.info("Playlist", "Playlist saved to:", result.filePath);
       } else {
         console.error("Playlist", "Failed to save playlist", result.error);
-        if (this.props.showMessage) {
-          this.props.showMessage("SaveFailed", result.error || "Unknown error");
+        if (this.props.onError) {
+          this.props.onError("SaveFailed", result.error || "Unknown error");
         }
       }
     } else {
@@ -1328,8 +1332,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         this.loadPlaylistData(result.content);
       } else if (result.error) {
         console.error("Playlist", "Failed to load playlist", result.error);
-        if (this.props.showMessage) {
-          this.props.showMessage("LoadFailed", result.error || "Unknown error");
+        if (this.props.onError) {
+          this.props.onError("LoadFailed", result.error || "Unknown error");
         }
       }
     } else {
@@ -1376,11 +1380,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     // Navigation keys - ArrowUp/ArrowDown for selection
     if (e.key === "ArrowUp" && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      this.handleArrowNavigation(-1, e.shiftKey);
+      this.scheduleKeyboardArrowNavigation(-1, e.shiftKey);
       return;
     } else if (e.key === "ArrowDown" && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      this.handleArrowNavigation(1, e.shiftKey);
+      this.scheduleKeyboardArrowNavigation(1, e.shiftKey);
       return;
     }
 
@@ -1817,9 +1821,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                     selectionAnchor: 0,
                   });
                   const firstItem = this.state.currentPlaylist.items[0];
-                  if (this.props.onPlaylistItemSelected) {
-                    this.props.onPlaylistItemSelected(firstItem);
-                  }
+                  this.emitPlaylistSelectionChange(firstItem, 0, "programmatic", true);
                 }
               }}
             >
@@ -1981,7 +1983,7 @@ const PlaylistItemRow: React.FC<{
     if (isFocused && ref.current) {
       const headerHeight = headerRef.current ? headerRef.current.offsetHeight : 0;
       ref.current.style.scrollMarginTop = `${headerHeight}px`;
-      ref.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      ref.current.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
   }, [isFocused]);
 
