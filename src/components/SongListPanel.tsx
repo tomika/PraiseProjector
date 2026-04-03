@@ -315,6 +315,17 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   private filterBarRef: HTMLDivElement | null = null;
   // Store reference to current database for cleanup
   private currentDb: ReturnType<typeof Database.getInstance> | null = null;
+  private keyboardSelectionDebounceTimer: number | null = null;
+  private keyboardNavRafId: number | null = null;
+  private pendingKeyboardNavDelta = 0;
+
+  private static readonly KEYBOARD_SELECTION_DEBOUNCE_MS = 180;
+
+  private scrollSelectedSongIntoView = () => {
+    if (this.selectedItemElement) {
+      this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
+    }
+  };
 
   static addSongToPlaylist(song: Song) {
     if (addSongToPlaylistCallback) {
@@ -342,11 +353,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (song) {
       this.setState({ selectedSong: song }, () => {
         this.expandCategoryForSong(song!);
-        setTimeout(() => {
-          if (this.selectedItemElement) {
-            this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
-          }
-        }, 50);
+        requestAnimationFrame(this.scrollSelectedSongIntoView);
       });
     }
   }
@@ -414,6 +421,15 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (this.currentDb) {
       this.currentDb.emitter.off("db-updated", this.updateCategories);
     }
+    if (this.keyboardSelectionDebounceTimer !== null) {
+      window.clearTimeout(this.keyboardSelectionDebounceTimer);
+      this.keyboardSelectionDebounceTimer = null;
+    }
+    if (this.keyboardNavRafId !== null) {
+      window.cancelAnimationFrame(this.keyboardNavRafId);
+      this.keyboardNavRafId = null;
+      this.pendingKeyboardNavDelta = 0;
+    }
     window.removeEventListener("focus", this.handleWindowFocus);
     window.removeEventListener("resize", this.handleWindowResize);
   }
@@ -473,27 +489,14 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       this.setState({ selectedSong: newSong }, () => {
         // Expand category containing the selected song and scroll into view
         this.expandCategoryForSong(newSong);
-        // Scroll into view after a short delay to allow DOM update
-        setTimeout(() => {
-          if (this.selectedItemElement) {
-            this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
-          }
-        }, 50);
+        requestAnimationFrame(this.scrollSelectedSongIntoView);
       });
     } else if (prevProps.selectedSong !== this.props.selectedSong) {
       this.setState({ selectedSong: this.props.selectedSong || null });
     }
 
-    // Scroll into view when selection changes internally
-    if (prevState.selectedSong?.Id !== this.state.selectedSong?.Id && this.state.selectedSong) {
-      setTimeout(() => {
-        if (this.selectedItemElement) {
-          this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
-        }
-      }, 50);
-    }
-
-    this.updateInlineSearchOptionsVisibility();
+    // Keep this out of generic updates: it reads layout and can hurt key-repeat responsiveness.
+    // It is updated on mount and window resize instead.
   }
 
   private handleWindowResize() {
@@ -570,11 +573,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     if (isExpanding) {
       // Keep selected item visible after list expands
-      setTimeout(() => {
-        if (this.selectedItemElement) {
-          this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
-        }
-      }, 50);
+      requestAnimationFrame(this.scrollSelectedSongIntoView);
     } else {
       // Narrowing or new search — scroll to top
       if (this.scrollContainerRef) {
@@ -584,9 +583,62 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   handleSongClick(song: Song) {
+    if (this.keyboardSelectionDebounceTimer !== null) {
+      window.clearTimeout(this.keyboardSelectionDebounceTimer);
+      this.keyboardSelectionDebounceTimer = null;
+    }
     // Don't update local state immediately - let the parent decide via selectedSong prop
     // This allows the parent to show a confirmation dialog and cancel the selection if needed
     this.props.onSongSelected(song);
+  }
+
+  private queueKeyboardSongSelection(song: Song) {
+    this.setState({ selectedSong: song }, () => {
+      requestAnimationFrame(this.scrollSelectedSongIntoView);
+    });
+
+    if (this.keyboardSelectionDebounceTimer !== null) {
+      window.clearTimeout(this.keyboardSelectionDebounceTimer);
+    }
+
+    this.keyboardSelectionDebounceTimer = window.setTimeout(() => {
+      this.keyboardSelectionDebounceTimer = null;
+      this.props.onSongSelected(song);
+    }, SongListPanel.KEYBOARD_SELECTION_DEBOUNCE_MS);
+  }
+
+  private scheduleKeyboardNavigation(direction: -1 | 1) {
+    this.pendingKeyboardNavDelta += direction;
+
+    if (this.keyboardNavRafId !== null) {
+      return;
+    }
+
+    this.keyboardNavRafId = window.requestAnimationFrame(() => {
+      this.keyboardNavRafId = null;
+
+      const navDelta = this.pendingKeyboardNavDelta;
+      this.pendingKeyboardNavDelta = 0;
+      if (navDelta === 0) return;
+
+      const visibleSongs = this.getFlatVisibleSongs();
+      if (visibleSongs.length === 0) return;
+
+      const { selectedSong } = this.state;
+      const selectedIndex = selectedSong ? visibleSongs.findIndex((song) => song.Id === selectedSong.Id) : -1;
+
+      let nextIndex: number;
+      if (selectedIndex === -1) {
+        nextIndex = navDelta < 0 ? visibleSongs.length - 1 : 0;
+      } else {
+        nextIndex = Math.max(0, Math.min(visibleSongs.length - 1, selectedIndex + navDelta));
+      }
+
+      const nextSong = visibleSongs[nextIndex];
+      if (nextSong && nextSong.Id !== selectedSong?.Id) {
+        this.queueKeyboardSongSelection(nextSong);
+      }
+    });
   }
 
   handleDoubleClick(song: Song) {
@@ -1047,7 +1099,45 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }
   };
 
+  private getFlatVisibleSongs(): Song[] {
+    const { categories } = this.state;
+    const songs: Song[] = [];
+
+    for (const category of categories) {
+      if (!category.expanded) continue;
+
+      for (const item of category.items) {
+        if (item.type === "song") {
+          songs.push(item.songFound.song);
+          continue;
+        }
+
+        if (!item.folder.expanded) continue;
+        for (const groupedSong of item.folder.songs) {
+          songs.push(groupedSong.song);
+        }
+      }
+    }
+
+    return songs;
+  }
+
   handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      this.scheduleKeyboardNavigation(event.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      const { selectedSong } = this.state;
+      if (selectedSong) {
+        event.preventDefault();
+        this.handleDoubleClick(selectedSong);
+      }
+      return;
+    }
+
     if (event.key === "Delete") {
       const { selectedSong } = this.state;
       if (selectedSong && selectedSong.GroupId) {
