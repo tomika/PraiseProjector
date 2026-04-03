@@ -69,6 +69,7 @@ import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelop
 import { formatLocalDateLabel } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
+import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -1591,9 +1592,6 @@ const AppContent: React.FC = () => {
     [applyDisplay]
   );
 
-  // Store cleanup functions for UDP event listeners
-  const udpCleanupRef = useRef<{ displayCleanup?: () => void; sessionEndedCleanup?: () => void }>({});
-
   // Use ref for exit function to avoid circular dependency
   const exitWatchModeRef = useRef<() => void>(() => {});
 
@@ -1614,20 +1612,8 @@ const AppContent: React.FC = () => {
       watchPollingAbortRef.current = null;
     }
 
-    // Stop UDP watching
-    if (window.electronAPI?.udpStopWatching) {
-      window.electronAPI.udpStopWatching();
-    }
-
-    // Clean up UDP event listeners
-    if (udpCleanupRef.current.displayCleanup) {
-      udpCleanupRef.current.displayCleanup();
-      udpCleanupRef.current.displayCleanup = undefined;
-    }
-    if (udpCleanupRef.current.sessionEndedCleanup) {
-      udpCleanupRef.current.sessionEndedCleanup();
-      udpCleanupRef.current.sessionEndedCleanup = undefined;
-    }
+    // Stop local UDP watching via HostDevice bridge
+    stopHostDeviceWatching();
 
     // Clear watched display state (matching C# watchedDisplay = null in ExitSessionWatchingMode)
     watchedDisplayRef.current = null;
@@ -1670,21 +1656,21 @@ const AppContent: React.FC = () => {
       setProjectedSong(null);
       updateCurrentSongText("");
 
-      if (sessionType === "local" && udpDetails && window.electronAPI?.udpStartWatching) {
-        // UDP session watching - matching C# behavior for local sessions
-
-        // Initialize watched display state for change detection (matching C# watchedDisplay = new Display())
+      if (sessionType === "local" && udpDetails) {
+        // UDP session watching via HostDevice bridge (Android/Electron parity).
         watchedDisplayRef.current = getEmptyDisplay();
-        // Set up UDP event listeners
-        if (window.electronAPI.onUdpDisplayUpdate) {
-          udpCleanupRef.current.displayCleanup = window.electronAPI.onUdpDisplayUpdate(handleUdpDisplayUpdate);
+        if (!isHostDevicePpdAvailable()) {
+          console.warn("App", "HostDevice unavailable for local watch mode");
+          exitWatchModeRef.current();
+          return;
         }
-        if (window.electronAPI.onUdpSessionEnded) {
-          udpCleanupRef.current.sessionEndedCleanup = window.electronAPI.onUdpSessionEnded(handleUdpSessionEnded);
-        }
-
-        // Start UDP watching
-        window.electronAPI.udpStartWatching(sessionId, udpDetails.hostId, udpDetails.address, udpDetails.port);
+        void initHostDevicePpd();
+        void startHostDeviceWatching(sessionId, udpDetails, handleUdpDisplayUpdate, handleUdpSessionEnded).then((started) => {
+          if (!started) {
+            console.warn("App", "HostDevice local watch start failed");
+            exitWatchModeRef.current();
+          }
+        });
       } else {
         // Cloud session watching - polling loop (matching C# WatchOnlineDisplay)
         watchPollingAbortRef.current = new AbortController();
