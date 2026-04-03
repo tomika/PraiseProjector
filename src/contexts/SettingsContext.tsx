@@ -148,7 +148,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       theme: "auto", // Auto-detect from system
       language: "auto", // Auto-detect from system
       leaderProfileUpdateMode: "allSources", // Allow profile updates from all sources by default
-      showPreferredOnly: false, // Don't filter by preferred by default
+      preferenceFilter: "all" as const, // Show all songs (excluding ignored) by default
       // QR Code settings
       qrCodeInPreview: false, // Show QR code in preview by default
       qrCodeX: 85, // QR code X position (% of image width)
@@ -169,6 +169,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
         if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
+        // Migrate old showPreferredOnly boolean to preferenceFilter string
+        const raw = loadedSettings as unknown as Record<string, unknown>;
+        if (!raw.preferenceFilter && raw.showPreferredOnly === true) {
+          merged.preferenceFilter = "preferred-only";
+        }
         setSettings(merged);
         setInitialSettings(merged);
       })

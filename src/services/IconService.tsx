@@ -76,6 +76,9 @@ export enum IconType {
   // Monochrome indicators
   CHECKBOX_CHECKED = "checkbox_checked",
   CHECKBOX_EMPTY = "checkbox_empty",
+
+  // Filter / visibility
+  EYE = "eye",
 }
 
 interface IconConfig {
@@ -423,6 +426,11 @@ const iconMap: Record<IconType, IconConfig> = {
   [IconType.CHECKBOX_EMPTY]: {
     faIcon: "fa fa-square-o",
     alt: "Unchecked",
+  },
+  [IconType.EYE]: {
+    faIcon: "fa fa-eye",
+    imagePath: "assets/eye.png",
+    alt: "Show all including ignored",
   },
 };
 

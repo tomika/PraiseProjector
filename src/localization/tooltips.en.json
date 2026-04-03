@@ -59,6 +59,10 @@
   
   "song_filter": "Filter songs by title or content",
   "song_filter_clear": "Clear filter",
+  "song_preference_neutral": "Neutral",
+  "song_preference_preferred": "Preferred",
+  "song_preference_ignored": "Ignored",
+
   "section_check_all": "Check all sections for projection",
   "section_uncheck_all": "Uncheck all sections",
   "section_previous": "Select previous section",

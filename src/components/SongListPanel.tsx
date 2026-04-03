@@ -46,7 +46,8 @@ interface SongListPanelState {
   showSongs: boolean; // Show items with chords (miShowSong)
   showTextOnly: boolean; // Show text-only items (miShowText)
   showMarked: boolean; // Show marked items (miShowMarked)
-  showPreferredOnly: boolean; // Filter to show only preferred songs
+  showPreferredOnly?: never; // removed - use preferenceFilter
+  preferenceFilter: "all" | "preferred-only" | "show-ignored"; // Filter mode for song list
   orderMode: "alphabetical" | "recent" | "cost"; // miAlphabeticalOrder, miRecentOrder, miCostOrder
   contextMenuVisible: boolean;
   contextMenuX: number;
@@ -376,7 +377,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       showSongs: true, // Default checked (miShowSong)
       showTextOnly: true, // Default checked (miShowText)
       showMarked: true, // Default checked (miShowMarked)
-      showPreferredOnly: props.settings.showPreferredOnly ?? false,
+      preferenceFilter: props.settings.preferenceFilter ?? "all",
       orderMode: "cost", // Default to LessCostMatch
       contextMenuVisible: false,
       contextMenuX: 0,
@@ -402,7 +403,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.handleHistoryDialogClose = this.handleHistoryDialogClose.bind(this);
     this.handleDeleteSong = this.handleDeleteSong.bind(this);
     this.handleHeartClick = this.handleHeartClick.bind(this);
-    this.togglePreferredFilter = this.togglePreferredFilter.bind(this);
+    this.handleSetPreference = this.handleSetPreference.bind(this);
+    this.cyclePreferenceFilter = this.cyclePreferenceFilter.bind(this);
     this.handleDropSongOnSong = this.handleDropSongOnSong.bind(this);
     this.handleDropSongOnFolder = this.handleDropSongOnFolder.bind(this);
     this.handleUngroupSong = this.handleUngroupSong.bind(this);
@@ -705,19 +707,31 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     const db = Database.getInstance();
     const pref = leader.getPreference(song.Id);
-    const newMode: "Preferred" | "Ignore" | "" = pref?.type === "Preferred" ? "Ignore" : pref?.type === "Ignore" ? "" : "Preferred";
+    // Toggle between neutral and preferred only; use context menu to set Ignore
+    const newMode: "Preferred" | "" = pref?.type === "Preferred" ? "" : "Preferred";
 
     leader.updatePreference(song.Id, { type: newMode }, db);
     db.forceSave();
     this.updateCategories();
   }
 
-  togglePreferredFilter() {
+  handleSetPreference(song: Song, type: "Preferred" | "Ignore" | "") {
+    const leader = this.props.selectedLeader;
+    if (!leader) return;
+
+    const db = Database.getInstance();
+    leader.updatePreference(song.Id, { type }, db);
+    db.forceSave();
+    this.updateCategories();
+  }
+
+  cyclePreferenceFilter() {
     this.setState(
       (prevState) => {
-        const newValue = !prevState.showPreferredOnly;
-        this.props.updateSettingWithAutoSave?.("showPreferredOnly", newValue);
-        return { showPreferredOnly: newValue };
+        const next =
+          prevState.preferenceFilter === "all" ? "preferred-only" : prevState.preferenceFilter === "preferred-only" ? "show-ignored" : "all";
+        this.props.updateSettingWithAutoSave?.("preferenceFilter", next);
+        return { preferenceFilter: next };
       },
       () => this.updateCategories()
     );
@@ -858,7 +872,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   async updateCategories() {
-    const { filter, showSongs, showTextOnly, showMarked, showPreferredOnly, orderMode } = this.state;
+    const { filter, showSongs, showTextOnly, showMarked, preferenceFilter, orderMode } = this.state;
     const db = Database.getInstance();
 
     // Map orderMode to SongOrder enum
@@ -882,7 +896,13 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     // Filter to preferred-only songs if toggle is active
     let songsToGroup: SongFound[] = filteredSongs;
     if (this.props.selectedLeader) {
-      songsToGroup = filteredSongs.filter((sf) => (showPreferredOnly ? sf.preference.type === "Preferred" : sf.preference.type !== "Ignore"));
+      songsToGroup = filteredSongs.filter((sf) =>
+        preferenceFilter === "preferred-only"
+          ? sf.preference.type === "Preferred"
+          : preferenceFilter === "show-ignored"
+            ? true
+            : sf.preference.type !== "Ignore"
+      );
     }
 
     // Group by FoundReason
@@ -1234,44 +1254,97 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   };
 
   renderContextMenu() {
-    const { contextMenuVisible, contextMenuX, contextMenuY, showSongs, showTextOnly, showMarked, orderMode } = this.state;
+    const { contextMenuVisible, contextMenuX, contextMenuY, showSongs, showTextOnly, showMarked, orderMode, selectedSong } = this.state;
     const { t } = this.props;
+    const { tt } = this.props;
 
     if (!contextMenuVisible) return null;
+
+    const leader = this.props.selectedLeader;
+    const currentPref = leader && selectedSong ? leader.getPreference(selectedSong.Id) : null;
 
     const menu = (
       <>
         <div className="songlist-context-menu-overlay" onClick={this.hideContextMenu} />
         <div className="songlist-context-menu" style={{ left: `${contextMenuX}px`, top: `${contextMenuY}px` }}>
-          <div
-            className="songlist-context-menu-item"
-            onClick={() => {
-              this.setState({ showMarked: !showMarked }, () => this.updateCategories());
-              this.hideContextMenu();
-            }}
-          >
-            <i className={`fa fa-${showMarked ? "check-" : ""}square-o me-2`}></i>
-            {t?.("SongListShowMarkedItems") || "Show marked items"}
-          </div>
-          <div
-            className="songlist-context-menu-item"
-            onClick={() => {
-              this.setState({ showSongs: !showSongs }, () => this.updateCategories());
-              this.hideContextMenu();
-            }}
-          >
-            <i className={`fa fa-${showSongs ? "check-" : ""}square-o me-2`}></i>
-            {t?.("SongListShowSongItems") || "Show song items"}
-          </div>
-          <div
-            className="songlist-context-menu-item"
-            onClick={() => {
-              this.setState({ showTextOnly: !showTextOnly }, () => this.updateCategories());
-              this.hideContextMenu();
-            }}
-          >
-            <i className={`fa fa-${showTextOnly ? "check-" : ""}square-o me-2`}></i>
-            {t?.("SongListShowTextOnlyItems") || "Show text-only items"}
+          {/* Preference row — only shown when a leader and song are selected */}
+          {leader && selectedSong && (
+            <>
+              <div className="songlist-context-menu-item songlist-context-menu-preference">
+                <span className="preference-label me-2">{t?.("SongListPreferenceModeMenu")}</span>
+                <button
+                  className={`preference-option${!currentPref?.type || (currentPref.type !== "Preferred" && currentPref.type !== "Ignore") ? " active" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    this.handleSetPreference(selectedSong, "");
+                    this.hideContextMenu();
+                  }}
+                  title={tt?.("song_preference_neutral")}
+                >
+                  <Icon type={IconType.HEART_EMPTY} />
+                </button>
+                <button
+                  className={`preference-option${currentPref?.type === "Preferred" ? " active" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    this.handleSetPreference(selectedSong, "Preferred");
+                    this.hideContextMenu();
+                  }}
+                  title={tt?.("song_preference_preferred")}
+                >
+                  <Icon type={IconType.HEART_FILLED} />
+                </button>
+                <button
+                  className={`preference-option${currentPref?.type === "Ignore" ? " active" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    this.handleSetPreference(selectedSong, "Ignore");
+                    this.hideContextMenu();
+                  }}
+                  title={tt?.("song_preference_ignored")}
+                >
+                  <Icon type={IconType.HEART_IGNORED} />
+                </button>
+              </div>
+              <div className="songlist-context-menu-divider"></div>
+            </>
+          )}
+          <div className="songlist-context-menu-item songlist-context-menu-submenu">
+            <i className="fa fa-filter me-2"></i>
+            <span>{t?.("SongListFilterMenu")}</span>
+            <i className="fa fa-chevron-right ms-auto"></i>
+            <div className="songlist-context-submenu">
+              <div
+                className="songlist-context-menu-item"
+                onClick={() => {
+                  this.setState({ showMarked: !showMarked }, () => this.updateCategories());
+                  this.hideContextMenu();
+                }}
+              >
+                <i className={`fa fa-${showMarked ? "check-" : ""}square-o me-2`}></i>
+                {t?.("SongListShowMarkedItems") || "Show marked items"}
+              </div>
+              <div
+                className="songlist-context-menu-item"
+                onClick={() => {
+                  this.setState({ showSongs: !showSongs }, () => this.updateCategories());
+                  this.hideContextMenu();
+                }}
+              >
+                <i className={`fa fa-${showSongs ? "check-" : ""}square-o me-2`}></i>
+                {t?.("SongListShowSongItems") || "Show song items"}
+              </div>
+              <div
+                className="songlist-context-menu-item"
+                onClick={() => {
+                  this.setState({ showTextOnly: !showTextOnly }, () => this.updateCategories());
+                  this.hideContextMenu();
+                }}
+              >
+                <i className={`fa fa-${showTextOnly ? "check-" : ""}square-o me-2`}></i>
+                {t?.("SongListShowTextOnlyItems") || "Show text-only items"}
+              </div>
+            </div>
           </div>
           <div className="songlist-context-menu-divider"></div>
           <div className="songlist-context-menu-item songlist-context-menu-submenu">
@@ -1360,7 +1433,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   render() {
-    const { filter, categories, selectedSong, showPreferredOnly, showInlineSearchOptions } = this.state;
+    const { filter, categories, selectedSong, preferenceFilter, showInlineSearchOptions } = this.state;
     const hasLeader = !!this.props.selectedLeader;
     const searchMethod = this.props.settings.searchMethod;
     const isTraditionalSearch = searchMethod === "traditional";
@@ -1377,13 +1450,27 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
           {hasLeader && (
             <div className="input-group-prepend">
               <button
-                className={`btn btn-outline-secondary preferred-filter-btn ${showPreferredOnly ? "preferred-filter-active" : ""}`}
+                className={`btn btn-outline-secondary preferred-filter-btn${preferenceFilter === "preferred-only" ? " preferred-filter-active" : preferenceFilter === "show-ignored" ? " preferred-filter-show-ignored" : ""}`}
                 type="button"
-                aria-label="Show preferred only"
-                title={showPreferredOnly ? "Showing preferred only" : "Show all songs"}
-                onClick={this.togglePreferredFilter}
+                aria-label="Cycle preference filter"
+                title={
+                  preferenceFilter === "preferred-only"
+                    ? "Showing preferred only"
+                    : preferenceFilter === "show-ignored"
+                      ? "Showing all including ignored"
+                      : "Show all songs"
+                }
+                onClick={this.cyclePreferenceFilter}
               >
-                <Icon type={showPreferredOnly ? IconType.BIG_HEART_FILLED : IconType.BIG_HEART_EMPTY} />
+                <Icon
+                  type={
+                    preferenceFilter === "preferred-only"
+                      ? IconType.BIG_HEART_FILLED
+                      : preferenceFilter === "show-ignored"
+                        ? IconType.EYE
+                        : IconType.BIG_HEART_EMPTY
+                  }
+                />
               </button>
             </div>
           )}

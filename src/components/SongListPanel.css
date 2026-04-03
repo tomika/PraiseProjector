@@ -277,6 +277,60 @@
   color: #e74c3c;
 }
 
+.preferred-filter-btn.preferred-filter-show-ignored .fa-eye {
+  color: #fff;
+}
+
+/* Preference row in context menu */
+.songlist-context-menu-preference {
+  align-items: center;
+  gap: 0.35rem;
+  cursor: default;
+}
+
+.songlist-context-menu-preference:hover {
+  background-color: transparent;
+}
+
+.preference-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  flex-shrink: 0;
+}
+
+.preference-option {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+  transition:
+    background-color 0.1s,
+    border-color 0.1s;
+}
+
+.preference-option:hover {
+  background-color: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.preference-option.active {
+  border-color: #0d6efd;
+  background-color: #e7f1ff;
+  color: #0a58ca;
+}
+
+.preference-option.active .fa-heart {
+  color: #e74c3c;
+}
+
+.preference-option.active .fa-times {
+  color: #dc3545;
+}
+
 .song-search-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -346,6 +400,10 @@
 }
 
 .song-filter-clear-btn {
+  padding: 0 !important;
+}
+
+.preferred-filter-btn {
   padding: 0 !important;
 }
 
@@ -477,6 +535,25 @@
 
 [data-theme="dark"] .songlist-context-menu-item.disabled {
   color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .preference-label {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .preference-option {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .preference-option:hover {
+  background-color: var(--pp-bg-tertiary);
+  border-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .preference-option.active {
+  border-color: #58a8ff;
+  background-color: rgba(77, 163, 255, 0.18);
+  color: #d6ebff;
 }
 
 [data-theme="dark"] .songlist-context-menu-divider {

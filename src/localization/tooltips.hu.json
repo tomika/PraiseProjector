@@ -59,6 +59,10 @@
   
   "song_filter": "Dalok szűrése cím vagy tartalom alapján",
   "song_filter_clear": "Szűrő törlése",
+  "song_preference_neutral": "Semleges",
+  "song_preference_preferred": "Kedvelt",
+  "song_preference_ignored": "Figyelmen kívül hagyott",
+
   "section_check_all": "Minden szakasz kijelölése vetítéshez",
   "section_uncheck_all": "Minden szakasz kijelölésének törlése",
   "section_previous": "Előző szakasz kiválasztása",
