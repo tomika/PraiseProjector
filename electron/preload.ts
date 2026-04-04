@@ -327,7 +327,15 @@ contextBridge.exposeInMainWorld("hostDevice", {
   exit: () => ipcRenderer.invoke("hostdevice-exit"),
   version: () => ipcRenderer.invoke("hostdevice-version"),
   info: (flags: number) => ipcRenderer.invoke("hostdevice-info", flags),
+  enableNotification: (sessionId: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean) =>
+    ipcRenderer.invoke("hostdevice-enable-notification", sessionId, name, descriptionText, checkIntervalMinutes, acquire),
+  getCacheSize: () => ipcRenderer.invoke("hostdevice-get-cache-size"),
+  clearCache: (includeDiskFiles: boolean) => ipcRenderer.invoke("hostdevice-clear-cache", includeDiskFiles),
+  startNavigationTimeout: (navigationTimeoutMs: number, message: string) =>
+    ipcRenderer.invoke("hostdevice-start-navigation-timeout", navigationTimeoutMs, message),
+  pageLoadedSuccessfully: () => ipcRenderer.invoke("hostdevice-page-loaded-successfully"),
   keepScreenOn: (enabled: boolean) => ipcRenderer.invoke("hostdevice-keep-screen-on", enabled),
+  share: (url: string, title: string, text: string) => ipcRenderer.invoke("hostdevice-share", url, title, text),
   openLinkExternal: (url: string) => ipcRenderer.invoke("hostdevice-open-link-external", url),
   getThirdPartyLicenseSections: () => ipcRenderer.invoke("hostdevice-get-third-party-license-sections"),
   checkNearbyPermissions: (acquire: boolean) => ipcRenderer.invoke("hostdevice-check-nearby-permissions", acquire),
@@ -337,10 +345,4 @@ contextBridge.exposeInMainWorld("hostDevice", {
   sendNearbyMessage: (endpointId: string, message: string) => ipcRenderer.invoke("hostdevice-send-nearby-message", endpointId, message),
   closeNearby: (endpointId: string) => ipcRenderer.invoke("hostdevice-close-nearby", endpointId),
   getNearbyState: () => ipcRenderer.invoke("hostdevice-get-nearby-state"),
-  onDeviceMessage: (callback: (message: HostDeviceMessage) => void) => {
-    hostDeviceMessageListeners.add(callback);
-    return () => {
-      hostDeviceMessageListeners.delete(callback);
-    };
-  },
 });

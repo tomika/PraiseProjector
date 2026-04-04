@@ -228,21 +228,47 @@ const ensureListening = async () => {
   return listenPort;
 };
 
+type GlobalWindowWithHandler = { handleDeviceMessage?: (raw: string) => void };
+
 export const isHostDevicePpdAvailable = () => {
   const hostDevice = getHostDevice();
-  return !!(hostDevice?.sendUdpMessage && hostDevice?.listenOnUdpPort && hostDevice?.onDeviceMessage);
+  return !!(hostDevice?.sendUdpMessage && hostDevice?.listenOnUdpPort);
 };
 
 export const initHostDevicePpd = async () => {
   if (initialized || !isHostDevicePpdAvailable()) return;
   initialized = true;
   await ensureListening();
-  const hostDevice = getHostDevice();
-  if (hostDevice?.onDeviceMessage) {
-    unsubscribeHostDevice = hostDevice.onDeviceMessage((payload) => {
+
+  const handleRaw = (raw: string) => {
+    try {
+      const payload = JSON.parse(raw) as { op: string; param: unknown };
       void onDeviceMessage(payload);
-    });
-  }
+    } catch {}
+  };
+
+  // Electron (contextIsolation): preload dispatches a CustomEvent on the shared DOM.
+  const domEventListener = (e: Event) => {
+    const detail = (e as CustomEvent<{ op: string; param: unknown }>).detail;
+    if (detail && typeof detail.op === "string") void onDeviceMessage(detail);
+  };
+  window.addEventListener("pp-hostdevice-message", domEventListener);
+
+  // Android: evaluateJavascript calls window.handleDeviceMessage directly in main world.
+  const globalWin = window as unknown as GlobalWindowWithHandler;
+  const previous = globalWin.handleDeviceMessage;
+  const ourHandler = (raw: string) => {
+    previous?.(raw);
+    handleRaw(raw);
+  };
+  globalWin.handleDeviceMessage = ourHandler;
+
+  unsubscribeHostDevice = () => {
+    window.removeEventListener("pp-hostdevice-message", domEventListener);
+    if ((window as unknown as GlobalWindowWithHandler).handleDeviceMessage === ourHandler) {
+      (window as unknown as GlobalWindowWithHandler).handleDeviceMessage = previous;
+    }
+  };
 };
 
 export const disposeHostDevicePpd = () => {

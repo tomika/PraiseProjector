@@ -22,7 +22,19 @@ export interface ElectronHostDevice {
   exit?: () => void | Promise<void>;
   version?: () => string | Promise<string>;
   info?: (flags: number) => string | Promise<string>;
+  enableNotification?: (
+    sessionId: string,
+    name: string,
+    descriptionText: string,
+    checkIntervalMinutes: number,
+    acquire: boolean
+  ) => boolean | Promise<boolean>;
+  getCacheSize?: () => number | Promise<number>;
+  clearCache?: (includeDiskFiles: boolean) => boolean | Promise<boolean>;
+  startNavigationTimeout?: (navigationTimeoutMs: number, message: string) => void | Promise<void>;
+  pageLoadedSuccessfully?: () => void | Promise<void>;
   keepScreenOn?: (enabled: boolean) => void | Promise<void>;
+  share?: (url: string, title: string, text: string) => void | Promise<void>;
   openLinkExternal?: (url: string) => void | Promise<void>;
   getThirdPartyLicenseSections?: () => string | Promise<string>;
   checkNearbyPermissions?: (acquire: boolean) => boolean | Promise<boolean>;
@@ -31,8 +43,6 @@ export interface ElectronHostDevice {
   connectNearby?: (endpointId: string) => boolean | Promise<boolean>;
   sendNearbyMessage?: (endpointId: string, message: string) => boolean | Promise<boolean>;
   closeNearby?: (endpointId: string) => boolean | Promise<boolean>;
-  getNearbyState?: () => Promise<{ discovering: boolean; sessions: Array<{ id: string; name: string; transport: string }> }>;
-  onDeviceMessage?: (callback: (message: HostDeviceMessage) => void) => () => void;
 }
 
 declare global {

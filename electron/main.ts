@@ -8,6 +8,7 @@ import {
   dialog,
   shell,
   powerSaveBlocker,
+  session,
   nativeImage,
   type MessageBoxOptions,
   type MessageBoxReturnValue,
@@ -1583,6 +1584,34 @@ ipcMain.handle("hostdevice-open-link-external", async (_event, url: string) => {
 
 ipcMain.handle("hostdevice-get-third-party-license-sections", async () => {
   return "[]";
+});
+
+ipcMain.handle("hostdevice-enable-notification", () => false);
+
+ipcMain.handle("hostdevice-get-cache-size", async () => {
+  try {
+    return await session.defaultSession.getCacheSize();
+  } catch {
+    return -1;
+  }
+});
+
+ipcMain.handle("hostdevice-clear-cache", async (_event, _includeDiskFiles: boolean) => {
+  try {
+    await session.defaultSession.clearCache();
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle("hostdevice-start-navigation-timeout", () => true);
+
+ipcMain.handle("hostdevice-page-loaded-successfully", () => true);
+
+ipcMain.handle("hostdevice-share", async (_event, url: string) => {
+  if (url) await openExternalUrlSafely(url);
+  return true;
 });
 
 // Open OS Bluetooth settings for device pairing
