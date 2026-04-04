@@ -459,6 +459,7 @@ function openPrintWindow(): void {
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.allowPrerelease = false; // Use stable releases (latest.yml)
+autoUpdater.allowDowngrade = true; // Allow downgrade when switching from testing to stable
 // Disable signature verification for unsigned builds in dev, but enforce in production.
 autoUpdater.forceDevUpdateConfig = !isProductionRuntime();
 // Note: channel defaults to "latest" which uses latest.yml
@@ -477,6 +478,74 @@ function loadReleasesUrl(): void {
     if (match) releasesBaseUrl = match[1].trim();
   } catch {
     // Will fall back to cloudApiHost in openManualMacUpdateDialog.
+  }
+}
+
+// Track the current update channel (stable or testing)
+let currentUpdateChannel: string = "stable";
+
+/**
+ * Apply update channel by setting the appropriate feed URL.
+ * Stable channel uses default latest.yml, testing uses testing/latest.yml subfolder.
+ */
+function applyUpdateChannel(channel: string): void {
+  if (!releasesBaseUrl) {
+    console.warn("Releases base URL not loaded, cannot apply channel:", channel);
+    return;
+  }
+
+  currentUpdateChannel = channel;
+  const feedUrl = channel === "testing" ? `${releasesBaseUrl}/testing` : releasesBaseUrl;
+
+  console.log(`Applying update channel: ${channel}`);
+  console.log(`Feed base URL: ${feedUrl}`);
+
+  autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
+}
+
+function getMetadataFileName(): string {
+  return process.platform === "linux" ? "latest-linux.yml" : process.platform === "darwin" ? "latest-mac.yml" : "latest.yml";
+}
+
+function buildChannelMetadataUrl(channel: string): string | null {
+  if (!releasesBaseUrl) return null;
+  const metadataFileName = getMetadataFileName();
+  return channel === "testing" ? `${releasesBaseUrl}/testing/${metadataFileName}` : `${releasesBaseUrl}/${metadataFileName}`;
+}
+
+async function fetchChannelVersionFromMetadata(channel: string): Promise<string | null> {
+  const metadataUrl = buildChannelMetadataUrl(channel);
+  if (!metadataUrl) return null;
+
+  try {
+    const response = await fetch(metadataUrl, { cache: "no-store" });
+    if (!response.ok) return null;
+
+    const content = await response.text();
+    const match = content.match(/^version:\s*(\S+)/m);
+    return match ? match[1].trim() : null;
+  } catch (err) {
+    console.warn("Failed to fetch channel metadata version:", err);
+    return null;
+  }
+}
+
+async function checkForUpdatesWithFallback(): Promise<{ available: boolean; version?: string; error?: string }> {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    let serverVersion = result?.updateInfo?.version;
+
+    // In downgrade scenarios some updater/provider combinations may not return updateInfo.
+    // Fall back to reading version from channel metadata so UI can still offer the update.
+    if (!serverVersion) {
+      serverVersion = (await fetchChannelVersionFromMetadata(currentUpdateChannel)) ?? undefined;
+    }
+
+    const available = !!serverVersion && serverVersion !== app.getVersion();
+    return { available, version: serverVersion };
+  } catch (err) {
+    console.error("Update check failed:", err);
+    return { available: false, error: (err as Error).message };
   }
 }
 
@@ -543,19 +612,24 @@ async function setupAutoUpdater() {
     autoUpdater.autoInstallOnAppQuit = canAutoInstall;
   }
 
-  // Log info after a delay to ensure feed URL is populated from app-update.yml
+  // Apply the current update channel before checking for updates
+  applyUpdateChannel(currentUpdateChannel);
+
+  // Log updater setup details (avoid deprecated getFeedURL)
   console.log("=== AUTO-UPDATER SETUP ===");
   console.log("Current app version:", app.getVersion());
-  console.log("Update channel:", autoUpdater.channel);
-  console.log("Feed URL:", autoUpdater.getFeedURL());
+  console.log("Update channel:", currentUpdateChannel);
+  const metadataFileName = getMetadataFileName();
+  const expectedMetadataPath = currentUpdateChannel === "testing" ? `testing/${metadataFileName}` : metadataFileName;
+  console.log("Releases base URL:", releasesBaseUrl);
+  console.log("Expected metadata path:", expectedMetadataPath);
 
   // Check for updates after app is ready
-  autoUpdater
-    .checkForUpdates()
+  checkForUpdatesWithFallback()
     .then((result) => {
       console.log("Update check completed");
-      console.log("Server version:", result?.updateInfo?.version);
-      console.log("Update available:", result?.updateInfo?.version !== app.getVersion());
+      console.log("Server version:", result.version);
+      console.log("Update available:", result.available);
     })
     .catch((err) => {
       console.error("Auto-update check failed:", err.message);
@@ -570,6 +644,7 @@ async function setupAutoUpdater() {
 
   autoUpdater.on("update-not-available", () => {
     console.log("No updates available");
+    mainWindow?.webContents.send("update-not-available");
   });
 
   autoUpdater.on("download-progress", (progress) => {
@@ -588,13 +663,7 @@ async function setupAutoUpdater() {
 
 // IPC handlers for auto-update
 ipcMain.handle("check-for-updates", async () => {
-  try {
-    const result = await autoUpdater.checkForUpdates();
-    return { available: !!result?.updateInfo, version: result?.updateInfo?.version };
-  } catch (err) {
-    console.error("Update check failed:", err);
-    return { available: false, error: (err as Error).message };
-  }
+  return checkForUpdatesWithFallback();
 });
 
 ipcMain.handle("download-update", async () => {
@@ -1095,6 +1164,24 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
       console.log(`[Main] powerSaveBlocker stopped (id: ${powerSaveBlockerId})`);
       powerSaveBlockerId = null;
     }
+  }
+
+  // Handle update channel changes
+  if (settings.updateChannel && settings.updateChannel !== currentUpdateChannel) {
+    console.log(`Update channel changed: ${currentUpdateChannel} -> ${settings.updateChannel}`);
+    applyUpdateChannel(settings.updateChannel);
+    // Automatically check for updates after channel change
+    checkForUpdatesWithFallback()
+      .then((result) => {
+        if (result.available && result.version) {
+          mainWindow?.webContents.send("update-available", { version: result.version });
+        } else {
+          mainWindow?.webContents.send("update-not-available");
+        }
+      })
+      .catch((err) => {
+        console.error("Auto-update check after channel change failed:", err);
+      });
   }
 });
 

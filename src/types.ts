@@ -134,8 +134,8 @@ export interface Settings {
   // Leader profile update mode: controls when leader preferences are updated
   leaderProfileUpdateMode: "leaderPageOnly" | "uiChangesAlso" | "allSources";
 
-  // Show only preferred songs in the song list
-  showPreferredOnly: boolean;
+  // Preference filter mode for the song list
+  preferenceFilter: "all" | "preferred-only" | "show-ignored";
 
   // QR Code settings
   qrCodeInPreview: boolean;
@@ -144,4 +144,7 @@ export interface Settings {
   qrCodeSizePercent: number; // Size as percentage of image height (5–50)
   showTextInPreview: boolean;
   showImageInPreview: boolean;
+
+  // Update channel: "stable" uses latest.yml, "testing" uses the testing subfolder
+  updateChannel: "stable" | "testing";
 }

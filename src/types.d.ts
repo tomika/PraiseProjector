@@ -93,7 +93,7 @@ export interface Settings {
   logAutoExpandParams: boolean;
   theme: "light" | "dark" | "auto";
   language: "en" | "hu" | "auto";
-  showPreferredOnly: boolean;
+  preferenceFilter: "all" | "preferred-only" | "show-ignored";
   qrCodeInPreview: boolean;
   qrCodeX: number;
   qrCodeY: number;

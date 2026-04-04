@@ -318,9 +318,35 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const [qrContextMenu, setQrContextMenu] = useState<{ x: number; y: number } | null>(null);
     const qrContextMenuRef = useRef<HTMLDivElement | null>(null);
 
-    const openQrContextMenuAt = useCallback((x: number, y: number) => {
-      setQrContextMenu({ x, y });
+    const clampQrContextMenuPosition = useCallback((x: number, y: number, menuWidth = 220, menuHeight = 84) => {
+      const container = previewContainerRef.current;
+      const bounds = container?.getBoundingClientRect();
+      const margin = 8;
+
+      if (!bounds) {
+        return {
+          x: Math.max(margin, Math.min(window.innerWidth - menuWidth - margin, x)),
+          y: Math.max(margin, Math.min(window.innerHeight - menuHeight - margin, y)),
+        };
+      }
+
+      const minX = bounds.left + margin;
+      const maxX = bounds.right - menuWidth - margin;
+      const minY = bounds.top + margin;
+      const maxY = bounds.bottom - menuHeight - margin;
+
+      return {
+        x: Math.max(minX, Math.min(maxX, x)),
+        y: Math.max(minY, Math.min(maxY, y)),
+      };
     }, []);
+
+    const openQrContextMenuAt = useCallback(
+      (x: number, y: number) => {
+        setQrContextMenu(clampQrContextMenuPosition(x, y));
+      },
+      [clampQrContextMenuPosition]
+    );
 
     // Available fonts for the font picker
     const [availableFonts, setAvailableFonts] = useState<string[]>(["Arial", "Times New Roman", "Verdana", "Georgia", "Courier New"]);
@@ -1586,16 +1612,16 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       }
     }, [settings?.qrCodeInPreview, qrRawUrl, qrContextMenu, updateSettingWithAutoSave]);
 
-    // Context menu on the projected image preview → show QR size slider (only when QR is visible)
+    // Context menu on the projected image preview -> show QR size slider (only when QR is visible)
     const handlePreviewContextMenu = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         if (settings?.qrCodeInPreview && qrCodeUrl) {
-          setQrContextMenu({ x: e.clientX, y: e.clientY });
+          openQrContextMenuAt(e.clientX, e.clientY);
         }
       },
-      [settings?.qrCodeInPreview, qrCodeUrl]
+      [settings?.qrCodeInPreview, qrCodeUrl, openQrContextMenuAt]
     );
 
     // Close the QR context menu when clicking outside or pressing Escape
@@ -1826,9 +1852,34 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         return;
       }
 
-      menu.style.left = `${qrContextMenu.x}px`;
-      menu.style.top = `${qrContextMenu.y}px`;
-    }, [qrContextMenu]);
+      const clamped = clampQrContextMenuPosition(qrContextMenu.x, qrContextMenu.y, menu.offsetWidth, menu.offsetHeight);
+
+      if (clamped.x !== qrContextMenu.x || clamped.y !== qrContextMenu.y) {
+        setQrContextMenu(clamped);
+        return;
+      }
+
+      menu.style.left = `${clamped.x}px`;
+      menu.style.top = `${clamped.y}px`;
+    }, [qrContextMenu, clampQrContextMenuPosition]);
+
+    useEffect(() => {
+      if (!qrContextMenu) {
+        return;
+      }
+
+      const handleResize = () => {
+        setQrContextMenu((prev) => {
+          if (!prev) return prev;
+          return clampQrContextMenuPosition(prev.x, prev.y);
+        });
+      };
+
+      window.addEventListener("resize", handleResize);
+      return () => {
+        window.removeEventListener("resize", handleResize);
+      };
+    }, [qrContextMenu, clampQrContextMenuPosition]);
 
     useEffect(() => {
       const swatch = fontColorSwatchRef.current;

@@ -3,6 +3,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import LeftPanel, { LeftPanelMethods } from "./components/LeftPanel";
+import { PlaylistSelectionEvent } from "./components/PlaylistPanel";
 import PreviewPanel, { PreviewPanelMethods } from "./components/PreviewPanel";
 import EditorPanel from "./components/EditorPanel";
 import Toolbar from "./components/Toolbar";
@@ -284,7 +285,15 @@ const AppContent: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false); // Loading state for database import
   const [eulaAccepted, setEulaAccepted] = useState(() => localStorage.getItem("pp-eula-accepted") === EULA_DATE);
   const [showEulaView, setShowEulaView] = useState(false);
-  const [selectedPlaylistItem, setSelectedPlaylistItem] = useState<PlaylistEntry | null>(null);
+  const [playlistSelection, setPlaylistSelection] = useState<PlaylistSelectionEvent | null>(null);
+  const selectedPlaylistItem = playlistSelection?.item ?? null;
+  const selectedPlaylistIndex = playlistSelection?.index ?? -1;
+  const playlistSelectionSourceRef = useRef<PlaylistSelectionEvent["source"]>("programmatic");
+  const keyboardSelectionTimerRef = useRef<number | null>(null);
+  const latestKeyboardSelectionRef = useRef<PlaylistSelectionEvent | null>(null);
+  const isArrowKeyHeldRef = useRef(false);
+  const playlistLoadTargetSongIdRef = useRef<string | null>(null);
+  const pendingPlaylistSelectionIndexRef = useRef<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [_editorInitialized, setEditorInitialized] = useState(false);
   // Remote highlight controller state - matching C# ProjectorForm.sectionListBox.Remote
@@ -343,10 +352,8 @@ const AppContent: React.FC = () => {
     settingsRef.current = settings;
   }, [settings]);
 
-  // Track selected playlist index for state persistence - initialized to -1, restored after database loads
-  const [selectedPlaylistIndex, setSelectedPlaylistIndex] = useState(-1);
   // Track selected song ID for state persistence - initialized to null, restored after database loads
-  const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
+  const [_selectedSongId, setSelectedSongId] = useState<string | null>(null);
   // Track selected section index for state persistence
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(-1);
   // Store pending section index to restore after sections are ready
@@ -494,27 +501,131 @@ const AppContent: React.FC = () => {
     };
   }, [showMessage, t]);
 
-  // Wrapper for playlist item selection that also tracks the index
-  const handlePlaylistItemSelected = useCallback((item: PlaylistEntry | null) => {
-    setSelectedPlaylistItem(item);
+  // Wrapper for playlist selection change.
+  // Keyboard events are debounced here so cross-panel updates only fire
+  // after selection activity calms down (single debounce point).
+  const KEYBOARD_SELECTION_DEBOUNCE_MS = 30;
+  const applyPlaylistSelection = useCallback((selection: PlaylistSelectionEvent) => {
+    playlistSelectionSourceRef.current = selection.source;
+    setPlaylistSelection(selection);
+
     // Also update song tree to show the same song (visual consistency)
     // But NOT during restoration - we restore to savedState.selectedSongId instead
-    if (item && !isRestoringStateRef.current) {
-      leftPanelRef.current?.setSelectedSongId(item.songId);
+    if (selection.item && !isRestoringStateRef.current) {
+      leftPanelRef.current?.setSelectedSongId(selection.item.songId);
       // Auto-select first section when user selects a new playlist item from UI
       setSelectedSectionIndex(0);
       previewPanelRef.current?.setSelectedSectionIndex(0);
     }
-    // Note: index is now updated via onPlaylistSelectedIndexChange prop separately
-    // This avoids timing issues with querying state after setState
   }, []);
+
+  const flushPendingKeyboardSelection = useCallback(() => {
+    const pendingSelection = latestKeyboardSelectionRef.current;
+    if (!pendingSelection) {
+      return;
+    }
+
+    latestKeyboardSelectionRef.current = null;
+    applyPlaylistSelection(pendingSelection);
+  }, [applyPlaylistSelection]);
+
+  const handlePlaylistSelectionChange = useCallback(
+    (selection: PlaylistSelectionEvent) => {
+      if (selection.source === "keyboard") {
+        latestKeyboardSelectionRef.current = selection;
+
+        // Debounce keyboard events — only update state once selection rests
+        if (keyboardSelectionTimerRef.current !== null) {
+          window.clearTimeout(keyboardSelectionTimerRef.current);
+        }
+        keyboardSelectionTimerRef.current = window.setTimeout(() => {
+          keyboardSelectionTimerRef.current = null;
+
+          // During key hold, keep buffering and wait for keyup to flush.
+          if (isArrowKeyHeldRef.current) {
+            return;
+          }
+
+          flushPendingKeyboardSelection();
+        }, KEYBOARD_SELECTION_DEBOUNCE_MS);
+        return;
+      }
+
+      // Mouse/programmatic: apply immediately
+      if (keyboardSelectionTimerRef.current !== null) {
+        window.clearTimeout(keyboardSelectionTimerRef.current);
+        keyboardSelectionTimerRef.current = null;
+      }
+      latestKeyboardSelectionRef.current = null;
+      applyPlaylistSelection(selection);
+    },
+    [applyPlaylistSelection, flushPendingKeyboardSelection]
+  );
+
+  useEffect(() => {
+    const isArrowNavigationKey = (key: string) => key === "ArrowUp" || key === "ArrowDown";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isArrowNavigationKey(event.key)) {
+        return;
+      }
+      isArrowKeyHeldRef.current = true;
+    };
+
+    const flushAfterKeyRelease = () => {
+      isArrowKeyHeldRef.current = false;
+
+      if (keyboardSelectionTimerRef.current !== null) {
+        window.clearTimeout(keyboardSelectionTimerRef.current);
+        keyboardSelectionTimerRef.current = null;
+      }
+
+      flushPendingKeyboardSelection();
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!isArrowNavigationKey(event.key)) {
+        return;
+      }
+      flushAfterKeyRelease();
+    };
+
+    const handleWindowBlur = () => {
+      flushAfterKeyRelease();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleWindowBlur);
+
+      if (keyboardSelectionTimerRef.current !== null) {
+        window.clearTimeout(keyboardSelectionTimerRef.current);
+        keyboardSelectionTimerRef.current = null;
+      }
+    };
+  }, [flushPendingKeyboardSelection]);
 
   // Callback when playlist is loaded - used for state restoration
   const handlePlaylistLoaded = useCallback((itemCount: number) => {
     console.info("App", `Playlist loaded with ${itemCount} items`);
-    // The playlist's loadPlaylist already handles applying the pending selection
-    // via the selectedIndex prop and componentDidUpdate
   }, []);
+
+  useEffect(() => {
+    if (pendingPlaylistSelectionIndexRef.current === null || !leftPanelRef.current) {
+      return;
+    }
+
+    leftPanelRef.current.setPlaylistSelection({
+      index: pendingPlaylistSelectionIndexRef.current,
+      emitChange: true,
+    });
+    pendingPlaylistSelectionIndexRef.current = null;
+  });
 
   const syncCurrentDisplayToBackend = useCallback(
     (display: Display) => {
@@ -635,7 +746,6 @@ const AppContent: React.FC = () => {
   }, []);
 
   // Memoized version for UI (toolbar button state)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _triggerRecalc = currentSongText;
   const canSaveSong = editedSong ? checkCanSaveSong() : false;
 
@@ -690,10 +800,10 @@ const AppContent: React.FC = () => {
           pendingSectionIndexRef.current = savedState.selectedSectionIndex;
         }
 
-        // Restore playlist selection index - PlaylistPanel will apply via componentDidUpdate
-        // The actual song loading happens when PlaylistPanel triggers onPlaylistItemSelected
+        // Restore playlist selection through LeftPanel's imperative setter.
+        // The actual song loading happens when the selection change callback fires.
         if (savedState.selectedPlaylistIndex >= 0) {
-          setSelectedPlaylistIndex(savedState.selectedPlaylistIndex);
+          pendingPlaylistSelectionIndexRef.current = savedState.selectedPlaylistIndex;
 
           // Also restore song tree selection and editor to the saved selectedSongId (may be different from playlist item)
           if (savedState.selectedSongId) {
@@ -721,6 +831,7 @@ const AppContent: React.FC = () => {
             setProjectedSong(cloned);
             updateCurrentSongText(cloned.Text);
             setSelectedSongId(savedState.selectedSongId);
+            setPlaylistSelection(null);
             // Also sync the song tree selection via ref
             leftPanelRef.current?.setSelectedSongId(savedState.selectedSongId);
           } else {
@@ -812,11 +923,11 @@ const AppContent: React.FC = () => {
         const song = _db.getSongById(data.id);
         if (song) {
           setSelectedSectionIndex(-1);
-          const item = leftPanelRef.current?.selectPlaylistSongById(song.Id);
-          if (item) {
+          const selection = leftPanelRef.current?.setPlaylistSelection({ songId: song.Id, emitChange: false });
+          if (selection?.item) {
             // Set playlist item directly without auto-selecting first section
-            setSelectedPlaylistItem(item);
-            leftPanelRef.current?.setSelectedSongId(item.songId);
+            setPlaylistSelection(selection);
+            leftPanelRef.current?.setSelectedSongId(selection.item.songId);
 
             // Keep backend display state in sync for remote song changes.
             // Without this, Electron changeDisplay is not triggered until a section is selected.
@@ -827,9 +938,9 @@ const AppContent: React.FC = () => {
               from: data.from ?? 0,
               to: data.to ?? 0,
               section: -1,
-              transpose: data.transpose ?? item.transpose ?? 0,
-              capo: data.capo ?? item.capo,
-              instructions: data.instructions ?? item.instructions,
+              transpose: data.transpose ?? selection.item.transpose ?? 0,
+              capo: data.capo ?? selection.item.capo,
+              instructions: data.instructions ?? selection.item.instructions,
             });
           }
         }
@@ -1021,11 +1132,17 @@ const AppContent: React.FC = () => {
       return;
     }
     if (selectedPlaylistItem) {
+      const targetSongId = selectedPlaylistItem.songId;
+      playlistLoadTargetSongIdRef.current = targetSongId;
+
       const loadSong = async () => {
         const db = await Database.waitForReady();
+        if (playlistLoadTargetSongIdRef.current !== targetSongId) {
+          return;
+        }
         console.debug("App", `Database has ${db.getSongs().length} songs`);
-        const song = db.getSongById(selectedPlaylistItem.songId);
-        console.debug("App", `Loading song from playlist selection: songId=${selectedPlaylistItem.songId}, found=${song?.Title || "NOT FOUND"}`);
+        const song = db.getSongById(targetSongId);
+        console.debug("App", `Loading song from playlist selection: songId=${targetSongId}, found=${song?.Title || "NOT FOUND"}`);
         if (song) {
           const clonedSong = song.clone();
           // Always set projected song from playlist
@@ -1042,14 +1159,15 @@ const AppContent: React.FC = () => {
 
           // Sync song tree selection - but NOT during restoration (we restore to savedState.selectedSongId instead)
           if (!isRestoringStateRef.current) {
-            console.debug("App", `Syncing song tree selection: ${selectedPlaylistItem.songId}`);
-            leftPanelRef.current?.setSelectedSongId(selectedPlaylistItem.songId);
+            console.debug("App", `Syncing song tree selection: ${targetSongId}`);
+            leftPanelRef.current?.setSelectedSongId(targetSongId);
           } else {
             console.debug("App", "Skipping song tree sync during restoration");
           }
         }
       };
-      loadSong();
+
+      void loadSong();
     }
   }, [selectedPlaylistItem, isEditing, isAuthLoading]);
 
@@ -1077,8 +1195,7 @@ const AppContent: React.FC = () => {
           updateCurrentSongText(cloned.Text);
           setSelectedSongId(song.Id);
           // Clear playlist selection when manually selecting a song from tree
-          setSelectedPlaylistItem(null);
-          setSelectedPlaylistIndex(-1);
+          setPlaylistSelection(null);
         },
         undefined,
         { confirmText: t("DiscardAndLoad"), confirmDanger: true }
@@ -1091,8 +1208,7 @@ const AppContent: React.FC = () => {
     updateCurrentSongText(cloned.Text);
     setSelectedSongId(song.Id);
     // Clear playlist selection when manually selecting a song from tree
-    setSelectedPlaylistItem(null);
-    setSelectedPlaylistIndex(-1);
+    setPlaylistSelection(null);
   };
 
   const handleEditModeChange = useCallback((editing: boolean) => {
@@ -1928,7 +2044,7 @@ const AppContent: React.FC = () => {
                 {usePagingMode && (
                   <LeftPanel
                     ref={leftPanelRef}
-                    onPlaylistItemSelected={handlePlaylistItemSelected}
+                    onPlaylistSelectionChange={handlePlaylistSelectionChange}
                     onSongSelected={handleSongSelected}
                     onOpenLeaderSettings={openLeaderSettings}
                     onSyncClick={handleSyncClick}
@@ -1948,8 +2064,6 @@ const AppContent: React.FC = () => {
                     onSongListPanelSizeChange={setSongListPanelSize}
                     songFilter={songFilter}
                     onSongFilterChange={setSongFilter}
-                    playlistSelectedIndex={selectedPlaylistIndex}
-                    onPlaylistSelectedIndexChange={setSelectedPlaylistIndex}
                     onPlaylistLoaded={handlePlaylistLoaded}
                     settings={settings}
                   />
@@ -2026,7 +2140,7 @@ const AppContent: React.FC = () => {
                   {!usePagingMode && (
                     <LeftPanel
                       ref={leftPanelRef}
-                      onPlaylistItemSelected={handlePlaylistItemSelected}
+                      onPlaylistSelectionChange={handlePlaylistSelectionChange}
                       onSongSelected={handleSongSelected}
                       onOpenLeaderSettings={openLeaderSettings}
                       onSyncClick={handleSyncClick}
@@ -2045,8 +2159,6 @@ const AppContent: React.FC = () => {
                       onSongListPanelSizeChange={setSongListPanelSize}
                       songFilter={songFilter}
                       onSongFilterChange={setSongFilter}
-                      playlistSelectedIndex={selectedPlaylistIndex}
-                      onPlaylistSelectedIndexChange={setSelectedPlaylistIndex}
                       onPlaylistLoaded={handlePlaylistLoaded}
                       settings={settings}
                     />

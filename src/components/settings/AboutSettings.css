@@ -1,13 +1,19 @@
-.about-update-progress {
-  height: 6px;
-  background-color: #dee2e6;
-  border-radius: 3px;
-  overflow: hidden;
+.about-update-progress-native {
+  width: 100%;
   max-width: 20rem;
+  height: 6px;
+  accent-color: #198754;
 }
 
-.about-update-progress-bar {
-  height: 100%;
-  background-color: #198754;
-  transition: width 0.3s ease;
+.about-update-progress-native::-webkit-progress-bar {
+  background-color: #dee2e6;
+  border-radius: 3px;
+}
+
+.about-update-progress-native::-webkit-progress-value {
+  border-radius: 3px;
+}
+
+.about-update-progress-native::-moz-progress-bar {
+  border-radius: 3px;
 }

@@ -121,10 +121,11 @@ export interface IElectronAPI {
 
   // Auto-updater
   getAppVersion?: () => Promise<string>;
-  checkForUpdates?: () => Promise<{ updateAvailable: boolean; version?: string; error?: string }>;
+  checkForUpdates?: () => Promise<{ available?: boolean; updateAvailable?: boolean; version?: string; error?: string }>;
   downloadUpdate?: () => Promise<{ success: boolean; error?: string }>;
   installUpdate?: () => void;
   onUpdateAvailable?: (callback: (info: { version: string }) => void) => () => void;
+  onUpdateNotAvailable?: (callback: () => void) => () => void;
   onUpdateDownloadProgress?: (callback: (progress: { percent: number }) => void) => () => void;
   onUpdateDownloaded?: (callback: (info: { version: string }) => void) => () => void;
 

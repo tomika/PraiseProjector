@@ -148,7 +148,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       theme: "auto", // Auto-detect from system
       language: "auto", // Auto-detect from system
       leaderProfileUpdateMode: "allSources", // Allow profile updates from all sources by default
-      showPreferredOnly: false, // Don't filter by preferred by default
+      preferenceFilter: "all" as const, // Show all songs (excluding ignored) by default
       // QR Code settings
       qrCodeInPreview: false, // Show QR code in preview by default
       qrCodeX: 85, // QR code X position (% of image width)
@@ -156,6 +156,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       qrCodeSizePercent: 15, // QR code size (% of image height)
       showTextInPreview: true,
       showImageInPreview: true,
+      updateChannel: "stable",
     };
   }, []);
 
@@ -169,6 +170,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
         if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
+        // Migrate old showPreferredOnly boolean to preferenceFilter string
+        const raw = loadedSettings as unknown as Record<string, unknown>;
+        if (!raw.preferenceFilter && raw.showPreferredOnly === true) {
+          merged.preferenceFilter = "preferred-only";
+        }
         setSettings(merged);
         setInitialSettings(merged);
       })
@@ -244,6 +250,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings((prev) => {
       if (!prev) return null;
       const newSettings = { ...prev, [key]: value };
+      // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
+      if (window.electronAPI?.syncSettings) {
+        window.electronAPI.syncSettings(newSettings);
+      }
       // Auto-save settings immediately (matching C# behavior for format panel)
       storeApi
         .saveSettings(newSettings)
@@ -252,10 +262,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setInitialSettings(newSettings);
           // Dispatch custom event to notify components
           window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-          // Sync to backend after auto-save
-          if (window.electronAPI?.syncSettings) {
-            window.electronAPI.syncSettings(newSettings);
-          }
         })
         .catch((error) => {
           console.error("General", `Failed to auto-save setting '${key}'`, error);
