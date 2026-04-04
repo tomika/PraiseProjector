@@ -60,6 +60,12 @@ export interface LocalSessionInfo {
   detected: number; // timestamp
 }
 
+export interface RawUdpPacket {
+  message: string;
+  from: string;
+  port: number;
+}
+
 // Module-level instance for singleton access
 let udpServerInstance: UdpServer | null = null;
 
@@ -67,10 +73,14 @@ export function getUdpServerInstance(): UdpServer | null {
   return udpServerInstance;
 }
 
+export type SessionChangeCallback = (type: "discovered" | "disappeared", sessionId: string, name?: string) => void;
+
 export class UdpServer {
   private socket: dgram.Socket;
   private address?: string;
   private port?: number;
+  private readonly rawPacketListeners = new Set<(packet: RawUdpPacket) => void>();
+  private readonly sessionChangeListeners = new Set<SessionChangeCallback>();
   private discoveredSessions: Map<string, LocalSessionInfo> = new Map();
   private defaultPorts = [1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983];
 
@@ -144,12 +154,30 @@ export class UdpServer {
     };
 
     this.discoveredSessions.set(message.device, session);
+    for (const listener of this.sessionChangeListeners) {
+      try {
+        listener("discovered", session.id, session.name);
+      } catch {}
+    }
   }
 
   private handleOffMessage(message: UdpMessage, _rinfo: dgram.RemoteInfo): void {
     if (message.device) {
+      const name = this.discoveredSessions.get(message.device)?.name;
       this.discoveredSessions.delete(message.device);
+      for (const listener of this.sessionChangeListeners) {
+        try {
+          listener("disappeared", message.device, name);
+        } catch {}
+      }
     }
+  }
+
+  public onSessionChanged(listener: SessionChangeCallback): () => void {
+    this.sessionChangeListeners.add(listener);
+    return () => {
+      this.sessionChangeListeners.delete(listener);
+    };
   }
 
   private handleScanRequest(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
@@ -172,6 +200,17 @@ export class UdpServer {
   public sendMessage(message: string, port: number, address: string): void {
     const encodedMsg = Buffer.from(message, "utf8").toString("base64");
     this.socket.send(encodedMsg, port, address, (err) => {
+      if (err) console.error(`[UDP] Send error: ${err.stack}`);
+    });
+  }
+
+  /**
+   * Send an already-encoded UDP payload as-is.
+   * HostDevice callers (Android-compatible flow) provide base64 payloads already,
+   * so re-encoding them would break PPD parsing on receivers.
+   */
+  public sendRawMessage(rawMessage: string, port: number, address: string): void {
+    this.socket.send(rawMessage, port, address, (err) => {
       if (err) console.error(`[UDP] Send error: ${err.stack}`);
     });
   }
@@ -255,6 +294,13 @@ export class UdpServer {
 
   public getPort(): number | undefined {
     return this.port;
+  }
+
+  public onRawPacket(listener: (packet: RawUdpPacket) => void): () => void {
+    this.rawPacketListeners.add(listener);
+    return () => {
+      this.rawPacketListeners.delete(listener);
+    };
   }
 
   /**
@@ -396,7 +442,22 @@ export class UdpServer {
     // Setup message handling on the successfully bound socket
     udpServer.socket.on("message", (msg, rinfo) => {
       try {
-        const decodedMsg = Buffer.from(msg.toString(), "base64").toString("utf8");
+        const rawMessage = msg.toString();
+        const localPort = udpServer.getPort() || rinfo.port;
+        const packet: RawUdpPacket = {
+          message: rawMessage,
+          from: rinfo.address,
+          port: localPort,
+        };
+        for (const listener of udpServer.rawPacketListeners) {
+          try {
+            listener(packet);
+          } catch (error) {
+            console.error("[UDP] Raw packet listener error", error);
+          }
+        }
+
+        const decodedMsg = Buffer.from(rawMessage, "base64").toString("utf8");
         const decoded = udpMessageCodec.decode(JSON.parse(decodedMsg));
         if (decoded._tag === "Right") {
           udpServer.handleUdpMessage(decoded.right, rinfo);

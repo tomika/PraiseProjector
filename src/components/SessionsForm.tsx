@@ -6,6 +6,7 @@ import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
 import { webBluetoothService } from "../services/webBluetooth";
+import { getHostDeviceDiscoveredSessions, initHostDevicePpd, isHostDevicePpdAvailable, scanHostDeviceSessions } from "../services/hostDevicePpd";
 import "./SessionsForm.css";
 import { useLeader } from "../contexts/LeaderContext";
 import { useSessionUrl, buildCloudUrl, generateQRCodeSVG, buildLocalUrl } from "../hooks/useSessionUrl";
@@ -50,6 +51,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const [scanAddress, setScanAddress] = useState<string | null>(null);
   // Check for Electron APIs - use state to ensure stable value after initial detection
   const [isElectron, setIsElectron] = useState(false);
+  const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
   // Check for Web Bluetooth availability (works in browser without pairing)
   const [hasWebBluetooth, setHasWebBluetooth] = useState(false);
   const [bleConnecting, setBleConnecting] = useState(false);
@@ -57,9 +59,11 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // Detect Electron and Web Bluetooth on mount
   useEffect(() => {
     const checkElectron = () => {
-      const hasElectron = typeof window !== "undefined" && !!window.electronAPI?.udpScanSessions;
+      const hasHostDevice = isHostDevicePpdAvailable();
+      const hasElectron = typeof window !== "undefined" && !!window.electronAPI;
+      setHasHostDevicePpd(hasHostDevice);
       setIsElectron(hasElectron);
-      console.debug("App", `SessionsForm: Electron API available: ${hasElectron}`);
+      console.debug("App", `SessionsForm: Electron runtime: ${hasElectron}, HostDevice PPD: ${hasHostDevice}`);
     };
 
     // Check for Web Bluetooth
@@ -124,16 +128,24 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     return () => window.removeEventListener("resize", centerDialog);
   }, [isMobile]);
 
-  // Initialize broadcast address from Electron if available
+  // Initialize broadcast address from HostDevice if available
   useEffect(() => {
     const initBroadcastAddress = async () => {
-      if (window.electronAPI?.udpGetBroadcastAddress) {
-        const addr = await window.electronAPI.udpGetBroadcastAddress();
-        if (addr) {
+      if (isHostDevicePpdAvailable()) {
+        await initHostDevicePpd();
+        try {
+          const infoRaw = await window.hostDevice?.info?.(2);
+          const info = typeof infoRaw === "string" ? (JSON.parse(infoRaw) as { broadcast?: string }) : undefined;
+          const addr = info?.broadcast || "255.255.255.255";
           setBroadcastAddress(addr);
           setScanAddress(addr);
+          return;
+        } catch {
+          // Fall through to default address.
         }
       }
+      setBroadcastAddress("255.255.255.255");
+      setScanAddress("255.255.255.255");
     };
     initBroadcastAddress();
   }, []);
@@ -213,11 +225,10 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
   // Scan timer tick (matching C# OnTimerTick)
   const onTimerTick = useCallback(async () => {
-    // 1. Scan for UDP servers (Electron only)
-    if (isElectron && window.electronAPI?.udpScanSessions) {
+    // 1. Scan for local sessions via HostDevice (Android/Electron parity)
+    if (hasHostDevicePpd) {
       const tryAddress = broadcastAddress;
-      console.debug("App", `SessionsForm: Scanning for UDP sessions at ${tryAddress}`);
-      const result = await window.electronAPI.udpScanSessions(tryAddress);
+      const result = await scanHostDeviceSessions(tryAddress);
 
       if (result.success) {
         if (result.address && result.address !== scanAddress) {
@@ -228,12 +239,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
         setAddressError(true);
       }
 
-      // Get discovered sessions
-      if (window.electronAPI?.udpGetDiscoveredSessions) {
-        const discovered = await window.electronAPI.udpGetDiscoveredSessions();
-        console.debug("App", `SessionsForm: Discovered local sessions: ${discovered.length}`);
-        updateLocalSessionList(discovered);
-      }
+      const discovered = getHostDeviceDiscoveredSessions();
+      updateLocalSessionList(discovered);
     }
 
     // 2. Fetch online sessions from cloud (works in both Electron and web mode)
@@ -244,7 +251,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     } catch (error) {
       console.error("App", "Failed to fetch online sessions", error);
     }
-  }, [isElectron, broadcastAddress, scanAddress, updateLocalSessionList, updateOnlineSessionList]);
+  }, [hasHostDevicePpd, broadcastAddress, scanAddress, updateLocalSessionList, updateOnlineSessionList]);
 
   // Start/stop scan timer
   useEffect(() => {
@@ -372,9 +379,14 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   };
 
   const handleResetAddress = async () => {
-    if (window.electronAPI?.udpGetBroadcastAddress) {
-      const addr = await window.electronAPI.udpGetBroadcastAddress();
-      setBroadcastAddress(addr || "255.255.255.255");
+    if (isHostDevicePpdAvailable()) {
+      try {
+        const infoRaw = await window.hostDevice?.info?.(2);
+        const info = typeof infoRaw === "string" ? (JSON.parse(infoRaw) as { broadcast?: string }) : undefined;
+        setBroadcastAddress(info?.broadcast || "255.255.255.255");
+      } catch {
+        setBroadcastAddress("255.255.255.255");
+      }
     } else {
       setBroadcastAddress("255.255.255.255");
     }
@@ -471,7 +483,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
         </div>
         <div className="sessions-modal-body">
           {/* Web mode notice - local sessions not available */}
-          {!isElectron && (
+          {!hasHostDevicePpd && (
             <div className="alert alert-info py-2 mb-2" role="alert">
               <small>🌐 {t("WebModeSessionsNotice") || "Local network sessions are only available in the desktop app."}</small>
             </div>
@@ -508,7 +520,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
           </div>
 
           {/* Details section - collapsed by default (matching C# SwapDetails) */}
-          {isElectron && (
+          {hasHostDevicePpd && (
             <>
               <div className="details-toggle">
                 <button className="btn btn-link btn-sm" onClick={toggleDetails}>

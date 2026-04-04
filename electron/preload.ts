@@ -4,6 +4,39 @@ import { Settings } from "../src/types";
 import { ApiResponse } from "../common/ipc-types";
 import { WindowBounds } from "../src/types/electron";
 
+type HostDeviceMessage = {
+  op: string;
+  param: unknown;
+};
+
+const hostDeviceMessageListeners = new Set<(message: HostDeviceMessage) => void>();
+
+const emitHostDeviceMessage = (message: HostDeviceMessage) => {
+  // Legacy client pages consume a global handleDeviceMessage callback.
+  const globalWindow = window as unknown as {
+    handleDeviceMessage?: (raw: string) => void;
+    dispatchEvent?: (event: Event) => boolean;
+  };
+  if (typeof globalWindow.handleDeviceMessage === "function") {
+    globalWindow.handleDeviceMessage(JSON.stringify(message));
+  }
+  if (typeof globalWindow.dispatchEvent === "function") {
+    globalWindow.dispatchEvent(new CustomEvent("pp-hostdevice-message", { detail: message }));
+  }
+  for (const listener of hostDeviceMessageListeners) {
+    try {
+      listener(message);
+    } catch (error) {
+      console.error("[preload] hostDevice listener error", error);
+    }
+  }
+};
+
+ipcRenderer.on("hostdevice-message", (_event, payload: HostDeviceMessage) => {
+  if (!payload || typeof payload.op !== "string") return;
+  emitHostDeviceMessage(payload);
+});
+
 contextBridge.exposeInMainWorld("electronAPI", {
   // Window bounds management
   getWindowBounds: () => ipcRenderer.invoke("get-window-bounds"),
@@ -272,4 +305,44 @@ contextBridge.exposeInMainWorld("electronAPI", {
   print: {
     openWindow: () => ipcRenderer.invoke("print:open-window"),
   },
+});
+
+contextBridge.exposeInMainWorld("hostDevice", {
+  debugLog: (tag: string, message: string) => ipcRenderer.invoke("hostdevice-debug-log", tag, message),
+  showToast: (toast: string) => ipcRenderer.invoke("hostdevice-show-toast", toast),
+  getErrors: () => ipcRenderer.invoke("hostdevice-get-errors"),
+  sendUdpMessage: (message: string, host: string, port: string) => ipcRenderer.invoke("hostdevice-send-udp-message", message, host, port),
+  listenOnUdpPort: (port: string) => ipcRenderer.invoke("hostdevice-listen-on-udp-port", port),
+  closeUdpPort: (port: string) => ipcRenderer.invoke("hostdevice-close-udp-port", port),
+  getHome: () => ipcRenderer.invoke("hostdevice-get-home"),
+  goHome: () => ipcRenderer.invoke("hostdevice-go-home"),
+  setFullScreen: (fs?: boolean) => ipcRenderer.invoke("hostdevice-set-fullscreen", fs),
+  isFullScreen: () => ipcRenderer.invoke("hostdevice-is-fullscreen"),
+  dialog: (message: string, title: string, positiveLabel: string, negativeLabel: string) =>
+    ipcRenderer.invoke("hostdevice-dialog", message, title, positiveLabel, negativeLabel),
+  storePreference: (key: string, value: string) => ipcRenderer.invoke("hostdevice-store-preference", key, value),
+  retrievePreference: (key: string) => ipcRenderer.invoke("hostdevice-retrieve-preference", key),
+  getName: () => ipcRenderer.invoke("hostdevice-get-name"),
+  getModel: () => ipcRenderer.invoke("hostdevice-get-model"),
+  exit: () => ipcRenderer.invoke("hostdevice-exit"),
+  version: () => ipcRenderer.invoke("hostdevice-version"),
+  info: (flags: number) => ipcRenderer.invoke("hostdevice-info", flags),
+  enableNotification: (sessionId: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean) =>
+    ipcRenderer.invoke("hostdevice-enable-notification", sessionId, name, descriptionText, checkIntervalMinutes, acquire),
+  getCacheSize: () => ipcRenderer.invoke("hostdevice-get-cache-size"),
+  clearCache: (includeDiskFiles: boolean) => ipcRenderer.invoke("hostdevice-clear-cache", includeDiskFiles),
+  startNavigationTimeout: (navigationTimeoutMs: number, message: string) =>
+    ipcRenderer.invoke("hostdevice-start-navigation-timeout", navigationTimeoutMs, message),
+  pageLoadedSuccessfully: () => ipcRenderer.invoke("hostdevice-page-loaded-successfully"),
+  keepScreenOn: (enabled: boolean) => ipcRenderer.invoke("hostdevice-keep-screen-on", enabled),
+  share: (url: string, title: string, text: string) => ipcRenderer.invoke("hostdevice-share", url, title, text),
+  openLinkExternal: (url: string) => ipcRenderer.invoke("hostdevice-open-link-external", url),
+  getThirdPartyLicenseSections: () => ipcRenderer.invoke("hostdevice-get-third-party-license-sections"),
+  checkNearbyPermissions: (acquire: boolean) => ipcRenderer.invoke("hostdevice-check-nearby-permissions", acquire),
+  advertiseNearby: (enabled: boolean) => ipcRenderer.invoke("hostdevice-advertise-nearby", enabled),
+  discoverNearby: (enabled: boolean) => ipcRenderer.invoke("hostdevice-discover-nearby", enabled),
+  connectNearby: (endpointId: string) => ipcRenderer.invoke("hostdevice-connect-nearby", endpointId),
+  sendNearbyMessage: (endpointId: string, message: string) => ipcRenderer.invoke("hostdevice-send-nearby-message", endpointId, message),
+  closeNearby: (endpointId: string) => ipcRenderer.invoke("hostdevice-close-nearby", endpointId),
+  getNearbyState: () => ipcRenderer.invoke("hostdevice-get-nearby-state"),
 });

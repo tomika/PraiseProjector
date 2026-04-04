@@ -62,6 +62,9 @@ export class P2PTransport {
   private displayUpdateCallback: ((display: unknown) => void) | null = null;
   private sessionEndedCallback: (() => void) | null = null;
 
+  // Nearby message callback - fires for Bluetooth peer messages (and future transports)
+  private nearbyMessageCallback: ((endpointId: string, message: unknown) => void) | null = null;
+
   private constructor(private readonly webServer: WebServer) {}
 
   /**
@@ -78,12 +81,24 @@ export class P2PTransport {
     //   if (transport.bluetoothServer) {
     //     // Share the same PPD protocol handler instance across both transports
     //     transport.bluetoothServer.setProtocolHandler(udpServer.getProtocolHandler());
+    //     // Forward Bluetooth messages as nearby events
+    //     transport.bluetoothServer.onPeerMessage((address, message) => {
+    //       transport.nearbyMessageCallback?.(BT_PREFIX + address, message);
+    //     });
     //     console.log("P2P Transport: Bluetooth available");
     //   }
     // }
 
     p2pTransportInstance = transport;
     return transport;
+  }
+
+  /**
+   * Register a callback for incoming messages from nearby peers.
+   * Called when a Bluetooth (or future transport) peer sends a message.
+   */
+  public onNearbyMessage(callback: ((endpointId: string, message: unknown) => void) | null): void {
+    this.nearbyMessageCallback = callback;
   }
 
   /**

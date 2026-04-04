@@ -8,6 +8,7 @@ import {
   dialog,
   shell,
   powerSaveBlocker,
+  session,
   nativeImage,
   type MessageBoxOptions,
   type MessageBoxReturnValue,
@@ -76,6 +77,64 @@ const netDisplayEncodeSettings: NetDisplayEncodeSettings = {
 };
 
 let lastNetDisplaySourceImageDataUrl: string | null = null;
+let hostDeviceDiscovering = false;
+
+const HOSTDEVICE_PREFS_FILE = "hostdevice-preferences.json";
+
+const parsePortSpec = (portSpec: string): number[] => {
+  const rv = new Set<number>();
+  for (const tokenRaw of (portSpec || "").split(",")) {
+    const token = tokenRaw.trim();
+    if (!token) continue;
+    const range = token.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = parseInt(range[1], 10);
+      const end = parseInt(range[2], 10);
+      if (Number.isInteger(start) && Number.isInteger(end)) {
+        const min = Math.min(start, end);
+        const max = Math.max(start, end);
+        for (let p = min; p <= max; p++) {
+          if (p >= 1 && p <= 65535) rv.add(p);
+        }
+      }
+      continue;
+    }
+    const value = parseInt(token, 10);
+    if (Number.isInteger(value) && value >= 1 && value <= 65535) {
+      rv.add(value);
+    }
+  }
+  return Array.from(rv.values()).sort((a, b) => a - b);
+};
+
+const hostDevicePrefsPath = () => path.join(app.getPath("userData"), HOSTDEVICE_PREFS_FILE);
+
+const readHostDevicePrefs = (): Record<string, string> => {
+  try {
+    const filePath = hostDevicePrefsPath();
+    if (!fs.existsSync(filePath)) return {};
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const safe: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (typeof v === "string") safe[k] = v;
+    }
+    return safe;
+  } catch {
+    return {};
+  }
+};
+
+const writeHostDevicePrefs = (prefs: Record<string, string>) => {
+  try {
+    fs.writeFileSync(hostDevicePrefsPath(), JSON.stringify(prefs, null, 2), "utf8");
+  } catch (error) {
+    console.error("[HostDevice] Failed writing preferences", error);
+  }
+};
+
+const sendHostDeviceMessage = (op: string, param: unknown) => {
+  getMainWindow()?.webContents.send("hostdevice-message", { op, param });
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -807,9 +866,27 @@ app.on("ready", () => {
       console.error("Failed to initialize UDP server");
       return;
     }
+    udpServer.onRawPacket((packet) => {
+      sendHostDeviceMessage("udp", packet);
+    });
+    udpServer.onSessionChanged((type, sessionId, name) => {
+      sendHostDeviceMessage("nearby", {
+        id: `udp_${sessionId}`,
+        name,
+        event: type === "discovered" ? "discovered" : "disappeared",
+      });
+    });
     // Initialize P2P transport with both UDP and Bluetooth
     P2PTransport.initialize(webServer, udpServer).then((p2p) => {
       console.log(`P2P Transport initialized - Status: ${JSON.stringify(p2p.getStatus())}`);
+      // Forward Bluetooth peer messages as HostDevice nearby-message events
+      p2p.onNearbyMessage((endpointId, message) => {
+        sendHostDeviceMessage("nearby", {
+          id: endpointId,
+          event: "message",
+          payload: typeof message === "string" ? message : JSON.stringify(message),
+        });
+      });
     });
   });
 });
@@ -1297,6 +1374,244 @@ ipcMain.handle("p2p-get-status", () => {
     return { udpAvailable: false, bluetoothAvailable: false, isAdvertising: false, isDiscovering: false };
   }
   return p2p.getStatus();
+});
+
+// HostDevice bridge handlers (Android-compatible surface for Electron frontend)
+ipcMain.handle("hostdevice-send-udp-message", (_event, message: string, host: string, portSpec: string) => {
+  const udpServer = getUdpServerInstance();
+  if (!udpServer) return "";
+  const ports = parsePortSpec(portSpec);
+  if (ports.length < 1) return "";
+
+  let target = host;
+  let sent = false;
+  if (host === "*") {
+    target = udpServer.getBroadcastAddress() || "255.255.255.255";
+  }
+  for (const port of ports) {
+    try {
+      udpServer.sendRawMessage(message, port, target);
+      sent = true;
+    } catch (error) {
+      console.error("[HostDevice] UDP send failed", { target, port, error });
+    }
+  }
+  return sent ? target : "";
+});
+
+ipcMain.handle("hostdevice-listen-on-udp-port", (_event, portSpec: string) => {
+  const udpServer = getUdpServerInstance();
+  const port = udpServer?.getPort() || 0;
+  if (!port) return 0;
+  const ports = parsePortSpec(portSpec);
+  if (ports.length < 1) return port;
+  return ports.includes(port) ? port : 0;
+});
+
+ipcMain.handle("hostdevice-close-udp-port", () => {
+  // Electron keeps a single shared UDP socket for app lifetime.
+  return true;
+});
+
+ipcMain.handle("hostdevice-check-nearby-permissions", () => true);
+
+ipcMain.handle("hostdevice-advertise-nearby", (_event, enabled: boolean) => {
+  const p2p = getP2PTransportInstance();
+  if (!p2p) return false;
+  if (enabled) return p2p.startAdvertising();
+  p2p.stopAdvertising();
+  return true;
+});
+
+ipcMain.handle("hostdevice-discover-nearby", (_event, enabled: boolean) => {
+  const p2p = getP2PTransportInstance();
+  if (!p2p) return false;
+  hostDeviceDiscovering = enabled;
+  if (enabled) {
+    const result = p2p.startDiscovery();
+    if (result.success) {
+      for (const session of p2p.getDiscoveredSessions()) {
+        sendHostDeviceMessage("nearby", { id: session.id, name: session.name, event: "discovered" });
+      }
+    }
+    return result.success;
+  }
+  p2p.stopDiscovery();
+  return true;
+});
+
+ipcMain.handle("hostdevice-connect-nearby", async (_event, endpointId: string) => {
+  const p2p = getP2PTransportInstance();
+  if (!p2p) return false;
+  const connected = await p2p.connect(endpointId);
+  if (connected) sendHostDeviceMessage("nearby", { id: endpointId, event: "connected" });
+  return connected;
+});
+
+ipcMain.handle("hostdevice-send-nearby-message", (_event, endpointId: string, message: string) => {
+  const p2p = getP2PTransportInstance();
+  if (!p2p) return false;
+  return p2p.sendMessage(endpointId, message);
+});
+
+ipcMain.handle("hostdevice-close-nearby", (_event, endpointId?: string) => {
+  const p2p = getP2PTransportInstance();
+  if (!p2p) return false;
+  const endpoint = typeof endpointId === "string" ? endpointId.trim() : "";
+  p2p.disconnect(endpoint || undefined);
+  if (endpoint) sendHostDeviceMessage("nearby", { id: endpoint, event: "disconnected" });
+  return true;
+});
+
+ipcMain.handle("hostdevice-get-nearby-state", () => {
+  const p2p = getP2PTransportInstance();
+  const sessions = p2p?.getDiscoveredSessions() || [];
+  return {
+    discovering: hostDeviceDiscovering,
+    sessions: sessions.map((session) => ({ id: session.id, name: session.name, transport: session.transport })),
+  };
+});
+
+ipcMain.handle("hostdevice-debug-log", (_event, tag: string, message: string) => {
+  console.log(`[${tag}] ${message}`);
+  return true;
+});
+
+ipcMain.handle("hostdevice-show-toast", (_event, message: string) => {
+  console.log(`[HostDeviceToast] ${message}`);
+  return true;
+});
+
+ipcMain.handle("hostdevice-get-errors", () => "");
+
+ipcMain.handle("hostdevice-get-home", () => {
+  if (process.env.VITE_DEV_SERVER_URL) return process.env.VITE_DEV_SERVER_URL;
+  return "";
+});
+
+ipcMain.handle("hostdevice-go-home", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (process.env.VITE_DEV_SERVER_URL) {
+      void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    } else {
+      void mainWindow.loadFile(path.join(__dirname, "../webapp/index.html"));
+    }
+  }
+  return true;
+});
+
+ipcMain.handle("hostdevice-set-fullscreen", (_event, fs?: boolean) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const next = fs == null ? !mainWindow.isFullScreen() : !!fs;
+  mainWindow.setFullScreen(next);
+  return next;
+});
+
+ipcMain.handle("hostdevice-is-fullscreen", () => {
+  return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen());
+});
+
+ipcMain.handle("hostdevice-dialog", async (_event, message: string, title: string, positiveLabel: string, negativeLabel: string) => {
+  const buttons = [positiveLabel || "OK"];
+  if (negativeLabel) buttons.push(negativeLabel);
+  const result = await showMainMessageBox({
+    type: "question",
+    title: title || "PraiseProjector",
+    message,
+    buttons,
+    defaultId: 0,
+    cancelId: buttons.length > 1 ? 1 : 0,
+    noLink: true,
+  });
+  sendHostDeviceMessage("dialog", result.response === 0);
+  return true;
+});
+
+ipcMain.handle("hostdevice-store-preference", (_event, key: string, value: string) => {
+  const prefs = readHostDevicePrefs();
+  prefs[key] = value;
+  writeHostDevicePrefs(prefs);
+  return true;
+});
+
+ipcMain.handle("hostdevice-retrieve-preference", (_event, key: string) => {
+  const prefs = readHostDevicePrefs();
+  return prefs[key] || "";
+});
+
+ipcMain.handle("hostdevice-get-name", () => os.hostname());
+ipcMain.handle("hostdevice-get-model", () => `${os.platform()}-${os.arch()}`);
+ipcMain.handle("hostdevice-exit", () => {
+  app.quit();
+  return true;
+});
+ipcMain.handle("hostdevice-version", () => app.getVersion());
+ipcMain.handle("hostdevice-info", (_event, flags = -1) => {
+  const info: Record<string, unknown> = {
+    deviceName: os.hostname(),
+    modelName: `${os.platform()}-${os.arch()}`,
+    versionName: app.getVersion(),
+  };
+  if ((flags & 1) !== 0 || flags < 0) {
+    info.totalMemory = os.totalmem();
+    info.freeMemory = os.freemem();
+  }
+  if ((flags & 2) !== 0 || flags < 0) {
+    const udpServer = getUdpServerInstance();
+    info.ipAddress = udpServer?.getAddress() || "";
+    info.gateway = "";
+    info.broadcast = udpServer?.getBroadcastAddress() || "";
+  }
+  return JSON.stringify(info);
+});
+
+ipcMain.handle("hostdevice-keep-screen-on", (_event, keep: boolean) => {
+  if (keep) {
+    if (powerSaveBlockerId === null || !powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+      powerSaveBlockerId = powerSaveBlocker.start("prevent-display-sleep");
+    }
+  } else if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlocker.stop(powerSaveBlockerId);
+    powerSaveBlockerId = null;
+  }
+  return true;
+});
+
+ipcMain.handle("hostdevice-open-link-external", async (_event, url: string) => {
+  await openExternalUrlSafely(url);
+  return true;
+});
+
+ipcMain.handle("hostdevice-get-third-party-license-sections", async () => {
+  return "[]";
+});
+
+ipcMain.handle("hostdevice-enable-notification", () => false);
+
+ipcMain.handle("hostdevice-get-cache-size", async () => {
+  try {
+    return await session.defaultSession.getCacheSize();
+  } catch {
+    return -1;
+  }
+});
+
+ipcMain.handle("hostdevice-clear-cache", async (_event, _includeDiskFiles: boolean) => {
+  try {
+    await session.defaultSession.clearCache();
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle("hostdevice-start-navigation-timeout", () => true);
+
+ipcMain.handle("hostdevice-page-loaded-successfully", () => true);
+
+ipcMain.handle("hostdevice-share", async (_event, url: string) => {
+  if (url) await openExternalUrlSafely(url);
+  return true;
 });
 
 // Open OS Bluetooth settings for device pairing
