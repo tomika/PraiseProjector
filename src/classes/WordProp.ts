@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
-
 export class WordProp {
   public text: string = "";
   public pos: number[] = [];

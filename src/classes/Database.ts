@@ -15,8 +15,17 @@ import { leaderDBProfileCodec, leadersResponseCodec, uniType } from "../../commo
 import { decode, parseAndDecode } from "../../common/io-utils";
 import * as t from "io-ts";
 import { TinyEmitter } from "tiny-emitter";
-import { Settings } from "../types";
-import { databaseStorage, getStorageKey } from "../services/DatabaseStorage";
+import { databaseStorage, getStorageKey } from "./DatabaseStorage";
+
+export interface DatabaseSettings {
+  searchMethod?: "traditional" | "typesense";
+  typesenseUrl: string;
+  typesenseApiKey: string;
+  searchMaxResults?: number;
+  traditionalSearchCaseSensitive?: boolean;
+  traditionalSearchWholeWords?: boolean;
+  useTextSimilarities?: boolean;
+}
 // --- MinHash hash coefficients (deterministic LCG-generated) ---
 const MINHASH_NUM_HASHES = 64;
 const MINHASH_SHINGLE_SIZE = 3;
@@ -336,7 +345,7 @@ class Database {
     return { id: song.Id, version: song.version, text: song.Text };
   }
 
-  public verifySearchEngine(settings: Settings | null) {
+  public verifySearchEngine(settings: DatabaseSettings | null) {
     const typesenseEnabled = settings?.searchMethod === "typesense";
     if (typesenseEnabled && !this.typesense) {
       this.ensureTypesenseInit(settings);
@@ -652,7 +661,7 @@ class Database {
     // Use fire-and-forget pattern for backwards compatibility
     this.forceSaveAsync().catch((error) => {
       console.error("Database", "Failed to save data to IndexedDB", error);
-      window.dispatchEvent(new CustomEvent("pp-db-save-error"));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-db-save-error"));
     });
   }
 
@@ -684,7 +693,7 @@ class Database {
         this.emitter.emit("db-updated");
       } catch (error) {
         console.error("Database", "Failed to save data to IndexedDB", error);
-        window.dispatchEvent(new CustomEvent("pp-db-save-error"));
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-db-save-error"));
         throw error;
       } finally {
         this.savePromise = null;
@@ -1197,7 +1206,7 @@ class Database {
     includeItemsWithoutChords = true,
     includeItemsWithNotes = true,
     order: SongOrder = SongOrder.Alphabetical,
-    settings?: Settings | null
+    settings?: DatabaseSettings | null
   ): Promise<SongFoundList> {
     if (this.typesenseEngineEnabled && settings?.searchMethod === "typesense" && expr.trim()) {
       try {
@@ -1215,7 +1224,7 @@ class Database {
       } catch {
         if (!this.typesenseFallbackFired) {
           this.typesenseFallbackFired = true;
-          window.dispatchEvent(new CustomEvent("pp-typesense-fallback"));
+          if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-typesense-fallback"));
         }
         return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
       }
@@ -1226,7 +1235,7 @@ class Database {
   private typesenseInitHash = "";
   private typesenseFallbackFired = false;
 
-  private ensureTypesenseInit(settings: Settings) {
+  private ensureTypesenseInit(settings: DatabaseSettings) {
     const hash = `${settings.typesenseUrl}|${settings.typesenseApiKey}`;
     if (hash === this.typesenseInitHash) return;
     this.typesenseInitHash = hash;
@@ -1257,7 +1266,7 @@ class Database {
     includeItemsWithoutChords: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
-    settings: Settings
+    settings: DatabaseSettings
   ): Promise<SongFoundList> {
     const res = new SongFoundList();
     const maxResults = settings.searchMaxResults ?? 0;
@@ -1321,7 +1330,7 @@ class Database {
     includeItemsWithoutChords: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
-    settings?: Settings | null
+    settings?: DatabaseSettings | null
   ): SongFoundList {
     const res = new SongFoundList();
     const maxResults = settings?.searchMaxResults ?? 0; // 0 = unlimited
@@ -1447,7 +1456,7 @@ class Database {
     song: Song,
     filters: ReadonlyArray<WordMatch>,
     leader: Leader | null,
-    _settings?: Settings | null
+    _settings?: DatabaseSettings | null
   ): [FoundReason, number, string | undefined] {
     let cost = Infinity;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
