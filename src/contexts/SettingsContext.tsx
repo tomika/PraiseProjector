@@ -156,6 +156,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       qrCodeSizePercent: 15, // QR code size (% of image height)
       showTextInPreview: true,
       showImageInPreview: true,
+      updateChannel: "stable",
     };
   }, []);
 
@@ -249,6 +250,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings((prev) => {
       if (!prev) return null;
       const newSettings = { ...prev, [key]: value };
+      // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
+      if (window.electronAPI?.syncSettings) {
+        window.electronAPI.syncSettings(newSettings);
+      }
       // Auto-save settings immediately (matching C# behavior for format panel)
       storeApi
         .saveSettings(newSettings)
@@ -257,10 +262,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setInitialSettings(newSettings);
           // Dispatch custom event to notify components
           window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-          // Sync to backend after auto-save
-          if (window.electronAPI?.syncSettings) {
-            window.electronAPI.syncSettings(newSettings);
-          }
         })
         .catch((error) => {
           console.error("General", `Failed to auto-save setting '${key}'`, error);

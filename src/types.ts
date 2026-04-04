@@ -144,4 +144,7 @@ export interface Settings {
   qrCodeSizePercent: number; // Size as percentage of image height (5–50)
   showTextInPreview: boolean;
   showImageInPreview: boolean;
+
+  // Update channel: "stable" uses latest.yml, "testing" uses the testing subfolder
+  updateChannel: "stable" | "testing";
 }

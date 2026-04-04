@@ -1,5 +1,6 @@
 import React from "react";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { useSettings } from "../../contexts/SettingsContext";
 import { cloudApi } from "../../../common/cloudApi";
 import { useUpdate } from "../../contexts/UpdateContext";
 import { getSettingsAboutLicenseSections } from "../../about-licenses";
@@ -12,11 +13,13 @@ declare const __APP_SHOW_COMMIT__: boolean;
 
 const AboutSettings: React.FC = () => {
   const { t } = useLocalization();
+  const { settings, updateSettingWithAutoSave } = useSettings();
   const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
   const commit = typeof __APP_COMMIT__ !== "undefined" ? __APP_COMMIT__ : "";
   const showCommit = typeof __APP_SHOW_COMMIT__ !== "undefined" ? __APP_SHOW_COMMIT__ : false;
   const versionDisplay = showCommit && commit ? `${version} (${commit})` : version;
   const isElectronRuntime = !!window.electronAPI;
+  const selectedUpdateChannel = settings?.updateChannel ?? "stable";
   const licenseSections = getSettingsAboutLicenseSections(isElectronRuntime ? "full-electron" : "frontend-only");
 
   // Derive site URL from API base URL (remove the path portion)
@@ -24,6 +27,11 @@ const AboutSettings: React.FC = () => {
   const siteUrl = apiBaseUrl.replace(/(https?:\/\/[^/]+).*/, "$1");
 
   const { updateAvailable, downloadProgress, updateDownloaded, checking, checkForUpdates, downloadUpdate, installUpdate } = useUpdate();
+
+  const onUpdateChannelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const channel = event.target.value as "stable" | "testing";
+    updateSettingWithAutoSave("updateChannel", channel);
+  };
 
   const renderUpdateStatus = () => {
     if (!window.electronAPI) return null;
@@ -41,9 +49,7 @@ const AboutSettings: React.FC = () => {
           <p className="mb-1">
             {t("UpdateDownloading")} {Math.round(downloadProgress)}%
           </p>
-          <div className="about-update-progress mb-2">
-            <div className="about-update-progress-bar" style={{ width: `${downloadProgress}%` }} />
-          </div>
+          <progress className="about-update-progress-native mb-2" max={100} value={downloadProgress} />
         </>
       );
     }
@@ -86,6 +92,25 @@ const AboutSettings: React.FC = () => {
       <h3>{t("AboutTitle")}</h3>
       <p>{t("AboutDescription")}</p>
       <p>{t("AboutVersion").replace("{version}", versionDisplay)}</p>
+      {isElectronRuntime && (
+        <div className="mb-3">
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <label className="form-label mb-0" htmlFor="updateChannelSelect">
+              {t("UpdateChannelLabel")}
+            </label>
+            <select
+              id="updateChannelSelect"
+              className="form-select form-select-sm w-auto"
+              value={selectedUpdateChannel}
+              onChange={onUpdateChannelChange}
+            >
+              <option value="stable">{t("UpdateChannelStable")}</option>
+              <option value="testing">{t("UpdateChannelTesting")}</option>
+            </select>
+            {selectedUpdateChannel === "testing" ? <span className="badge text-bg-warning">{t("UpdateChannelTestingWarning")}</span> : null}
+          </div>
+        </div>
+      )}
       {renderUpdateStatus()}
       {renderUpdateActions()}
       <p>

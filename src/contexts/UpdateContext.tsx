@@ -41,6 +41,14 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       );
     }
 
+    if (api.onUpdateNotAvailable) {
+      cleanupFns.push(
+        api.onUpdateNotAvailable(() => {
+          setUpdateAvailable(null);
+        })
+      );
+    }
+
     if (api.onUpdateDownloadProgress) {
       cleanupFns.push(
         api.onUpdateDownloadProgress((progress) => {
@@ -66,7 +74,14 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!api?.checkForUpdates) return;
     setChecking(true);
     try {
-      await api.checkForUpdates();
+      const result = await api.checkForUpdates();
+      const available = result?.available ?? result?.updateAvailable ?? false;
+
+      if (available && result?.version) {
+        setUpdateAvailable({ version: result.version });
+      } else if (!available) {
+        setUpdateAvailable(null);
+      }
     } finally {
       setChecking(false);
     }
