@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { Settings } from "../../types";
-import { Leaders, Leader } from "../../classes";
+import { Leaders, Leader } from "../../../db-common";
 import SongPreferencesEditor from "./SongPreferencesEditor";
 import { useLocalization } from "../../localization/LocalizationContext";
 import "./LeadersSettings.css";

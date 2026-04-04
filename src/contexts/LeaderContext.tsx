@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { Leader } from "../classes/Leader";
-import { Database } from "../classes/Database";
+import { Leader } from "../../db-common/Leader";
+import { Database } from "../../db-common/Database";
 import { useSettings } from "../hooks/useSettings";
 import { v4 as uuidv4 } from "uuid";
 

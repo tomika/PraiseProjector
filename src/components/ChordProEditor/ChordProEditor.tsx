@@ -1,10 +1,10 @@
 import React from "react";
-import { Song } from "../../classes/Song";
+import { Song } from "../../../db-common/Song";
 import { Icon, IconType } from "../../services/IconService";
 import { ensureChordProAssets } from "../../utils/loadChordProAssets";
 import { Settings } from "../../types";
 import { useLocalization, StringKey } from "../../localization/LocalizationContext";
-import { Database } from "../../classes/Database";
+import { Database } from "../../../db-common/Database";
 import "./ChordProEditor.css";
 
 interface ChordProEditorProps {

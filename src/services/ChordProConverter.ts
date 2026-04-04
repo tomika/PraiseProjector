@@ -1,5 +1,5 @@
-import { ImportLines, ImportLine } from "../classes/ImportLine";
-import { ChordMap } from "../classes/ChordMap";
+import { ImportLines, ImportLine } from "../../db-common/ImportLine";
+import { ChordMap } from "../../db-common/ChordMap";
 
 /**
  * Service for converting multi-line chord/lyric format to ChordPro format

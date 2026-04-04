@@ -1,13 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect, Suspense, lazy } from "react";
 import { DocumentImporter } from "../../services/DocumentImporter";
 import { ChordProConverter } from "../../services/ChordProConverter";
-import { ImportLines } from "../../classes/ImportLine";
-import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../classes/ChordMap";
-import { Song } from "../../classes/Song";
+import { ImportLines } from "../../../db-common/ImportLine";
+import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../../db-common/ChordMap";
+import { Song } from "../../../db-common/Song";
 import { ChordProDocument, getChordSystem } from "../../../chordpro/chordpro_base";
 import { ChordSelector } from "../../../chordpro/chord_selector";
 import { ChordDetails } from "../../../chordpro/note_system";
-import { Database } from "../../classes/Database";
+import { Database } from "../../../db-common/Database";
 import ChordProEditorComponent from "../ChordProEditor/ChordProEditor";
 import { ChordProEditor } from "../ChordProEditor/ChordProEditor";
 import { setEditedSong } from "../../state/CurrentSongStore";

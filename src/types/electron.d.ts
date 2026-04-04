@@ -1,5 +1,5 @@
 import { Display as PPDisplay } from "../../common/pp-types";
-import { PlaylistEntry } from "../classes/PlaylistEntry";
+import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 import { Settings } from "../types";
 
 export type Display = PPDisplay;

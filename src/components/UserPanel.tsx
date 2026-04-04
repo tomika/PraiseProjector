@@ -7,7 +7,7 @@ import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
 import { cloudApi } from "../../common/cloudApi";
 import { useSettings } from "../hooks/useSettings";
-import { Database } from "../classes/Database";
+import { Database } from "../../db-common/Database";
 import AuthDialog from "./AuthDialog";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;

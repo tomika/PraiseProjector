@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
 import { generateQRCodeSVG } from "../hooks/useSessionUrl";
 import "./PreviewPanel.css";
-import { PlaylistEntry } from "../classes/PlaylistEntry";
-import { Song } from "../classes/Song";
+import { PlaylistEntry } from "../../db-common/PlaylistEntry";
+import { Song } from "../../db-common/Song";
 import { SectionGenerator, SectionItem, DisplaySettings } from "../utils/SectionGenerator";
 import { SectionRenderer, RenderSettings } from "../utils/SectionRenderer";
 import { useSettings } from "../hooks/useSettings";

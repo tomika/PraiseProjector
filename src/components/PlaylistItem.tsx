@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from "react";
 import { useDrag, useDrop, DropTargetMonitor } from "react-dnd";
 import { XYCoord } from "dnd-core";
-import { PlaylistEntry } from "../classes/PlaylistEntry";
+import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 
 const ItemTypes = {
   PLAYLIST_ITEM: "playlist_item",

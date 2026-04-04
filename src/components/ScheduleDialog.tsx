@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Leader } from "../classes/Leader";
+import { Leader } from "../../db-common/Leader";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { formatLocalDateKey } from "../../common/date-only";

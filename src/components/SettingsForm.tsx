@@ -8,7 +8,7 @@ import WebServerSettings from "./settings/WebServerSettings";
 import NetDisplaySettings from "./settings/NetDisplaySettings";
 import ImagesSettings from "./settings/ImagesSettings";
 import AboutSettings from "./settings/AboutSettings";
-import { Leader } from "../classes";
+import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
 import { useSettings } from "../hooks/useSettings";

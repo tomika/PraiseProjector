@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
 import { KnownChordModifiers } from "./KnownChordModifiers";
 import { StringExtensions } from "./StringExtensions";
-import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../../common/pp-types";
-import { decode } from "../../common/io-utils";
+import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../common/pp-types";
+import { decode } from "../common/io-utils";
 import * as t from "io-ts";
-import { chordSystemCodec, songDataCodec, uniType } from "../../common/pp-codecs";
+import { chordSystemCodec, songDataCodec, uniType } from "../common/pp-codecs";
 
 export const songStoreCodec = uniType(
   {

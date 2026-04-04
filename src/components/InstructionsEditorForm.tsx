@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 import { ChordProEditor } from "../../chordpro/chordpro_editor";
 import { getChordSystem } from "../../chordpro/chordpro_base";
 import { useTooltips } from "../localization/TooltipContext";

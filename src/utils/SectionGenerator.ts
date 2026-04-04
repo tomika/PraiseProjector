@@ -1,5 +1,5 @@
 import { TextMeasurer, TextSplitter, ChunkData } from "./TextMeasurer";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 
 /**
  * Section item for display list (port of C# SectionListBox.Item)

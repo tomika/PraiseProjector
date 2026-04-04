@@ -13,4 +13,4 @@ export {
   removeDatabase,
   saveDatabase,
   setRawDatabase,
-} from "../classes/DatabaseStorage";
+} from "../../db-common/DatabaseStorage";

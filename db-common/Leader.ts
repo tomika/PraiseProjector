@@ -1,6 +1,6 @@
 import { Playlist } from "./Playlist";
 import { SongPreference } from "./SongPreference";
-import { SongPreferenceEntry } from "../../common/pp-types";
+import { SongPreferenceEntry } from "../common/pp-types";
 
 // Forward declaration to avoid circular dependency
 interface Database {
@@ -9,10 +9,10 @@ interface Database {
 }
 
 import { Song } from "./Song";
-import { leaderDBProfileCodec } from "../../common/pp-codecs";
-import { LeaderDBProfile, PlayList, PreferenceType } from "../../common/pp-types";
-import { decode } from "../../common/io-utils";
-import { parseScheduleDate } from "../../common/date-only";
+import { leaderDBProfileCodec } from "../common/pp-codecs";
+import { LeaderDBProfile, PlayList, PreferenceType } from "../common/pp-types";
+import { decode } from "../common/io-utils";
+import { parseScheduleDate } from "../common/date-only";
 
 export interface UpdatePreferenceOptions {
   title?: string;

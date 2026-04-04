@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useImperativeHandle, forwardRef, useCallback } from "react";
-import { Leader, SongPreference } from "../../classes";
-import { Song } from "../../classes/Song";
-import { Database } from "../../classes/Database";
+import { Leader, SongPreference } from "../../../db-common";
+import { Song } from "../../../db-common/Song";
+import { Database } from "../../../db-common/Database";
 import InstructionsEditorForm from "../InstructionsEditorForm";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { Icon, IconType } from "../../services/IconService";

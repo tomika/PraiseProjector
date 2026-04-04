@@ -1,7 +1,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { Song } from "../classes/Song";
-import { Database, FoundReason, SongFound } from "../classes/Database";
+import { Song } from "../../db-common/Song";
+import { Database, FoundReason, SongFound } from "../../db-common/Database";
 import { useDrag, useDrop } from "react-dnd";
 import { useSettings } from "../hooks/useSettings";
 import { Icon, IconType } from "../services/IconService";
@@ -12,8 +12,8 @@ import { useLeader } from "../contexts/LeaderContext";
 import { useMessageBox, ConfirmOptions } from "../contexts/MessageBoxContext";
 import { Settings } from "../types";
 import { cloudApi } from "../../common/cloudApi";
-import { SongPreference } from "../classes/SongPreference";
-import { Leader } from "../classes/Leader";
+import { SongPreference } from "../../db-common/SongPreference";
+import { Leader } from "../../db-common/Leader";
 import CompareDialog, { convertHistoryEntriesToSongsWithHistory } from "./CompareDialog";
 import "./SongListPanel.css";
 

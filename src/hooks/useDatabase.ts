@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Leaders } from "../classes";
-import { Database } from "../classes/Database";
+import { Leaders } from "../../db-common";
+import { Database } from "../../db-common/Database";
 
 // Hook for managing leaders in the database (matching C# SettingsForm pattern)
 export const useDatabase = () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 import { SongDBPendingEntry, PendingSongOperation, PendingSongState } from "../../common/pp-types";
 import { cloudApi } from "../../common/cloudApi";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Song, SongChange } from "../classes/Song";
+import { Song, SongChange } from "../../db-common/Song";
 import { PendingSongState, SongHistoryEntry } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import ChordProEditor from "./ChordProEditor/ChordProEditor";

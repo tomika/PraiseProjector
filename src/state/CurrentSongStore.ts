@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 import { Display } from "../../common/pp-types";
 import { cloneDisplay, compareDisplays, getEmptyDisplay } from "../../common/pp-utils";
 

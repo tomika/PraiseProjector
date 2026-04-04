@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { installConsoleInterceptor, subscribeToLogs } from "../common/logger";
 import type { LogEntry } from "../common/logger";
-import { Database } from "./classes/Database";
+import { Database } from "../db-common/Database";
 
 // Install console interceptor early to capture all logs
 installConsoleInterceptor();

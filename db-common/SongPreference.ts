@@ -1,4 +1,4 @@
-import { PreferenceType, SongPreferenceEntry } from "../../common/pp-types";
+import { PreferenceType, SongPreferenceEntry } from "../common/pp-types";
 
 export class SongPreference {
   public title: string = "";

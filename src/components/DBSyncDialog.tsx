@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Song } from "../classes/Song";
-import { Leader } from "../classes/Leader";
-import { Database } from "../classes/Database";
+import { Song } from "../../db-common/Song";
+import { Leader } from "../../db-common/Leader";
+import { Database } from "../../db-common/Database";
 import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";

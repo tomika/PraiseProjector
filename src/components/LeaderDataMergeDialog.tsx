@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Leader } from "../classes/Leader";
-import { SongPreference } from "../classes/SongPreference";
-import { Playlist } from "../classes/Playlist";
-import { PlaylistEntry } from "../classes/PlaylistEntry";
-import { Database } from "../classes/Database";
+import { Leader } from "../../db-common/Leader";
+import { SongPreference } from "../../db-common/SongPreference";
+import { Playlist } from "../../db-common/Playlist";
+import { PlaylistEntry } from "../../db-common/PlaylistEntry";
+import { Database } from "../../db-common/Database";
 import { Icon, IconType } from "../services/IconService";
 import { useLocalization } from "../localization/LocalizationContext";
 import "./LeaderDataMergeDialog.css";

@@ -1,4 +1,4 @@
-import { PlaylistEntry as PlaylistEntryJSON } from "../../common/pp-types";
+import { PlaylistEntry as PlaylistEntryJSON } from "../common/pp-types";
 
 export class PlaylistEntry {
   title = "";

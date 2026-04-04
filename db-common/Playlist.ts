@@ -1,7 +1,7 @@
 import { PlaylistEntry } from "./PlaylistEntry";
 import { Song } from "./Song";
 import { v4 as uuidv4 } from "uuid";
-import { PlayList } from "../../common/pp-types";
+import { PlayList } from "../common/pp-types";
 
 export class Playlist {
   id: string;

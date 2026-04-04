@@ -2,7 +2,7 @@ import React, { useState, useRef, useContext, useEffect, ReactNode, useCallback 
 import { SessionResponse } from "../../common/pp-types";
 import { cloudApi } from "../../common/cloudApi";
 import { cloudApiBaseUrl } from "../config";
-import { Database } from "../classes/Database";
+import { Database } from "../../db-common/Database";
 
 type AuthStatus = "guest" | "authenticated" | "offline";
 

@@ -1,7 +1,7 @@
 import { Leader } from "./Leader";
-import { leadersResponseCodec } from "../../common/pp-codecs";
-import { LeaderDBProfile } from "../../common/pp-types";
-import { decode } from "../../common/io-utils";
+import { leadersResponseCodec } from "../common/pp-codecs";
+import { LeaderDBProfile } from "../common/pp-types";
+import { decode } from "../common/io-utils";
 
 export class Leaders {
   items: Leader[];

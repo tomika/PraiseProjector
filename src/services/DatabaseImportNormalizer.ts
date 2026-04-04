@@ -1,8 +1,8 @@
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
-import type { SongStoreRecord } from "../classes/Song";
+import type { SongStoreRecord } from "../../db-common/Song";
 import * as t from "io-ts";
 import { decode } from "../../common/io-utils";
-import { Database } from "../classes/Database";
+import { Database } from "../../db-common/Database";
 import { LeadersResponse, PlayList, PlaylistEntry, SongPreferenceEntry } from "../../common/pp-types";
 
 const DB_VERSION_PREFIX = "# db_version:";

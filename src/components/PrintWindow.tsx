@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 import { Settings } from "../types";
 import { ChordProEditor } from "./ChordProEditor/ChordProEditor";
 import ChordProEditorWithLocalization from "./ChordProEditor/ChordProEditor";

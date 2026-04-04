@@ -1,15 +1,15 @@
 import React from "react";
 import { useDrop, useDrag } from "react-dnd";
-import { Song } from "../classes/Song";
-import { Playlist } from "../classes/Playlist";
-import { PlaylistEntry } from "../classes/PlaylistEntry";
+import { Song } from "../../db-common/Song";
+import { Playlist } from "../../db-common/Playlist";
+import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 import {
   PlaylistEntry as PlaylistEntryData,
   SongPreference as SongPreferenceData,
   SongPreferenceEntry as SongPreferenceEntryData,
 } from "../../common/pp-types";
 import InstructionsEditorForm from "./InstructionsEditorForm";
-import { Database } from "../classes/Database";
+import { Database } from "../../db-common/Database";
 import "./PlaylistPanel.css";
 import { setAddSongToPlaylist } from "./SongListPanel";
 import { Icon, IconType } from "../services/IconService";
@@ -19,7 +19,7 @@ import { useTooltips, TooltipKey } from "../localization/TooltipContext";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import { useMessageBox, ConfirmOptions } from "../contexts/MessageBoxContext";
 import { ScheduleDialog } from "./ScheduleDialog";
-import { Leader } from "../classes/Leader";
+import { Leader } from "../../db-common/Leader";
 import { Settings } from "../types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";

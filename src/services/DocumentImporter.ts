@@ -1,6 +1,6 @@
 import mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist";
-import { ImportLine, ImportLines } from "../classes/ImportLine";
+import { ImportLine, ImportLines } from "../../db-common/ImportLine";
 
 // Configure PDF.js worker - use local worker instead of CDN
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();

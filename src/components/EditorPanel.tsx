@@ -1,5 +1,5 @@
 import React from "react";
-import { Song } from "../classes/Song";
+import { Song } from "../../db-common/Song";
 import "./EditorPanel.css";
 import { subscribeEditedSong } from "../state/CurrentSongStore";
 import { Settings } from "../types";
