@@ -710,8 +710,9 @@ export class App extends AppBase {
     this.installPinchZoomHandler(document.body, Math.max(1, Math.min(window.outerWidth, window.outerHeight) / 10));
 
     this.edFilter = document.getElementById("filter") as HTMLInputElement;
-    if (this.edFilter) { if (this.mode !== "OnlineSession") this.mode = "App"; }
-    else this.edFilter = document.getElementById("searchText") as HTMLInputElement;
+    if (this.edFilter) {
+      if (this.mode !== "OnlineSession") this.mode = "App";
+    } else this.edFilter = document.getElementById("searchText") as HTMLInputElement;
 
     const btnHome = document.getElementById("btnHome");
     if (btnHome) {
@@ -1359,7 +1360,7 @@ export class App extends AppBase {
   }
 
   private async updateDatabase(mode: "LOAD" | "RELOAD" | "UPDATE" = "UPDATE") {
-    const db = this.database ?? await Database.initialize();
+    const db = this.database ?? (await Database.initialize());
     this.database = db;
 
     if (mode === "RELOAD") {
@@ -1695,7 +1696,8 @@ export class App extends AppBase {
       return false;
     }
 
-    const pageFlipEnabled = this.hasNeighbours && !!this.editor?.readOnly && !this.editor?.inMarkingState && (this.mode === "App" || this.chkAdmin?.checked);
+    const pageFlipEnabled =
+      this.hasNeighbours && !!this.editor?.readOnly && !this.editor?.inMarkingState && (this.mode === "App" || this.chkAdmin?.checked);
     const page = this.pages.current.div;
     if (page)
       switch (type) {
@@ -2118,7 +2120,9 @@ export class App extends AppBase {
       if (greeting) await snooze(Math.max(0, loadTimeout - Date.now() + start));
 
       const dbSong = this.database?.getSong(songId);
-      let entry: SongEntry | undefined = dbSong ? { songId: dbSong.Id, title: dbSong.Title, songdata: { text: dbSong.Text, system: dbSong.System } } : undefined;
+      let entry: SongEntry | undefined = dbSong
+        ? { songId: dbSong.Id, title: dbSong.Title, songdata: { text: dbSong.Text, system: dbSong.System } }
+        : undefined;
       if (listId && this.selPlaylists) {
         const m = /^(.*)@([0-9]+)$/.exec(listId);
         if (m) listId = m[1];
