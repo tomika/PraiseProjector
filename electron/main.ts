@@ -1056,7 +1056,17 @@ ipcMain.handle("show-display-window", async (_event, displayId: string, imageDat
 
   // Ensure the latest frame is applied once the display window DOM is ready.
   displayWindow.webContents.once("did-finish-load", () => {
-    updateDisplayWindowImage(pendingDisplayWindowImageDataUrl ?? lastNetDisplaySourceImageDataUrl);
+    const latest = pendingDisplayWindowImageDataUrl ?? lastNetDisplaySourceImageDataUrl;
+    updateDisplayWindowImage(latest);
+
+    // Windows can lag during fullscreen/open transitions; re-apply latest frame a few times.
+    const retryDelays = [50, 150, 350, 700, 1200];
+    for (const delayMs of retryDelays) {
+      setTimeout(() => {
+        if (!displayWindow || displayWindow.isDestroyed()) return;
+        updateDisplayWindowImage(pendingDisplayWindowImageDataUrl ?? lastNetDisplaySourceImageDataUrl);
+      }, delayMs);
+    }
   });
 
   displayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
@@ -1210,11 +1220,35 @@ function updateDisplayWindowImage(pngDataUrl: string | null): void {
     return;
   }
   pendingDisplayWindowImageDataUrl = pngDataUrl;
-  if (pngDataUrl) {
-    displayWindow.webContents.executeJavaScript(`document.querySelector('img').src = ${JSON.stringify(pngDataUrl)};`).catch(() => {});
-  } else {
-    displayWindow.webContents.executeJavaScript(`document.querySelector('img').removeAttribute('src');`).catch(() => {});
-  }
+
+  const js = `(() => {
+    const img = document.querySelector('img');
+    if (!img) return false;
+    const src = ${JSON.stringify(pngDataUrl)};
+    if (src) {
+      img.src = src;
+    } else {
+      img.removeAttribute('src');
+    }
+    return true;
+  })();`;
+
+  const tryApply = (attempt = 0) => {
+    if (!displayWindow || displayWindow.isDestroyed()) return;
+    displayWindow.webContents
+      .executeJavaScript(js)
+      .then((applied) => {
+        if (applied) return;
+        if (attempt >= 20) return;
+        setTimeout(() => tryApply(attempt + 1), 50);
+      })
+      .catch(() => {
+        if (attempt >= 20) return;
+        setTimeout(() => tryApply(attempt + 1), 50);
+      });
+  };
+
+  tryApply();
 }
 
 // Internal Electron display window image update (lossless frame)
