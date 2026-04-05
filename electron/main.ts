@@ -41,6 +41,22 @@ app.setName(stableAppName);
 // On macOS:   ~/Library/Application Support/PraiseProjector
 // On Linux:   ~/.config/PraiseProjector
 
+// Fix: mouse events stop working after ~30 min of inactivity; pressing F11 (resize) restores them.
+//
+// Root cause (Windows): Chromium's CalculateNativeWinOcclusion feature uses the Win32 occlusion
+// API to detect when a window is covered by another native window.  Even a brief occlusion by a
+// tooltip, system notification, or taskbar popup is enough to make Chromium suspend the compositor.
+// With the compositor suspended the GPU hit-test tree goes stale, so mouse events are no longer
+// delivered to the correct element — but keyboard events still work because they bypass the
+// compositor.  A window resize (F11 → setFullScreen) forces a full recompose and restores
+// hit-testing until the next occlusion event.
+//
+// CalculateNativeWinOcclusion: disables the Windows occlusion tracker (primary fix).
+// disable-renderer-backgrounding: prevents the renderer from being deprioritized on idle
+//   (belt-and-suspenders — harmless on all platforms).
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+
 // Single-instance lock to prevent multiple app instances
 // Uses Electron's built-in lock (doesn't rely on file flags, survives process crashes)
 const gotTheLock = app.requestSingleInstanceLock();
