@@ -925,10 +925,6 @@ const AppContent: React.FC = () => {
           setSelectedSectionIndex(-1);
           const selection = leftPanelRef.current?.setPlaylistSelection({ songId: song.Id, emitChange: false });
           if (selection?.item) {
-            // Set playlist item directly without auto-selecting first section
-            setPlaylistSelection(selection);
-            leftPanelRef.current?.setSelectedSongId(selection.item.songId);
-
             // Keep backend display state in sync for remote song changes.
             // Without this, Electron changeDisplay is not triggered until a section is selected.
             updateCurrentDisplay({
@@ -942,6 +938,10 @@ const AppContent: React.FC = () => {
               capo: data.capo ?? selection.item.capo,
               instructions: data.instructions ?? selection.item.instructions,
             });
+
+            // Set playlist item directly without auto-selecting first section
+            setPlaylistSelection(selection);
+            leftPanelRef.current?.setSelectedSongId(selection.item.songId);
           }
         }
       } else {
@@ -965,9 +965,10 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (!window.electronAPI?.onRemoteDisplayUpdate) return;
-    window.electronAPI.onRemoteDisplayUpdate((data) => {
+    const unsubscribe = window.electronAPI.onRemoteDisplayUpdate((data) => {
       enqueue(() => remoteDisplayUpdateHandler(data));
     });
+    return () => unsubscribe?.();
   }, []);
 
   // Set up general webserver API handler
