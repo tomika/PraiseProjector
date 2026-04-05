@@ -5,8 +5,8 @@
   "description": "PraiseProjector browser client",
   "scripts": {
     "build": "npm run build:release",
-    "build:debug": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --sourcemap --outfile=../public/app/pp-api.js",
-    "build:release": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --minify --outfile=../public/app/pp-api.js",
+    "build:debug": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --sourcemap --define:import.meta.env={} --outfile=../public/app/pp-api.js",
+    "build:release": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --minify --define:import.meta.env={} --outfile=../public/app/pp-api.js",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\""
   },
@@ -23,6 +23,9 @@
     "core-js": "^3.19.1",
     "fp-ts": "^2.16.11",
     "io-ts": "^2.2.22",
+    "localforage": "^1.10.0",
+    "tiny-emitter": "^2.1.0",
+    "uuid": "^13.0.0",
     "yalps": "^0.5.7"
   }
 }

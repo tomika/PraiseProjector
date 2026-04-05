@@ -15,7 +15,6 @@ import { ChordSelector } from "../chordpro/chord_selector";
 import { getKeyCodeString, isNumLockEnabled } from "../chordpro/keycodes";
 import { ChordDetails } from "../chordpro/note_system";
 import { cloudApi } from "../common/cloudApi";
-import { simplifyString } from "../common/stringTools";
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -44,10 +43,8 @@ import {
   SongPreferenceEntry,
   AppConfig,
   SongData,
-  SongDBEntry,
   LeaderDBProfile,
   SongFound,
-  SongFoundType,
   OnlineSessionEntry,
   SessionResponse,
   PpdMessage,
@@ -58,7 +55,7 @@ import {
 import { notPhraseFoundAdditionalCost, isErrorResponse } from "../common/pp-utils";
 import { setLogFunction } from "../common/pp-log";
 import Calendar from "color-calendar";
-import { SongWords } from "../common/words";
+import { Database, FormatFoundReason } from "../db-common/Database";
 import { UnicodeSymbol } from "./symbols";
 import { preventDisplayFromSleep } from "./awake";
 import { getAboutBoxHtml } from "./about";
@@ -404,7 +401,6 @@ export class App extends AppBase {
   private iconWiFiOn: HTMLElement | null = null;
   private iconWiFiOff: HTMLElement | null = null;
   private iconWeb: HTMLElement | null = null;
-  private allSong?: Map<string, SongEntry>;
   private playlists = new Map<string, LeaderPlaylist>();
   private fontSizeDialog: HTMLDivElement | null = null;
   private baseFontSizeSlider: HTMLInputElement | null = null;
@@ -427,7 +423,7 @@ export class App extends AppBase {
     },
   };
   private allSongModeState: "LOADING" | "LOADED" | "ERROR" | "READY" = "LOADING";
-  private songWords = new SongWords();
+  private database?: Database;
   private switchToPlaylistView = () => {}; //TODO: make it nicer?
   private songToCheck?: DiffSongRequest;
 
@@ -435,6 +431,7 @@ export class App extends AppBase {
   private orientation = 0;
   private darkModeEnabled: boolean | undefined;
   private readonly onlineMode: boolean;
+  private mode: "App" | "Client" | "OnlineSession";
   private leaderModeAvailable: boolean;
   private leaderMode: boolean;
   private readonly leaderId: string;
@@ -449,6 +446,7 @@ export class App extends AppBase {
   ) {
     super();
     this.onlineMode = options?.online ?? false;
+    this.mode = this.onlineMode ? "OnlineSession" : "Client";
     this.leaderModeAvailable = !!options?.leaderModeAvailable;
     this.leaderMode = !!options?.leaderModeEnabled;
     this.leaderId = options?.leaderId ?? "";
@@ -696,10 +694,6 @@ export class App extends AppBase {
     else location.reload();
   }
 
-  private get mode() {
-    return this.onlineMode ? "OnlineSession" : this.allSong ? "App" : "Client";
-  }
-
   private initFields() {
     const about = document.getElementById("about");
     const aboutBox = document.getElementById("aboutBox");
@@ -716,7 +710,7 @@ export class App extends AppBase {
     this.installPinchZoomHandler(document.body, Math.max(1, Math.min(window.outerWidth, window.outerHeight) / 10));
 
     this.edFilter = document.getElementById("filter") as HTMLInputElement;
-    if (this.edFilter) this.allSong = new Map<string, SongEntry>();
+    if (this.edFilter) { if (this.mode !== "OnlineSession") this.mode = "App"; }
     else this.edFilter = document.getElementById("searchText") as HTMLInputElement;
 
     const btnHome = document.getElementById("btnHome");
@@ -776,7 +770,7 @@ export class App extends AppBase {
     if (this.selShift) {
       const selShift = this.selShift;
       this.selShift.onchange = () => {
-        if (this.allSong) {
+        if (this.mode === "App") {
           const transpose = parseInt(selShift.options[selShift.selectedIndex].value, 10);
           if (!isNaN(transpose)) this.transpose(transpose);
           this.storeDisplaySettings();
@@ -988,11 +982,11 @@ export class App extends AppBase {
       setTimeout(
         () => {
           if (filterRequestCounter === last) {
-            if (this.allSong) this.applyFilterOnLocalSongList();
+            if (this.mode === "App") this.applyFilterOnLocalSongList();
             else this.onSearchTextChanged();
           }
         },
-        this.allSong ? 100 : 500
+        this.mode === "App" ? 100 : 500
       );
     };
 
@@ -1230,7 +1224,7 @@ export class App extends AppBase {
     this.iconStopSession = this.hostDevice ? document.getElementById("iconStopSession") : null;
     if (this.iconStopSession) {
       this.iconStopSession.onclick = () => {
-        if (!this.allSong && history.length > 1) {
+        if (this.mode !== "App" && history.length > 1) {
           this.goHome();
           return;
         }
@@ -1365,12 +1359,31 @@ export class App extends AppBase {
   }
 
   private async updateDatabase(mode: "LOAD" | "RELOAD" | "UPDATE" = "UPDATE") {
-    const songsAndPlaylists = await this.loadAllSongsAndPlaylists(mode);
-    this.allSong = new Map<string, SongEntry>();
-    for (const entry of songsAndPlaylists.songs) this.allSong.set(entry.songId, entry);
-    const backup = this.selPlaylists?.value;
-    this.refreshPlaylists(songsAndPlaylists.playlists);
-    if (backup && this.selPlaylists) this.selPlaylists.value = backup;
+    const db = this.database ?? await Database.initialize();
+    this.database = db;
+
+    if (mode === "RELOAD") {
+      // Full reload: re-fetch everything from server
+      await db.updateFromServer(0, true, "overwrite");
+    } else if (mode === "LOAD" || mode === "UPDATE") {
+      // Incremental update from server
+      try {
+        await db.updateFromServer(undefined, true, "overwrite");
+      } catch (error) {
+        this.log("Database update failed, using cached: " + error);
+      }
+    }
+
+    // Playlists: still fetched via cloudApi for legacy playlist UI
+    try {
+      const playlists = await this.fetchAllPlaylistFromServer();
+      const backup = this.selPlaylists?.value;
+      this.refreshPlaylists(playlists);
+      if (backup && this.selPlaylists) this.selPlaylists.value = backup;
+    } catch (error) {
+      this.log("Playlists update failed: " + error);
+    }
+
     await this.applyFilterOnLocalSongList();
   }
 
@@ -1675,14 +1688,14 @@ export class App extends AppBase {
       type !== "move" &&
       !this.editor.inMarkingState &&
       (!this.swipeState || this.swipeState.direction === 0) &&
-      this.editor.handleExternalChordBoxTouch(e, type === "down", !!this.allSong)
+      this.editor.handleExternalChordBoxTouch(e, type === "down", this.mode === "App")
     ) {
       this.swipeState = null;
       e.preventDefault();
       return false;
     }
 
-    const pageFlipEnabled = this.hasNeighbours && !!this.editor?.readOnly && !this.editor?.inMarkingState && (this.allSong || this.chkAdmin?.checked);
+    const pageFlipEnabled = this.hasNeighbours && !!this.editor?.readOnly && !this.editor?.inMarkingState && (this.mode === "App" || this.chkAdmin?.checked);
     const page = this.pages.current.div;
     if (page)
       switch (type) {
@@ -2104,7 +2117,8 @@ export class App extends AppBase {
 
       if (greeting) await snooze(Math.max(0, loadTimeout - Date.now() + start));
 
-      let entry = this.allSong?.get(songId);
+      const dbSong = this.database?.getSong(songId);
+      let entry: SongEntry | undefined = dbSong ? { songId: dbSong.Id, title: dbSong.Title, songdata: { text: dbSong.Text, system: dbSong.System } } : undefined;
       if (listId && this.selPlaylists) {
         const m = /^(.*)@([0-9]+)$/.exec(listId);
         if (m) listId = m[1];
@@ -2353,7 +2367,7 @@ export class App extends AppBase {
 
     const entry = this.getNeighbouringPlaylistEntry(next);
     if (entry) {
-      if (this.allSong) {
+      if (this.mode === "App") {
         this.selectFromAllSongs(entry);
       } else {
         const promise = new Promise<void>((resolve) => {
@@ -2584,7 +2598,7 @@ export class App extends AppBase {
         this.updateSelectedSongInList(req);
         await snooze(0);
         if (isDiffSongRequest(req)) this.loadSongToCheck(req);
-        else if (this.allSong) this.selectFromAllSongs(req);
+        else if (this.mode === "App") this.selectFromAllSongs(req);
         else this.requestSong(req);
       }
       for (let elem: HTMLElement | undefined; (elem = inModal()); ) endModal(elem);
@@ -2709,7 +2723,7 @@ export class App extends AppBase {
         const isFoundList = entryIsFound(songEntry);
 
         let checkBox: HTMLInputElement | undefined = undefined;
-        if (isFoundList && !this.allSong) {
+        if (isFoundList && this.mode !== "App") {
           const checkBoxCell = row.insertCell(cellCount++);
           checkBox = document.createElement("input") as HTMLInputElement;
           checkBox.type = "checkbox";
@@ -2772,7 +2786,7 @@ export class App extends AppBase {
               songEntry.found.type.toLocaleLowerCase() +
               (songEntry.found.cost >= notPhraseFoundAdditionalCost ? "_words" : "") +
               ".svg)";
-          if (!this.allSong) {
+          if (this.mode !== "App") {
             cell.onclick = async () => {
               const preview = this.preview;
               if (preview) {
@@ -2818,10 +2832,10 @@ export class App extends AppBase {
           }
           enableRow();
         }
-        if (this.allSong || !isFoundList) {
+        if (this.mode === "App" || !isFoundList) {
           let doubleclicked = 0;
-          (this.allSong ? row : cell).onclick = () => {
-            if (this.allSong) {
+          (this.mode === "App" ? row : cell).onclick = () => {
+            if (this.mode === "App") {
               this.nextSongReq = songEntry;
               this.closeOptions(!this.landscape);
             } else
@@ -2842,7 +2856,7 @@ export class App extends AppBase {
               authorCell.className = "authorColumn";
               authorCell.innerText = songEntry.uploader;
             } else cell.colSpan = 2;
-          } else if (this.allSong ? this.selPlaylists && isVisible(this.selPlaylists) : this.mode === "Client" || this.leaderMode) {
+          } else if (this.mode === "App" ? this.selPlaylists && isVisible(this.selPlaylists) : this.mode === "Client" || this.leaderMode) {
             const songId = songEntry.songId;
             if (this.mode !== "App")
               cell.ondblclick = () => {
@@ -2878,7 +2892,7 @@ export class App extends AppBase {
                   : "";
               } else lab.innerText = songEntry.capo != null && songEntry.capo >= 0 ? songEntry.capo.toString() : "";
               td.appendChild(lab);
-              if (!this.allSong) {
+              if (this.mode !== "App") {
                 const sel = document.createElement("select") as HTMLSelectElement;
                 for (let optIndex = transpose ? -11 : -1; optIndex < 12; ++optIndex) {
                   const option = document.createElement("option") as HTMLOptionElement;
@@ -2890,7 +2904,7 @@ export class App extends AppBase {
                 sel.onchange = transpose
                   ? () => this.transposeRequest(sel.options[sel.selectedIndex].value, songId)
                   : () => this.capoRequest(sel.selectedIndex - 1, songId);
-                makeReadonly(sel, !!this.allSong);
+                makeReadonly(sel, false);
                 td.appendChild(sel);
                 td.ontouchend = (e) => {
                   const path = e.composedPath?.() || [];
@@ -2920,7 +2934,7 @@ export class App extends AppBase {
         const item = this.currentDisplay.playlist?.find((x) => x.songId === songEntry.songId);
         if (item) disableRow(item);
 
-        if (!this.allSong && !isFoundList) {
+        if (this.mode !== "App" && !isFoundList) {
           row.draggable = true;
           row.ondragstart = (event: DragEvent) => {
             this.draggedRow = row;
@@ -2999,11 +3013,12 @@ export class App extends AppBase {
   }
 
   private selectFromAllSongs(playlistEntry: SongRequest) {
-    const entry = isFullSongRequest(playlistEntry) ? playlistEntry : this.allSong?.get(playlistEntry.songId);
+    const full = isFullSongRequest(playlistEntry) ? playlistEntry : undefined;
+    const s = !full ? this.database?.getSong(playlistEntry.songId) : undefined;
     this.applyDisplay({
       songId: playlistEntry.songId,
-      song: entry?.songdata?.text ?? "",
-      system: entry?.songdata?.system ?? "S",
+      song: full?.songdata?.text ?? s?.Text ?? "",
+      system: full?.songdata?.system ?? s?.System ?? "S",
       from: 0,
       to: 0,
       transpose: playlistEntry.transpose ?? 0,
@@ -3097,8 +3112,8 @@ export class App extends AppBase {
   private async verifyNeighbouringSongs(next?: boolean, useCapoChangedOnly?: boolean) {
     const loadAndTranspose = (page: EditorPage, playListItem: PlaylistEntry | null, songdata?: SongData) => {
       if (!songdata) {
-        const entry = playListItem ? this.allSong?.get(playListItem.songId) : null;
-        songdata = entry?.songdata ?? { text: "", system: "S" };
+        const dbSong = playListItem ? this.database?.getSong(playListItem.songId) : undefined;
+        songdata = dbSong ? { text: dbSong.Text, system: dbSong.System } : { text: "", system: "S" };
       }
       const { loaded } = page.load(songdata.text, songdata.system, {
         preferredCapo: this.chkUseCapo?.checked ? playListItem?.capo : undefined,
@@ -3116,7 +3131,7 @@ export class App extends AppBase {
         if (playListItem.capo) entry.capo = playListItem.capo;
       }
     };
-    if (this.allSong) {
+    if (this.mode === "App") {
       if (!next && this.pages.prev) loadAndTranspose(this.pages.prev, this.getNeighbouringPlaylistEntry(false));
       if ((next === undefined || next) && this.pages.next) loadAndTranspose(this.pages.next, this.getNeighbouringPlaylistEntry(true));
       this.hasNeighbours = true;
@@ -3167,11 +3182,11 @@ export class App extends AppBase {
   private lastDisplayRequest: any = null;
 
   private async watchDisplay(forced: boolean = false) {
-    if (this.allSong) {
+    if (this.mode === "App") {
       if (!this.songListTable) return;
       if (this.iconLoadingList) {
         makeVisible(this.iconLoadingList);
-        if (this.allSong.size === 0) makeVisible(this.songListTable, false);
+        if ((this.database?.getSongs().length ?? 0) === 0) makeVisible(this.songListTable, false);
       }
       try {
         await this.updateDatabase("LOAD");
@@ -3275,11 +3290,11 @@ export class App extends AppBase {
   }
 
   private async transposeRequest(new_transpose: string, songId?: string) {
-    return !this.allSong && (await this.preferenceUpdate("transpose", new_transpose, songId));
+    return this.mode !== "App" && (await this.preferenceUpdate("transpose", new_transpose, songId));
   }
 
   private async capoRequest(new_capo: number, songId?: string) {
-    return !this.allSong && (await this.preferenceUpdate("capo", new_capo.toString(), songId));
+    return this.mode !== "App" && (await this.preferenceUpdate("capo", new_capo.toString(), songId));
   }
 
   private sendPlaylistUpdateRequest(playlistItems: SongPreferenceEntry[], cb?: (error?: string | Error) => void) {
@@ -3290,7 +3305,7 @@ export class App extends AppBase {
   }
 
   private leaderPlaylistSelected() {
-    if (this.allSong) return;
+    if (this.mode === "App") return;
     if (this.selPlaylists && this.selPlaylists.selectedIndex >= 0) {
       const id = this.selPlaylists.options[this.selPlaylists.selectedIndex].value;
       const playlist = this.playlists.get(id);
@@ -3299,7 +3314,7 @@ export class App extends AppBase {
   }
 
   private replaceCurrentPlaylistWithSelected() {
-    if (!this.allSong && this.selPlaylists && this.selPlaylists.selectedIndex >= 0) {
+    if (this.mode !== "App" && this.selPlaylists && this.selPlaylists.selectedIndex >= 0) {
       const id = this.selPlaylists.options[this.selPlaylists.selectedIndex].value;
       const playlist = this.playlists.get(id);
       if (playlist) {
@@ -3381,7 +3396,7 @@ export class App extends AppBase {
   }
 
   private async onSearchTextChanged(allowSelectAll?: boolean) {
-    if (this.allSong || !this.edFilter || !isVisible(this.edFilter)) return;
+    if (this.mode === "App" || !this.edFilter || !isVisible(this.edFilter)) return;
 
     const text = this.edFilter?.value || "";
     if (this.chkAdmin?.checked && this.lastSearchText !== text) {
@@ -3453,7 +3468,7 @@ export class App extends AppBase {
   }
 
   private onNoteButtonClicked(createButtonClicked: boolean) {
-    if (!this.editor || this.allSong) return;
+    if (!this.editor || this.mode === "App") return;
     if (createButtonClicked) {
       if (this.editor.inMarkingState) {
         this.editor.marking(false);
@@ -3578,7 +3593,7 @@ export class App extends AppBase {
   }
 
   private async applyFilterOnLocalSongList() {
-    if (!this.allSong) return;
+    if (this.mode !== "App") return;
 
     const processEntries = (entries: SongEntry[]) => {
       this.playlist = entries;
@@ -3590,81 +3605,36 @@ export class App extends AppBase {
       const entries: SongEntry[] = [];
       const id = this.selPlaylists.options[this.selPlaylists.selectedIndex]?.value;
       for (const item of this.playlists.get(id)?.songs ?? []) {
-        const song = this.allSong.get(item.songId);
-        if (song) entries.push({ ...item, songdata: song.songdata });
+        const dbSong = this.database?.getSong(item.songId);
+        if (dbSong) entries.push({ ...item, songdata: { text: dbSong.Text, system: dbSong.System } });
       }
       return processEntries(entries);
     }
 
     if (this.edFilter?.value && this.isOnline) {
       try {
-        const allSong = this.allSong;
-        return processEntries((await this.querySearchOnline(this.edFilter.value)).filter((item) => allSong.has(item.songId)));
+        const db = this.database;
+        return processEntries((await this.querySearchOnline(this.edFilter.value)).filter((item) => !!db?.getSong(item.songId)));
       } catch {
         this.isOnline = false;
       }
     }
 
-    if (this.songWords) {
-      const filter = (this.edFilter?.value || "").toLocaleLowerCase();
-      return processEntries(filter ? this.songWords.filter(filter, this.allSong.values()) : Array.from(this.allSong.values()));
+    // Use Database.filter() for local search (replaces legacy songWords + inline search)
+    if (this.database) {
+      const filter = this.edFilter?.value || "";
+      const results = await this.database.filter(filter);
+      const entries: SongFound[] = results.map((sf) => ({
+        songId: sf.song.Id,
+        title: sf.song.Title,
+        songdata: { text: sf.song.Text, system: sf.song.System },
+        found: { type: FormatFoundReason(sf.reason), cost: sf.cost, snippet: sf.snippet },
+      }));
+      return processEntries(entries);
     }
 
-    const filter = simplifyString(this.edFilter?.value || "");
-    const filterWords = filter.split(" ");
-    const generateSongFound = (song: SongEntry): { cost: number; type: SongFoundType } | undefined => {
-      if (!filter) return { cost: -1, type: "LYRICS" };
-
-      const calcCost = (text: string) => {
-        const simplified = simplifyString(text);
-        if (simplified.includes(filter)) return 0;
-        for (const word of filterWords) {
-          if (!simplified.includes(word)) return -1;
-        }
-        return 1000;
-      };
-
-      let cost = calcCost(song.title);
-      if (cost >= 0) return { type: "TITLE", cost };
-
-      const metaValues: string[] = [];
-      const lyricsOnly =
-        song.songdata?.text
-          .replace(/\[[^\]]*\]|^[ \t]*#.*$|^[ \t]*{[^}]*}[ \t]*$/gm, (s) => {
-            const trimmed = s.trim();
-            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-              const i = trimmed.indexOf(":");
-              if (i >= 0) metaValues.push(trimmed.substring(i + 1, trimmed.length - 1).trim());
-            }
-            return "";
-          })
-          .replace(/\n+/g, "\n")
-          .trim() ?? "";
-
-      let offset = -1;
-      for (let i = 0; i < 2; ++i) if ((offset = lyricsOnly.indexOf("\n", offset + 1)) < 0) break;
-      if (offset >= 0) {
-        const head = lyricsOnly.substring(0, offset);
-        cost = calcCost(head);
-        if (cost >= 0) return { type: "HEAD", cost: cost + 1 };
-      }
-
-      const lyrics = offset >= 0 ? lyricsOnly.substring(offset) : lyricsOnly;
-      cost = calcCost(lyrics);
-      if (cost >= 0) return { type: "LYRICS", cost: cost + 2 };
-
-      cost = calcCost(metaValues.join(" "));
-      if (cost >= 0) return { type: "META", cost: cost + 3 };
-
-      return undefined;
-    };
-    const foundList: SongFound[] = [];
-    this.allSong.forEach((value) => {
-      const found = generateSongFound(value);
-      if (found) foundList.push({ ...value, found });
-    });
-    foundList.sort((a, b) => a.found.cost - b.found.cost);
-    return processEntries(foundList);
+    // Final fallback: return empty list (database not yet initialized)
+    return processEntries([]);
   }
   /*
   private parseSongsReponse(resp: string): SongEntry[] {
@@ -3768,7 +3738,7 @@ export class App extends AppBase {
 
     if (
       !this.onlineMode &&
-      !this.allSong &&
+      this.mode !== "App" &&
       settings.leaderMode !== undefined &&
       this.chkAdmin &&
       isVisible(this.chkAdmin) &&
@@ -3801,98 +3771,8 @@ export class App extends AppBase {
     }
   }
 
-  private async loadAllSongsAndPlaylists(type: "LOAD" | "RELOAD" | "UPDATE") {
-    const storageVersion = "1.0";
-    const ls = localStorage || window.localStorage;
-
-    let songs: SongDBEntry[] = [];
-    let playlists: LeaderPlaylistWithVersion[] = [];
-    let songsVersion: number | undefined = undefined;
-    let playlistsVersion: number | undefined = undefined;
-    let value: string | null = null;
-    let groupId = (document.getElementById("pp-group-id")?.textContent ?? "").trim();
-
-    const listElem = document.getElementById("pp-initial-list");
-    let listId = (listElem?.innerText ?? "").trim();
-    const songElem = document.getElementById("pp-initial-song");
-    let songId = (songElem?.innerText ?? "").trim();
-
-    if (ls) {
-      if (type === "RELOAD" || (type === "LOAD" && ls.getItem("storageVersion") !== storageVersion)) ls.clear();
-
-      value = ls.getItem("groupId");
-      if (!groupId && value) groupId = value;
-      if (type !== "UPDATE") {
-        value = ls.getItem("songId_" + groupId);
-        if (!songId && value) songId = value;
-        value = ls.getItem("listId_" + groupId);
-        if (!listId && value) listId = value;
-      }
-      value = ls.getItem("songs_" + groupId);
-      if (value) songs = JSON.parse(value);
-      value = ls.getItem("playlists_" + groupId);
-      if (value) playlists = JSON.parse(value);
-    }
-
-    for (const song of songs) songsVersion = songsVersion === undefined ? song.version : Math.max(songsVersion, song.version);
-    for (const playlist of playlists)
-      playlistsVersion = playlistsVersion === undefined ? playlist.version : Math.max(playlistsVersion, playlist.version);
-
-    try {
-      const newSongs = await this.fetchAllSongFromServer(songsVersion ? songsVersion + 1 : undefined);
-      for (const song of newSongs) {
-        songsVersion = songsVersion === undefined ? song.version : Math.max(songsVersion, song.version);
-        songs.push(song);
-      }
-    } catch (error) {
-      this.log("Songs update failed, using cached: " + error);
-    }
-
-    try {
-      const newPlaylists = await this.fetchAllPlaylistFromServer(playlistsVersion ? playlistsVersion + 1 : undefined);
-      for (const playlist of newPlaylists) {
-        playlistsVersion = playlistsVersion === undefined ? playlist.version : Math.max(playlistsVersion, playlist.version);
-        playlists.push(playlist);
-      }
-    } catch (error) {
-      this.log("Playlists update failed, using cached: " + error);
-    }
-
-    const songUniqueMap = new Map<string, SongDBEntry>();
-    for (const song of songs) {
-      const p = songUniqueMap.get(song.songId);
-      if ((p?.version ?? -1) < song.version) songUniqueMap.set(song.songId, song);
-    }
-    songs = songs.filter((song) => song.songdata && songUniqueMap.get(song.songId) === song && /\[.*\]/g.test(song.songdata.text));
-    this.sortSongEntries(songs);
-    const listUniqueMap = new Map<string, LeaderPlaylistWithVersion>();
-    for (const playlist of playlists) {
-      verifyPlaylist(playlist);
-      listUniqueMap.set((playlist.leaderId ?? playlist.leaderName) + "/" + playlist.label + "@" + (playlist.scheduled ?? ""), playlist);
-    }
-    playlists = Array.from(listUniqueMap.values());
-
-    if (ls) {
-      ls.setItem("storageVersion", storageVersion);
-      ls.setItem("groupId", groupId);
-      ls.setItem("songs_" + groupId, JSON.stringify(songs));
-      ls.setItem("playlists_" + groupId, JSON.stringify(playlists));
-      ls.setItem("songId_" + groupId, songId);
-      ls.setItem("listId_" + groupId, listId);
-      if (type === "LOAD" && !listElem?.innerText && !songElem?.innerText) {
-        if (listElem && listId) listElem.innerText = listId;
-        if (songElem && songId) songElem.innerText = songId;
-      }
-    }
-
-    // TODO: this should be incremental
-    if (this.songWords) this.songWords.rebuild(songs);
-
-    return { songs, playlists };
-  }
-
   private switchToOnlineSession(create: boolean, leaderId?: string) {
-    if (!this.allSong) return;
+    if (this.mode !== "App") return;
     const form = document.createElement("form");
     form.method = "POST";
     if (create) {
@@ -4234,8 +4114,8 @@ export class App extends AppBase {
   }
 
   private storeDisplaySettings() {
-    if (!this.allSong || this.allSongModeState === "READY") {
-      const serialized = JSON.stringify(this.getDisplaySettings(!!this.allSong));
+    if (this.mode !== "App" || this.allSongModeState === "READY") {
+      const serialized = JSON.stringify(this.getDisplaySettings(this.mode === "App"));
       if (this.hostDevice) {
         this.hostDevice.storePreference("displaySettings", serialized);
         return;
@@ -4258,16 +4138,6 @@ export class App extends AppBase {
     }
     const ls = localStorage || window.localStorage;
     if (ls) ls.setItem("appSettings", serialized);
-  }
-
-  private sortSongEntries(songs: SongEntry[]) {
-    songs.sort((a, b) => a.title.localeCompare(b.title));
-  }
-
-  private async fetchAllSongFromServer(version?: number, groupId?: string) {
-    const songs = await cloudApi.fetchAllSongs(version, groupId);
-    this.sortSongEntries(songs);
-    return songs;
   }
 
   private async fetchAllPlaylistFromServer(version?: number) {
@@ -4574,7 +4444,7 @@ export class App extends AppBase {
     } else document.onkeydown = (e) => this.onKeyDown(e);
 
     this.restoreAppSettings();
-    if (!this.allSong) this.restoreDisplaySettings(false);
+    if (this.mode !== "App") this.restoreDisplaySettings(false);
     const startup = () => {
       this.updateFieldsForUser(false);
       this.watchDisplay();
