@@ -224,6 +224,7 @@
   "SettingsChordSystemGerman": "German (C D E F G A H)",
   "SettingsChordSystemStandard": "Standard (C D E F G A B)",
   "SettingsKeepAwake": "Keep awake",
+  "SettingsFullscreen": "Fullscreen",
   "SettingsHideChordsInEditor": "Hide chords in read-only editor",
   "SettingsExternalWebDisplay": "Enable external web display",
   "SettingsShowTooltips": "Show tooltips",

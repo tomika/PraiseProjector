@@ -32,6 +32,7 @@ export interface Settings {
   sectionSelByEditorLineSel: boolean;
   sectionSelByEditorDblclk: boolean;
   keepAwake: boolean;
+  fullscreen: boolean;
   showTooltips: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;

@@ -223,6 +223,38 @@ const AppContent: React.FC = () => {
     }
   }, []);
 
+  const applyFullscreenSetting = useCallback(async (enabled: boolean) => {
+    const hostDevice = window.hostDevice;
+    if (hostDevice?.setFullScreen) {
+      try {
+        const current = hostDevice.isFullScreen ? await hostDevice.isFullScreen() : undefined;
+        if (current !== enabled) {
+          await hostDevice.setFullScreen(enabled);
+        }
+      } catch (error) {
+        console.warn("[Fullscreen] hostDevice apply failed:", error);
+      }
+      return;
+    }
+
+    try {
+      if (enabled) {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen?.();
+        }
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen?.();
+      }
+    } catch (error) {
+      console.warn("[Fullscreen] browser apply failed:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof settings?.fullscreen !== "boolean") return;
+    void applyFullscreenSetting(settings.fullscreen);
+  }, [settings?.fullscreen, applyFullscreenSetting]);
+
   // In webapp mode, request projector window close when main window/tab is closed.
   // Keep this at App level so it survives PreviewPanel unmount/remount cycles.
   useEffect(() => {
