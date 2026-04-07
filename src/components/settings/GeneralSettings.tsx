@@ -118,6 +118,18 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
             <input
               className="form-check-input"
               type="checkbox"
+              id="fullscreen"
+              checked={settings.fullscreen}
+              onChange={(e) => updateSetting("fullscreen", e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="fullscreen">
+              {t("SettingsFullscreen")}
+            </label>
+          </div>
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="checkbox"
               id="hideChordsInEditor"
               checked={settings.hideChordsInReadonlyEditor}
               onChange={(e) => updateSetting("hideChordsInReadonlyEditor", e.target.checked)}

@@ -26,6 +26,7 @@ export interface Settings {
   sectionSelByEditorLineSel: boolean;
   sectionSelByEditorDblclk: boolean;
   keepAwake: boolean;
+  fullscreen: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
   backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";
