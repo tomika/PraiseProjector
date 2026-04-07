@@ -1,3 +1,5 @@
+import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
+
 export interface Settings {
   displayBorderRect: {
     left: number;
@@ -147,4 +149,7 @@ export interface Settings {
 
   // Update channel: "stable" uses latest.yml, "testing" uses the testing subfolder
   updateChannel: "stable" | "testing";
+
+  // Customizable ChordPro editor styles for light and dark themes
+  chordProStyles: ChordProStylesSettings;
 }

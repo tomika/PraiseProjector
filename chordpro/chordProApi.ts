@@ -13,6 +13,7 @@ import { ChordDetails, NoteSystemCode } from "./note_system";
 import * as clipboard from "./clipboard";
 import { ChordBoxType } from "./chord_drawer";
 import { NoteHitBox } from "./ui_base";
+import type { ChordProStylesSettings } from "./chordpro_styles";
 
 const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
 
@@ -282,6 +283,10 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (instance) instance.refreshDisplayProps();
     },
+    setStyles: (styles: ChordProStylesSettings | null) => {
+      const instance = getBoundEditor();
+      if (instance) instance.setStyles(styles);
+    },
   };
 }
 
@@ -345,6 +350,10 @@ export const chordProAPI = {
   refreshDisplayProps() {
     const instance = getEditorInstance();
     if (instance) instance.refreshDisplayProps();
+  },
+  setStyles(styles: ChordProStylesSettings | null) {
+    const instance = getEditorInstance();
+    if (instance) instance.setStyles(styles);
   },
 };
 

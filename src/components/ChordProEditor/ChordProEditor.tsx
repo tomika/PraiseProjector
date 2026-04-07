@@ -68,6 +68,7 @@ type ChordProAPIBound = {
   installLocaleHandler: (handler: (s: string) => string) => void;
   darkMode: (dark: boolean) => void;
   refreshDisplayProps: () => void;
+  setStyles: (styles: Settings["chordProStyles"] | null) => void;
 };
 
 const CHORD_PRO_MARKUP = `
@@ -202,6 +203,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       // Only update if we're in readonly mode (edit mode always shows chords)
       this.updateDisplay();
     }
+
+    if (prevProps.settings?.chordProStyles !== this.props.settings?.chordProStyles) {
+      this.applyStylesToEditor();
+    }
   }
 
   componentWillUnmount() {
@@ -269,6 +274,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         }
       });
     }
+  }
+
+  private applyStylesToEditor() {
+    const api = this.getBoundChordProAPI();
+    api?.setStyles?.(this.props.settings?.chordProStyles ?? null);
   }
 
   private async prepareWysiwygHost() {
@@ -543,6 +553,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
           }
 
           // Apply dark mode after loading
+          this.applyStylesToEditor();
           this.applyDarkModeToEditor();
           requestAnimationFrame(() => requestAnimationFrame(this.scheduleEditorRefresh));
         } else if (chordApi.updateDocument) {

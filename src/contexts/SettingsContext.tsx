@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { Settings } from "../types";
+import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -157,6 +158,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       showTextInPreview: true,
       showImageInPreview: true,
       updateChannel: "stable",
+      chordProStyles: createDefaultChordProStylesSettings(),
     };
   }, []);
 

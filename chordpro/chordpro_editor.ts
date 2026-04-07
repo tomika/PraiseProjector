@@ -14,7 +14,15 @@ import {
   ChordProAbc,
   fixChordProText,
 } from "./chordpro_base";
-import { defaultDisplayProperties, defaultStyles } from "./chordpro_styles";
+import {
+  ChordProDirectiveStyles,
+  ChordProDisplayProperties,
+  ChordProStylesSettings,
+  cloneDirectiveStyles,
+  cloneDisplayProperties,
+  defaultDisplayProperties,
+  defaultStyles,
+} from "./chordpro_styles";
 import { getKeyCodeString } from "./keycodes";
 import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
@@ -122,16 +130,6 @@ type ChordProEditorState = {
 };
 
 type ChordPosition = { line: number; chord: number };
-type ChordProStyle = {
-  prefix?: string;
-  font?: string;
-  fg?: string;
-  bg?: string;
-  height?: number;
-  align?: string;
-  indent?: number;
-};
-
 class ChordProSelection {
   constructor(
     public line: number,
@@ -499,7 +497,7 @@ export class ChordProEditor extends ChordDrawer {
   onLyricsHit: ((hit: HighlightingParams) => void) | null = null;
 
   targetRatio = 0;
-  displayProps: ReturnType<typeof defaultDisplayProperties>;
+  displayProps: ChordProDisplayProperties;
   canvas: HTMLCanvasElement;
   scale: number;
 
@@ -513,7 +511,8 @@ export class ChordProEditor extends ChordDrawer {
   private instructionsRenderMode: InstructionsRenderMode = "";
   private instructionEditorActive = false;
 
-  private directiveStyles: { [key: string]: ChordProStyle };
+  private directiveStyles: ChordProDirectiveStyles;
+  private customStyles: ChordProStylesSettings | null = null;
   private keyIsAuto = false;
 
   private inApplyState = false;
@@ -883,15 +882,54 @@ export class ChordProEditor extends ChordDrawer {
     if (this.isDark !== dark) {
       this.isDark = dark;
       this.chordSelector?.setDarkMode(dark);
-      this.displayProps = defaultDisplayProperties(dark);
-      this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, dark);
+      this.applyStylesForCurrentTheme();
       this.draw();
     }
   }
 
+  setStyles(styles: ChordProStylesSettings | null) {
+    this.customStyles = styles;
+    this.applyStylesForCurrentTheme();
+    this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    this.draw();
+  }
+
+  private applyStylesForCurrentTheme() {
+    const defaults = defaultDisplayProperties(this.isDark);
+    const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark);
+    const currentTheme = this.isDark ? this.customStyles?.dark : this.customStyles?.light;
+
+    if (!currentTheme) {
+      this.displayProps = defaults;
+      this.directiveStyles = defaultDirectiveStyles;
+      return;
+    }
+
+    this.displayProps = cloneDisplayProperties({
+      ...defaults,
+      ...currentTheme.display,
+      guitarChordSize: {
+        ...defaults.guitarChordSize,
+        ...(currentTheme.display?.guitarChordSize ?? {}),
+      },
+      pianoChordSize: {
+        ...defaults.pianoChordSize,
+        ...(currentTheme.display?.pianoChordSize ?? {}),
+      },
+    });
+
+    const mergedDirectiveStyles = cloneDirectiveStyles(defaultDirectiveStyles);
+    for (const [key, value] of Object.entries(currentTheme.directives ?? {})) {
+      mergedDirectiveStyles[key] = {
+        ...(mergedDirectiveStyles[key] ?? {}),
+        ...value,
+      };
+    }
+    this.directiveStyles = mergedDirectiveStyles;
+  }
+
   refreshDisplayProps() {
-    this.displayProps = defaultDisplayProperties(this.isDark);
-    this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, this.isDark);
+    this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
     this.draw();
   }
