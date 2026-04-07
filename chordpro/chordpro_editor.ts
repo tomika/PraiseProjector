@@ -4157,22 +4157,10 @@ export class ChordProEditor extends ChordDrawer {
     let x = 0;
     line_obj.styles.forEach((_v, name) => {
       const style = this.directiveStyles[name];
-      if (style)
-        for (const key of Object.keys(style) as (keyof ChordProStyle)[]) {
-          const value = style[key];
-          if (value)
-            switch (key) {
-              case "font":
-                ctx.font = value.toString();
-                break;
-              case "fg":
-                ctx.fillStyle = value.toString();
-                break;
-              case "indent":
-                x += parseInt(value.toString());
-                break;
-            }
-        }
+      if (!style) return;
+      if (style.font) ctx.font = style.font.toString();
+      if (style.fg) ctx.fillStyle = style.fg.toString();
+      if (style.indent != null) x += parseInt(style.indent.toString());
     }, true);
     return x;
   }
@@ -4661,22 +4649,10 @@ export class ChordProEditor extends ChordDrawer {
       let indent = 0;
       line_obj.styles.forEach((_v, name) => {
         const style = this.directiveStyles[name];
-        if (style)
-          for (const key of Object.keys(style) as (keyof ChordProStyle)[]) {
-            const value = style[key];
-            if (value)
-              switch (key) {
-                case "font":
-                  elem.style.font = value.toString();
-                  break;
-                case "fg":
-                  elem.style.color = value.toString();
-                  break;
-                case "indent":
-                  indent += parseInt(value.toString());
-                  break;
-              }
-          }
+        if (!style) return;
+        if (style.font) elem.style.font = style.font.toString();
+        if (style.fg) elem.style.color = style.fg.toString();
+        if (style.indent != null) indent += parseInt(style.indent.toString());
       }, true);
       return indent;
     };
