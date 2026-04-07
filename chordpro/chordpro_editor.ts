@@ -4160,12 +4160,14 @@ export class ChordProEditor extends ChordDrawer {
       if (!style) return;
       if (style.font) ctx.font = style.font;
       if (style.fg) ctx.fillStyle = style.fg;
-      if (style.indent != null) {
-        const indent = Number(style.indent);
-        if (Number.isFinite(indent)) x += indent;
-      }
+      if (style.indent != null) x += this.safeIndent(style.indent);
     }, true);
     return x;
+  }
+
+  private safeIndent(value: unknown) {
+    const indent = Number(value);
+    return Number.isFinite(indent) ? indent : 0;
   }
 
   private drawWavyLine(ctx: CanvasRenderingContext2D, rect: Rectangle) {
@@ -4655,10 +4657,7 @@ export class ChordProEditor extends ChordDrawer {
         if (!style) return;
         if (style.font) elem.style.font = style.font;
         if (style.fg) elem.style.color = style.fg;
-        if (style.indent != null) {
-          const indentValue = Number(style.indent);
-          if (Number.isFinite(indentValue)) indent += indentValue;
-        }
+        if (style.indent != null) indent += this.safeIndent(style.indent);
       }, true);
       return indent;
     };
