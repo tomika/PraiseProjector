@@ -36,9 +36,9 @@ export type ChordProDisplayProperties = {
 
 export type ChordProDirectiveStyle = {
   prefix?: string;
-  font: string;
-  fg: string;
-  bg: string;
+  font?: string;
+  fg?: string;
+  bg?: string;
   height?: number;
   align?: string;
   indent?: number;

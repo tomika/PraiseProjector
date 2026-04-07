@@ -4160,7 +4160,7 @@ export class ChordProEditor extends ChordDrawer {
       if (!style) return;
       if (style.font) ctx.font = style.font.toString();
       if (style.fg) ctx.fillStyle = style.fg.toString();
-      if (style.indent != null) x += parseInt(style.indent.toString());
+      if (style.indent != null) x += parseInt(style.indent.toString(), 10);
     }, true);
     return x;
   }
@@ -4652,7 +4652,7 @@ export class ChordProEditor extends ChordDrawer {
         if (!style) return;
         if (style.font) elem.style.font = style.font.toString();
         if (style.fg) elem.style.color = style.fg.toString();
-        if (style.indent != null) indent += parseInt(style.indent.toString());
+        if (style.indent != null) indent += parseInt(style.indent.toString(), 10);
       }, true);
       return indent;
     };
