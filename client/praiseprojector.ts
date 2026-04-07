@@ -2956,7 +2956,7 @@ export class App extends AppBase {
               }
             }
           };
-          row.ondrop = (event: DragEvent) => endDnD(event, row.rowIndex);
+          row.ondrop = (event: DragEvent) => endDnD(event, this.draggedRow?.rowIndex ?? row.rowIndex);
         }
         if (!firstSong) firstSong = songEntry;
       }
