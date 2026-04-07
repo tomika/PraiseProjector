@@ -4160,7 +4160,10 @@ export class ChordProEditor extends ChordDrawer {
       if (!style) return;
       if (style.font) ctx.font = style.font;
       if (style.fg) ctx.fillStyle = style.fg;
-      if (style.indent != null) x += style.indent;
+      if (style.indent != null) {
+        const indent = Number(style.indent);
+        if (Number.isFinite(indent)) x += indent;
+      }
     }, true);
     return x;
   }
@@ -4652,7 +4655,10 @@ export class ChordProEditor extends ChordDrawer {
         if (!style) return;
         if (style.font) elem.style.font = style.font;
         if (style.fg) elem.style.color = style.fg;
-        if (style.indent != null) indent += style.indent;
+        if (style.indent != null) {
+          const indentValue = Number(style.indent);
+          if (Number.isFinite(indentValue)) indent += indentValue;
+        }
       }, true);
       return indent;
     };
