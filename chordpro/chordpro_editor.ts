@@ -4158,9 +4158,9 @@ export class ChordProEditor extends ChordDrawer {
     line_obj.styles.forEach((_v, name) => {
       const style = this.directiveStyles[name];
       if (!style) return;
-      if (style.font) ctx.font = style.font.toString();
-      if (style.fg) ctx.fillStyle = style.fg.toString();
-      if (style.indent != null) x += parseInt(style.indent.toString(), 10);
+      if (style.font) ctx.font = style.font;
+      if (style.fg) ctx.fillStyle = style.fg;
+      if (style.indent != null) x += style.indent;
     }, true);
     return x;
   }
@@ -4650,9 +4650,9 @@ export class ChordProEditor extends ChordDrawer {
       line_obj.styles.forEach((_v, name) => {
         const style = this.directiveStyles[name];
         if (!style) return;
-        if (style.font) elem.style.font = style.font.toString();
-        if (style.fg) elem.style.color = style.fg.toString();
-        if (style.indent != null) indent += parseInt(style.indent.toString(), 10);
+        if (style.font) elem.style.font = style.font;
+        if (style.fg) elem.style.color = style.fg;
+        if (style.indent != null) indent += style.indent;
       }, true);
       return indent;
     };
