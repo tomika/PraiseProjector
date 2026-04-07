@@ -2746,7 +2746,6 @@ export class App extends AppBase {
             checkBox.onclick = (e) => {
               if (!this.currentDisplay.playlist) this.currentDisplay.playlist = [];
               this.currentDisplay.playlist.push(strip());
-              cloudApi.abortAll();
               this.sendPlaylistUpdateRequest(this.currentDisplay.playlist, (error) => {
                 if (!error) disableRow(songEntry);
               });
@@ -2761,7 +2760,6 @@ export class App extends AppBase {
             checkBox.onclick = (e) => {
               if (item && this.currentDisplay.playlist) {
                 this.currentDisplay.playlist = this.currentDisplay.playlist.filter((x) => x !== item);
-                cloudApi.abortAll();
                 this.sendPlaylistUpdateRequest(this.currentDisplay.playlist, (error) => {
                   if (!error) enableRow();
                 });
