@@ -227,9 +227,9 @@ const AppContent: React.FC = () => {
     const hostDevice = window.hostDevice;
     if (hostDevice?.setFullScreen) {
       try {
-        const current = hostDevice.isFullScreen ? await Promise.resolve(hostDevice.isFullScreen()) : undefined;
+        const current = hostDevice.isFullScreen ? await hostDevice.isFullScreen() : undefined;
         if (current !== enabled) {
-          await Promise.resolve(hostDevice.setFullScreen(enabled));
+          await hostDevice.setFullScreen(enabled);
         }
       } catch (error) {
         console.warn("[Fullscreen] hostDevice apply failed:", error);
