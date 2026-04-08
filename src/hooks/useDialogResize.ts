@@ -10,16 +10,16 @@ interface ResizeStart {
 }
 
 /**
- * Hook that provides center-based resize behaviour for floating dialogs.
+ * Hook that provides center-based resize behavior for floating dialogs.
  *
  * When the user drags the resize handle the dialog expands equally in both
- * directions (left/right and up/down) so that it grows around its centre
+ * directions (left/right and up/down) so that it grows around its center
  * point.  The resulting position and size are always clamped so the dialog
  * stays fully within the visible viewport.
  *
  * @param dialogRef   Ref to the dialog root element.
  * @param disabled    When true the resize handle does nothing (e.g. while
- *                    maximised or on mobile).
+ *                    maximized or on mobile).
  */
 export function useDialogResize(dialogRef: RefObject<HTMLDivElement | null>, { disabled = false }: { disabled?: boolean } = {}) {
   const [isResizing, setIsResizing] = useState(false);
@@ -55,7 +55,7 @@ export function useDialogResize(dialogRef: RefObject<HTMLDivElement | null>, { d
       const dx = e.clientX - resizeStart.x;
       const dy = e.clientY - resizeStart.y;
 
-      // Centre of the dialog at the moment the drag started.
+      // Center of the dialog at the moment the drag started.
       const centerX = resizeStart.left + resizeStart.width / 2;
       const centerY = resizeStart.top + resizeStart.height / 2;
 
@@ -72,7 +72,7 @@ export function useDialogResize(dialogRef: RefObject<HTMLDivElement | null>, { d
       newWidth = Math.min(newWidth, window.innerWidth);
       newHeight = Math.min(newHeight, window.innerHeight);
 
-      // Re-centre after clamping.
+      // Re-center after clamping.
       let newLeft = centerX - newWidth / 2;
       let newTop = centerY - newHeight / 2;
 
