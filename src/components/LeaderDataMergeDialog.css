@@ -25,7 +25,6 @@
   height: 52rem;
   display: flex;
   flex-direction: column;
-  resize: both;
   overflow: hidden;
 }
 
@@ -48,16 +47,7 @@
   flex-shrink: 0;
 }
 
-.leader-merge-modal-dialog::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 1rem;
-  height: 1rem;
-  background: linear-gradient(135deg, transparent 50%, #adb5bd 50%);
-  cursor: nwse-resize;
-}
+/* The .dialog-resize-handle styles are defined globally in SettingsForm.css */
 
 .leader-merge-modal-dialog.maximized {
   position: fixed !important;
@@ -72,7 +62,6 @@
   min-width: unset;
   min-height: unset;
   border-radius: 0;
-  resize: none;
 }
 
 /* Reuse SettingsForm header button style for maximize/restore consistency. */
@@ -133,11 +122,6 @@
     min-width: unset;
     min-height: unset;
     border-radius: 0;
-    resize: none;
-  }
-
-  .leader-merge-modal-dialog::after {
-    display: none;
   }
 
   .leader-merge-modal-dialog .modal-header {

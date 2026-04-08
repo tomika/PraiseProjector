@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useDialogResize } from "../hooks/useDialogResize";
 import GeneralSettings from "./settings/GeneralSettings";
 import ProjectingSettings from "./settings/ProjectingSettings";
 import SearchingSettings from "./settings/SearchingSettings";
@@ -61,6 +62,8 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
   const [saving, setSaving] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
+  const { handleResizeMouseDown } = useDialogResize(dialogRef, { disabled: isMobile || isMaximized });
+
   // Detect mobile viewport
   useEffect(() => {
     const checkMobile = () => {
@@ -117,6 +120,27 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
 
       return () => window.removeEventListener("resize", centerDialog);
     }
+  }, [isMobile]);
+
+  // Clamp dialog within viewport when its size changes (e.g. due to font-size change).
+  useEffect(() => {
+    if (!dialogRef.current || isMobile) return;
+
+    const dialog = dialogRef.current;
+    const observer = new ResizeObserver(() => {
+      if (!dialog.style.left && !dialog.style.top) return; // not yet positioned
+      const maxLeft = window.innerWidth - dialog.offsetWidth;
+      const maxTop = window.innerHeight - dialog.offsetHeight;
+      const currentLeft = parseFloat(dialog.style.left) || 0;
+      const currentTop = parseFloat(dialog.style.top) || 0;
+      const newLeft = Math.max(0, Math.min(maxLeft, currentLeft));
+      const newTop = Math.max(0, Math.min(maxTop, currentTop));
+      if (newLeft !== currentLeft) dialog.style.left = `${newLeft}px`;
+      if (newTop !== currentTop) dialog.style.top = `${newTop}px`;
+    });
+
+    observer.observe(dialog);
+    return () => observer.disconnect();
   }, [isMobile]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -376,6 +400,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             {t("OK")}
           </button>
         </div>
+        {!isMobile && !isMaximized && <div className="dialog-resize-handle" onMouseDown={handleResizeMouseDown} />}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 import { Database } from "../../db-common/Database";
 import { Icon, IconType } from "../services/IconService";
 import { useLocalization } from "../localization/LocalizationContext";
+import { useDialogResize } from "../hooks/useDialogResize";
 import "./LeaderDataMergeDialog.css";
 
 interface PreferenceConflict {
@@ -65,6 +66,8 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isMobile, setIsMobile] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+
+  const { handleResizeMouseDown } = useDialogResize(dialogRef, { disabled: isMobile || isMaximized });
 
   // Track single expanded schedule conflict (by date timestamp, null = none expanded)
   const [expandedSchedule, setExpandedSchedule] = useState<number | null>(null);
@@ -927,6 +930,7 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
               )}
             </div>
           </div>
+          {!isMobile && !isMaximized && <div className="dialog-resize-handle" onMouseDown={handleResizeMouseDown} />}
         </div>
       </div>
       {/* Hover popup for playlist differences */}

@@ -21,7 +21,6 @@
   background: white;
   border-radius: 0.3rem;
   box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
-  resize: both;
   overflow: hidden;
 }
 
@@ -40,16 +39,11 @@
     min-width: unset;
     min-height: unset;
     border-radius: 0;
-    resize: none;
   }
 
   .settings-modal-backdrop {
     height: 100vh;
     height: 100dvh;
-  }
-
-  .settings-modal-dialog::after {
-    display: none; /* Hide resize handle on mobile */
   }
 
   .settings-modal-header {
@@ -156,7 +150,6 @@
   min-width: unset;
   min-height: unset;
   border-radius: 0;
-  resize: none;
 }
 
 .settings-modal-body {
@@ -218,9 +211,8 @@
   flex: 1;
 }
 
-/* Resize handle indicator */
-.settings-modal-dialog::after {
-  content: "";
+/* Resize handle */
+.dialog-resize-handle {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -228,6 +220,7 @@
   height: 1rem;
   background: linear-gradient(135deg, transparent 50%, #adb5bd 50%);
   cursor: nwse-resize;
+  z-index: 10;
 }
 
 /* ========================================
@@ -258,7 +251,7 @@
   border-top-color: var(--pp-border-color);
 }
 
-[data-theme="dark"] .settings-modal-dialog::after {
+[data-theme="dark"] .dialog-resize-handle {
   background: linear-gradient(135deg, transparent 50%, var(--pp-border-color) 50%);
 }
 
