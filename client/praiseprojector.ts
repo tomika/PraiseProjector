@@ -2731,6 +2731,14 @@ export class App extends AppBase {
           const checkBoxCell = row.insertCell(cellCount++);
           checkBox = document.createElement("input") as HTMLInputElement;
           checkBox.type = "checkbox";
+          const stopPropagation = (event: Event) => event.stopPropagation();
+          checkBoxCell.onclick = stopPropagation;
+          checkBoxCell.onmousedown = stopPropagation;
+          checkBoxCell.ontouchstart = stopPropagation;
+          checkBoxCell.ontouchend = stopPropagation;
+          checkBox.onmousedown = stopPropagation;
+          checkBox.ontouchstart = stopPropagation;
+          checkBox.ontouchend = stopPropagation;
           checkBoxCell.appendChild(checkBox);
         }
 
