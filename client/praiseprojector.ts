@@ -3225,7 +3225,9 @@ export class App extends AppBase {
         (code) => {
           if (this.lastDisplayRequest !== req) return;
           this.lastDisplayRequest = null;
-          if (("" + code).trim() !== "0") {
+          // Don't treat abort errors as network failures; they're intentional cancellations
+          const isAbortError = code instanceof Error && code.name === "AbortError";
+          if (!isAbortError) {
             this.log("Download error: " + code);
             this.setNetworkState("offline", code);
           }

@@ -85,7 +85,7 @@ export class CloudApiService {
   // Base URL for API calls (set via setBaseUrl)
   private baseUrl: string = "";
   // Track in-flight requests for abort support
-  private inFlightRequests = new Map<AbortController, undefined>();
+  private inFlightRequests = new Set<AbortController>();
   private fixedHeaders = new Map<string, string>();
   private proxyApi?: IProxyAPI;
 
@@ -224,7 +224,7 @@ export class CloudApiService {
    * Abort all in-flight requests (used by praiseprojector.ts to cancel pending operations)
    */
   abortAll(): void {
-    for (const controller of this.inFlightRequests.keys()) {
+    for (const controller of this.inFlightRequests) {
       try {
         controller.abort();
       } catch {
@@ -286,7 +286,7 @@ export class CloudApiService {
     const combinedSignal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
 
     // Track this request for potential abort
-    this.inFlightRequests.set(controller, undefined);
+    this.inFlightRequests.add(controller);
 
     try {
       if (combinedSignal.aborted) {
@@ -552,39 +552,49 @@ export class CloudApiService {
 
     const path = command.startsWith("/") ? command : `/${command}`;
 
-    if (this.proxyApi) {
-      const headers = this.getHeaders();
-      const result = await this.proxyApi.proxyGet(this.baseUrl, path, headers);
-      if (result && typeof result === "object" && "error" in result) {
-        const errorResult = result as { error: { message?: string; status?: number } };
-        const status = errorResult.error?.status;
-        if (status === 401) this.authToken = null;
-        throw new Error(status ? String(status) : errorResult.error?.message || "Unknown error");
-      }
-      const data = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : result;
-      return {
-        display: this.parseResponse(displayCodec, data),
-        ppHeaders:
-          result && typeof result === "object" && "ppHeaders" in result ? ((result as { ppHeaders?: Record<string, string> }).ppHeaders ?? {}) : {},
-      };
-    }
+    // Create an AbortController for this request and track it for abortAll()
+    const controller = new AbortController();
+    const combinedSignal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    this.inFlightRequests.add(controller);
 
-    // Fallback path for web mode (and older preload implementations).
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      headers: this.getHeaders(),
-      credentials: "include",
-      signal: options?.signal,
-    });
-    if (!response.ok) {
-      if (response.status === 401) this.authToken = null;
-      throw new Error(String(response.status));
+    try {
+      if (this.proxyApi) {
+        const headers = this.getHeaders();
+        const result = await this.proxyApi.proxyGet(this.baseUrl, path, headers);
+        if (result && typeof result === "object" && "error" in result) {
+          const errorResult = result as { error: { message?: string; status?: number } };
+          const status = errorResult.error?.status;
+          if (status === 401) this.authToken = null;
+          throw new Error(status ? String(status) : errorResult.error?.message || "Unknown error");
+        }
+        const data = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : result;
+        return {
+          display: this.parseResponse(displayCodec, data),
+          ppHeaders:
+            result && typeof result === "object" && "ppHeaders" in result ? ((result as { ppHeaders?: Record<string, string> }).ppHeaders ?? {}) : {},
+        };
+      }
+
+      // Fallback path for web mode (and older preload implementations).
+      const url = `${this.baseUrl}${path}`;
+      const response = await fetch(url, {
+        headers: this.getHeaders(),
+        credentials: "include",
+        signal: combinedSignal,
+      });
+      if (!response.ok) {
+        if (response.status === 401) this.authToken = null;
+        throw new Error(String(response.status));
+      }
+      const text = await response.text();
+      return {
+        display: this.parseResponse(displayCodec, text),
+        ppHeaders: extractPpHeadersFromFetch(response.headers),
+      };
+    } finally {
+      // Clean up tracking
+      this.inFlightRequests.delete(controller);
     }
-    const text = await response.text();
-    return {
-      display: this.parseResponse(displayCodec, text),
-      ppHeaders: extractPpHeadersFromFetch(response.headers),
-    };
   }
 
   /**
