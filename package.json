@@ -1,6 +1,6 @@
 {
   "name": "praiseprojector-electron",
-  "version": "2.0.35",
+  "version": "2.0.36",
   "private": true,
   "description": "Cross-platform praise presentation software (source-available, non-commercial, not open source)",
   "main": "dist/electron/main.js",
