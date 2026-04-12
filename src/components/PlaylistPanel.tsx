@@ -23,6 +23,7 @@ import { Leader } from "../../db-common/Leader";
 import { Settings } from "../types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
+import { generatePlaylistId } from "../../common/pp-utils";
 
 // DisplayMode enum matching C# SectionListBox.Item.Mode
 enum DisplayMode {
@@ -340,7 +341,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       capo: item.capo,
       instructions: item.instructions,
     }));
-    updateCurrentDisplay({ playlist });
+    generatePlaylistId(playlist).then((playlist_id) => updateCurrentDisplay({ playlist, playlist_id }));
   }
 
   updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string): void {

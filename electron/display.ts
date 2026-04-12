@@ -1,5 +1,5 @@
 import { Display } from "../common/pp-types";
-import { cloneDisplay, compareDisplays, getEmptyDisplay } from "../common/pp-utils";
+import { cloneDisplay, compareDisplays, generatePlaylistId, getEmptyDisplay } from "../common/pp-utils";
 import { AsyncJobQueue } from "../common/asyncQueue";
 
 class DisplayChangeListener {
@@ -42,15 +42,6 @@ export function getCurrentDisplay(): Display {
   return { ...currentDisplay, playlist: currentDisplay.playlist?.slice() };
 }
 
-async function getSHA256Hash(data: string): Promise<string> {
-  // Use Web Crypto API for browser/cross-platform compatibility
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(data);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export function changeDisplay(display: Display): Promise<void> {
   return changeDisplayQueue.enqueue(() => doChangeDisplay(display));
 }
@@ -66,10 +57,8 @@ async function doChangeDisplay(display: Display): Promise<void> {
 
   Object.assign(currentDisplay, display);
 
-  if ((currentDisplay.playlist?.length ?? 0) > 0) {
-    const playlistJson = JSON.stringify(currentDisplay.playlist);
-    currentDisplay.playlist_id = await getSHA256Hash(playlistJson);
-  }
+  currentDisplay.playlist_id = await generatePlaylistId(currentDisplay.playlist || []);
+
   // create a shallow copy of the display object to prevent mutation issues for listeners
   for (const listener of displayChangeListeners.slice()) {
     listener.checkForChange(currentDisplay);

@@ -84,6 +84,21 @@ export function compareDisplays(display1: Display, display2: Display): boolean {
   );
 }
 
+async function getSHA256Hash(data: string): Promise<string> {
+  // Use Web Crypto API for browser/cross-platform compatibility
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function generatePlaylistId(playlist: PlaylistEntry[]): Promise<string> {
+  if (playlist.length === 0) return "empty";
+  const playlistJson = JSON.stringify(playlist);
+  return await getSHA256Hash(playlistJson);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  parsing functions
 // ═══════════════════════════════════════════════════════════════════════════════
