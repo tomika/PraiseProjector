@@ -340,7 +340,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       capo: item.capo,
       instructions: item.instructions,
     }));
-    updateCurrentDisplay({ playlist });
+    updateCurrentDisplay({ playlist, playlist_id: `${newPlaylist.id}:${newPlaylist.modified}` });
   }
 
   updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string): void {
