@@ -524,6 +524,23 @@ function getMetadataFileName(): string {
   return process.platform === "linux" ? "latest-linux.yml" : process.platform === "darwin" ? "latest-mac.yml" : "latest.yml";
 }
 
+/**
+ * Compare two semantic versions (e.g., "1.2.3" vs "1.2.4").
+ * Returns: positive if v1 > v2, negative if v1 < v2, 0 if equal.
+ */
+function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split(".").map((x) => parseInt(x, 10) || 0);
+  const parts2 = v2.split(".").map((x) => parseInt(x, 10) || 0);
+  const maxLen = Math.max(parts1.length, parts2.length);
+
+  for (let i = 0; i < maxLen; i++) {
+    const diff = (parts1[i] ?? 0) - (parts2[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
 function buildChannelMetadataUrl(channel: string): string | null {
   if (!releasesBaseUrl) return null;
   const metadataFileName = getMetadataFileName();
@@ -556,6 +573,15 @@ async function checkForUpdatesWithFallback(): Promise<{ available: boolean; vers
     // Fall back to reading version from channel metadata so UI can still offer the update.
     if (!serverVersion) {
       serverVersion = (await fetchChannelVersionFromMetadata(currentUpdateChannel)) ?? undefined;
+    }
+
+    // If on testing channel, also check stable channel for newer versions
+    if (currentUpdateChannel === "testing" && serverVersion) {
+      const stableVersion = await fetchChannelVersionFromMetadata("stable");
+      if (stableVersion && compareVersions(stableVersion, serverVersion) > 0) {
+        console.log(`Newer stable version available: ${stableVersion} (testing has ${serverVersion})`);
+        serverVersion = stableVersion;
+      }
     }
 
     const available = !!serverVersion && serverVersion !== app.getVersion();
