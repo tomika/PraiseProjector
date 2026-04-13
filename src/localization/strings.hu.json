@@ -731,5 +731,9 @@
   "EulaViewLicense": "Licencszerződés megtekintése",
 
   "RememberMeTitle": "Bejelentkezve marad?",
-  "RememberMeMessage": "Szeretne bejelentkezve maradni az alkalmazás újraindítása között? Ez kényelmesebb, de valamivel kevésbé biztonságos."
+  "RememberMeMessage": "Szeretne bejelentkezve maradni az alkalmazás újraindítása között? Ez kényelmesebb, de valamivel kevésbé biztonságos.",
+
+  "GroupIdChanged": "Csoport változott",
+  "ShowChordProCode": "Kód megjelenítése",
+  "ShowWysiwyg": "WYSIWYG megjelenítése"
 }

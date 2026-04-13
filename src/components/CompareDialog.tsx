@@ -1,5 +1,7 @@
 import React, { useState } from "react";
+import { diffWords } from "diff";
 import { Song, SongChange } from "../../db-common/Song";
+import { Database } from "../../db-common/Database";
 import { PendingSongState, SongHistoryEntry } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import ChordProEditor from "./ChordProEditor/ChordProEditor";
@@ -79,6 +81,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const { t } = useLocalization();
   const [currentIndex, setCurrentIndex] = useState(initialPairIndex);
   const [showDiff, setShowDiff] = useState(false);
+  const [showCode, setShowCode] = useState(false);
 
   // For History mode: track selected indices for left and right panels
   const [leftVersionIndex, setLeftVersionIndex] = useState(0);
@@ -149,6 +152,64 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
       ? currentPair?.right.Text || ""
       : comparedSong?.Text || "";
 
+  const compactLeft = leftContent.replace(/[^\S\r\n]+/g, " ");
+  const compactRight = rightContent.replace(/[^\S\r\n]+/g, " ");
+  const codeDiffChunks = diffWords(compactLeft, compactRight).filter((chunk) => chunk.value.length > 0);
+  const hasDifferences = leftContent !== rightContent;
+  const showDiffActive = showDiff && hasDifferences;
+
+  // Get the actual Song objects for group ID comparison
+  const leftSong: Song | null = isHistoryMode ? getLeftSongForHistory() || null : isComparePairsMode ? currentPair?.left || null : originalSong;
+  const rightSong: Song | null = isHistoryMode
+    ? getRightSongForHistory() || null
+    : isComparePairsMode
+      ? currentPair?.right || null
+      : comparedSong || null;
+
+  // Check if group ID changed between left and right songs
+  const leftGroupId = leftSong?.GroupId || "";
+  const rightGroupId = rightSong?.GroupId || "";
+  const groupIdChanged = leftGroupId !== rightGroupId && (leftGroupId !== "" || rightGroupId !== "");
+
+  const getGroupMembersByTitle = (groupId: string, panelSong: Song | null): Song[] => {
+    if (!groupId) return [];
+
+    const allSongs = Database.getInstance().getSongs();
+    const members = allSongs.filter((s) => s.GroupId === groupId);
+
+    if (panelSong && panelSong.GroupId === groupId && !members.some((s) => s.Id === panelSong.Id)) {
+      members.push(panelSong);
+    }
+
+    return members.sort((a, b) => a.Title.localeCompare(b.Title));
+  };
+
+  const renderGroupChangeBadge = (groupId: string, panelSong: Song | null) => {
+    if (!groupId) {
+      return (
+        <div className="compare-group-id-badge">
+          {t("GroupIdChanged")}: <span className="compare-group-empty">-</span>
+        </div>
+      );
+    }
+
+    const groupMembers = getGroupMembersByTitle(groupId, panelSong);
+    return (
+      <div className="compare-group-id-badge">
+        <details className="compare-group-details">
+          <summary>
+            {t("GroupIdChanged")} ({groupMembers.length})
+          </summary>
+          <ul className="compare-group-song-list">
+            {groupMembers.map((song) => (
+              <li key={song.Id}>{song.Title || t("UntitledSong")}</li>
+            ))}
+          </ul>
+        </details>
+      </div>
+    );
+  };
+
   const handleSaveLeft = () => {
     if (originalSong) {
       const merged = new Song(leftContent, originalSong.System);
@@ -204,12 +265,12 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
 
   const renderContent = () => {
     // When showing diff, all editors should be read-only (like C# EnableEditMode(false))
-    const editableInConflict = mode === "Conflict" && !showDiff;
+    const editableInConflict = mode === "Conflict" && !showDiffActive;
     // Always hide toolbar/tabs in CompareDialog (like C# PreviewOnly) - this is a compare view, not an editor
     const usePreviewOnly = true;
 
     return (
-      <div className={`compare-view ${showDiff ? "compare-view-with-diff" : ""}`}>
+      <div className={`compare-view ${showDiffActive ? "compare-view-with-diff" : ""}`}>
         {/* Left panel - Original/Local version */}
         <div className="compare-panel">
           {isHistoryMode ? (
@@ -228,29 +289,47 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                         : t("ActualSong"))}
             </label>
           )}
-          <ChordProEditor
-            key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
-            song={new Song(leftContent)}
-            initialEditMode={editableInConflict}
-            previewOnly={usePreviewOnly}
-          />
-          {mode === "Conflict" && !showDiff && (
+          {groupIdChanged && renderGroupChangeBadge(leftGroupId, leftSong)}
+          {showCode ? (
+            <textarea className="compare-code-textarea" value={leftContent} readOnly wrap="off" aria-label="Left ChordPro Code" />
+          ) : (
+            <ChordProEditor
+              key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
+              song={new Song(leftContent)}
+              initialEditMode={editableInConflict}
+              previewOnly={usePreviewOnly}
+            />
+          )}
+          {mode === "Conflict" && !showDiffActive && (
             <button className="btn btn-primary mt-2" onClick={handleSaveLeft}>
               {leftButtonLabel || t("KeepThisOne")}
             </button>
           )}
         </div>
 
-        {/* Middle panel - Diff view using ChordProEditor's built-in diff functionality */}
-        {showDiff && (
+        {/* Middle panel - Diff view for both WYSIWYG and code mode */}
+        {showDiffActive && (
           <div className="compare-panel diff-panel">
             <label>{t("Differences")}</label>
-            <ChordProEditor
-              key={`diff-${isHistoryMode ? `${leftVersionIndex}-${rightVersionIndex}` : currentIndex}`}
-              song={new Song(rightContent)}
-              compareBase={leftContent}
-              initialEditMode={false}
-            />
+            {showCode ? (
+              <div className="compare-code-diff-compact" aria-label="Code Differences">
+                {codeDiffChunks.map((chunk, idx) => (
+                  <span
+                    key={idx}
+                    className={`compare-code-diff-chunk ${chunk.added ? "compare-code-diff-added" : chunk.removed ? "compare-code-diff-removed" : "compare-code-diff-unchanged"}`}
+                  >
+                    {chunk.value}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <ChordProEditor
+                key={`diff-${isHistoryMode ? `${leftVersionIndex}-${rightVersionIndex}` : currentIndex}`}
+                song={new Song(rightContent)}
+                compareBase={leftContent}
+                initialEditMode={false}
+              />
+            )}
           </div>
         )}
 
@@ -272,13 +351,18 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                         : t("SimilarSongInDatabase"))}
             </label>
           )}
-          <ChordProEditor
-            key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
-            song={new Song(rightContent)}
-            initialEditMode={editableInConflict}
-            previewOnly={usePreviewOnly}
-          />
-          {mode === "Conflict" && !showDiff && (
+          {groupIdChanged && renderGroupChangeBadge(rightGroupId, rightSong)}
+          {showCode ? (
+            <textarea className="compare-code-textarea" value={rightContent} readOnly wrap="off" aria-label="Right ChordPro Code" />
+          ) : (
+            <ChordProEditor
+              key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
+              song={new Song(rightContent)}
+              initialEditMode={editableInConflict}
+              previewOnly={usePreviewOnly}
+            />
+          )}
+          {mode === "Conflict" && !showDiffActive && (
             <button className="btn btn-primary mt-2" onClick={handleSaveRight}>
               {rightButtonLabel || t("KeepThisOne")}
             </button>
@@ -309,8 +393,11 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   &lt;&lt;
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)}>
-                {showDiff ? t("HideDifferences") : t("ShowDifferences")}
+              <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)} disabled={!hasDifferences}>
+                {showDiffActive ? t("HideDifferences") : t("ShowDifferences")}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setShowCode(!showCode)}>
+                {showCode ? t("ShowWysiwyg") : t("ShowChordProCode")}
               </button>
               {showNavButtons && (
                 <button className="btn btn-secondary" onClick={handleNext} disabled={currentIndex >= navItemCount - 1}>

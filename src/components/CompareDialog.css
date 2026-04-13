@@ -92,6 +92,89 @@
   overflow: hidden;
 }
 
+/* Group ID changed badge */
+.compare-group-id-badge {
+  font-size: 0.85rem;
+  color: #856404;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.compare-group-details {
+  margin-top: 0;
+}
+
+.compare-group-details summary {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.compare-group-song-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.compare-group-empty {
+  opacity: 0.7;
+}
+
+/* ChordPro code textarea in compare panel */
+.compare-code-textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.9rem;
+  resize: none;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  background-color: #f8f9fa;
+  color: #212529;
+  overflow: auto;
+}
+
+.compare-code-diff-compact {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  background-color: #f8f9fa;
+  color: #212529;
+  font-family: monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre;
+  word-break: normal;
+}
+
+.compare-code-diff-chunk {
+  border-radius: 0.2rem;
+  padding: 0.05rem 0.1rem;
+}
+
+.compare-code-diff-unchanged {
+  color: #6c757d;
+}
+
+.compare-code-diff-added {
+  color: #0f5132;
+  background-color: rgba(25, 135, 84, 0.2);
+}
+
+.compare-code-diff-removed {
+  color: #842029;
+  background-color: rgba(220, 53, 69, 0.2);
+  text-decoration: line-through;
+}
+
 /* ========================================
    DARK MODE OVERRIDES - CompareDialog.css
    ======================================== */
@@ -106,4 +189,40 @@
 
 [data-theme="dark"] .compare-panel .wysiwyg-host {
   background-color: var(--pp-panel-bg, #212529);
+}
+
+[data-theme="dark"] .compare-group-id-badge {
+  color: #ffc107;
+  background-color: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.4);
+}
+
+[data-theme="dark"] .compare-group-details summary {
+  color: #ffc107;
+}
+
+[data-theme="dark"] .compare-code-textarea {
+  background-color: var(--pp-panel-bg, #212529);
+  color: var(--pp-text-color, #e0e0e0);
+  border-color: var(--pp-border-color, #495057);
+}
+
+[data-theme="dark"] .compare-code-diff-compact {
+  background-color: var(--pp-panel-bg, #212529);
+  color: var(--pp-text-color, #e0e0e0);
+  border-color: var(--pp-border-color, #495057);
+}
+
+[data-theme="dark"] .compare-code-diff-unchanged {
+  color: #b8bec5;
+}
+
+[data-theme="dark"] .compare-code-diff-added {
+  color: #75d39d;
+  background-color: rgba(25, 135, 84, 0.28);
+}
+
+[data-theme="dark"] .compare-code-diff-removed {
+  color: #f2a7af;
+  background-color: rgba(220, 53, 69, 0.3);
 }
