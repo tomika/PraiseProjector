@@ -222,7 +222,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
 
   const renderContent = () => {
     // When showing diff, all editors should be read-only (like C# EnableEditMode(false))
-    const editableInConflict = mode === "Conflict" && !showDiff && !showCode;
+    const editableInConflict = mode === "Conflict" && !showDiff;
     // Always hide toolbar/tabs in CompareDialog (like C# PreviewOnly) - this is a compare view, not an editor
     const usePreviewOnly = true;
 
