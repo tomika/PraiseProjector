@@ -79,6 +79,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const { t } = useLocalization();
   const [currentIndex, setCurrentIndex] = useState(initialPairIndex);
   const [showDiff, setShowDiff] = useState(false);
+  const [showCode, setShowCode] = useState(false);
 
   // For History mode: track selected indices for left and right panels
   const [leftVersionIndex, setLeftVersionIndex] = useState(0);
@@ -149,6 +150,23 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
       ? currentPair?.right.Text || ""
       : comparedSong?.Text || "";
 
+  // Get the actual Song objects for group ID comparison
+  const leftSong: Song | null = isHistoryMode
+    ? getLeftSongForHistory() || null
+    : isComparePairsMode
+      ? currentPair?.left || null
+      : originalSong;
+  const rightSong: Song | null = isHistoryMode
+    ? getRightSongForHistory() || null
+    : isComparePairsMode
+      ? currentPair?.right || null
+      : comparedSong || null;
+
+  // Check if group ID changed between left and right songs
+  const leftGroupId = leftSong?.GroupId || "";
+  const rightGroupId = rightSong?.GroupId || "";
+  const groupIdChanged = leftGroupId !== rightGroupId && (leftGroupId !== "" || rightGroupId !== "");
+
   const handleSaveLeft = () => {
     if (originalSong) {
       const merged = new Song(leftContent, originalSong.System);
@@ -204,7 +222,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
 
   const renderContent = () => {
     // When showing diff, all editors should be read-only (like C# EnableEditMode(false))
-    const editableInConflict = mode === "Conflict" && !showDiff;
+    const editableInConflict = mode === "Conflict" && !showDiff && !showCode;
     // Always hide toolbar/tabs in CompareDialog (like C# PreviewOnly) - this is a compare view, not an editor
     const usePreviewOnly = true;
 
@@ -228,12 +246,26 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                         : t("ActualSong"))}
             </label>
           )}
-          <ChordProEditor
-            key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
-            song={new Song(leftContent)}
-            initialEditMode={editableInConflict}
-            previewOnly={usePreviewOnly}
-          />
+          {groupIdChanged && (
+            <div className="compare-group-id-badge">
+              {t("GroupIdChanged")}: <code>{leftGroupId || "—"}</code>
+            </div>
+          )}
+          {showCode ? (
+            <textarea
+              className="compare-code-textarea"
+              value={leftContent}
+              readOnly
+              aria-label="Left ChordPro Code"
+            />
+          ) : (
+            <ChordProEditor
+              key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
+              song={new Song(leftContent)}
+              initialEditMode={editableInConflict}
+              previewOnly={usePreviewOnly}
+            />
+          )}
           {mode === "Conflict" && !showDiff && (
             <button className="btn btn-primary mt-2" onClick={handleSaveLeft}>
               {leftButtonLabel || t("KeepThisOne")}
@@ -242,7 +274,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
         </div>
 
         {/* Middle panel - Diff view using ChordProEditor's built-in diff functionality */}
-        {showDiff && (
+        {showDiff && !showCode && (
           <div className="compare-panel diff-panel">
             <label>{t("Differences")}</label>
             <ChordProEditor
@@ -272,12 +304,26 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                         : t("SimilarSongInDatabase"))}
             </label>
           )}
-          <ChordProEditor
-            key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
-            song={new Song(rightContent)}
-            initialEditMode={editableInConflict}
-            previewOnly={usePreviewOnly}
-          />
+          {groupIdChanged && (
+            <div className="compare-group-id-badge">
+              {t("GroupIdChanged")}: <code>{rightGroupId || "—"}</code>
+            </div>
+          )}
+          {showCode ? (
+            <textarea
+              className="compare-code-textarea"
+              value={rightContent}
+              readOnly
+              aria-label="Right ChordPro Code"
+            />
+          ) : (
+            <ChordProEditor
+              key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
+              song={new Song(rightContent)}
+              initialEditMode={editableInConflict}
+              previewOnly={usePreviewOnly}
+            />
+          )}
           {mode === "Conflict" && !showDiff && (
             <button className="btn btn-primary mt-2" onClick={handleSaveRight}>
               {rightButtonLabel || t("KeepThisOne")}
@@ -311,6 +357,9 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
               )}
               <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)}>
                 {showDiff ? t("HideDifferences") : t("ShowDifferences")}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setShowCode(!showCode)}>
+                {showCode ? t("ShowWysiwyg") : t("ShowChordProCode")}
               </button>
               {showNavButtons && (
                 <button className="btn btn-secondary" onClick={handleNext} disabled={currentIndex >= navItemCount - 1}>

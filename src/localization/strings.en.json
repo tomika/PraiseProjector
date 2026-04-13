@@ -730,5 +730,9 @@
   "EulaViewLicense": "View License Agreement",
 
   "RememberMeTitle": "Stay Logged In?",
-  "RememberMeMessage": "Would you like to stay logged in between app restarts? This is more convenient but slightly less secure."
+  "RememberMeMessage": "Would you like to stay logged in between app restarts? This is more convenient but slightly less secure.",
+
+  "GroupIdChanged": "Group ID changed",
+  "ShowChordProCode": "Show Code",
+  "ShowWysiwyg": "Show WYSIWYG"
 }
