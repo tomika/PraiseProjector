@@ -318,8 +318,7 @@ const LogViewerPage: React.FC = () => {
   const handleCopyVisibleLogs = useCallback(async () => {
     const lines = displayLogs.map((log) => {
       const source = (log.source ?? "backend") === "frontend" ? "FE" : "BE";
-      const argsText = log.args && log.args.length > 0 ? "\t" + log.args.map((a) => stringifyLogArg(a)).join(" ") : "";
-      return `${formatTimestamp(log.timestamp)}\t${source}\t${log.level.toUpperCase()}\t${log.message}${argsText}`;
+      return `${formatTimestamp(log.timestamp)}\t${source}\t${log.level.toUpperCase()}\t${log.message}`;
     });
 
     try {
