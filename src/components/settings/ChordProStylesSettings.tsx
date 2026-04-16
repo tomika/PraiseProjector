@@ -91,9 +91,15 @@ const DIRECTIVE_LABELS: Record<string, string> = {
   key: "ChordProStylesDirectiveKey",
   capo: "ChordProStylesDirectiveCapo",
   tempo: "ChordProStylesDirectiveTempo",
+  artist: "ChordProStylesDirectiveArtist",
   composer: "ChordProStylesDirectiveComposer",
+  lyricist: "ChordProStylesDirectiveLyricist",
   subtitle: "ChordProStylesDirectiveSubtitle",
   copyright: "ChordProStylesDirectiveCopyright",
+  album: "ChordProStylesDirectiveAlbum",
+  year: "ChordProStylesDirectiveYear",
+  time: "ChordProStylesDirectiveTime",
+  duration: "ChordProStylesDirectiveDuration",
   start_of_grid: "ChordProStylesDirectiveGrid",
   start_of_chorus: "ChordProStylesDirectiveChorus",
   start_of_verse: "ChordProStylesDirectiveVerse",
@@ -106,8 +112,14 @@ const DIRECTIVE_ORDER = [
   "key",
   "capo",
   "tempo",
+  "artist",
   "composer",
+  "lyricist",
   "copyright",
+  "album",
+  "year",
+  "time",
+  "duration",
   "start_of_verse",
   "start_of_chorus",
   "start_of_bridge",
@@ -143,7 +155,6 @@ type DisplayColorKey =
   | "highlightColor"
   | "chordBoxColor"
   | "cursorColor"
-  | "backgroundColor"
   | "lineColor"
   | "selectedTextBg"
   | "selectedTextFg"
@@ -163,7 +174,6 @@ const DISPLAY_COLOR_TARGETS: ColorTarget[] = [
   { type: "display", key: "highlightColor", label: "ChordProStylesHighlightColor" },
   { type: "display", key: "chordBoxColor", label: "ChordProStylesChordBoxColor" },
   { type: "display", key: "cursorColor", label: "ChordProStylesCursorColor" },
-  { type: "display", key: "backgroundColor", label: "ChordProStylesBackgroundColor" },
   { type: "display", key: "lineColor", label: "ChordProStylesLineColor" },
   { type: "display", key: "selectedTextBg", label: "ChordProStylesSelectedTextBg" },
   { type: "display", key: "selectedTextFg", label: "ChordProStylesSelectedTextFg" },
@@ -269,6 +279,16 @@ function cloneTheme(theme: ChordProThemeStyles): ChordProThemeStyles {
     display: cloneDisplayProperties(theme.display),
     directives: cloneDirectiveStyles(theme.directives),
   };
+}
+
+function stripDirectiveBackgrounds(theme: ChordProThemeStyles): ChordProThemeStyles {
+  const next = cloneTheme(theme);
+  for (const key of Object.keys(next.directives)) {
+    if ("bg" in next.directives[key]) {
+      delete next.directives[key].bg;
+    }
+  }
+  return next;
 }
 
 function clampMargin(value: number, max: number): number {
@@ -384,7 +404,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   const uiFontSize = settings.baseFontSize || 16;
   const prevUiFontSizeRef = React.useRef(uiFontSize);
 
-  const defaultStyles = React.useMemo(() => createDefaultChordProStylesSettings(), []);
+  const defaultStyles = React.useMemo(() => createDefaultChordProStylesSettings((key) => t(key as never)), [t]);
   const selectedThemeStyles = settings.chordProStyles[themeMode];
 
   const allColorTargets = React.useMemo<ColorTarget[]>(() => [...DISPLAY_COLOR_TARGETS, ...DIRECTIVE_COLOR_TARGETS], []);
@@ -429,18 +449,21 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     const light = cloneTheme(settings.chordProStyles.light);
     const dark = cloneTheme(settings.chordProStyles.dark);
     updater(light, dark);
-    updateSetting("chordProStyles", {
-      light,
-      dark,
-    });
+    const lightStripped = stripDirectiveBackgrounds(light);
+    const darkStripped = stripDirectiveBackgrounds(dark);
+    lightStripped.display.backgroundColor = "white";
+    darkStripped.display.backgroundColor = "black";
+    updateSetting("chordProStyles", { light: lightStripped, dark: darkStripped });
   };
 
   const updateCurrentTheme = (updater: (theme: ChordProThemeStyles) => void) => {
     const current = cloneTheme(selectedThemeStyles);
     updater(current);
+    const stripped = stripDirectiveBackgrounds(current);
+    stripped.display.backgroundColor = themeMode === "dark" ? "black" : "white";
     updateSetting("chordProStyles", {
       ...settings.chordProStyles,
-      [themeMode]: current,
+      [themeMode]: stripped,
     });
   };
 
@@ -459,7 +482,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
   const updateDirectiveCommon = (
     directiveKey: string,
-    patch: Partial<Pick<ChordProDirectiveStyle, "prefix" | "font" | "height" | "align" | "indent">>
+    patch: Partial<Pick<ChordProDirectiveStyle, "prefix" | "font" | "height" | "align" | "indent" | "hidden">>
   ) => {
     updateBothThemes((light, dark) => {
       light.directives[directiveKey] = {
@@ -514,7 +537,6 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
         "highlightColor",
         "chordBoxColor",
         "cursorColor",
-        "backgroundColor",
         "lineColor",
         "selectedTextBg",
         "selectedTextFg",
@@ -571,6 +593,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
           height: base.height,
           align: base.align,
           indent: base.indent,
+          hidden: base.hidden,
         };
         dark.directives[directiveKey] = {
           ...(dark.directives[directiveKey] ?? {}),
@@ -579,9 +602,43 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
           height: base.height,
           align: base.align,
           indent: base.indent,
+          hidden: base.hidden,
         };
       }
     });
+  };
+
+  const resetDirectiveStyles = () => {
+    updateBothThemes((light, dark) => {
+      const lightDefaults = defaultStyles.light.directives;
+      const darkDefaults = defaultStyles.dark.directives;
+      for (const directiveKey of directiveKeys) {
+        const lightBase = lightDefaults[directiveKey] ?? {};
+        const darkBase = darkDefaults[directiveKey] ?? {};
+        light.directives[directiveKey] = {
+          ...(light.directives[directiveKey] ?? {}),
+          prefix: lightBase.prefix,
+          font: lightBase.font,
+          height: lightBase.height,
+          align: lightBase.align,
+          indent: lightBase.indent,
+          hidden: lightBase.hidden,
+        };
+        dark.directives[directiveKey] = {
+          ...(dark.directives[directiveKey] ?? {}),
+          prefix: darkBase.prefix,
+          font: darkBase.font,
+          height: darkBase.height,
+          align: darkBase.align,
+          indent: darkBase.indent,
+          hidden: darkBase.hidden,
+        };
+      }
+    });
+  };
+
+  const confirmFactoryDefaultsReset = () => {
+    return window.confirm(t("ChordProStylesResetFactoryConfirm"));
   };
 
   React.useEffect(() => {
@@ -639,8 +696,8 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     if (!node) return;
     node.style.setProperty("--pp-chordpro-hmargin", `${selectedThemeStyles.display.horizontalMargin}px`);
     node.style.setProperty("--pp-chordpro-vmargin", `${selectedThemeStyles.display.verticalMargin}px`);
-    node.style.setProperty("--pp-chordpro-preview-bg", selectedThemeStyles.display.backgroundColor);
-  }, [selectedThemeStyles.display.horizontalMargin, selectedThemeStyles.display.verticalMargin, selectedThemeStyles.display.backgroundColor]);
+    node.style.setProperty("--pp-chordpro-preview-bg", themeMode === "dark" ? "black" : "white");
+  }, [selectedThemeStyles.display.horizontalMargin, selectedThemeStyles.display.verticalMargin, themeMode]);
 
   const applyDraggedMargin = (edge: MarginEdge, clientX: number, clientY: number) => {
     const frame = previewFrameRef.current;
@@ -726,7 +783,6 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   });
 
   const selectedDirective = selectedThemeStyles.directives[selectedDirectiveKey] ?? {};
-  const selectedDirectiveDefault = defaultStyles.light.directives[selectedDirectiveKey] ?? {};
   const directiveFont = parseFontSpec(
     selectedDirective.font,
     parseFontSpec(selectedThemeStyles.display.lyricsFont, {
@@ -780,6 +836,16 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   <h6 className="mb-1">{t("ChordProStylesTextColorsSection")}</h6>
                   <p className="text-muted mb-0">{t("ChordProStylesCommonSettingsHint")}</p>
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    if (!confirmFactoryDefaultsReset()) return;
+                    resetSharedLayoutAndFonts();
+                  }}
+                >
+                  {t("ChordProStylesResetShared")}
+                </button>
               </div>
 
               <div className="chordpro-styles-font-target-row">
@@ -872,6 +938,16 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   <h6 className="mb-1">{t("ChordProStylesColorSection")}</h6>
                   <p className="text-muted mb-0">{t("ChordProStylesThemeOnlyHint")}</p>
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    if (!confirmFactoryDefaultsReset()) return;
+                    resetThemeColors();
+                  }}
+                >
+                  {t("ChordProStylesResetThemeColors")}
+                </button>
               </div>
 
               <div className="chordpro-styles-color-target-row">
@@ -916,6 +992,16 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   <h6 className="mb-1">{t("ChordProStylesDirectiveSection")}</h6>
                   <p className="text-muted mb-0">{t("ChordProStylesDirectiveHelp")}</p>
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    if (!confirmFactoryDefaultsReset()) return;
+                    resetDirectiveStyles();
+                  }}
+                >
+                  {t("ChordProStylesResetDirectiveStyles")}
+                </button>
               </div>
 
               <div className="chordpro-styles-directive-pager">
@@ -958,22 +1044,19 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
               <div className="chordpro-styles-directive-card compact">
                 <div className="chordpro-styles-directive-header">
                   <h6 className="mb-0">{directiveTitle}</h6>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary"
-                    onClick={() => {
-                      updateDirectiveCommon(selectedDirectiveKey, {
-                        prefix: selectedDirectiveDefault.prefix,
-                        font: selectedDirectiveDefault.font,
-                        height: selectedDirectiveDefault.height,
-                        align: selectedDirectiveDefault.align,
-                        indent: selectedDirectiveDefault.indent,
-                      });
-                    }}
-                  >
-                    {t("ResetToDefaults")}
-                  </button>
                 </div>
+
+                {!selectedDirectiveKey.startsWith("start_of_") && (
+                  <label className="chordpro-styles-toggle">
+                    <input
+                      type="checkbox"
+                      className="form-check-input me-2"
+                      checked={!(selectedDirective.hidden ?? false)}
+                      onChange={(e) => updateDirectiveCommon(selectedDirectiveKey, { hidden: !e.target.checked })}
+                    />
+                    <span>{t("ChordProStylesMetaRowVisible")}</span>
+                  </label>
+                )}
 
                 <div className="chordpro-styles-grid">
                   <label className="form-label chordpro-styles-field">
@@ -1030,25 +1113,6 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   sizeLabel={t("ChordProStylesFontSize")}
                   baseFontSize={lyricsFontSize}
                 />
-              </div>
-            </div>
-          </section>
-
-          <section className="card chordpro-styles-card">
-            <div className="card-body">
-              <div className="chordpro-styles-section-header">
-                <div>
-                  <h6 className="mb-1">{t("ChordProStylesResetSection")}</h6>
-                  <p className="text-muted mb-0">{t("ChordProStylesResetSectionHelp")}</p>
-                </div>
-              </div>
-              <div className="chordpro-styles-grid">
-                <button type="button" className="btn btn-outline-secondary" onClick={resetThemeColors}>
-                  {t("ChordProStylesResetThemeColors")}
-                </button>
-                <button type="button" className="btn btn-outline-secondary" onClick={resetSharedLayoutAndFonts}>
-                  {t("ChordProStylesResetShared")}
-                </button>
               </div>
             </div>
           </section>

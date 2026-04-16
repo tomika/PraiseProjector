@@ -720,7 +720,7 @@ export class ChordProEditor extends ChordDrawer {
     }
 
     this.displayProps = defaultDisplayProperties();
-    this.directiveStyles = defaultStyles(this.displayProps.lyricsFont);
+    this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, this.isDark, (key) => this.localeHandler?.(key) ?? key);
 
     this.clearActionState();
 
@@ -822,6 +822,8 @@ export class ChordProEditor extends ChordDrawer {
 
   installLocaleHandler(handler: (s: string) => string) {
     this.localeHandler = handler;
+    this.applyStylesForCurrentTheme();
+    this.draw();
   }
 
   private localize(s: string) {
@@ -1017,7 +1019,7 @@ export class ChordProEditor extends ChordDrawer {
 
   private applyStylesForCurrentTheme() {
     const defaults = defaultDisplayProperties(this.isDark);
-    const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark);
+    const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark, (key) => this.localeHandler?.(key) ?? key);
     const currentTheme = this.isDark ? this.customStyles?.dark : this.customStyles?.light;
 
     if (!currentTheme) {
@@ -3621,7 +3623,7 @@ export class ChordProEditor extends ChordDrawer {
           (this.chordPro.hasMeta(styleName) || (this.differentialDisplay && this.chordPro.hasMeta(styleName, false)))
         ) {
           const directiveStyle = this.directiveStyles[styleName];
-          if (directiveStyle && directiveStyle.height && (styleName === "title" ? this.showTitle : this.showMeta)) {
+          if (directiveStyle && directiveStyle.height && !directiveStyle.hidden && (styleName === "title" ? this.showTitle : this.showMeta)) {
             let text: string | DifferentialText = this.differentialDisplay
               ? this.chordPro.differentialMeta(styleName)
               : this.chordPro.getMeta(styleName);
@@ -4982,7 +4984,8 @@ export class ChordProEditor extends ChordDrawer {
       let top = this.displayProps.verticalMargin;
       if (this.showTitle) top += this.directiveStyles.title?.height ?? 0;
       for (const styleName in this.directiveStyles)
-        if (!styleName.startsWith("start_of_") && this.chordPro.getMeta(styleName)) top += this.directiveStyles[styleName].height ?? 0;
+        if (!styleName.startsWith("start_of_") && !this.directiveStyles[styleName].hidden && this.chordPro.getMeta(styleName))
+          top += this.directiveStyles[styleName].height ?? 0;
 
       this.updateChordStripHTML(all.sort(), ctx, top);
     } else {
@@ -5371,7 +5374,7 @@ export class ChordProEditor extends ChordDrawer {
           (this.chordPro.hasMeta(styleName) || (this.differentialDisplay && this.chordPro.hasMeta(styleName, false)))
         ) {
           const directiveStyle = this.directiveStyles[styleName];
-          if (directiveStyle && directiveStyle.height && (styleName === "title" ? this.showTitle : this.showMeta)) {
+          if (directiveStyle && directiveStyle.height && !directiveStyle.hidden && (styleName === "title" ? this.showTitle : this.showMeta)) {
             let text = (directiveStyle.prefix ?? "") + this.chordPro.getMeta(styleName);
             if (styleName === "key" && typeof text === "string" && this.readOnly) {
               const key = this.system.getKey(text);

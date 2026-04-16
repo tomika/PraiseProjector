@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { Settings } from "../types";
 import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
+import { useLocalization } from "../localization/LocalizationContext";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -42,6 +43,7 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { t } = useLocalization();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [initialSettings, setInitialSettings] = useState<Settings | null>(null);
 
@@ -159,9 +161,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       showTextInPreview: true,
       showImageInPreview: true,
       updateChannel: "stable",
-      chordProStyles: createDefaultChordProStylesSettings(),
+      chordProStyles: createDefaultChordProStylesSettings((key) => t(key as never)),
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const defaultSettings = createDefaultSettings();

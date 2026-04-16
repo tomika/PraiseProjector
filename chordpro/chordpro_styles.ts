@@ -42,6 +42,7 @@ export type ChordProDirectiveStyle = {
   height?: number;
   align?: string;
   indent?: number;
+  hidden?: boolean;
 };
 
 export type ChordProDirectiveStyles = Record<string, ChordProDirectiveStyle>;
@@ -55,6 +56,8 @@ export type ChordProStylesSettings = {
   light: ChordProThemeStyles;
   dark: ChordProThemeStyles;
 };
+
+type PrefixLocalizer = (key: string) => string;
 
 export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayProperties {
   // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px)
@@ -110,7 +113,12 @@ export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayPro
   return def;
 }
 
-export function defaultStyles(lyricsFont: string, darkMode?: boolean): ChordProDirectiveStyles {
+export function defaultStyles(lyricsFont: string, darkMode?: boolean, localize?: PrefixLocalizer): ChordProDirectiveStyles {
+  const localizedPrefix = (key: string, fallback: string) => {
+    const translated = localize?.(key);
+    return translated && translated !== key ? translated : fallback;
+  };
+
   const style = {
     title: {
       font: "bold 32px times",
@@ -120,46 +128,94 @@ export function defaultStyles(lyricsFont: string, darkMode?: boolean): ChordProD
       align: "center",
     },
     key: {
-      prefix: "Hangnem",
+      prefix: localizedPrefix("MetaKey", "Key"),
       font: "12px sherif",
       fg: "gray",
       bg: "white",
       height: 14,
     },
     capo: {
-      prefix: "Capo",
+      prefix: localizedPrefix("MetaCapo", "Capo"),
       font: "14px sherif",
       fg: "#404040",
       bg: "white",
       height: 18,
     },
     tempo: {
-      prefix: "Tempo",
+      prefix: localizedPrefix("MetaTempo", "Tempo"),
       font: "10px sherif",
       fg: "gray",
       bg: "white",
       height: 14,
     },
     composer: {
-      prefix: "Szerző",
+      prefix: localizedPrefix("MetaComposer", "Composer"),
       font: "10px sherif",
       fg: "gray",
       bg: "white",
       height: 14,
     },
     subtitle: {
-      prefix: "Alcím/Eredeti cím",
+      prefix: localizedPrefix("MetaSubtitle", "Subtitle"),
       font: "10px sherif",
       fg: "gray",
       bg: "white",
       height: 14,
     },
     copyright: {
-      prefix: "Copyright",
+      prefix: localizedPrefix("MetaCopyright", "Copyright"),
       font: "10px sherif",
       fg: "gray",
       bg: "white",
       height: 14,
+    },
+    artist: {
+      prefix: localizedPrefix("MetaArtist", "Artist"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
+    },
+    lyricist: {
+      prefix: localizedPrefix("MetaLyricist", "Lyricist"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
+    },
+    album: {
+      prefix: localizedPrefix("MetaAlbum", "Album"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
+    },
+    year: {
+      prefix: localizedPrefix("MetaYear", "Year"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
+    },
+    time: {
+      prefix: localizedPrefix("MetaTime", "Time"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
+    },
+    duration: {
+      prefix: localizedPrefix("MetaDuration", "Duration"),
+      font: "10px sherif",
+      fg: "gray",
+      bg: "white",
+      height: 14,
+      hidden: true,
     },
     start_of_grid: {
       font: "bold " + lyricsFont,
@@ -214,17 +270,17 @@ export function cloneDirectiveStyles(styles: ChordProDirectiveStyles): ChordProD
   return clone;
 }
 
-export function createDefaultChordProStylesSettings(): ChordProStylesSettings {
+export function createDefaultChordProStylesSettings(localize?: PrefixLocalizer): ChordProStylesSettings {
   const lightDisplay = defaultDisplayProperties(false);
   const darkDisplay = defaultDisplayProperties(true);
   return {
     light: {
       display: cloneDisplayProperties(lightDisplay),
-      directives: cloneDirectiveStyles(defaultStyles(lightDisplay.lyricsFont, false)),
+      directives: cloneDirectiveStyles(defaultStyles(lightDisplay.lyricsFont, false, localize)),
     },
     dark: {
       display: cloneDisplayProperties(darkDisplay),
-      directives: cloneDirectiveStyles(defaultStyles(darkDisplay.lyricsFont, true)),
+      directives: cloneDirectiveStyles(defaultStyles(darkDisplay.lyricsFont, true, localize)),
     },
   };
 }
