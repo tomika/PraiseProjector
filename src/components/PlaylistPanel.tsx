@@ -355,7 +355,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       // console.debug("Playlist", "setState callback ENTER for updatePlaylist");
       try {
         this.updatePlaylistItemStates();
-        this.doUpdatePlaylistCallback(playlist); // Update Display state
+        this.savePlaylist(playlist); // Persist and update Display state
 
         // Notify parent that playlist is loaded (for state restoration)
         this.props.onPlaylistLoaded?.(playlist.items.length);
@@ -395,7 +395,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
           currentPlaylist: newPlaylist,
         },
         () => {
-          this.doUpdatePlaylistCallback(this.state.currentPlaylist); // Update Display state
+          this.savePlaylist(this.state.currentPlaylist); // Persist and update Display state
         }
       );
       return newPlaylist;
