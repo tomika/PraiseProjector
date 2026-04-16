@@ -16,7 +16,7 @@ import {
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
-import { exec as execCb } from "node:child_process";
+import { exec as execCb, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import os from "node:os";
 const execAsync = promisify(execCb);
@@ -327,6 +327,50 @@ const parseExternalUrl = (value: string): URL | null => {
   }
 };
 
+/**
+ * In dev mode, detect the default browser and open URLs in private/incognito mode.
+ * Returns true if the URL was opened, false if it should fall through to shell.openExternal.
+ */
+const openInPrivateBrowser = async (url: string): Promise<boolean> => {
+  if (process.platform !== "win32") return false;
+  try {
+    // Read the default HTTP handler ProgId from the registry
+    const { stdout: progIdOut } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        "reg",
+        ["query", "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice", "/v", "ProgId"],
+        (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr }))
+      );
+    });
+    const progIdMatch = progIdOut.match(/ProgId\s+REG_SZ\s+(\S+)/);
+    if (!progIdMatch) return false;
+
+    // Read the browser command line from the ProgId
+    const { stdout: cmdOut } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile("reg", ["query", `HKEY_CLASSES_ROOT\\${progIdMatch[1]}\\shell\\open\\command`, "/ve"], (err, stdout, stderr) =>
+        err ? reject(err) : resolve({ stdout, stderr })
+      );
+    });
+    const cmdMatch = cmdOut.match(/REG_SZ\s+"([^"]+\.exe)"/i) || cmdOut.match(/REG_SZ\s+(\S+\.exe)/i);
+    if (!cmdMatch) return false;
+    const exePath = cmdMatch[1];
+
+    // Map browser executable to its private-mode flag
+    const exeLower = exePath.toLowerCase();
+    let flag: string | undefined;
+    if (exeLower.includes("chrome") || exeLower.includes("brave")) flag = "--incognito";
+    else if (exeLower.includes("msedge") || exeLower.includes("edge")) flag = "--inPrivate";
+    else if (exeLower.includes("firefox")) flag = "--private-window";
+    else if (exeLower.includes("opera")) flag = "--private";
+    if (!flag) return false;
+
+    execFile(exePath, [flag, url]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const openExternalUrlSafely = async (value: string): Promise<void> => {
   const parsed = parseExternalUrl(value);
   if (!parsed) return;
@@ -368,6 +412,7 @@ const openExternalUrlSafely = async (value: string): Promise<void> => {
   }
 
   if (trustedDomain || localAddress) {
+    if (!isProductionRuntime() && (await openInPrivateBrowser(value))) return;
     await shell.openExternal(value);
     return;
   }
