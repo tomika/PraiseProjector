@@ -3712,8 +3712,8 @@ export class ChordProEditor extends ChordDrawer {
       return null;
     };
 
-    type AbcEntry = { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number };
-    const pendingAbcEntries: AbcEntry[] = [];
+    type PendingAbcElement = { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number };
+    const pendingAbcEntries: PendingAbcElement[] = [];
     const abcElements = new Map<ChordProAbc, HTMLDivElement | null>();
 
     for (let i = 0; i < lines.length; ++i) {
@@ -3734,15 +3734,17 @@ export class ChordProEditor extends ChordDrawer {
           const abcDiv = document.createElement("div");
           abcDiv.className = "abc";
           abcRender(line_obj, this.parent_div.getBoundingClientRect().width, abcDiv);
-          // Temporarily append to parent_div to measure rendered height
-          this.parent_div.appendChild(abcDiv);
-          const measuredHeight = abcDiv.getBoundingClientRect().height;
-          abcDiv.remove();
-          if (this.scale === 1) {
-            line_height = abcScale * measuredHeight - topOffset;
+          // Measure height using the abcContainer (already in the DOM) to minimize reflows
+          abcDiv.style.position = "absolute";
+          abcDiv.style.visibility = "hidden";
+          if (this.abcContainer) {
+            this.abcContainer.appendChild(abcDiv);
           } else {
-            line_height = abcScale * measuredHeight - topOffset;
+            this.parent_div.appendChild(abcDiv);
           }
+          const measuredHeight = abcDiv.getBoundingClientRect().height;
+          abcDiv.style.visibility = "";
+          line_height = abcScale * measuredHeight - topOffset;
           pendingAbcEntries.push({ line_obj, abcDiv, y });
           abcElements.set(line_obj, abcDiv);
           y += topOffset;
@@ -4635,7 +4637,7 @@ export class ChordProEditor extends ChordDrawer {
       const { line_obj, abcDiv, y } = entry;
       staleKeys.delete(line_obj);
 
-      // Reuse existing div if already in the container for this abc line, otherwise add the new one
+      // Reuse existing div if already in the container for this abc line, otherwise adopt the new one
       let existingDiv = this.abcDivElements.get(line_obj);
       if (existingDiv) {
         // Re-render at the final content width if needed (e.g. scale != 1)
@@ -4645,6 +4647,10 @@ export class ChordProEditor extends ChordDrawer {
         } else {
           existingDiv.innerHTML = abcDiv.innerHTML;
         }
+        // Remove the temporary measurement div if it's different from the reused one
+        if (abcDiv !== existingDiv && abcDiv.parentNode) {
+          abcDiv.remove();
+        }
       } else {
         existingDiv = abcDiv;
         // Re-render at the final content width for scaled views
@@ -4652,7 +4658,10 @@ export class ChordProEditor extends ChordDrawer {
           existingDiv.innerHTML = "";
           abcRender(line_obj, contentWidth, existingDiv);
         }
-        this.abcContainer.appendChild(existingDiv);
+        // The div was already appended to abcContainer during measurement; just register it
+        if (!existingDiv.parentNode) {
+          this.abcContainer.appendChild(existingDiv);
+        }
         this.abcDivElements.set(line_obj, existingDiv);
       }
 
