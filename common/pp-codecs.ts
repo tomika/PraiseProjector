@@ -189,6 +189,18 @@ export const displayCodec = uniType(
     version: t.number,
     instructions: t.string,
     message: t.string,
+    chordProStylesRev: t.string,
+    chordProStyles: t.UnknownRecord,
+  }
+);
+
+export const displayStylesQueryResponseCodec = uniType(
+  {
+    rev: t.string,
+  },
+  {
+    changed: t.boolean,
+    styles: t.UnknownRecord,
   }
 );
 

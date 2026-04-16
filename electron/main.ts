@@ -1237,6 +1237,7 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
       longPollTimeout: settings.longPollTimeout,
       allClientsCanUseLeaderMode: settings.allClientsCanUseLeaderMode,
       leaderModeClients: settings.leaderModeClients,
+      chordProStyles: settings.chordProStyles,
     });
 
     // Re-encode and republish the latest net display frame when encode settings change.

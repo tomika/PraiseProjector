@@ -178,7 +178,7 @@ function collectScheduledLeaders(): Map<string, Playlist> {
 const AppContent: React.FC = () => {
   const width = useWindowWidth();
   const orientation = useOrientation();
-  const { settings, syncToBackend, updateSettingWithAutoSave } = useSettings();
+  const { settings, syncToBackend, updateSetting, updateSettingWithAutoSave } = useSettings();
   const { selectedLeader, guestLeaderId } = useLeader();
   const { loadInitialCredentials, isAuthenticated, isGuest, isLoading: isAuthLoading } = useAuth();
   const { t } = useLocalization();
@@ -644,6 +644,19 @@ const AppContent: React.FC = () => {
   const handlePlaylistLoaded = useCallback((itemCount: number) => {
     console.info("App", `Playlist loaded with ${itemCount} items`);
   }, []);
+
+  useEffect(() => {
+    if (!settings?.externalWebDisplayEnabled || !settings.chordProStyles) return;
+    const leaderId = isGuest ? guestLeaderId : settings.selectedLeader;
+    if (!leaderId) return;
+
+    cloudApi
+      .sendDisplayStylesUpdate({
+        leaderId,
+        chordProStyles: settings.chordProStyles,
+      })
+      .catch((err) => console.error("Cloud display styles update failed:", err));
+  }, [settings?.externalWebDisplayEnabled, settings?.selectedLeader, settings?.chordProStyles, isGuest, guestLeaderId]);
 
   useEffect(() => {
     if (pendingPlaylistSelectionIndexRef.current === null || !leftPanelRef.current) {
@@ -1627,6 +1640,21 @@ const AppContent: React.FC = () => {
 
   // Watched display state for tracking changes (matching C# watchedDisplay field)
   const watchedDisplayRef = useRef<(Display & { message?: string }) | null>(null);
+  const remoteStylesRevRef = useRef<string>("");
+
+  const syncRemoteStyles = useCallback(
+    async (leaderId: string, stylesRev: string | undefined) => {
+      if (!stylesRev || remoteStylesRevRef.current === stylesRev) return;
+      const response = await cloudApi.fetchDisplayStylesQuery({
+        leaderId,
+        rev: remoteStylesRevRef.current,
+      });
+      remoteStylesRevRef.current = response.rev;
+      if (!response.styles) return;
+      updateSetting("chordProStyles", response.styles as Settings["chordProStyles"]);
+    },
+    [updateSetting]
+  );
 
   /**
    * Apply display update from any source (HTTP cloud or UDP local)
@@ -1673,6 +1701,7 @@ const AppContent: React.FC = () => {
         section: display.section ?? emtyDisplay.section,
         instructions: display.instructions ?? emtyDisplay.instructions,
         message: display.message ?? emtyDisplay.message,
+        chordProStylesRev: display.chordProStylesRev,
       };
 
       // Keep the global display store in sync so backend subscriber pushes updates
@@ -1704,6 +1733,7 @@ const AppContent: React.FC = () => {
 
             // Apply display update using unified handler
             applyDisplay(display);
+            await syncRemoteStyles(leaderId, display.chordProStylesRev);
 
             forced = false;
           } catch (error) {
@@ -1722,7 +1752,7 @@ const AppContent: React.FC = () => {
         watchedDisplayRef.current = null;
       }
     },
-    [applyDisplay]
+    [applyDisplay, syncRemoteStyles]
   );
 
   // Handle UDP display update from electron main process - uses unified applyDisplay
@@ -1776,7 +1806,7 @@ const AppContent: React.FC = () => {
       setProjectedSong(null);
       updateCurrentSongText("");
     }
-  }, [updateCurrentSongText]);
+  }, [updateCurrentSongText, watchedSessionId]);
 
   // Update ref when exitWatchMode changes
   useEffect(() => {

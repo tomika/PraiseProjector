@@ -45,6 +45,7 @@ import {
   editSongRequestCodec,
   suggestRequestCodec,
   netDisplayDataCodec,
+  displayStylesQueryResponseCodec,
 } from "./pp-codecs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -120,6 +121,7 @@ export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type Display = t.TypeOf<typeof displayCodec>;
+export type DisplayStylesQueryResponse = t.TypeOf<typeof displayStylesQueryResponseCodec>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Netdisplay data

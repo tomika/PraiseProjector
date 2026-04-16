@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { Display, NetDisplayData } from "../common/pp-types";
 import { compareDisplays, deserializePlaylist } from "../common/pp-utils";
+import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -37,6 +38,7 @@ export interface WebServerSettings {
   longPollTimeout: number;
   allClientsCanUseLeaderMode: boolean;
   leaderModeClients: string[];
+  chordProStyles: ChordProStylesSettings | null;
 }
 
 // Connected client info (matching C# ClientInfo)
@@ -103,6 +105,7 @@ export class WebServer {
       currentLeader: initialSettings?.currentLeader ?? "",
       allClientsCanUseLeaderMode: initialSettings?.allClientsCanUseLeaderMode ?? true,
       leaderModeClients: initialSettings?.leaderModeClients ?? [],
+      chordProStyles: initialSettings?.chordProStyles ?? null,
     };
 
     this.verifyWebServerPath();
@@ -123,6 +126,21 @@ export class WebServer {
     );
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
+
+    this.app.get("/display_styles_query", (req, res) => {
+      this.setCommonHeaders(res);
+      const rev = (req.query.rev as string) || "";
+      const currentRev = this.getChordProStylesRev();
+      if (rev && rev === currentRev) {
+        res.json({ rev: currentRev, changed: false });
+        return;
+      }
+      res.json({
+        rev: currentRev,
+        changed: true,
+        styles: this.settings.chordProStyles ?? undefined,
+      });
+    });
 
     //log all requests and response http codes
     this.app.use((req, res, next) => {
@@ -148,6 +166,12 @@ export class WebServer {
     if (this.settings.webServerPath && !this.settings.webServerPath.endsWith("/")) {
       this.settings.webServerPath = this.settings.webServerPath + "/";
     }
+  }
+
+  private getChordProStylesRev() {
+    return this.settings.chordProStyles
+      ? crypto.createHash("md5").update(JSON.stringify(this.settings.chordProStyles)).digest("hex")
+      : "";
   }
 
   private setupRoutes() {
@@ -653,6 +677,7 @@ export class WebServer {
       if (deviceName && clientIdentity.id) this.trackClient(clientIdentity.id, deviceName);
 
       try {
+        const stylesRev = this.getChordProStylesRev();
         const clientDisplay: Display = {
           songId: (req.query.id as string) || currentDisplay.songId,
           song: currentDisplay.song,
@@ -664,6 +689,7 @@ export class WebServer {
           instructions: (req.query.instructions ?? "") !== "" ? (req.query.instructions as string) : currentDisplay.instructions,
           section: (req.query.section ?? "") !== "" ? parseInt((req.query.section as string) || "-1", 10) : currentDisplay.section,
           message: (req.query.message ?? "") !== "" ? (req.query.message as string) : currentDisplay.message,
+          chordProStylesRev: (req.query.chordpro_styles_rev as string) || "",
         };
 
         verifyDisplayPlaylist(clientDisplay);
@@ -672,7 +698,9 @@ export class WebServer {
 
         // If forced or state changed, respond immediately
         let newDisplay =
-          forced || !compareDisplays(clientDisplay, clientType !== "GUEST" ? currentDisplay : { ...currentDisplay, playlist_id: undefined })
+          forced ||
+          clientDisplay.chordProStylesRev !== stylesRev ||
+          !compareDisplays(clientDisplay, clientType !== "GUEST" ? currentDisplay : { ...currentDisplay, playlist_id: undefined })
             ? currentDisplay
             : undefined;
 
@@ -702,6 +730,8 @@ export class WebServer {
           }
 
           const displayToSend = clientType !== "GUEST" ? newDisplay : { ...newDisplay, playlist: undefined, playlist_id: undefined }; // Hide playlist from non-admins
+          displayToSend.chordProStylesRev = stylesRev;
+          delete displayToSend.chordProStyles;
           console.debug(
             `[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] display_query: responding with new display:`,
             displayToSend

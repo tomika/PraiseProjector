@@ -2,6 +2,7 @@ import * as t from "io-ts";
 import { decode } from "./io-utils";
 import {
   Display,
+  DisplayStylesQueryResponse,
   OnlineSessionEntry,
   PeekResponse,
   PlaylistEntry,
@@ -29,8 +30,10 @@ import {
   syncResponseCodec,
   editSongResponseCodec,
   netDisplayDataCodec,
+  displayStylesQueryResponseCodec,
 } from "./pp-codecs";
 import type { NetDisplayData, SongHistoryEntry } from "./pp-types";
+import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 1000;
@@ -547,6 +550,7 @@ export class CloudApiService {
     if (display.section != null) command += "&section=" + encodeURIComponent(display.section);
     if (display.instructions != null) command += "&instructions=" + encodeURIComponent(display.instructions);
     if (display.message != null) command += "&message=" + encodeURIComponent(display.message);
+    if (display.chordProStylesRev != null) command += "&chordpro_styles_rev=" + encodeURIComponent(display.chordProStylesRev);
     if (options?.leaderId) command += "&leader=" + encodeURIComponent(options.leaderId);
     if (options?.forced) command += "&forced=true";
 
@@ -595,6 +599,34 @@ export class CloudApiService {
       // Clean up tracking
       this.inFlightRequests.delete(controller);
     }
+  }
+
+  async fetchDisplayStylesQuery(options?: {
+    leaderId?: string;
+    rev?: string;
+    signal?: AbortSignal;
+  }): Promise<DisplayStylesQueryResponse> {
+    let endpoint = "/display_styles_query";
+    const params: string[] = [];
+    if (options?.leaderId) params.push(`leader=${encodeURIComponent(options.leaderId)}`);
+    if (options?.rev) params.push(`rev=${encodeURIComponent(options.rev)}`);
+    if (params.length > 0) endpoint += `?${params.join("&")}`;
+    const response = await this.apiCall<unknown>(endpoint, undefined, { signal: options?.signal });
+    return this.parseResponse(displayStylesQueryResponseCodec, response);
+  }
+
+  async sendDisplayStylesUpdate(data: {
+    chordProStyles: ChordProStylesSettings;
+    chordProStylesRev?: string;
+    leaderId?: string;
+  }): Promise<string> {
+    const payload: Record<string, unknown> = {
+      chordProStyles: data.chordProStyles,
+    };
+    if (data.chordProStylesRev) payload.chordProStylesRev = data.chordProStylesRev;
+    if (data.leaderId) payload.leader = data.leaderId;
+
+    return this.apiCall<string>("/display_styles_update", payload);
   }
 
   /**

@@ -65,6 +65,7 @@ import { formatLocalDateLabel } from "../common/date-only";
 import { entryIsFound, getEmptyDisplay, verifyPlaylist } from "../common/pp-utils";
 import { ChordBoxType } from "../chordpro/chord_drawer";
 import { NoteHitBox } from "../chordpro/ui_base";
+import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 
 export const praiseProjectorOrigin = "https://praiseprojector.com";
 
@@ -330,6 +331,9 @@ export class App extends AppBase {
     to: 0,
     transpose: 0,
   };
+  private chordProStylesRev = "";
+  private pendingChordProStylesRev = "";
+  private chordProStyles: ChordProStylesSettings | null = null;
 
   private hasNeighbours = false;
   private swipeState: { dragX: number; dragY: number; direction: number; totalScroll: number; lastScroll?: number; startTime: number } | null = null;
@@ -2219,6 +2223,7 @@ export class App extends AppBase {
     if (!page) page = this.pages.current;
     const editor = page.editor;
     if (editor) {
+      editor.setStyles(this.chordProStyles);
       if (page !== this.preview) this.verifyChordSelectorSystem(editor.system);
       editor.targetRatio =
         page.div?.parentNode instanceof HTMLDivElement
@@ -2228,6 +2233,37 @@ export class App extends AppBase {
       editor.update(keepDrawingSuppressed);
       this.updateAspectRatio(editor);
       editor.onLyricsHit = (s) => this.onLyricsHit(s);
+    }
+  }
+
+  private applyChordProStyles(styles: ChordProStylesSettings | null) {
+    this.chordProStyles = styles;
+    const pages = [this.pages.current, this.pages.prev, this.pages.next];
+    for (const page of pages) {
+      if (page?.editor) page.editor.setStyles(styles);
+    }
+    if (this.baseEditor) this.baseEditor.setStyles(styles);
+  }
+
+  private async syncChordProStyles(stylesRev: string | undefined) {
+    if (!this.webRoot || !stylesRev || this.chordProStylesRev === stylesRev || this.pendingChordProStylesRev === stylesRev) return;
+    this.pendingChordProStylesRev = stylesRev;
+    try {
+      const response = await cloudApi.fetchDisplayStylesQuery({
+        leaderId: this.onlineMode ? this.leaderId : undefined,
+        rev: this.chordProStylesRev,
+      });
+      this.chordProStylesRev = response.rev;
+      this.currentDisplay.chordProStylesRev = response.rev;
+      if (response.styles) {
+        this.applyChordProStyles(response.styles as ChordProStylesSettings);
+      }
+    } catch (error) {
+      this.log("Display styles query failed: " + error);
+    } finally {
+      if (this.pendingChordProStylesRev === stylesRev) {
+        this.pendingChordProStylesRev = "";
+      }
     }
   }
 
@@ -3087,6 +3123,9 @@ export class App extends AppBase {
       this.currentDisplay.to = display.to;
       this.currentDisplay.section = display.section;
       this.currentDisplay.message = display.message;
+      this.currentDisplay.chordProStylesRev = display.chordProStylesRev;
+
+      void this.syncChordProStyles(display.chordProStylesRev);
 
       this.updateHighlight(false);
       this.updateEditIconsByState();
@@ -3445,6 +3484,7 @@ export class App extends AppBase {
       playlist: [],
       section: this.currentDisplay.section,
       message: this.currentDisplay.message,
+      chordProStylesRev: this.currentDisplay.chordProStylesRev || this.chordProStylesRev,
     };
 
     const controller = new AbortController();
