@@ -14,7 +14,16 @@ import {
   ChordProAbc,
   fixChordProText,
 } from "./chordpro_base";
-import { defaultDisplayProperties, defaultStyles } from "./chordpro_styles";
+import {
+  ChordProDirectiveStyle,
+  ChordProDirectiveStyles,
+  ChordProDisplayProperties,
+  ChordProStylesSettings,
+  cloneDirectiveStyles,
+  cloneDisplayProperties,
+  defaultDisplayProperties,
+  defaultStyles,
+} from "./chordpro_styles";
 import { getKeyCodeString } from "./keycodes";
 import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
@@ -122,16 +131,6 @@ type ChordProEditorState = {
 };
 
 type ChordPosition = { line: number; chord: number };
-type ChordProStyle = {
-  prefix?: string;
-  font?: string;
-  fg?: string;
-  bg?: string;
-  height?: number;
-  align?: string;
-  indent?: number;
-};
-
 class ChordProSelection {
   constructor(
     public line: number,
@@ -499,7 +498,7 @@ export class ChordProEditor extends ChordDrawer {
   onLyricsHit: ((hit: HighlightingParams) => void) | null = null;
 
   targetRatio = 0;
-  displayProps: ReturnType<typeof defaultDisplayProperties>;
+  displayProps: ChordProDisplayProperties;
   canvas: HTMLCanvasElement;
   scale: number;
 
@@ -513,7 +512,8 @@ export class ChordProEditor extends ChordDrawer {
   private instructionsRenderMode: InstructionsRenderMode = "";
   private instructionEditorActive = false;
 
-  private directiveStyles: { [key: string]: ChordProStyle };
+  private directiveStyles: ChordProDirectiveStyles;
+  private customStyles: ChordProStylesSettings | null = null;
   private keyIsAuto = false;
 
   private inApplyState = false;
@@ -883,15 +883,54 @@ export class ChordProEditor extends ChordDrawer {
     if (this.isDark !== dark) {
       this.isDark = dark;
       this.chordSelector?.setDarkMode(dark);
-      this.displayProps = defaultDisplayProperties(dark);
-      this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, dark);
+      this.applyStylesForCurrentTheme();
       this.draw();
     }
   }
 
+  setStyles(styles: ChordProStylesSettings | null) {
+    this.customStyles = styles;
+    this.applyStylesForCurrentTheme();
+    this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    this.draw();
+  }
+
+  private applyStylesForCurrentTheme() {
+    const defaults = defaultDisplayProperties(this.isDark);
+    const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark);
+    const currentTheme = this.isDark ? this.customStyles?.dark : this.customStyles?.light;
+
+    if (!currentTheme) {
+      this.displayProps = defaults;
+      this.directiveStyles = defaultDirectiveStyles;
+      return;
+    }
+
+    this.displayProps = cloneDisplayProperties({
+      ...defaults,
+      ...currentTheme.display,
+      guitarChordSize: {
+        ...defaults.guitarChordSize,
+        ...(currentTheme.display?.guitarChordSize ?? {}),
+      },
+      pianoChordSize: {
+        ...defaults.pianoChordSize,
+        ...(currentTheme.display?.pianoChordSize ?? {}),
+      },
+    });
+
+    const mergedDirectiveStyles = cloneDirectiveStyles(defaultDirectiveStyles);
+    for (const [key, value] of Object.entries(currentTheme.directives ?? {})) {
+      mergedDirectiveStyles[key] = {
+        ...(mergedDirectiveStyles[key] ?? {}),
+        ...value,
+      };
+    }
+    this.directiveStyles = mergedDirectiveStyles;
+  }
+
   refreshDisplayProps() {
-    this.displayProps = defaultDisplayProperties(this.isDark);
-    this.directiveStyles = defaultStyles(this.displayProps.lyricsFont, this.isDark);
+    this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
     this.draw();
   }
@@ -3398,7 +3437,10 @@ export class ChordProEditor extends ChordDrawer {
   private _drawSongOnly(ctx: CanvasRenderingContext2D, leftMargin?: number) {
     this.cursorBox = null;
 
+    const horizontalSeparation = 2 * this.displayProps.lyricsLineHeight;
+
     leftMargin = leftMargin ?? this.displayProps.horizontalMargin;
+    const rightMargin = this.displayProps.horizontalMargin;
     let x = leftMargin,
       y = this.displayProps.verticalMargin;
     const totalSize = { width: 0, height: 0 },
@@ -3414,24 +3456,27 @@ export class ChordProEditor extends ChordDrawer {
 
     ctx.textBaseline = "middle";
 
+    // --- Phase 1: Reserve vertical space for metadata (don't draw yet) ---
+    type MetaEntry = {
+      styleName: string;
+      directiveStyle: ChordProDirectiveStyle;
+      text: string | DifferentialText;
+      y: number;
+      height: number;
+    };
+    const pendingMeta: MetaEntry[] = [];
+
     if (this.showMeta || this.showTitle) {
       for (const styleName in this.directiveStyles) {
         if (
           !styleName.startsWith("start_of_") &&
           (this.chordPro.hasMeta(styleName) || (this.differentialDisplay && this.chordPro.hasMeta(styleName, false)))
         ) {
-          x = leftMargin;
           const directiveStyle = this.directiveStyles[styleName];
           if (directiveStyle && directiveStyle.height && (styleName === "title" ? this.showTitle : this.showMeta)) {
-            ctx.font = directiveStyle.font || "";
-            ctx.fillStyle = directiveStyle.fg || "";
-
-            if (directiveStyle.prefix) {
-              ctx.fillText(directiveStyle.prefix, x, y + directiveStyle.height / 2);
-              x += ctx.measureText(directiveStyle.prefix).width;
-            }
-
-            let text = this.differentialDisplay ? this.chordPro.differentialMeta(styleName) : this.chordPro.getMeta(styleName);
+            let text: string | DifferentialText = this.differentialDisplay
+              ? this.chordPro.differentialMeta(styleName)
+              : this.chordPro.getMeta(styleName);
             if (styleName === "key" && typeof text === "string" && this.readOnly) {
               const key = this.system.getKey(text);
               text = text.replace(/[#b]/g, (r) => (r === "#" ? UnicodeSymbol.sharp : UnicodeSymbol.flat));
@@ -3443,42 +3488,7 @@ export class ChordProEditor extends ChordDrawer {
               }
               if (this.keyIsAuto) text += " " + UnicodeSymbol.robot;
             }
-            const w = this._drawText(
-              ctx,
-              { x, y },
-              directiveStyle.height,
-              text,
-              (rect) => new ChordProMetaHitBox(rect.x, rect.y, rect.width, rect.height, styleName)
-            );
-
-            updateSize(x + w, y + directiveStyle.height);
-
-            if (this.actionTarget instanceof ChordProMetaHitBox && this.actionTarget.key === styleName) {
-              if (text instanceof DifferentialText) text = text.flatten();
-
-              if (
-                typeof this.selectionStart === "number" &&
-                typeof this.selectionEnd === "number" &&
-                this.comparePositions(this.selectionStart, this.selectionEnd)
-              ) {
-                const start = this.selectionStart > 0 ? ctx.measureText(text.substr(0, this.selectionStart)).width : 0,
-                  txt = text.substr(this.selectionStart, this.selectionEnd - this.selectionStart),
-                  measurerdWidth = ctx.measureText(txt).width;
-                ctx.save();
-                ctx.strokeStyle = ctx.fillStyle = this.displayProps.selectedTextBg;
-                ctx.strokeRect(x + start, y, measurerdWidth, directiveStyle.height);
-                ctx.fillRect(x + start, y, measurerdWidth, directiveStyle.height);
-                ctx.fillStyle = this.displayProps.selectedTextFg;
-                ctx.fillText(txt, x + start, y + directiveStyle.height / 2);
-                ctx.restore();
-              }
-
-              if (this.cursorPos != null) {
-                const measuredWidth = ctx.measureText(text.substr(0, this.cursorPos)).width;
-                this.drawCursor(ctx, x + measuredWidth, y, directiveStyle.height);
-              }
-            }
-
+            pendingMeta.push({ styleName, directiveStyle, text, y, height: directiveStyle.height });
             y += directiveStyle.height;
           }
         }
@@ -3508,8 +3518,7 @@ export class ChordProEditor extends ChordDrawer {
     const abcScale = 2 / 3;
     const abcs = this.parent_div.getElementsByClassName("abc");
     for (let i = 0; i < abcs.length; ++i) abcs.item(i)?.remove();
-    const calcStaffWith = (maxWidth: number) =>
-      maxWidth - (leftMargin ?? this.displayProps.horizontalMargin) - 2 * this.displayProps.horizontalMargin;
+    const calcStaffWith = (maxWidth: number) => maxWidth - leftMargin - horizontalSeparation;
     const abcRender = (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => {
       const options = {
         germanAlphabet: this.chordPro?.system.systemCode === "G",
@@ -3660,15 +3669,7 @@ export class ChordProEditor extends ChordDrawer {
             { x: startPos, y: lyricsPos - this.displayProps.lyricsLineHeight / 2 },
             this.displayProps.lyricsLineHeight,
             tagInfo.text,
-            (rect) =>
-              new ChordProTagHitBox(
-                rect.x,
-                rect.y,
-                rect.width /*2 * this.displayProps.horizontalMargin + tagWidth*/,
-                rect.height,
-                line_obj,
-                tagInfo.name
-              )
+            (rect) => new ChordProTagHitBox(rect.x, rect.y, rect.width /*horizontalSeparation + tagWidth*/, rect.height, line_obj, tagInfo.name)
           );
 
           if (
@@ -3700,7 +3701,7 @@ export class ChordProEditor extends ChordDrawer {
             }
           }
         }
-        x += tagWidth + 2 * this.displayProps.horizontalMargin;
+        x += tagWidth + horizontalSeparation;
         this.tagsStripWidth = x;
         prevTagInfo = tagInfo;
       }
@@ -4103,6 +4104,98 @@ export class ChordProEditor extends ChordDrawer {
       }
     }
 
+    // --- Phase 2: Draw metadata using song content bounding width for alignment ---
+    const metaRowWidth = totalSize.width > leftMargin ? totalSize.width : 0;
+    for (const meta of pendingMeta) {
+      const { styleName, directiveStyle, y: metaY, height } = meta;
+      let { text } = meta;
+      x = leftMargin;
+      ctx.font = directiveStyle.font || "";
+      ctx.fillStyle = directiveStyle.fg || "";
+
+      if (directiveStyle.indent != null) x += this.safeIndent(directiveStyle.indent);
+
+      const prefixText = directiveStyle.prefix ?? "";
+      const prefixWidth = prefixText ? ctx.measureText(prefixText).width : 0;
+      const flatText = text instanceof DifferentialText ? text.flatten() : text;
+      const valueWidth = ctx.measureText(flatText).width;
+      const totalTextWidth = prefixWidth + valueWidth;
+      const availableWidth = metaRowWidth > 0 ? metaRowWidth - x : 0;
+
+      const align = directiveStyle.align;
+      let drawX = x;
+      let needsEllipsis = false;
+      if (align && availableWidth > 0) {
+        if (totalTextWidth <= availableWidth) {
+          if (align === "center") drawX = x + (availableWidth - totalTextWidth) / 2;
+          else if (align === "right") drawX = x + availableWidth - totalTextWidth;
+        } else {
+          needsEllipsis = true;
+        }
+      }
+
+      if (prefixText) {
+        ctx.fillText(prefixText, drawX, metaY + height / 2);
+        drawX += prefixWidth;
+      }
+
+      if (needsEllipsis && availableWidth > 0) {
+        const ellipsis = "\u2026";
+        const ellipsisWidth = ctx.measureText(ellipsis).width;
+        const maxTextWidth = availableWidth - prefixWidth - ellipsisWidth;
+        if (maxTextWidth > 0) {
+          let truncated = flatText;
+          let tw = valueWidth;
+          while (truncated.length > 1 && tw > maxTextWidth) {
+            truncated = truncated.slice(0, -1);
+            tw = ctx.measureText(truncated).width;
+          }
+          ctx.fillText(truncated + ellipsis, drawX, metaY + height / 2);
+        }
+      } else {
+        this._drawText(
+          ctx,
+          { x: drawX, y: metaY },
+          height,
+          text,
+          (rect) => new ChordProMetaHitBox(rect.x, rect.y, rect.width, rect.height, styleName)
+        );
+      }
+
+      if (this.actionTarget instanceof ChordProMetaHitBox && this.actionTarget.key === styleName) {
+        if (text instanceof DifferentialText) text = text.flatten();
+        const selDrawX = drawX + prefixWidth;
+
+        if (
+          typeof this.selectionStart === "number" &&
+          typeof this.selectionEnd === "number" &&
+          this.comparePositions(this.selectionStart, this.selectionEnd)
+        ) {
+          const start = this.selectionStart > 0 ? ctx.measureText(text.substr(0, this.selectionStart)).width : 0,
+            txt = text.substr(this.selectionStart, this.selectionEnd - this.selectionStart),
+            measurerdWidth = ctx.measureText(txt).width;
+          ctx.save();
+          ctx.strokeStyle = ctx.fillStyle = this.displayProps.selectedTextBg;
+          ctx.strokeRect(selDrawX + start, metaY, measurerdWidth, height);
+          ctx.fillRect(selDrawX + start, metaY, measurerdWidth, height);
+          ctx.fillStyle = this.displayProps.selectedTextFg;
+          ctx.fillText(txt, selDrawX + start, metaY + height / 2);
+          ctx.restore();
+        }
+
+        if (this.cursorPos != null) {
+          const measuredWidth = ctx.measureText(text.substr(0, this.cursorPos)).width;
+          this.drawCursor(ctx, selDrawX + measuredWidth, metaY, height);
+        }
+      }
+    }
+
+    // Ensure totalSize.height accounts for metadata area
+    if (pendingMeta.length > 0) {
+      const lastMeta = pendingMeta[pendingMeta.length - 1];
+      updateSize(totalSize.width, lastMeta.y + lastMeta.height);
+    }
+
     return totalSize;
   }
 
@@ -4119,24 +4212,17 @@ export class ChordProEditor extends ChordDrawer {
     let x = 0;
     line_obj.styles.forEach((_v, name) => {
       const style = this.directiveStyles[name];
-      if (style)
-        for (const key of Object.keys(style) as (keyof ChordProStyle)[]) {
-          const value = style[key];
-          if (value)
-            switch (key) {
-              case "font":
-                ctx.font = value.toString();
-                break;
-              case "fg":
-                ctx.fillStyle = value.toString();
-                break;
-              case "indent":
-                x += parseInt(value.toString());
-                break;
-            }
-        }
+      if (!style) return;
+      if (style.font) ctx.font = style.font;
+      if (style.fg) ctx.fillStyle = style.fg;
+      if (style.indent != null) x += this.safeIndent(style.indent);
     }, true);
     return x;
+  }
+
+  private safeIndent(value: unknown) {
+    const indent = Number(value);
+    return Number.isFinite(indent) ? indent : 0;
   }
 
   private drawWavyLine(ctx: CanvasRenderingContext2D, rect: Rectangle) {
@@ -4623,22 +4709,11 @@ export class ChordProEditor extends ChordDrawer {
       let indent = 0;
       line_obj.styles.forEach((_v, name) => {
         const style = this.directiveStyles[name];
-        if (style)
-          for (const key of Object.keys(style) as (keyof ChordProStyle)[]) {
-            const value = style[key];
-            if (value)
-              switch (key) {
-                case "font":
-                  elem.style.font = value.toString();
-                  break;
-                case "fg":
-                  elem.style.color = value.toString();
-                  break;
-                case "indent":
-                  indent += parseInt(value.toString());
-                  break;
-              }
-          }
+        if (!style) return;
+        if (style.font) elem.style.font = style.font;
+        if (style.fg) elem.style.color = style.fg;
+        if (style.indent != null) indent += this.safeIndent(style.indent);
+        if (style.align) elem.style.textAlign = style.align;
       }, true);
       return indent;
     };
@@ -4726,6 +4801,8 @@ export class ChordProEditor extends ChordDrawer {
             const element = createDivElement({ innerText: text, parent });
             element.style.font = directiveStyle.font || "";
             element.style.color = directiveStyle.fg || "";
+            if (directiveStyle.indent != null) element.style.marginLeft = this.safeIndent(directiveStyle.indent) + "px";
+            if (directiveStyle.align) element.style.textAlign = directiveStyle.align;
           }
         }
       }
@@ -4825,13 +4902,13 @@ export class ChordProEditor extends ChordDrawer {
           elementLineMap.set(songLine, line_obj);
 
           sectionIndent += applyLineStyle(songLine, line_obj);
+          if (sectionIndent > 0) songLine.style.paddingLeft = sectionIndent + "px";
 
           const drawChords = !line_obj.sectionChordDuplicate && (!this.readOnly || (this.chordFormat & CHORDFORMAT_NOCHORDS) === 0);
 
-          if (line_obj.isComment) genCommentChunks(line_obj, songLine, sectionIndent);
+          if (line_obj.isComment) genCommentChunks(line_obj, songLine, 0);
           else if (line_obj.isGrid) {
             const lyricsLine = createDivElement({ className: "song-line", parent: songLine });
-            lyricsLine.style.marginLeft = sectionIndent + "px";
             const text = line_obj.lyrics;
             for (let j = 0; j < text.length; ) {
               const chCell = createDivElement({ className: "song-chunk", parent: lyricsLine });

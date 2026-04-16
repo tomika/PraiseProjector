@@ -9,6 +9,7 @@ import WebServerSettings from "./settings/WebServerSettings";
 import NetDisplaySettings from "./settings/NetDisplaySettings";
 import ImagesSettings from "./settings/ImagesSettings";
 import AboutSettings from "./settings/AboutSettings";
+import ChordProStylesSettings from "./settings/ChordProStylesSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
@@ -36,6 +37,7 @@ function normalizeSettingsTab(tab: string | undefined): string {
     "images",
     "leaders",
     "sections",
+    "chordpro-styles",
     "about",
     ...(window.electronAPI ? ["webserver", "netdisplay"] : []),
   ]);
@@ -276,6 +278,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
         />
       ),
       sections: <SectionsSettings settings={settings} updateSetting={updateSetting} />,
+      "chordpro-styles": <ChordProStylesSettings settings={settings} updateSetting={updateSetting} />,
       images: <ImagesSettings settings={settings} updateSetting={updateSetting} />,
       webserver: <WebServerSettings settings={settings} updateSetting={updateSetting} />,
       netdisplay: <NetDisplaySettings settings={settings} updateSetting={updateSetting} />,
@@ -343,6 +346,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "sections" ? "active" : ""}`} href="#" onClick={() => setActiveTab("sections")}>
                 {t("SettingsPageSections")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "chordpro-styles" ? "active" : ""}`} href="#" onClick={() => setActiveTab("chordpro-styles")}>
+                {t("SettingsPageChordProStyles")}
               </a>
             </li>
             {!!window.electronAPI && (

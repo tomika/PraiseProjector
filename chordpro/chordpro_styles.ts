@@ -1,4 +1,62 @@
-export function defaultDisplayProperties(darkMode?: boolean) {
+export type ChordProDisplayProperties = {
+  horizontalMargin: number;
+  verticalMargin: number;
+  tagFont: string;
+  tagColor: string;
+  chordFont: string;
+  chordLineHeight: number;
+  chordTextColor: string;
+  unknownChordTextColor: string;
+  chordBorder: number;
+  lyricsFont: string;
+  lyricsLineHeight: number;
+  lyricsTextColor: string;
+  chordLyricSep: number;
+  sectionBreakColor: string;
+  highlightColor: string;
+  chordBoxColor: string;
+  cursorColor: string;
+  backgroundColor: string;
+  lineColor: string;
+  selectedTextBg: string;
+  selectedTextFg: string;
+  commentBg: string;
+  commentFg: string;
+  commentBorder: string;
+  guitarChordSize: {
+    width: number;
+    height: number;
+  };
+  pianoChordSize: {
+    width: number;
+    height: number;
+  };
+  markUnderscoreColor: string;
+};
+
+export type ChordProDirectiveStyle = {
+  prefix?: string;
+  font?: string;
+  fg?: string;
+  bg?: string;
+  height?: number;
+  align?: string;
+  indent?: number;
+};
+
+export type ChordProDirectiveStyles = Record<string, ChordProDirectiveStyle>;
+
+export type ChordProThemeStyles = {
+  display: ChordProDisplayProperties;
+  directives: ChordProDirectiveStyles;
+};
+
+export type ChordProStylesSettings = {
+  light: ChordProThemeStyles;
+  dark: ChordProThemeStyles;
+};
+
+export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayProperties {
   // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px)
   const rootPx = typeof document !== "undefined" ? parseFloat(document.documentElement.style.fontSize || "16") || 16 : 16;
   const scale = rootPx / 16;
@@ -52,7 +110,7 @@ export function defaultDisplayProperties(darkMode?: boolean) {
   return def;
 }
 
-export function defaultStyles(lyricsFont: string, darkMode?: boolean) {
+export function defaultStyles(lyricsFont: string, darkMode?: boolean): ChordProDirectiveStyles {
   const style = {
     title: {
       font: "bold 32px times",
@@ -138,4 +196,35 @@ export function defaultStyles(lyricsFont: string, darkMode?: boolean) {
   }
 
   return style;
+}
+
+export function cloneDisplayProperties(display: ChordProDisplayProperties): ChordProDisplayProperties {
+  return {
+    ...display,
+    guitarChordSize: { ...display.guitarChordSize },
+    pianoChordSize: { ...display.pianoChordSize },
+  };
+}
+
+export function cloneDirectiveStyles(styles: ChordProDirectiveStyles): ChordProDirectiveStyles {
+  const clone: ChordProDirectiveStyles = {};
+  for (const [key, value] of Object.entries(styles)) {
+    clone[key] = { ...value };
+  }
+  return clone;
+}
+
+export function createDefaultChordProStylesSettings(): ChordProStylesSettings {
+  const lightDisplay = defaultDisplayProperties(false);
+  const darkDisplay = defaultDisplayProperties(true);
+  return {
+    light: {
+      display: cloneDisplayProperties(lightDisplay),
+      directives: cloneDirectiveStyles(defaultStyles(lightDisplay.lyricsFont, false)),
+    },
+    dark: {
+      display: cloneDisplayProperties(darkDisplay),
+      directives: cloneDirectiveStyles(defaultStyles(darkDisplay.lyricsFont, true)),
+    },
+  };
 }

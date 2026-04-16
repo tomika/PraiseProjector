@@ -1,0 +1,301 @@
+.chordpro-styles-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chordpro-styles-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.chordpro-styles-toolbar-main,
+.chordpro-styles-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.chordpro-styles-theme-select {
+  min-width: 12rem;
+}
+
+.chordpro-styles-description {
+  margin: 0;
+}
+
+.chordpro-styles-main {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chordpro-styles-preview-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 0 0 42%;
+  min-width: 380px;
+  max-width: 42%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chordpro-styles-controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.chordpro-styles-card {
+  border: 1px solid var(--pp-border-color);
+  background: var(--pp-card-bg);
+  color: var(--pp-text-color);
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.chordpro-styles-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.chordpro-styles-preview-frame {
+  --pp-chordpro-hmargin: 5px;
+  --pp-chordpro-vmargin: 5px;
+  --pp-chordpro-preview-bg: var(--pp-panel-bg);
+  min-height: 16rem;
+  flex: 1;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--pp-border-color);
+  position: relative;
+  background: var(--pp-chordpro-preview-bg);
+}
+
+.chordpro-styles-preview-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chordpro-styles-preview-card > .card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chordpro-styles-preview-frame .chordpro-editor-container,
+.chordpro-styles-preview-frame .wysiwyg-host,
+.chordpro-styles-preview-frame .wysiwyg-tab-content,
+.chordpro-styles-preview-frame .tab-pane,
+.chordpro-styles-preview-frame .editor-iframe-container {
+  min-height: 16rem;
+  background: transparent !important;
+}
+
+.chordpro-styles-preview-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chordpro-styles-preview-canvas-border {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(13, 110, 253, 0.55);
+  border-radius: 0.75rem;
+}
+
+.chordpro-styles-preview-margin-box {
+  position: absolute;
+  left: var(--pp-chordpro-hmargin);
+  right: var(--pp-chordpro-hmargin);
+  top: var(--pp-chordpro-vmargin);
+  bottom: var(--pp-chordpro-vmargin);
+  border: 1px dashed rgba(241, 93, 93, 0.95);
+  border-radius: 0.35rem;
+}
+
+.chordpro-styles-margin-handle {
+  position: absolute;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  padding: 0;
+}
+
+.chordpro-styles-margin-handle.left,
+.chordpro-styles-margin-handle.right {
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  cursor: ew-resize;
+}
+
+.chordpro-styles-margin-handle.left {
+  left: calc(var(--pp-chordpro-hmargin) - 8px);
+}
+
+.chordpro-styles-margin-handle.right {
+  right: calc(var(--pp-chordpro-hmargin) - 8px);
+}
+
+.chordpro-styles-margin-handle.top,
+.chordpro-styles-margin-handle.bottom {
+  left: 0;
+  right: 0;
+  height: 16px;
+  cursor: ns-resize;
+}
+
+.chordpro-styles-margin-handle.top {
+  top: calc(var(--pp-chordpro-vmargin) - 8px);
+}
+
+.chordpro-styles-margin-handle.bottom {
+  bottom: calc(var(--pp-chordpro-vmargin) - 8px);
+}
+
+.chordpro-styles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.chordpro-styles-field {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chordpro-styles-font-target-row,
+.chordpro-styles-color-target-row {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.8rem;
+}
+
+.chordpro-styles-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.chordpro-styles-slider-value {
+  font-size: 0.82rem;
+  color: var(--pp-text-muted);
+}
+
+.chordpro-styles-color-picker {
+  width: 100%;
+  min-height: 2.1rem;
+}
+
+.chordpro-styles-font-card,
+.chordpro-styles-directive-card {
+  border: 1px solid var(--pp-border-color);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+  background: var(--pp-panel-bg);
+}
+
+.chordpro-styles-font-card.compact {
+  padding: 0.7rem;
+}
+
+.chordpro-styles-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--pp-border-color);
+  border-radius: 0.6rem;
+  background: var(--pp-bg-secondary);
+}
+
+.chordpro-styles-toggle .form-check-input {
+  margin: 0;
+}
+
+.chordpro-styles-directive-pager {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.chordpro-styles-directive-select-wrap {
+  margin: 0;
+}
+
+.chordpro-styles-directive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.chordpro-styles-font-select {
+  min-width: 14rem;
+}
+
+@media (max-width: 1199px) {
+  .chordpro-styles-main {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .chordpro-styles-preview-column {
+    flex: 0 0 auto;
+    min-width: unset;
+    max-width: unset;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    overflow: visible;
+  }
+
+  .chordpro-styles-controls-column {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .chordpro-styles-preview-frame,
+  .chordpro-styles-preview-frame .chordpro-editor-container,
+  .chordpro-styles-preview-frame .wysiwyg-host {
+    min-height: 16rem;
+  }
+
+  .chordpro-styles-grid,
+  .chordpro-styles-font-target-row,
+  .chordpro-styles-color-target-row {
+    grid-template-columns: 1fr;
+  }
+}

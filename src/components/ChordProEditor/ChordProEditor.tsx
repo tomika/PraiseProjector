@@ -17,6 +17,7 @@ interface ChordProEditorProps {
   initialEditMode?: boolean; // Start in edit mode
   compareBase?: string; // For diff view - pass the base song text to compare against
   previewOnly?: boolean; // Hide tabs and toolbar, like C# PreviewOnly()
+  forceThemeMode?: "light" | "dark"; // Optional forced theme for embedded previews
   // Called before entering edit mode - return Promise<boolean> to allow/cancel, or just await for sync confirmation
   onBeforeEnterEditMode?: () => Promise<boolean>;
   // Called after leaving edit mode with the current text - parent can decide to prompt save.
@@ -68,6 +69,7 @@ type ChordProAPIBound = {
   installLocaleHandler: (handler: (s: string) => string) => void;
   darkMode: (dark: boolean) => void;
   refreshDisplayProps: () => void;
+  setStyles: (styles: Settings["chordProStyles"] | null) => void;
 };
 
 const CHORD_PRO_MARKUP = `
@@ -202,6 +204,14 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       // Only update if we're in readonly mode (edit mode always shows chords)
       this.updateDisplay();
     }
+
+    if (prevProps.settings?.chordProStyles !== this.props.settings?.chordProStyles) {
+      this.applyStylesToEditor();
+    }
+
+    if (prevProps.forceThemeMode !== this.props.forceThemeMode) {
+      this.applyDarkModeToEditor();
+    }
   }
 
   componentWillUnmount() {
@@ -255,20 +265,26 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   }
 
   private applyDarkModeToEditor() {
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const forcedMode = this.props.forceThemeMode;
+    const isDark = forcedMode ? forcedMode === "dark" : document.documentElement.getAttribute("data-theme") === "dark";
     const api = this.getBoundChordProAPI();
     if (api && api.darkMode) {
       api.darkMode(isDark);
       // On mobile, the editor may need an additional call after a microtask
       // to ensure the dark mode is applied after all pending DOM updates
       queueMicrotask(() => {
-        const stillDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const stillDark = forcedMode ? forcedMode === "dark" : document.documentElement.getAttribute("data-theme") === "dark";
         if (stillDark !== isDark && api.darkMode) {
           // Theme changed during microtask, reapply
           api.darkMode(stillDark);
         }
       });
     }
+  }
+
+  private applyStylesToEditor() {
+    const api = this.getBoundChordProAPI();
+    api?.setStyles?.(this.props.settings?.chordProStyles ?? null);
   }
 
   private async prepareWysiwygHost() {
@@ -543,6 +559,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
           }
 
           // Apply dark mode after loading
+          this.applyStylesToEditor();
           this.applyDarkModeToEditor();
           requestAnimationFrame(() => requestAnimationFrame(this.scheduleEditorRefresh));
         } else if (chordApi.updateDocument) {
