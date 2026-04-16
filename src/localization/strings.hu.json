@@ -588,6 +588,7 @@
   "Log": "Napló",
   "Debug": "Debug",
   "AutoScroll": "Auto-görgetés",
+  "CopyVisible": "Látható bejegyzések másolása",
   "ClearLogs": "Törlés",
   "NoLogs": "Nincs elérhető napló",
   "Time": "Idő",

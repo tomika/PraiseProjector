@@ -19,7 +19,6 @@ const SettingsForm = lazy(() => import("./components/SettingsForm"));
 const DBSyncDialog = lazy(() => import("./components/DBSyncDialog"));
 const SessionsForm = lazy(() => import("./components/SessionsForm"));
 const SongImporterWizard = lazy(() => import("./components/SongImporterWizard/SongImporterWizard").then((m) => ({ default: m.SongImporterWizard })));
-const LogViewer = lazy(() => import("./components/LogViewer"));
 const CompareDialog = lazy(() => import("./components/CompareDialog"));
 const SongCheckDialog = lazy(() => import("./components/SongCheckDialog"));
 
@@ -312,7 +311,6 @@ const AppContent: React.FC = () => {
     onDecision: (decision: ImportDecision) => void;
   } | null>(null);
   const [showSessionsForm, setShowSessionsForm] = useState(false);
-  const [showLogViewer, setShowLogViewer] = useState(false);
   const [showSongCheck, setShowSongCheck] = useState(false);
   const [isImporting, setIsImporting] = useState(false); // Loading state for database import
   const [eulaAccepted, setEulaAccepted] = useState(() => localStorage.getItem("pp-eula-accepted") === EULA_DATE);
@@ -2358,17 +2356,6 @@ const AppContent: React.FC = () => {
                 <div className="mt-2">{t("ImportDatabaseTitle")}...</div>
               </div>
             </div>
-          )}
-          {showLogViewer && (
-            <Suspense
-              fallback={
-                <div className="loading-overlay">
-                  <div className="loading-spinner" />
-                </div>
-              }
-            >
-              <LogViewer onClose={() => setShowLogViewer(false)} />
-            </Suspense>
           )}
           {showSongCheck && (
             <Suspense

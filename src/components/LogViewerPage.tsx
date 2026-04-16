@@ -169,6 +169,16 @@ function getFirstLine(message: string): string {
   return nl >= 0 ? message.substring(0, nl) : message;
 }
 
+function stringifyLogArg(arg: unknown): string {
+  if (arg === undefined) return "undefined";
+  if (typeof arg === "string") return arg;
+  try {
+    return JSON.stringify(arg, null, 2) ?? String(arg);
+  } catch {
+    return String(arg);
+  }
+}
+
 // ── LogViewerPage Component ──────────────────────────────────────────────────
 
 const LogViewerPage: React.FC = () => {
@@ -305,6 +315,20 @@ const LogViewerPage: React.FC = () => {
     return result;
   }, [logs, filter, levelFilter, sourceFilter, selectedIndex]);
 
+  const handleCopyVisibleLogs = useCallback(async () => {
+    const lines = displayLogs.map((log) => {
+      const source = (log.source ?? "backend") === "frontend" ? "FE" : "BE";
+      const argsText = log.args && log.args.length > 0 ? "\t" + log.args.map((a) => stringifyLogArg(a)).join(" ") : "";
+      return `${formatTimestamp(log.timestamp)}\t${source}\t${log.level.toUpperCase()}\t${log.message}${argsText}`;
+    });
+
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+    } catch (error) {
+      console.error("Failed to copy visible logs:", error);
+    }
+  }, [displayLogs]);
+
   // Scroll selected row into view when filter changes
   useEffect(() => {
     if (selectedRowRef.current) {
@@ -318,41 +342,46 @@ const LogViewerPage: React.FC = () => {
   const renderMessage = useCallback(
     (log: DisplayLogEntry) => {
       const expanded = expandedRows.has(log.uid);
-      const expandable = isExpandable(log);
       const hasObjectArgs = log.args?.some((a) => a !== null && a !== undefined && typeof a === "object");
+      const hasMultiline = log.message.includes("\n");
 
-      if (!expandable) {
-        return <span className="lvp-msg-text">{hl(log.message)}</span>;
-      }
-
-      if (!expanded) {
+      // Object args: render all args inline (string args as text, objects as ObjectNode)
+      // Don't use log.message here — it already contains stringified objects which would duplicate the ObjectNode output.
+      if (hasObjectArgs && log.args) {
         return (
-          <span className="lvp-msg-collapsed">
-            <span className="lvp-expand-toggle" onClick={(e) => toggleExpand(log.uid, e)} title="Click to expand">
-              ▶
-            </span>
-            <span className="lvp-msg-text">{hl(getFirstLine(log.message))}</span>
-            {log.message.includes("\n") && <span className="lvp-msg-more"> …</span>}
+          <span className="lvp-msg-text">
+            {log.args.map((arg, i) => (
+              <ArgRenderer key={i} arg={arg} index={i} autoExpand={autoExpandParams} />
+            ))}
           </span>
         );
       }
 
-      return (
-        <span className="lvp-msg-expanded">
-          <span className="lvp-expand-toggle" onClick={(e) => toggleExpand(log.uid, e)} title="Click to collapse">
-            ▼
-          </span>
-          {hasObjectArgs && log.args ? (
-            <span className="lvp-msg-args">
-              {log.args.map((arg, i) => (
-                <ArgRenderer key={i} arg={arg} index={i} autoExpand={autoExpandParams} />
-              ))}
+      // Multiline messages: use row-level expand/collapse
+      if (hasMultiline) {
+        if (!expanded) {
+          return (
+            <span className="lvp-msg-collapsed">
+              <span className="lvp-expand-toggle" onClick={(e) => toggleExpand(log.uid, e)} title="Click to expand">
+                ▶
+              </span>
+              <span className="lvp-msg-text">{hl(getFirstLine(log.message))}</span>
+              <span className="lvp-msg-more"> …</span>
             </span>
-          ) : (
+          );
+        }
+        return (
+          <span className="lvp-msg-expanded">
+            <span className="lvp-expand-toggle" onClick={(e) => toggleExpand(log.uid, e)} title="Click to collapse">
+              ▼
+            </span>
             <pre className="lvp-message-pre">{hl(log.message)}</pre>
-          )}
-        </span>
-      );
+          </span>
+        );
+      }
+
+      // Simple single-line, no object args
+      return <span className="lvp-msg-text">{hl(log.message)}</span>;
     },
     [expandedRows, toggleExpand, autoExpandParams, hl]
   );
@@ -402,6 +431,9 @@ const LogViewerPage: React.FC = () => {
         </label>
         <button className="btn btn-outline-secondary btn-sm" onClick={handleRefresh}>
           {t("Refresh")}
+        </button>
+        <button className="btn btn-outline-secondary btn-sm" onClick={() => void handleCopyVisibleLogs()} disabled={displayLogs.length === 0}>
+          {t("CopyVisible")}
         </button>
         <button className="btn btn-outline-danger btn-sm" onClick={handleClear}>
           {t("ClearLogs")}

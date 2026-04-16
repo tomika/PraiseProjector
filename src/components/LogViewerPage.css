@@ -1,5 +1,5 @@
 /* LogViewerPage - Standalone log viewer window with light/dark theme support */
-/* Uses lvp- prefix to avoid conflicts with LogViewer.css modal styles */
+/* Uses lvp- prefix for standalone log viewer styles */
 
 /* ===== Light Theme (default) ===== */
 .lvp-container {

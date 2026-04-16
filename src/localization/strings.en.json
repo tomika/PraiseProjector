@@ -587,6 +587,7 @@
   "Log": "Log",
   "Debug": "Debug",
   "AutoScroll": "Auto-scroll",
+  "CopyVisible": "Copy visible entries",
   "ClearLogs": "Clear",
   "NoLogs": "No logs available",
   "Time": "Time",
