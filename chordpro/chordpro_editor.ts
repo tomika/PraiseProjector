@@ -376,6 +376,7 @@ export class ChordProEditor extends ChordDrawer {
   private composing = false;
   private cursorBlinkHandle: number | null = null;
   private pendingDrawHandle: number | null = null;
+  private pendingCanvasFocusAfterMetaBlur = false;
   private windowPasteListenerAttached = false;
   private disposed = false;
   private contextMenuElement: HTMLDivElement | null = null;
@@ -447,14 +448,7 @@ export class ChordProEditor extends ChordDrawer {
     let draw = this.eraseSelection();
     if (!draw) this.saveState();
 
-    if (this.actionTarget instanceof ChordProMetaHitBox) {
-      const name = this.actionTarget.key;
-      const value = this.chordPro.getMeta(name);
-      const cursorPos = this.cursorPos || 0;
-      this.chordPro.setMeta(name, value.substr(0, cursorPos) + s + value.substr(cursorPos));
-      this.cursorPos = cursorPos + 1;
-      draw = true;
-    } else if (this.actionTarget instanceof ChordProTagHitBox) {
+    if (this.actionTarget instanceof ChordProTagHitBox) {
       const line_obj = this.actionTarget.target;
       const name = this.actionTarget.parameter;
       const value = line_obj.styles.get(name);
@@ -525,6 +519,7 @@ export class ChordProEditor extends ChordDrawer {
   private prevClickTime = 0;
 
   private prevText = "";
+  private metaMeasureSpan: HTMLSpanElement | null = null;
   private actionTarget: ActionTarget = null;
 
   private cursorPos: number | null = null;
@@ -534,6 +529,20 @@ export class ChordProEditor extends ChordDrawer {
   private displayedLines: ChordProLine[] = [];
   private dragData: ChordProDragStart | ChordProSelection | number | null = null;
   private tagWidth = 0;
+
+  private metaContainer: HTMLDivElement | null = null;
+  private metaInputs = new Map<string, { row: HTMLDivElement; prefix: HTMLSpanElement; value: HTMLInputElement }>();
+
+  private chordStripContainer: HTMLDivElement | null = null;
+  private chordStripItems = new Map<string, HTMLDivElement>();
+  private chordStripBaseTop = 0;
+  private overlayCanvasLeft = 0;
+  private overlayCanvasTop = 0;
+
+  private chordBoxContainer: HTMLDivElement | null = null;
+  private chordBoxElements = new Map<string, HTMLCanvasElement>();
+  private canvasResizeObserver: ResizeObserver | null = null;
+  private lastCanvasOffsetWidth = 0;
 
   private cursorBox: { left: number; top: number; width: number; height: number } | null = null;
   private chordStripWidth = 0;
@@ -617,6 +626,90 @@ export class ChordProEditor extends ChordDrawer {
     canvas.onfocus = null;
     this.canvas = canvas;
     this.canvas.addEventListener("focus", this.handleCanvasFocus);
+
+    // Auto-redraw overlays when canvas transitions from hidden to visible
+    this.canvasResizeObserver?.disconnect();
+    this.lastCanvasOffsetWidth = 0;
+    this.canvasResizeObserver = new ResizeObserver(() => {
+      const w = this.canvas.offsetWidth;
+      const wasHidden = this.lastCanvasOffsetWidth === 0;
+      this.lastCanvasOffsetWidth = w;
+      if (w > 0) {
+        if (wasHidden) this.draw();
+        else this.syncOverlayTransforms();
+      }
+    });
+    this.canvasResizeObserver.observe(this.canvas);
+
+    // Create metadata container for HTML-based metadata display/editing
+    const existingMetaContainer = this.parent_div.querySelector(".chordpro-meta-container") as HTMLDivElement | null;
+    if (existingMetaContainer) {
+      this.metaContainer = existingMetaContainer;
+      this.metaContainer.innerHTML = "";
+    } else {
+      this.metaContainer = document.createElement("div");
+      this.metaContainer.className = "chordpro-meta-container";
+      this.parent_div.insertBefore(this.metaContainer, this.canvas);
+    }
+    this.metaContainer.style.position = "absolute";
+    this.metaContainer.style.left = "0";
+    this.metaContainer.style.top = "0";
+    this.metaContainer.style.width = "0";
+    this.metaContainer.style.height = "0";
+    this.metaContainer.style.background = "transparent";
+    this.metaContainer.style.overflow = "visible";
+    this.metaContainer.style.pointerEvents = "none";
+    this.metaContainer.style.zIndex = "1";
+    this.metaInputs.clear();
+
+    // Create chord strip container for HTML-based chord palette
+    const existingChordStrip = this.parent_div.querySelector(".chordpro-chordstrip-container") as HTMLDivElement | null;
+    if (existingChordStrip) {
+      this.chordStripContainer = existingChordStrip;
+      this.chordStripContainer.innerHTML = "";
+    } else {
+      this.chordStripContainer = document.createElement("div");
+      this.chordStripContainer.className = "chordpro-chordstrip-container";
+      this.parent_div.insertBefore(this.chordStripContainer, this.canvas);
+    }
+    this.chordStripContainer.style.position = "absolute";
+    this.chordStripContainer.style.left = "0";
+    this.chordStripContainer.style.top = "0";
+    this.chordStripContainer.style.width = "0";
+    this.chordStripContainer.style.height = "0";
+    this.chordStripContainer.style.background = "transparent";
+    this.chordStripContainer.style.overflow = "visible";
+    this.chordStripContainer.style.zIndex = "2";
+    this.chordStripContainer.style.pointerEvents = "none";
+    this.chordStripItems.clear();
+
+    // Create chord box container for HTML-based chord diagram display
+    const existingChordBoxContainer = this.parent_div.querySelector(".chordpro-chordbox-container") as HTMLDivElement | null;
+    if (existingChordBoxContainer) {
+      this.chordBoxContainer = existingChordBoxContainer;
+      this.chordBoxContainer.innerHTML = "";
+    } else {
+      this.chordBoxContainer = document.createElement("div");
+      this.chordBoxContainer.className = "chordpro-chordbox-container";
+      this.parent_div.insertBefore(this.chordBoxContainer, this.canvas);
+    }
+    this.chordBoxContainer.style.position = "absolute";
+    this.chordBoxContainer.style.left = "0";
+    this.chordBoxContainer.style.top = "0";
+    this.chordBoxContainer.style.width = "0";
+    this.chordBoxContainer.style.height = "0";
+    this.chordBoxContainer.style.background = "transparent";
+    this.chordBoxContainer.style.overflow = "visible";
+    this.chordBoxContainer.style.zIndex = "1";
+    this.chordBoxContainer.style.pointerEvents = "none";
+    this.chordBoxElements.clear();
+
+    this.parent_div.addEventListener("scroll", this.updateChordStripPosition);
+
+    const computedPosition = getComputedStyle(this.parent_div).position;
+    if (!computedPosition || computedPosition === "static") {
+      this.parent_div.style.position = "relative";
+    }
 
     this.scale = scale || 1.0;
 
@@ -830,6 +923,28 @@ export class ChordProEditor extends ChordDrawer {
       this.keyEventTarget = null;
     }
 
+    // Clean up metadata container
+    if (this.metaContainer) {
+      this.metaContainer.remove();
+      this.metaContainer = null;
+    }
+    this.metaInputs.clear();
+
+    // Clean up chord strip container
+    this.parent_div.removeEventListener("scroll", this.updateChordStripPosition);
+    if (this.chordStripContainer) {
+      this.chordStripContainer.remove();
+      this.chordStripContainer = null;
+    }
+    this.chordStripItems.clear();
+
+    // Clean up chord box container
+    if (this.chordBoxContainer) {
+      this.chordBoxContainer.remove();
+      this.chordBoxContainer = null;
+    }
+    this.chordBoxElements.clear();
+
     // Clean up mobile input proxy textarea
     if (this.textarea) {
       this.textarea.removeEventListener("input", this.handleTextareaInput);
@@ -845,6 +960,11 @@ export class ChordProEditor extends ChordDrawer {
     this.canvas.removeEventListener("keypress", this.handleKeyPress);
     this.canvas.removeEventListener("focus", this.handleCanvasFocus);
     this.canvas.onfocus = null;
+
+    if (this.canvasResizeObserver) {
+      this.canvasResizeObserver.disconnect();
+      this.canvasResizeObserver = null;
+    }
 
     if (this.removeTouchEvents) {
       this.removeTouchEvents();
@@ -1023,6 +1143,13 @@ export class ChordProEditor extends ChordDrawer {
     if (this.chordPro && this.readOnly !== readOnly) {
       for (const line of this.chordPro.lines) line.invalidateCache();
       this.readOnly = readOnly;
+
+      // Toggle existing meta inputs between editable and inert
+      for (const [, el] of this.metaInputs) {
+        el.value.readOnly = readOnly;
+        el.row.style.pointerEvents = readOnly ? "none" : "auto";
+      }
+
       this.clearActionState();
       this.draw();
     }
@@ -1047,11 +1174,19 @@ export class ChordProEditor extends ChordDrawer {
 
     if (this.actionTarget) {
       if (this.actionTarget instanceof ChordProLine) target = this.actionTarget.getLineIndex();
-      else if (this.actionTarget instanceof ChordProMetaHitBox) {
-        target = this.actionTarget.key;
-      } else if (this.actionTarget instanceof ChordProChordHitBox) {
+      else if (this.actionTarget instanceof ChordProChordHitBox) {
         const line_obj = this.actionTarget.chord.line;
         target = { line: line_obj.getLineIndex(), chord: line_obj.chords.indexOf(this.actionTarget.chord) };
+      }
+    }
+
+    // Check if a metadata HTML input is focused
+    if (!target) {
+      for (const [styleName, el] of this.metaInputs) {
+        if (el.value === document.activeElement) {
+          target = styleName;
+          break;
+        }
       }
     }
 
@@ -1092,8 +1227,12 @@ export class ChordProEditor extends ChordDrawer {
                 box.chord === box.chord.line.chords[target.chord]
               )
                 this.changeActionTarget(box.chord);
-            } else if (box instanceof ChordProMetaHitBox && box.key === target) {
-              this.changeActionTarget(box);
+            } else if (typeof target === "string") {
+              // Metadata target: focus the HTML input if available
+              const metaEl = this.metaInputs.get(target);
+              if (metaEl && metaEl.value instanceof HTMLInputElement) {
+                metaEl.value.focus();
+              }
               break;
             }
         }
@@ -1227,7 +1366,6 @@ export class ChordProEditor extends ChordDrawer {
 
       if (this.actionTarget instanceof ChordProChord) text = this.actionTarget.text;
       else if (this.actionTarget instanceof ChordProLineHitBox) text = this.actionTarget.target.lyrics;
-      else if (this.actionTarget instanceof ChordProMetaHitBox) text = this.chordPro.getMeta(this.actionTarget.key);
       else if (this.actionTarget instanceof ChordProTagHitBox) text = this.actionTarget.target.styles.get(this.actionTarget.parameter);
       else return false;
 
@@ -1238,7 +1376,6 @@ export class ChordProEditor extends ChordDrawer {
         this.actionTarget.text = text;
         this.actionTarget.line.genText();
       } else if (this.actionTarget instanceof ChordProTagHitBox) this.setTagName(this.actionTarget.target, this.actionTarget.parameter, text);
-      else if (this.actionTarget instanceof ChordProMetaHitBox) this.chordPro.setMeta(this.actionTarget.key, text);
 
       this.cursorPos = this.selectionStart;
       this.selectionStart = null;
@@ -1261,6 +1398,11 @@ export class ChordProEditor extends ChordDrawer {
     return (this.lastMouseDown = this.normalizeMousePos(e));
   }
 
+  private getActiveMetaInput() {
+    if (!(document.activeElement instanceof HTMLInputElement) || !this.metaContainer) return null;
+    return this.metaContainer.contains(document.activeElement) ? document.activeElement : null;
+  }
+
   onMouseDown(e: MouseEvent) {
     if (this.chordSelector && this.chordSelector.inModal) {
       // Don't close the dialog if the click is inside the chord selector
@@ -1270,6 +1412,29 @@ export class ChordProEditor extends ChordDrawer {
       this.chordSelector.closeDialog();
       return;
     }
+
+    const targetInMeta = !!(this.metaContainer && e.target instanceof Node && this.metaContainer.contains(e.target));
+    if (!targetInMeta) {
+      const activeMetaInput = this.getActiveMetaInput();
+      if (activeMetaInput) {
+        // Leaving metadata editing: blur active meta input so canvas edit can proceed.
+        activeMetaInput.blur();
+        this.pendingCanvasFocusAfterMetaBlur = true;
+      }
+    } else {
+      this.pendingCanvasFocusAfterMetaBlur = false;
+    }
+
+    // Let HTML metadata inputs handle their own events
+    if (targetInMeta) {
+      return;
+    }
+
+    // Let HTML chord strip handle its own events
+    if (this.chordStripContainer && e.target instanceof Node && this.chordStripContainer.contains(e.target)) return;
+
+    // Let HTML chord box diagrams handle their own events
+    if (this.chordBoxContainer && e.target instanceof Node && this.chordBoxContainer.contains(e.target)) return;
 
     const box = this.HitTest(e);
     this.lastMouseDownHadHit = !!box;
@@ -1302,7 +1467,7 @@ export class ChordProEditor extends ChordDrawer {
         this.changeActionTarget(box);
         this.dragData = null;
         this.cursorPos = null;
-      } else if (box instanceof ChordProMetaHitBox || box instanceof ChordProTagHitBox) {
+      } else if (box instanceof ChordProTagHitBox) {
         this.changeActionTarget(box);
         this.dragData = this.calcCursorPos(box, e);
         this.cursorPos = null;
@@ -1400,7 +1565,17 @@ export class ChordProEditor extends ChordDrawer {
       return rv;
     }
 
+    const fromMetaHandoff = this.pendingCanvasFocusAfterMetaBlur;
+
+    // Let HTML overlay controls keep native focus/interaction.
+    if (!fromMetaHandoff && this.metaContainer && e.target instanceof Node && this.metaContainer.contains(e.target)) return;
+    if (this.chordStripContainer && e.target instanceof Node && this.chordStripContainer.contains(e.target)) return;
+    if (this.chordBoxContainer && e.target instanceof Node && this.chordBoxContainer.contains(e.target)) return;
+
+    this.pendingCanvasFocusAfterMetaBlur = false;
+
     this.focus();
+
     if (this.actionTarget instanceof ChordTemplateHitBox) {
       this.clearActionState();
       this.draw();
@@ -1431,7 +1606,11 @@ export class ChordProEditor extends ChordDrawer {
       this.dragData = null;
       this.draw();
     } else if (this.dragData instanceof ChordProSelection) {
-      const box = this.HitTest(e);
+      let box = this.HitTest(e);
+      if (!(box instanceof ChordProLineHitBox) && fromMetaHandoff && this.lastMouseDown) {
+        const downBox = this.HitTestCoords(this.lastMouseDown);
+        if (downBox instanceof ChordProLineHitBox) box = downBox;
+      }
       if (box instanceof ChordProLineHitBox) {
         this.changeActionTarget(box.target);
         this.cursorPos = box.column;
@@ -1440,7 +1619,7 @@ export class ChordProEditor extends ChordDrawer {
       this.draw();
     } else if (typeof this.dragData === "number") {
       const box = this.HitTest(e);
-      if (box instanceof ChordProMetaHitBox || box instanceof ChordProTagHitBox) {
+      if (box instanceof ChordProTagHitBox) {
         this.changeActionTarget(box);
         this.cursorPos = this.calcCursorPos(box, e);
       }
@@ -1678,7 +1857,7 @@ export class ChordProEditor extends ChordDrawer {
       }
     } else if (typeof this.dragData === "number") {
       const box = this.HitTest(e);
-      if (box instanceof ChordProMetaHitBox || (box instanceof ChordProLineHitBox && typeof box.column === "string")) {
+      if (box instanceof ChordProTagHitBox) {
         this.changeActionTarget(box);
         this.cursorPos = this.calcCursorPos(box, e);
         this.selectionStart = this.dragData;
@@ -1694,6 +1873,11 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   onMouseLeave(e: MouseEvent) {
+    // Don't steal focus from active meta inputs when the mouse leaves the canvas area.
+    const activeMetaInput = this.getActiveMetaInput();
+    if (activeMetaInput) return;
+    // If no active drag/click sequence exists, ignore leave to avoid clearing cursor state.
+    if (!this.lastMouseDown) return;
     return this.onMouseUp(e, true);
   }
 
@@ -2392,14 +2576,7 @@ export class ChordProEditor extends ChordDrawer {
     let draw = this.eraseSelection();
     if (!draw) this.saveState();
 
-    if (this.actionTarget instanceof ChordProMetaHitBox) {
-      const name = this.actionTarget.key;
-      const value = this.chordPro.getMeta(name);
-      const cursorPos = this.cursorPos || 0;
-      this.chordPro.setMeta(name, value.substr(0, cursorPos) + s + value.substr(cursorPos));
-      this.cursorPos = cursorPos + 1;
-      draw = true;
-    } else if (this.actionTarget instanceof ChordProTagHitBox) {
+    if (this.actionTarget instanceof ChordProTagHitBox) {
       const line_obj = this.actionTarget.target;
       const name = this.actionTarget.parameter;
       const value = line_obj.styles.get(name);
@@ -2444,9 +2621,6 @@ export class ChordProEditor extends ChordDrawer {
     } else if (this.actionTarget instanceof ChordProChord) {
       this.selectionStart = 0;
       this.selectionEnd = this.actionTarget.text.length;
-    } else if (this.actionTarget instanceof ChordProMetaHitBox) {
-      this.selectionStart = 0;
-      this.selectionEnd = this.chordPro.getMeta(this.actionTarget.key).length;
     }
   }
 
@@ -2603,13 +2777,6 @@ export class ChordProEditor extends ChordDrawer {
       chord.insertString(cursorPos, str);
       this.cursorPos = cursorPos + str.length;
       this.convertChordPrefixToPos(chord);
-    } else if (this.actionTarget instanceof ChordProMetaHitBox) {
-      const name = this.actionTarget.key,
-        text = this.chordPro.getMeta(name);
-      str = str.split("\n")[0];
-      const cursorPos = this.cursorPos || 0;
-      this.chordPro.setMeta(name, text.substr(0, cursorPos) + str + text.substr(cursorPos));
-      this.cursorPos = cursorPos + str.length;
     }
 
     this.draw();
@@ -2635,9 +2802,7 @@ export class ChordProEditor extends ChordDrawer {
           if (this.selectionEnd.line !== l) str += "\n";
         }
       } else if (typeof this.selectionStart === "number" && typeof this.selectionEnd === "number") {
-        if (this.actionTarget instanceof ChordProMetaHitBox)
-          str = this.chordPro.getMeta(this.actionTarget.key).substr(this.selectionStart, this.selectionEnd - this.selectionStart);
-        else if (this.actionTarget instanceof ChordProChordHitBox)
+        if (this.actionTarget instanceof ChordProChordHitBox)
           str = this.actionTarget.chord.text.substr(this.selectionStart, this.selectionEnd - this.selectionStart);
       }
     }
@@ -3075,40 +3240,27 @@ export class ChordProEditor extends ChordDrawer {
 
   selectMetaData(name: string, offset?: number) {
     if (!offset) offset = 0;
-    if (!name && this.actionTarget instanceof ChordProMetaHitBox) name = this.actionTarget.key;
 
-    if (!this.boxes.length) this.draw();
+    const keys = Array.from(this.metaInputs.keys());
+    let currentIndex = keys.indexOf(name);
 
-    let prev: ChordProMetaHitBox | null = null,
-      box: ChordProHitBox | null = null,
-      i: number;
-    for (i = 0; i < this.boxes.length; ++i) {
-      box = this.boxes[i];
-      if (box instanceof ChordProMetaHitBox) {
-        if (box.key === name) break;
-        prev = box;
-      }
-      box = null;
+    // If name not found but we have inputs, try to find any match
+    if (currentIndex < 0 && !name && keys.length > 0) {
+      currentIndex = offset < 0 ? keys.length : -1;
     }
 
-    if (offset === 0) this.changeActionTarget(box);
-    else if (offset < 0) {
-      if (prev) this.changeActionTarget(prev);
-    } else
-      while (++i < this.boxes.length) {
-        box = this.boxes[i];
-        if (box instanceof ChordProMetaHitBox) {
-          this.changeActionTarget(box);
-          break;
-        }
-        box = null;
+    const targetIndex = currentIndex + (offset || 0);
+    if (targetIndex >= 0 && targetIndex < keys.length) {
+      const targetName = keys[targetIndex];
+      const el = this.metaInputs.get(targetName);
+      if (el && el.value instanceof HTMLInputElement) {
+        el.value.focus();
+        return true;
       }
-    if (this.actionTarget) {
-      this.cursorPos = 0;
-      this.draw();
+      return false;
     }
 
-    return offset < 0 ? prev != null : box != null;
+    return false;
   }
 
   externalUpdate(text: string) {
@@ -3193,9 +3345,6 @@ export class ChordProEditor extends ChordDrawer {
       font = this.displayProps.chordFont;
       text = box.chord.text;
       x -= this.displayProps.chordBorder;
-    } else if (box instanceof ChordProMetaHitBox) {
-      font = this.directiveStyles[box.key].font || "";
-      text = this.chordPro.getMeta(box.key);
     } else if (box instanceof ChordProTagHitBox) {
       font = this.displayProps.tagFont;
       text = box.target.styles.get(box.parameter);
@@ -3440,7 +3589,6 @@ export class ChordProEditor extends ChordDrawer {
     const horizontalSeparation = 2 * this.displayProps.lyricsLineHeight;
 
     leftMargin = leftMargin ?? this.displayProps.horizontalMargin;
-    const rightMargin = this.displayProps.horizontalMargin;
     let x = leftMargin,
       y = this.displayProps.verticalMargin;
     const totalSize = { width: 0, height: 0 },
@@ -4104,91 +4252,8 @@ export class ChordProEditor extends ChordDrawer {
       }
     }
 
-    // --- Phase 2: Draw metadata using song content bounding width for alignment ---
-    const metaRowWidth = totalSize.width > leftMargin ? totalSize.width : 0;
-    for (const meta of pendingMeta) {
-      const { styleName, directiveStyle, y: metaY, height } = meta;
-      let { text } = meta;
-      x = leftMargin;
-      ctx.font = directiveStyle.font || "";
-      ctx.fillStyle = directiveStyle.fg || "";
-
-      if (directiveStyle.indent != null) x += this.safeIndent(directiveStyle.indent);
-
-      const prefixText = directiveStyle.prefix ?? "";
-      const prefixWidth = prefixText ? ctx.measureText(prefixText).width : 0;
-      const flatText = text instanceof DifferentialText ? text.flatten() : text;
-      const valueWidth = ctx.measureText(flatText).width;
-      const totalTextWidth = prefixWidth + valueWidth;
-      const availableWidth = metaRowWidth > 0 ? metaRowWidth - x : 0;
-
-      const align = directiveStyle.align;
-      let drawX = x;
-      let needsEllipsis = false;
-      if (align && availableWidth > 0) {
-        if (totalTextWidth <= availableWidth) {
-          if (align === "center") drawX = x + (availableWidth - totalTextWidth) / 2;
-          else if (align === "right") drawX = x + availableWidth - totalTextWidth;
-        } else {
-          needsEllipsis = true;
-        }
-      }
-
-      if (prefixText) {
-        ctx.fillText(prefixText, drawX, metaY + height / 2);
-        drawX += prefixWidth;
-      }
-
-      if (needsEllipsis && availableWidth > 0) {
-        const ellipsis = "\u2026";
-        const ellipsisWidth = ctx.measureText(ellipsis).width;
-        const maxTextWidth = availableWidth - prefixWidth - ellipsisWidth;
-        if (maxTextWidth > 0) {
-          let truncated = flatText;
-          let tw = valueWidth;
-          while (truncated.length > 1 && tw > maxTextWidth) {
-            truncated = truncated.slice(0, -1);
-            tw = ctx.measureText(truncated).width;
-          }
-          ctx.fillText(truncated + ellipsis, drawX, metaY + height / 2);
-        }
-      } else {
-        this._drawText(
-          ctx,
-          { x: drawX, y: metaY },
-          height,
-          text,
-          (rect) => new ChordProMetaHitBox(rect.x, rect.y, rect.width, rect.height, styleName)
-        );
-      }
-
-      if (this.actionTarget instanceof ChordProMetaHitBox && this.actionTarget.key === styleName) {
-        if (text instanceof DifferentialText) text = text.flatten();
-        const selDrawX = drawX + prefixWidth;
-
-        if (
-          typeof this.selectionStart === "number" &&
-          typeof this.selectionEnd === "number" &&
-          this.comparePositions(this.selectionStart, this.selectionEnd)
-        ) {
-          const start = this.selectionStart > 0 ? ctx.measureText(text.substr(0, this.selectionStart)).width : 0,
-            txt = text.substr(this.selectionStart, this.selectionEnd - this.selectionStart),
-            measurerdWidth = ctx.measureText(txt).width;
-          ctx.save();
-          ctx.strokeStyle = ctx.fillStyle = this.displayProps.selectedTextBg;
-          ctx.strokeRect(selDrawX + start, metaY, measurerdWidth, height);
-          ctx.fillRect(selDrawX + start, metaY, measurerdWidth, height);
-          ctx.fillStyle = this.displayProps.selectedTextFg;
-          ctx.fillText(txt, selDrawX + start, metaY + height / 2);
-          ctx.restore();
-        }
-
-        if (this.cursorPos != null) {
-          const measuredWidth = ctx.measureText(text.substr(0, this.cursorPos)).width;
-          this.drawCursor(ctx, selDrawX + measuredWidth, metaY, height);
-        }
-      }
-    }
+    // --- Phase 2: Update metadata HTML elements ---
+    this.updateMetaHTML(pendingMeta, leftMargin, totalSize.width);
 
     // Ensure totalSize.height accounts for metadata area
     if (pendingMeta.length > 0) {
@@ -4223,6 +4288,541 @@ export class ChordProEditor extends ChordDrawer {
   private safeIndent(value: unknown) {
     const indent = Number(value);
     return Number.isFinite(indent) ? indent : 0;
+  }
+
+  private getOverlayScale() {
+    const width = this.canvas.width;
+    const viewWidth = this.canvas.offsetWidth;
+    let viewportScale = 1;
+    if (width > 0 && viewWidth > 0) {
+      const s = viewWidth / width;
+      if (Number.isFinite(s) && s > 0) viewportScale = s;
+    }
+    return this.scale * viewportScale;
+  }
+
+  syncOverlayTransforms() {
+    this.syncOverlayRootLayout();
+    const scale = this.getOverlayScale();
+    const transform = scale !== 1 ? `scale(${scale})` : "";
+    if (this.metaContainer) {
+      this.metaContainer.style.transform = transform;
+      this.metaContainer.style.transformOrigin = "0 0";
+    }
+    if (this.chordStripContainer) {
+      this.chordStripContainer.style.transform = transform;
+      this.chordStripContainer.style.transformOrigin = "0 0";
+    }
+    if (this.chordBoxContainer) {
+      this.chordBoxContainer.style.transform = transform;
+      this.chordBoxContainer.style.transformOrigin = "0 0";
+    }
+  }
+
+  private syncOverlayRootLayout() {
+    const left = this.canvas.offsetLeft || 0;
+    const top = this.canvas.offsetTop || 0;
+    this.overlayCanvasLeft = left;
+    this.overlayCanvasTop = top;
+
+    // Use 0x0 with overflow:visible so containers don't add to scroll dimensions.
+    // Children are absolutely positioned inside and rendered via overflow.
+    if (this.metaContainer) {
+      this.metaContainer.style.left = left + "px";
+      this.metaContainer.style.top = top + "px";
+      this.metaContainer.style.width = "0";
+      this.metaContainer.style.height = "0";
+      this.metaContainer.style.overflow = "visible";
+    }
+
+    if (this.chordStripContainer) {
+      this.chordStripContainer.style.left = left + "px";
+      this.chordStripContainer.style.width = "0";
+      this.chordStripContainer.style.height = "0";
+      this.chordStripContainer.style.overflow = "visible";
+    }
+
+    if (this.chordBoxContainer) {
+      this.chordBoxContainer.style.left = left + "px";
+      this.chordBoxContainer.style.top = top + "px";
+      this.chordBoxContainer.style.width = "0";
+      this.chordBoxContainer.style.height = "0";
+      this.chordBoxContainer.style.overflow = "visible";
+    }
+  }
+
+  private updateMetaHTML(
+    entries: { styleName: string; directiveStyle: ChordProDirectiveStyle; text: string | DifferentialText; y: number; height: number }[],
+    leftMargin: number,
+    contentWidth: number
+  ) {
+    if (!this.metaContainer) return;
+
+    this.syncOverlayRootLayout();
+
+    const scale = this.getOverlayScale();
+    this.metaContainer.style.transform = scale !== 1 ? `scale(${scale})` : "";
+    this.metaContainer.style.transformOrigin = "0 0";
+
+    const metaRowWidth = contentWidth > leftMargin ? contentWidth : 0;
+    const staleKeys = new Set(this.metaInputs.keys());
+
+    for (const entry of entries) {
+      const { styleName, directiveStyle, text, y, height } = entry;
+      staleKeys.delete(styleName);
+
+      let el = this.metaInputs.get(styleName);
+      if (!el) {
+        el = this.createMetaRow(styleName);
+        this.metaInputs.set(styleName, el);
+        this.metaContainer.appendChild(el.row);
+      }
+
+      const row = el.row;
+      row.style.top = y + "px";
+      row.style.height = height + "px";
+      row.style.lineHeight = height + "px";
+      row.style.font = directiveStyle.font || "";
+      row.style.color = directiveStyle.fg || "";
+      row.style.backgroundColor = "transparent";
+
+      const indent = directiveStyle.indent != null ? this.safeIndent(directiveStyle.indent) : 0;
+      row.style.left = leftMargin + "px";
+      row.style.paddingLeft = indent ? indent + "px" : "";
+
+      if (metaRowWidth > 0) {
+        row.style.width = metaRowWidth - leftMargin + "px";
+      } else {
+        row.style.width = "";
+      }
+      row.style.textAlign = directiveStyle.align || "left";
+      const align = directiveStyle.align || "";
+      row.style.justifyContent = align === "right" ? "flex-end" : align === "center" ? "center" : "";
+      const tightAlign = align === "right" || align === "center";
+      el.value.style.flex = tightAlign ? "0 0 auto" : "1";
+      // Apply current font styles to prefix so it matches input
+      el.prefix.style.font = directiveStyle.font || "";
+      el.prefix.style.color = directiveStyle.fg || "";
+
+      // Update prefix
+      const prefix = directiveStyle.prefix ?? "";
+      el.prefix.textContent = prefix ? prefix + ":\u00a0" : "";
+
+      // Update value — only update if input is not focused (to preserve cursor position)
+      const flatText = text instanceof DifferentialText ? text.flatten() : text;
+      if (document.activeElement !== el.value && el.value.value !== flatText) {
+        el.value.value = flatText;
+      }
+      this.updateMetaInputWidth(styleName, flatText);
+    }
+
+    // Remove stale elements
+    for (const key of staleKeys) {
+      const el = this.metaInputs.get(key);
+      if (el) {
+        el.row.remove();
+        this.metaInputs.delete(key);
+      }
+    }
+  }
+
+  private createMetaRow(styleName: string) {
+    const row = document.createElement("div");
+    row.style.position = "absolute";
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.whiteSpace = "nowrap";
+    row.style.overflow = "hidden";
+    row.style.boxSizing = "border-box";
+    row.style.background = "transparent";
+    row.style.pointerEvents = this.readOnly ? "none" : "auto";
+
+    const prefix = document.createElement("span");
+    prefix.style.flexShrink = "0";
+    prefix.style.font = "inherit";
+    prefix.style.color = "inherit";
+    prefix.style.height = "100%";
+    prefix.style.display = "flex";
+    prefix.style.alignItems = "center";
+    row.appendChild(prefix);
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.readOnly = this.readOnly;
+    input.style.border = "none";
+    input.style.outline = "none";
+    input.style.background = "transparent";
+    input.style.padding = "0";
+    input.style.margin = "0";
+    input.style.font = "inherit";
+    input.style.color = "inherit";
+    input.style.textAlign = "inherit";
+    input.style.flex = "1";
+    input.style.minWidth = "0";
+    input.style.height = "100%";
+    input.style.boxSizing = "border-box";
+    input.style.pointerEvents = "auto";
+    if (this.readOnly) {
+      input.style.overflow = "hidden";
+      input.style.textOverflow = "ellipsis";
+    }
+    input.addEventListener("input", () => this.onMetaInput(styleName, input.value));
+    input.addEventListener("keydown", (e: KeyboardEvent) => this.onMetaKeyDown(styleName, e));
+    input.addEventListener("focus", () => this.onMetaFocus(styleName));
+    input.addEventListener("blur", () => this.onMetaBlur(styleName));
+    row.appendChild(input);
+
+    return { row, prefix, value: input };
+  }
+
+  private measureMetaValueWidth(input: HTMLInputElement, text: string) {
+    if (!this.metaMeasureSpan) {
+      const span = document.createElement("span");
+      span.style.position = "absolute";
+      span.style.left = "-100000px";
+      span.style.top = "0";
+      span.style.visibility = "hidden";
+      span.style.whiteSpace = "pre";
+      span.style.pointerEvents = "none";
+      document.body.appendChild(span);
+      this.metaMeasureSpan = span;
+    }
+
+    const style = getComputedStyle(input);
+    const span = this.metaMeasureSpan;
+    span.style.font = style.font;
+    span.style.letterSpacing = style.letterSpacing;
+    span.style.textTransform = style.textTransform;
+    span.textContent = text && text.length > 0 ? text : " ";
+    return span.offsetWidth;
+  }
+
+  private updateMetaInputWidth(styleName: string, valueOverride?: string) {
+    const el = this.metaInputs.get(styleName);
+    if (!el) return;
+
+    const align = el.row.style.textAlign || "";
+    const tightAlign = align === "right" || align === "center";
+    el.value.style.flex = tightAlign ? "0 0 auto" : "1";
+
+    if (tightAlign) {
+      const text = valueOverride ?? el.value.value;
+      const measured = Math.ceil(this.measureMetaValueWidth(el.value, text) + 3);
+      const prefixWidth = el.prefix.offsetWidth;
+      const available = Math.max(1, el.row.clientWidth - prefixWidth);
+      el.value.style.width = Math.min(measured, available) + "px";
+    } else {
+      el.value.style.width = "";
+    }
+
+    // Remove intrinsic character-based sizing so width is driven by measured pixels.
+    el.value.removeAttribute("size");
+  }
+
+  private onMetaInput(name: string, newValue: string) {
+    this.updateMetaInputWidth(name, newValue);
+    if (!this.chordPro) return;
+    this.saveState();
+    this.chordPro.setMeta(name, newValue);
+    if (this.onChange) {
+      const currentText = this.chordProCode;
+      if (this.prevText !== currentText) this.onChange((this.prevText = currentText));
+    }
+  }
+
+  private onMetaKeyDown(name: string, e: KeyboardEvent) {
+    const code = getKeyCodeString(e);
+    if (code === "UP") {
+      e.preventDefault();
+      if (!this.selectMetaData(name, -1)) this.selectMetaData(name);
+    } else if (code === "DOWN" || code === "ENTER") {
+      e.preventDefault();
+      if (!this.selectMetaData(name, 1)) {
+        // Navigate to first song line
+        if (this.chordPro && this.chordPro.lines.length > 0) {
+          this.changeActionTarget(this.chordPro.lines[0]);
+          this.cursorPos = 0;
+          this.draw();
+          this.focus();
+        }
+      }
+    } else if ((e.ctrlKey || e.metaKey) && code === "Z" && !e.shiftKey) {
+      e.preventDefault();
+      this.undo();
+      this.syncMetaInputValues();
+    } else if ((e.ctrlKey || e.metaKey) && (code === "Y" || (e.shiftKey && code === "Z"))) {
+      e.preventDefault();
+      this.redo();
+      this.syncMetaInputValues();
+    }
+  }
+
+  private onMetaFocus(_name: string) {
+    // Clear canvas action state when metadata input gets focus.
+    // draw() is required so this.boxes is repopulated for future hit-testing
+    // (clearActionState empties it).
+    this.clearActionState();
+    this.draw();
+  }
+
+  private onMetaBlur(_name: string) {
+    // Nothing special needed; canvas mousedown handles re-focus
+  }
+
+  private syncMetaInputValues() {
+    if (!this.chordPro) return;
+    for (const [styleName, el] of this.metaInputs) {
+      const currentValue = this.chordPro.getMeta(styleName);
+      if (el.value.value !== currentValue) el.value.value = currentValue;
+      this.updateMetaInputWidth(styleName, currentValue);
+    }
+  }
+
+  // ---- Chord strip HTML methods ----
+
+  private updateChordStripPosition = () => {
+    if (this.chordStripContainer) {
+      const top = Math.max(this.overlayCanvasTop + this.chordStripBaseTop * this.getOverlayScale(), this.parent_div.scrollTop);
+      this.chordStripContainer.style.top = top + "px";
+    }
+  };
+
+  private formatChordHTML(chord: string): string {
+    const details = this.getChordDetails(chord);
+    if (!details) return chord.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    let html = "";
+    if (details.prefix) html += this.escapeHTML(details.prefix);
+    html += this.escapeHTML(details.baseNote);
+    const modifier = details.modifier.replace(/b/g, "\u266D"); // ♭
+    if (modifier) html += this.escapeHTML(modifier);
+    if (details.bassNote) {
+      html += "/" + this.escapeHTML(details.bassNote);
+      const bassMod = ""; // bass modifier already included in bassNote from getChordDetails
+      if (bassMod) html += this.escapeHTML(bassMod);
+    }
+    if (details.suffix) html += this.escapeHTML(details.suffix);
+    return html;
+  }
+
+  private escapeHTML(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  private updateChordStripHTML(chords: string[], ctx: CanvasRenderingContext2D, topOffset: number) {
+    if (!this.chordStripContainer) return;
+
+    this.syncOverlayRootLayout();
+
+    const scale = this.getOverlayScale();
+    this.chordStripContainer.style.transform = scale !== 1 ? `scale(${scale})` : "";
+    this.chordStripContainer.style.transformOrigin = "0 0";
+    this.chordStripContainer.style.pointerEvents = "none";
+
+    this.chordStripBaseTop = topOffset;
+    this.updateChordStripPosition();
+
+    const staleKeys = new Set(this.chordStripItems.keys());
+    let top = topOffset;
+    let maxWidth = 0;
+
+    for (const chord of chords) {
+      staleKeys.delete(chord);
+
+      let div = this.chordStripItems.get(chord);
+      if (!div) {
+        div = this.createChordStripItem(chord);
+        this.chordStripItems.set(chord, div);
+        this.chordStripContainer.appendChild(div);
+      }
+
+      div.innerHTML = this.formatChordHTML(chord);
+      div.style.top = top - topOffset + "px";
+      div.style.left = this.displayProps.horizontalMargin + "px";
+      div.style.font = this.displayProps.chordFont;
+      div.style.color = this.displayProps.chordTextColor;
+      div.style.height = this.displayProps.chordLineHeight + "px";
+      div.style.lineHeight = this.displayProps.chordLineHeight + "px";
+      div.style.pointerEvents = this.readOnly || this.actionTarget instanceof ChordTemplateHitBox ? "none" : "auto";
+
+      // Measure width using canvas for accuracy
+      ctx.font = this.displayProps.chordFont;
+      const width = this.drawChordText(chord, ctx).width;
+
+      // Create ChordTemplateHitBox for HitTest (double-click, etc.)
+      this.boxes.push(
+        new ChordTemplateHitBox(
+          this.displayProps.horizontalMargin,
+          top - this.displayProps.chordLineHeight / 2,
+          width,
+          this.displayProps.chordLineHeight,
+          chord
+        )
+      );
+
+      maxWidth = Math.max(maxWidth, width);
+      top += this.displayProps.chordLineHeight;
+    }
+
+    // Remove stale elements
+    for (const key of staleKeys) {
+      const div = this.chordStripItems.get(key);
+      if (div) {
+        div.remove();
+        this.chordStripItems.delete(key);
+      }
+    }
+
+    this.chordStripWidth = chords.length > 0 ? this.displayProps.horizontalMargin + maxWidth : 0;
+  }
+
+  private createChordStripItem(chord: string): HTMLDivElement {
+    const div = document.createElement("div");
+    div.style.position = "absolute";
+    div.style.whiteSpace = "nowrap";
+    div.style.background = "transparent";
+    div.style.cursor = "grab";
+    div.style.userSelect = "none";
+
+    div.addEventListener("mousedown", (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+
+      // Disable pointer events on the strip during drag so mouse events reach the canvas
+      if (this.chordStripContainer) this.chordStripContainer.style.pointerEvents = "none";
+
+      // Compute canvas-coordinate position from the HTML element's position
+      const divRect = div.getBoundingClientRect();
+      const parentRect = this.parent_div.getBoundingClientRect();
+      const overlayScale = this.getOverlayScale();
+      const x = (divRect.left - parentRect.left + this.parent_div.scrollLeft) / overlayScale;
+      const y = (divRect.top - parentRect.top + this.parent_div.scrollTop) / overlayScale;
+
+      const drawCtx = this.canvas.getContext("2d");
+      let width = this.displayProps.chordLineHeight; // fallback
+      if (drawCtx) {
+        drawCtx.font = this.displayProps.chordFont;
+        width = this.drawChordText(chord, drawCtx).width;
+      }
+
+      const box = new ChordTemplateHitBox(x, y, width, this.displayProps.chordLineHeight, chord);
+      this.changeActionTarget(box);
+      this.dragData = null;
+      this.cursorPos = null;
+      this.selectionStart = null;
+      this.selectionEnd = null;
+      this.lastMouseDown = { x, y };
+      this.draw();
+    });
+
+    div.addEventListener("dblclick", (e: MouseEvent) => {
+      e.stopPropagation();
+      if (this.chordSelector && this.multiChordChangeEnabled) {
+        // Find the matching template box from the boxes array
+        for (const box of this.boxes) {
+          if (box instanceof ChordTemplateHitBox && box.chord === chord) {
+            if (!this.readOnly) this.changeActionTarget(box);
+            this.chordSelector.showDialog(chord, this.readOnly, this.isDark);
+            return;
+          }
+        }
+      }
+    });
+
+    return div;
+  }
+
+  private updateChordBoxHTML(positions: { chord: string; x: number; y: number }[], chordSize: { width: number; height: number }) {
+    if (!this.chordBoxContainer) return;
+
+    this.syncOverlayRootLayout();
+
+    const scale = this.getOverlayScale();
+    this.chordBoxContainer.style.transform = scale !== 1 ? `scale(${scale})` : "";
+    this.chordBoxContainer.style.transformOrigin = "0 0";
+
+    if (positions.length === 0) {
+      // No chord boxes to show — clear existing
+      this.chordBoxContainer.style.pointerEvents = "none";
+      for (const canvas of this.chordBoxElements.values()) canvas.remove();
+      this.chordBoxElements.clear();
+      return;
+    }
+
+    this.chordBoxContainer.style.pointerEvents = "none";
+    const staleKeys = new Set(this.chordBoxElements.keys());
+
+    for (const { chord, x, y } of positions) {
+      const key = chord + ":" + x + ":" + y;
+      staleKeys.delete(key);
+
+      let miniCanvas = this.chordBoxElements.get(key);
+      if (!miniCanvas) {
+        miniCanvas = document.createElement("canvas");
+        miniCanvas.style.width = chordSize.width + "px";
+        miniCanvas.style.height = chordSize.height + "px";
+        miniCanvas.width = Math.round(chordSize.width * Math.max(1, Math.ceil(scale)));
+        miniCanvas.height = Math.round(chordSize.height * Math.max(1, Math.ceil(scale)));
+        miniCanvas.style.position = "absolute";
+        miniCanvas.style.cursor = "pointer";
+        miniCanvas.style.pointerEvents = "auto";
+
+        // Click handler for chord variant cycling / play
+        let mouseDownPos: { x: number; y: number } | null = null;
+        miniCanvas.addEventListener("mousedown", (e: MouseEvent) => {
+          e.stopPropagation();
+          mouseDownPos = { x: e.offsetX, y: e.offsetY };
+        });
+        miniCanvas.addEventListener("mouseup", (e: MouseEvent) => {
+          e.stopPropagation();
+          if (!mouseDownPos) return;
+          const dx = e.offsetX - mouseDownPos.x;
+          const dy = e.offsetY - mouseDownPos.y;
+          mouseDownPos = null;
+
+          // If significant movement, cycle variant
+          if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+            const offset = dx < 0 || dy < 0 ? -1 : 1;
+            const variant = (this.chordVariantCache.get(chord) || 0) + offset;
+            this.chordVariantCache.set(chord, variant);
+            this.draw();
+          } else {
+            // Simple click: play chord
+            for (const box of this.boxes) {
+              if (box instanceof ChordBoxHitBox && box.chord === chord) {
+                this.playChord(box);
+                break;
+              }
+            }
+          }
+        });
+
+        this.chordBoxElements.set(key, miniCanvas);
+        this.chordBoxContainer.appendChild(miniCanvas);
+      }
+
+      miniCanvas.style.left = x + "px";
+      miniCanvas.style.top = y + "px";
+      miniCanvas.style.width = chordSize.width + "px";
+      miniCanvas.style.height = chordSize.height + "px";
+      const renderScale = Math.max(1, Math.ceil(scale));
+      miniCanvas.width = Math.round(chordSize.width * renderScale);
+      miniCanvas.height = Math.round(chordSize.height * renderScale);
+
+      // Render chord diagram to the mini canvas
+      if (this.chordBoxType) {
+        this.chordBoxDraw(this.chordBoxType, chord, miniCanvas);
+      }
+    }
+
+    // Remove stale elements
+    for (const key of staleKeys) {
+      const canvas = this.chordBoxElements.get(key);
+      if (canvas) {
+        canvas.remove();
+        this.chordBoxElements.delete(key);
+      }
+    }
   }
 
   private drawWavyLine(ctx: CanvasRenderingContext2D, rect: Rectangle) {
@@ -4377,35 +4977,29 @@ export class ChordProEditor extends ChordDrawer {
       });
 
     if (this.chordPro && !this.readOnly) {
-      ctx.font = this.displayProps.chordFont;
-      ctx.fillStyle = this.displayProps.chordTextColor;
-
       const all: string[] = [];
       chordSet.forEach((value) => all.push(value));
-      let maxLength = 0,
-        top = this.displayProps.verticalMargin;
+      let top = this.displayProps.verticalMargin;
       if (this.showTitle) top += this.directiveStyles.title?.height ?? 0;
       for (const styleName in this.directiveStyles)
         if (!styleName.startsWith("start_of_") && this.chordPro.getMeta(styleName)) top += this.directiveStyles[styleName].height ?? 0;
-      for (const chord of all.sort()) {
-        const width = this.drawChordText(chord, ctx, this.displayProps.horizontalMargin, top).width;
-        maxLength = Math.max(maxLength, width);
-        const box = new ChordTemplateHitBox(
-          this.displayProps.horizontalMargin,
-          top - this.displayProps.chordLineHeight / 2,
-          width,
-          this.displayProps.chordLineHeight,
-          chord
-        );
-        this.boxes.push(box);
-        //ctx.strokeRect(box.left, box.top, box.width, box.height);
-        top += this.displayProps.chordLineHeight;
+
+      this.updateChordStripHTML(all.sort(), ctx, top);
+    } else {
+      this.chordStripWidth = 0;
+      if (this.chordStripContainer) {
+        this.chordStripContainer.style.pointerEvents = "none";
+        for (const key of this.chordStripItems.keys()) {
+          this.chordStripItems.get(key)?.remove();
+        }
+        this.chordStripItems.clear();
       }
-      this.chordStripWidth = this.displayProps.horizontalMargin + maxLength;
     }
 
     let totalSize = { width: 0, height: 0 };
     let targetRatio: number | undefined = undefined;
+    let latestChordBoxPositions: { chord: string; x: number; y: number }[] = [];
+    let latestChordBoxSize = { width: 0, height: 0 };
 
     const boxCount = this.boxes.length;
 
@@ -4428,36 +5022,25 @@ export class ChordProEditor extends ChordDrawer {
         const chords: string[] = [];
         chordSet.forEach((value, key) => chords.push(displayNormalizedChord ? key : value));
         const chordboxes: (PianoChordHitBox | GuitarChordHitBox)[] = [];
-        if (this.chordBoxType === "PIANO") {
-          totalSize = this._drawChordLayouts(chords, totalSize, this.displayProps.pianoChordSize, (chord, x, y) => {
-            if (
-              this.drawPianoChordLayout(
-                ctx,
-                { x, y, width: this.displayProps.pianoChordSize.width, height: this.displayProps.pianoChordSize.height },
-                chord
-              )
-            ) {
-              chordboxes.push(new PianoChordHitBox(x, y, this.displayProps.guitarChordSize.width, this.displayProps.guitarChordSize.height, chord));
-              return true;
-            }
-            return false;
-          });
-        } else if (this.chordBoxType === "GUITAR") {
-          totalSize = this._drawChordLayouts(chords, totalSize, this.displayProps.guitarChordSize, (chord, x, y) => {
-            if (
-              this.drawGuitarChordLayout(
-                ctx,
-                { x, y, width: this.displayProps.guitarChordSize.width, height: this.displayProps.guitarChordSize.height },
-                chord
-              )
-            ) {
-              chordboxes.push(new GuitarChordHitBox(x, y, this.displayProps.guitarChordSize.width, this.displayProps.guitarChordSize.height, chord));
-              return true;
-            }
-            return false;
-          });
-        }
+        const pendingChordBoxes: { chord: string; x: number; y: number }[] = [];
+        const chordSize = this.chordBoxType === "PIANO" ? this.displayProps.pianoChordSize : this.displayProps.guitarChordSize;
+
+        // Use layout algorithm to compute positions; defer actual rendering to HTML canvases
+        totalSize = this._drawChordLayouts(chords, totalSize, chordSize, (chord, x, y) => {
+          const canRender =
+            this.chordBoxType === "PIANO" ? !!this.system.identifyChord(chord) : !!(this.getActualChordLayout(chord) && this.chordSelector);
+          if (canRender) {
+            pendingChordBoxes.push({ chord, x, y });
+            const BoxType = this.chordBoxType === "PIANO" ? PianoChordHitBox : GuitarChordHitBox;
+            chordboxes.push(new BoxType(x, y, chordSize.width, chordSize.height, chord));
+            return true;
+          }
+          return false;
+        });
+
         if (chordboxes.length > 0) this.boxes.splice(0, 0, ...chordboxes);
+        latestChordBoxPositions = pendingChordBoxes;
+        latestChordBoxSize = chordSize;
       }
 
       if (
@@ -4477,6 +5060,10 @@ export class ChordProEditor extends ChordDrawer {
         }
       }
     }
+
+    // Render chord box diagrams as HTML canvas elements
+    this.updateChordBoxHTML(latestChordBoxPositions, latestChordBoxSize);
+
     return totalSize;
   }
 

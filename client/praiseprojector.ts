@@ -265,6 +265,10 @@ class EditorPage {
       loaded = true;
       if (!(system instanceof ChordSystem)) system = getChordSystem(system);
       this.loaded.system = system.systemCode;
+      if (this.editor) {
+        this.editor.dispose();
+        this.editor = null;
+      }
       const retval = EditorPage.loadSong(
         system,
         (this.loaded.text = chp),

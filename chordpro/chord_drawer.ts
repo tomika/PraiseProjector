@@ -473,29 +473,38 @@ export class ChordDrawer {
     rect?: Rectangle,
     noteHitBoxes?: NoteHitBox[]
   ) {
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+    const hasExplicitCSSSize = canvas.style.width !== "";
+    const cssW = hasExplicitCSSSize ? canvas.offsetWidth : 0;
+    const cssH = hasExplicitCSSSize ? canvas.offsetHeight : 0;
+    const logicalW = cssW > 0 ? cssW : canvas.width;
+    const logicalH = cssH > 0 ? cssH : canvas.height;
+    if (!hasExplicitCSSSize) {
+      canvas.width = logicalW;
+      canvas.height = logicalH;
+    }
     const ctx = canvas.getContext("2d");
     if (ctx) {
+      const dpr = canvas.width / logicalW;
+      if (dpr !== 1) ctx.scale(dpr, dpr);
       const backgroundColor = this.getCanvasBackgroundColor(canvas);
       const originalBackgroundColor = this.displayProps.backgroundColor;
       if (backgroundColor) this.displayProps.backgroundColor = backgroundColor;
       try {
         ctx.strokeStyle = this.displayProps.lineColor;
         ctx.fillStyle = this.displayProps.backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, logicalW, logicalH);
         const maxRect = (refSize: Size) => {
           const center = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
+            x: logicalW / 2,
+            y: logicalH / 2,
           };
           const scale = refSize.width / refSize.height;
           let width: number, height: number;
-          if (canvas.width / canvas.height > scale) {
-            height = canvas.height;
+          if (logicalW / logicalH > scale) {
+            height = logicalH;
             width = height * scale;
           } else {
-            width = canvas.width;
+            width = logicalW;
             height = width / scale;
           }
           return {
