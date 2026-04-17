@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { Settings } from "../types";
 import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
@@ -46,6 +46,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { t } = useLocalization();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [initialSettings, setInitialSettings] = useState<Settings | null>(null);
+  const initializedRef = useRef(false);
 
   const createDefaultSettings = useCallback((): Settings => {
     return {
@@ -166,6 +167,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [t]);
 
   useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+
     const defaultSettings = createDefaultSettings();
 
     storeApi

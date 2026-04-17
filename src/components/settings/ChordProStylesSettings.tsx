@@ -10,6 +10,7 @@ import {
 } from "../../../chordpro/chordpro_styles";
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { useMessageBox } from "../../contexts/MessageBoxContext";
 import ChordProEditor from "../ChordProEditor/ChordProEditor";
 import "./ChordProStylesSettings.css";
 
@@ -394,6 +395,7 @@ const FontEditor: React.FC<{
 
 const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ settings, updateSetting }) => {
   const { t } = useLocalization();
+  const { showConfirm } = useMessageBox();
   const [themeMode, setThemeMode] = React.useState<ThemeMode>("light");
   const [previewSong] = React.useState(() => new Song(PREVIEW_SONG));
   const [fontTarget, setFontTarget] = React.useState<FontTargetKey>("tagFont");
@@ -637,8 +639,17 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     });
   };
 
-  const confirmFactoryDefaultsReset = () => {
-    return window.confirm(t("ChordProStylesResetFactoryConfirm"));
+  const confirmFactoryDefaultsReset = (onConfirm: () => void) => {
+    const snapshot = {
+      light: cloneTheme(settings.chordProStyles.light),
+      dark: cloneTheme(settings.chordProStyles.dark),
+    };
+    showConfirm(t("Confirm"), t("ChordProStylesResetFactoryConfirm"), onConfirm, () =>
+      updateSetting("chordProStyles", {
+        light: cloneTheme(snapshot.light),
+        dark: cloneTheme(snapshot.dark),
+      })
+    );
   };
 
   React.useEffect(() => {
@@ -839,10 +850,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary"
-                  onClick={() => {
-                    if (!confirmFactoryDefaultsReset()) return;
-                    resetSharedLayoutAndFonts();
-                  }}
+                  onClick={() => confirmFactoryDefaultsReset(resetSharedLayoutAndFonts)}
                 >
                   {t("ChordProStylesResetShared")}
                 </button>
@@ -938,14 +946,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   <h6 className="mb-1">{t("ChordProStylesColorSection")}</h6>
                   <p className="text-muted mb-0">{t("ChordProStylesThemeOnlyHint")}</p>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => {
-                    if (!confirmFactoryDefaultsReset()) return;
-                    resetThemeColors();
-                  }}
-                >
+                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetThemeColors)}>
                   {t("ChordProStylesResetThemeColors")}
                 </button>
               </div>
@@ -992,14 +993,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                   <h6 className="mb-1">{t("ChordProStylesDirectiveSection")}</h6>
                   <p className="text-muted mb-0">{t("ChordProStylesDirectiveHelp")}</p>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => {
-                    if (!confirmFactoryDefaultsReset()) return;
-                    resetDirectiveStyles();
-                  }}
-                >
+                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetDirectiveStyles)}>
                   {t("ChordProStylesResetDirectiveStyles")}
                 </button>
               </div>

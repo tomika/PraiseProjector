@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 // Import language files
 import enStrings from "./strings.en.json";
@@ -124,19 +124,24 @@ export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [language, languageSetting]);
 
-  const setLanguageSetting = (lang: LanguageSetting) => {
+  const setLanguageSetting = useCallback((lang: LanguageSetting) => {
     setLanguageSettingState(lang);
-  };
+  }, []);
 
-  const getString = (key: StringKey): string => {
+  const getString = useCallback((key: StringKey): string => {
     return translations[language][key] || translations.en[key] || key;
-  };
+  }, [language]);
 
   // Short alias for getString
   const t = getString;
 
+  const contextValue = useMemo(
+    () => ({ language, languageSetting, setLanguageSetting, getString, t }),
+    [language, languageSetting, setLanguageSetting, getString, t]
+  );
+
   return (
-    <LocalizationContext.Provider value={{ language, languageSetting, setLanguageSetting, getString, t }}>{children}</LocalizationContext.Provider>
+    <LocalizationContext.Provider value={contextValue}>{children}</LocalizationContext.Provider>
   );
 };
 
