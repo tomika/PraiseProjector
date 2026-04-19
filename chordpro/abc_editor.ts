@@ -11,6 +11,7 @@
 import { mount, type AbcEditor, type LocaleId } from "abc-gui";
 import "abc-gui/style.css";
 import { chordMap } from "./allchords";
+import { getChordSystem, type ChordSystemCode } from "./chordpro_base";
 
 const NOTE_BASE_MIDI: Record<string, number> = {
   C: 60,
@@ -179,6 +180,7 @@ export class AbcWysiwygEditor {
         this.currentAbc = abc;
       },
       chordEditor: (seed) => this.invokeChordEditor(seed),
+      chordVerifier: (chordName, useGermanAlphabet) => this.verifyChord(chordName, useGermanAlphabet),
       abcjsOptions: {
         germanAlphabet,
         jazzchords: true,
@@ -238,6 +240,11 @@ export class AbcWysiwygEditor {
         resolve({ chordName, chordMidiValues: chordToMidi(chordName) });
       });
     });
+  }
+
+  private verifyChord(chordName: string, germanAlphabet: boolean): boolean {
+    const systemCode: ChordSystemCode = germanAlphabet ? "G" : "S";
+    return getChordSystem(systemCode).identifyChord(chordName) !== null;
   }
 
   private L(s: string): string {
