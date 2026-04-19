@@ -3,7 +3,8 @@ import { Song } from "../../../db-common/Song";
 import { Icon, IconType } from "../../services/IconService";
 import { ensureChordProAssets } from "../../utils/loadChordProAssets";
 import { Settings } from "../../types";
-import { useLocalization, StringKey } from "../../localization/LocalizationContext";
+import { useLocalization, StringKey, Language } from "../../localization/LocalizationContext";
+import { useTooltips, TooltipKey } from "../../localization/TooltipContext";
 import { Database } from "../../../db-common/Database";
 import "./ChordProEditor.css";
 
@@ -26,6 +27,8 @@ interface ChordProEditorProps {
   // Original song text for comparison (to detect changes)
   originalText?: string;
   t?: (key: StringKey) => string; // Localization function injected by HOC
+  tt?: (key: TooltipKey) => string | undefined; // Tooltip function injected by HOC
+  language?: Language; // Active UI language injected by HOC (for ABC editor locale)
 }
 
 interface ChordProEditorState {
@@ -67,6 +70,8 @@ type ChordProAPIBound = {
   getUnknownChords: () => string;
   dispose: () => void;
   installLocaleHandler: (handler: (s: string) => string) => void;
+  installTooltipHandler: (handler: (key: string) => string | undefined) => void;
+  setAbcLocale: (locale: Language) => void;
   darkMode: (dark: boolean) => void;
   refreshDisplayProps: () => void;
   setStyles: (styles: Settings["chordProStyles"] | null) => void;
@@ -211,6 +216,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
     if (prevProps.forceThemeMode !== this.props.forceThemeMode) {
       this.applyDarkModeToEditor();
+    }
+
+    if (prevProps.language !== this.props.language && this.props.language) {
+      this.getBoundChordProAPI()?.setAbcLocale?.(this.props.language);
     }
   }
 
@@ -461,9 +470,19 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         // Install locale handler for context menu strings — reads this.props.t
         // on each call so it picks up language changes without reinstalling.
         boundChordApi?.installLocaleHandler?.((s: string) => {
-          const key = ("ChpMenu" + s.replace(/ /g, "")) as StringKey;
+          const key = s.replace(/ /g, "") as StringKey;
           return this.props.t?.(key) ?? s;
         });
+
+        // Install tooltip handler for ABC editor toolbar
+        boundChordApi?.installTooltipHandler?.((key: string) => {
+          return this.props.tt?.(key as TooltipKey);
+        });
+
+        // Propagate active UI language to the ABC editor so it renders in hu/en.
+        if (this.props.language) {
+          boundChordApi?.setAbcLocale?.(this.props.language);
+        }
       }
     } catch (error) {
       console.error("Editor", "Error initializing database with editor data", error);
@@ -1061,9 +1080,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 }
 
 // HOC to inject localization into class component
-const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<ChordProEditorProps, "t">>((props, ref) => {
-  const { t } = useLocalization();
-  return <ChordProEditor {...props} t={t} ref={ref as React.Ref<ChordProEditor>} />;
+const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<ChordProEditorProps, "t" | "tt" | "language">>((props, ref) => {
+  const { t, language } = useLocalization();
+  const { tt } = useTooltips();
+  return <ChordProEditor {...props} t={t} tt={tt} language={language} ref={ref as React.Ref<ChordProEditor>} />;
 });
 
 ChordProEditorWithLocalization.displayName = "ChordProEditorWithLocalization";

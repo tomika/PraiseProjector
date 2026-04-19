@@ -22,6 +22,7 @@ interface ChordProAPI {
   updateDocument?(text: string): void;
   dispose?(): void;
   installLocaleHandler?(handler: (s: string) => string): void;
+  installTooltipHandler?(handler: (key: string) => string | undefined): void;
   darkMode?(dark: boolean): void;
   refreshDisplayProps?(): void;
 }

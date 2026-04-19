@@ -60,10 +60,33 @@ export class ChordSelector {
   private inModalState = false;
   private readOnly = false;
   private onCloseCallback?: (chord?: string) => void;
+  private onCloseOnceCallback?: (chord?: string) => void;
   private applyButton: HTMLInputElement | null = null;
   private musicChordBoxDivName = "musicChordBox";
   private darkMode = false;
   private themeRefreshHandle: number | null = null;
+  private openedChord = "";
+
+  private normalizeChordInput(chord: string | undefined) {
+    return (chord ?? "").replace(/[♯＃]/g, "#").replace(/[♭]/g, "b").replace(/\s+/g, " ").trim();
+  }
+
+  private syncCanvasSize(canvas: HTMLCanvasElement | null) {
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(0, Math.round(rect.width));
+    const h = Math.max(0, Math.round(rect.height));
+    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+
+  private syncCanvasSizes() {
+    this.syncCanvasSize(this.musicChordBox);
+    this.syncCanvasSize(this.guitarChordBox);
+    this.syncCanvasSize(this.pianoChordBox);
+  }
 
   public setDarkMode(dark: boolean) {
     if (this.darkMode !== dark) this.darkMode = dark;
@@ -231,7 +254,7 @@ export class ChordSelector {
 
     if (options.closeSelector) {
       const elem = document.getElementById(options.closeSelector);
-      if (elem) elem.onclick = () => this.closeDialog();
+      if (elem) elem.onclick = () => this.closeDialog(false, true);
     }
 
     if (options.applySelector) {
@@ -456,6 +479,7 @@ export class ChordSelector {
   }
 
   private identifyChord(chord: string, createUnknown?: boolean) {
+    chord = this.normalizeChordInput(chord);
     let info = this.system.identifyChord(chord);
     if (!info && createUnknown) {
       let desc: string | null = null;
@@ -578,6 +602,7 @@ export class ChordSelector {
   }
 
   private updateForm(chord: string) {
+    chord = this.normalizeChordInput(chord);
     const info = this.identifyChord(chord, true);
     if (info) {
       this.setBaseNote(info.baseNote);
@@ -679,9 +704,10 @@ export class ChordSelector {
     return chord;
   }
 
-  showDialog(chord: string, readOnly: boolean, dark: boolean) {
+  showDialog(chord: string, readOnly: boolean, dark: boolean, onCloseOnce?: (chord?: string) => void) {
     this.inModalState = true;
     this.darkMode = dark;
+    this.onCloseOnceCallback = onCloseOnce;
 
     this.readOnly = !!readOnly;
     makeReadonly(this.selBaseNote, this.readOnly);
@@ -696,19 +722,48 @@ export class ChordSelector {
     this.parent.style.filter = "";
     this.applyTheme();
 
+    chord = this.normalizeChordInput(chord);
     if (chord) this.updateForm(chord);
+    this.openedChord = this.normalizeChord(this.updateFrom());
+
+    // When opening from a hidden state (or inside another modal), CSS layout can settle one
+    // or two frames later. Re-sync intrinsic canvas sizes to avoid crushed chord charts.
+    requestAnimationFrame(() => {
+      if (!this.inModalState) return;
+      this.syncCanvasSizes();
+      const refreshed = this.updateFrom();
+      if (refreshed) this.drawChord(refreshed, false);
+    });
   }
 
-  closeDialog(apply?: boolean) {
+  private normalizeChord(chord: string | undefined) {
+    return this.normalizeChordInput(chord).replace(/\s+/g, "");
+  }
+
+  private hasUnsavedChanges(currentChord: string) {
+    if (this.readOnly) return false;
+    return this.normalizeChord(currentChord) !== this.openedChord;
+  }
+
+  closeDialog(apply?: boolean, confirmDiscard = false) {
     if (!this.inModalState) return;
+    const chord = this.updateFrom();
+    if (!apply && confirmDiscard && this.hasUnsavedChanges(chord)) {
+      const ok = window.confirm("Discard chord changes?");
+      if (!ok) return;
+    }
     if (this.themeRefreshHandle != null) {
       window.clearTimeout(this.themeRefreshHandle);
       this.themeRefreshHandle = null;
     }
-    const chord = this.updateFrom();
     const details = this.identifyChord(chord);
-    if (this.onCloseCallback) this.onCloseCallback(apply && details ? chord : undefined);
+    const selected = apply && details ? chord : undefined;
+    const once = this.onCloseOnceCallback;
+    this.onCloseOnceCallback = undefined;
+    if (once) once(selected);
+    if (this.onCloseCallback) this.onCloseCallback(selected);
     this.parent.style.display = "none";
     this.inModalState = false;
+    this.openedChord = "";
   }
 }

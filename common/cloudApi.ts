@@ -601,11 +601,7 @@ export class CloudApiService {
     }
   }
 
-  async fetchDisplayStylesQuery(options?: {
-    leaderId?: string;
-    rev?: string;
-    signal?: AbortSignal;
-  }): Promise<DisplayStylesQueryResponse> {
+  async fetchDisplayStylesQuery(options?: { leaderId?: string; rev?: string; signal?: AbortSignal }): Promise<DisplayStylesQueryResponse> {
     let endpoint = "/display_styles_query";
     const params: string[] = [];
     if (options?.leaderId) params.push(`leader=${encodeURIComponent(options.leaderId)}`);
@@ -615,11 +611,7 @@ export class CloudApiService {
     return this.parseResponse(displayStylesQueryResponseCodec, response);
   }
 
-  async sendDisplayStylesUpdate(data: {
-    chordProStyles: ChordProStylesSettings;
-    chordProStylesRev?: string;
-    leaderId?: string;
-  }): Promise<string> {
+  async sendDisplayStylesUpdate(data: { chordProStyles: ChordProStylesSettings; chordProStylesRev?: string; leaderId?: string }): Promise<string> {
     const payload: Record<string, unknown> = {
       chordProStyles: data.chordProStyles,
     };

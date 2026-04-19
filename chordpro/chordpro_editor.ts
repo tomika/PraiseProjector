@@ -28,6 +28,7 @@ import { getKeyCodeString } from "./keycodes";
 import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
 import { Instrument, playChord, playMidiFile } from "./midi";
+import { AbcWysiwygEditor } from "./abc_editor";
 import { isVowel, knownVowelChars, removeDiacretics, simplifyString, splitTextToWords } from "../common/stringTools";
 import {
   arrayBufferToBase64,
@@ -541,6 +542,10 @@ export class ChordProEditor extends ChordDrawer {
 
   private chordBoxContainer: HTMLDivElement | null = null;
   private chordBoxElements = new Map<string, HTMLCanvasElement>();
+  private abcContainer: HTMLDivElement | null = null;
+  private abcDivElements = new Map<ChordProAbc, HTMLDivElement>();
+  private abcEditor: AbcWysiwygEditor | null = null;
+  private activeAbcBlock: ChordProAbc | null = null;
   private canvasResizeObserver: ResizeObserver | null = null;
   private lastCanvasOffsetWidth = 0;
 
@@ -552,6 +557,8 @@ export class ChordProEditor extends ChordDrawer {
 
   private midiPlayer?: ReturnType<typeof playMidiFile>;
   private localeHandler?: (s: string) => string;
+  private tooltipHandler?: (key: string) => string | undefined;
+  private abcLocale: "en" | "hu" = "en";
 
   log(s: string) {
     if (this.onLog) this.onLog(s.toString());
@@ -704,6 +711,32 @@ export class ChordProEditor extends ChordDrawer {
     this.chordBoxContainer.style.pointerEvents = "none";
     this.chordBoxElements.clear();
 
+    // Create abc container for HTML-based abcjs notation display
+    const existingAbcContainer = this.parent_div.querySelector(".chordpro-abc-container") as HTMLDivElement | null;
+    if (existingAbcContainer) {
+      this.abcContainer = existingAbcContainer;
+      this.abcContainer.innerHTML = "";
+    } else {
+      this.abcContainer = document.createElement("div");
+      this.abcContainer.className = "chordpro-abc-container";
+      this.parent_div.insertBefore(this.abcContainer, this.canvas);
+    }
+    this.abcContainer.style.position = "absolute";
+    this.abcContainer.style.left = "0";
+    this.abcContainer.style.top = "0";
+    this.abcContainer.style.width = "0";
+    this.abcContainer.style.height = "0";
+    this.abcContainer.style.background = "transparent";
+    this.abcContainer.style.overflow = "visible";
+    this.abcContainer.style.zIndex = "1";
+    this.abcContainer.style.pointerEvents = "none";
+    if (this.abcEditor) {
+      this.abcEditor.dispose();
+      this.abcEditor = null;
+    }
+    this.activeAbcBlock = null;
+    this.abcDivElements.clear();
+
     this.parent_div.addEventListener("scroll", this.updateChordStripPosition);
 
     const computedPosition = getComputedStyle(this.parent_div).position;
@@ -826,8 +859,17 @@ export class ChordProEditor extends ChordDrawer {
     this.draw();
   }
 
-  private localize(s: string) {
-    return this.localeHandler?.(s.replace(/_/g, " ")) ?? s;
+  installTooltipHandler(handler: (key: string) => string | undefined) {
+    this.tooltipHandler = handler;
+  }
+
+  setAbcLocale(locale: "en" | "hu") {
+    this.abcLocale = locale;
+    this.abcEditor?.setLocale(locale);
+  }
+
+  private localize(s: string, prefix = "ChpMenu"): string {
+    return this.localeHandler?.(prefix + s.replace(/_/g, " ")) ?? s;
   }
 
   /**
@@ -946,6 +988,18 @@ export class ChordProEditor extends ChordDrawer {
       this.chordBoxContainer = null;
     }
     this.chordBoxElements.clear();
+
+    // Clean up abc container and editors
+    if (this.abcEditor) {
+      this.abcEditor.dispose();
+      this.abcEditor = null;
+    }
+    this.activeAbcBlock = null;
+    if (this.abcContainer) {
+      this.abcContainer.remove();
+      this.abcContainer = null;
+    }
+    this.abcDivElements.clear();
 
     // Clean up mobile input proxy textarea
     if (this.textarea) {
@@ -1411,9 +1465,12 @@ export class ChordProEditor extends ChordDrawer {
       if (e.target instanceof Node && this.chordSelector.parent.contains(e.target)) {
         return;
       }
-      this.chordSelector.closeDialog();
+      this.chordSelector.closeDialog(false, true);
       return;
     }
+
+    // Block canvas interaction while ABC editor modal is open
+    if (this.abcEditor?.isOpen) return;
 
     const targetInMeta = !!(this.metaContainer && e.target instanceof Node && this.metaContainer.contains(e.target));
     if (!targetInMeta) {
@@ -1640,7 +1697,7 @@ export class ChordProEditor extends ChordDrawer {
       if (e.target instanceof Node && this.chordSelector.parent.contains(e.target)) {
         return;
       }
-      this.chordSelector.closeDialog();
+      this.chordSelector.closeDialog(false, true);
       return;
     }
 
@@ -1664,8 +1721,67 @@ export class ChordProEditor extends ChordDrawer {
     }
 
     this.focus();
+    // Check if double-click is on an ABC block
+    if (this.checkAbcHit(e)) return;
     this.checkChordBoxOrTemplateHit(e);
     this.lastMouseDown = null;
+  }
+
+  private checkAbcHit(e: MouseEvent): boolean {
+    const box = this.HitTest(e);
+    if (box instanceof AbcHitBox) {
+      this.openAbcEditor(box.abc);
+      return true;
+    }
+    return false;
+  }
+
+  private openAbcEditor(abc: ChordProAbc) {
+    // Lazily create the single reusable modal editor
+    if (!this.abcEditor) {
+      this.abcEditor = new AbcWysiwygEditor(
+        this.parent_div,
+        {
+          onAbcTextChanged: (newText) => {
+            if (!this.activeAbcBlock) return;
+            const newLines = newText.split("\n");
+            (this.activeAbcBlock as unknown as { lines: string[] }).lines.splice(0, Infinity, ...newLines);
+            if (this.onChange) {
+              const currentText = this.chordProCode;
+              if (this.prevText !== currentText) this.onChange((this.prevText = currentText));
+            }
+            this.draw();
+          },
+          onClose: () => {
+            this.activeAbcBlock = null;
+          },
+          onOpenChordSelector: (currentChord, onSelected) => {
+            if (!this.chordSelector) {
+              onSelected(undefined);
+              return;
+            }
+            // Raise the chord selector above the ABC editor backdrop while the
+            // ABC editor is open (its backdrop sits at z-index 1060). Restore the
+            // original z-index once the selector is dismissed.
+            const selectorHost = document.getElementById("chordsel") as HTMLElement | null;
+            const prevZ = selectorHost?.style.zIndex ?? "";
+            if (selectorHost) selectorHost.style.zIndex = "1070";
+            this.chordSelector.showDialog(currentChord || "C", this.readOnly, this.isDark, (chord) => {
+              if (selectorHost) selectorHost.style.zIndex = prevZ;
+              onSelected(chord);
+            });
+          },
+        },
+        this.isDark,
+        (s) => this.localize(s, "ChpAbc"),
+        (key) => this.tooltipHandler?.(key),
+        this.abcLocale
+      );
+    } else {
+      this.abcEditor.setDark(this.isDark);
+    }
+    this.activeAbcBlock = abc;
+    this.abcEditor.open(abc.getAbc(), this.chordPro?.system.systemCode === "G");
   }
 
   private checkChordBoxOrTemplateHit(e: MouseEvent) {
@@ -3666,8 +3782,6 @@ export class ChordProEditor extends ChordDrawer {
     const noSectionDup = this.readOnly && (this.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
 
     const abcScale = 2 / 3;
-    const abcs = this.parent_div.getElementsByClassName("abc");
-    for (let i = 0; i < abcs.length; ++i) abcs.item(i)?.remove();
     const calcStaffWith = (maxWidth: number) => maxWidth - leftMargin - horizontalSeparation;
     const abcRender = (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => {
       const options = {
@@ -3676,7 +3790,7 @@ export class ChordProEditor extends ChordDrawer {
         paddingleft: 0,
         paddingright: 0,
         staffwidth: calcStaffWith(maxWidth),
-        dragging: !this.readOnly,
+        dragging: false,
         currentColor: this.isDark ? "white" : "black",
       };
       if (!abcDiv) return line_obj.generateImage(options);
@@ -3684,6 +3798,8 @@ export class ChordProEditor extends ChordDrawer {
       return null;
     };
 
+    type PendingAbcElement = { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number };
+    const pendingAbcEntries: PendingAbcElement[] = [];
     const abcElements = new Map<ChordProAbc, HTMLDivElement | null>();
 
     for (let i = 0; i < lines.length; ++i) {
@@ -3700,29 +3816,38 @@ export class ChordProEditor extends ChordDrawer {
         if (line_obj.isComment) line_height += this.displayProps.chordLineHeight / 2;
         else if (line_obj instanceof ChordProAbc) {
           const topOffset = this.displayProps.chordLineHeight;
-          if (this.scale === 1) {
-            const abcDiv = document.createElement("div");
-            abcDiv.className = "abc";
-            abcRender(line_obj, this.parent_div.getBoundingClientRect().width, abcDiv);
-            this.parent_div.appendChild(abcDiv);
-            line_height = abcScale * abcDiv.getBoundingClientRect().height - topOffset;
-            abcDiv.style.left = leftMargin + "px";
-            abcDiv.style.top = y + "px";
-            abcDiv.style.transform = `scale(${abcScale})`;
-            abcDiv.style.pointerEvents = this.readOnly ? "none" : "auto";
-            makeDark(abcDiv, this.isDark);
-            abcElements.set(line_obj, abcDiv);
+          // Render abc content into a DOM div for measurement; will be positioned in abcContainer later.
+          const abcDiv = document.createElement("div");
+          abcDiv.className = "abc";
+          // Use logical canvas width (canvas.width is the pixel buffer = logical * this.scale;
+          // _draw runs with ctx.setTransform(this.scale,...) so coordinates here are logical)
+          const logicalCanvasWidth = this.canvas.width / this.scale;
+          const abcMaxWidth = (logicalCanvasWidth - leftMargin) / abcScale + leftMargin + horizontalSeparation;
+          abcRender(line_obj, abcMaxWidth, abcDiv);
+          // Measure height using the abcContainer (already in the DOM) to minimize reflows
+          abcDiv.style.position = "absolute";
+          abcDiv.style.visibility = "hidden";
+          if (this.abcContainer) {
+            this.abcContainer.appendChild(abcDiv);
           } else {
-            const img = abcRender(line_obj, this.parent_div.getBoundingClientRect().width);
-            if (img) line_height = abcScale * img.height - topOffset;
-            abcElements.set(line_obj, null);
+            this.parent_div.appendChild(abcDiv);
           }
+          // Undo any inherited overlay transform so ABC block height is based on
+          // logical canvas units and stays stable when client scaling changes.
+          const overlayScale = this.getOverlayScale();
+          const normalizedOverlayScale = Number.isFinite(overlayScale) && overlayScale > 0 ? overlayScale : 1;
+          const measuredHeight = abcDiv.getBoundingClientRect().height / normalizedOverlayScale;
+          abcDiv.style.visibility = "";
+          line_height = abcScale * measuredHeight - topOffset;
+          pendingAbcEntries.push({ line_obj, abcDiv, y });
+          abcElements.set(line_obj, abcDiv);
           y += topOffset;
         }
 
+        const suppressTagLabel = line_obj instanceof ChordProAbc;
         const info = line_obj.getTagInfo(this.differentialDisplay),
-          infoName = info.name;
-        let tag = info.tag;
+          infoName = suppressTagLabel ? "" : info.name;
+        let tag = suppressTagLabel ? "" : info.tag;
 
         // tslint:disable-next-line: no-bitwise
         if (!this.readOnly || (this.chordFormat & CHORDFORMAT_NOCHORDS) === 0) {
@@ -4238,23 +4363,26 @@ export class ChordProEditor extends ChordDrawer {
     totalSize.height += this.displayProps.verticalMargin;
 
     if (this.scale !== 1 && this.readOnly) {
-      for (const [line_obj, abcDiv] of abcElements.entries()) {
-        abcDiv?.remove();
-        const img = abcRender(line_obj, totalSize.width);
-        if (img) {
-          ctx.save();
-          try {
-            ctx.transform(abcScale, 0, 0, abcScale, 0, 0);
-            ctx.drawImage(img, leftMargin, line_obj.yRange.top);
-            this.boxes.push(new AbcHitBox(leftMargin, line_obj.yRange.top, totalSize.width - leftMargin, line_obj.yRange.bottom, line_obj));
-          } finally {
-            ctx.restore();
-          }
-        }
+      for (const [line_obj] of abcElements.entries()) {
+        this.boxes.push(
+          new AbcHitBox(leftMargin, line_obj.yRange.top, totalSize.width - leftMargin, line_obj.yRange.bottom - line_obj.yRange.top, line_obj)
+        );
+      }
+    } else if (!this.readOnly) {
+      // In edit mode, create hit boxes for ABC blocks so double-click opens the editor
+      for (const [line_obj] of abcElements.entries()) {
+        this.boxes.push(
+          new AbcHitBox(leftMargin, line_obj.yRange.top, totalSize.width - leftMargin, line_obj.yRange.bottom - line_obj.yRange.top, line_obj)
+        );
       }
     }
 
-    // --- Phase 2: Update metadata HTML elements ---
+    // --- Phase 2: Update abc HTML elements in dedicated container ---
+    // Use logical canvas width (see abcMaxWidth above) so client (scale > 1) doesn't oversize the SVG.
+    const abcRenderMaxWidth = (this.canvas.width / this.scale - leftMargin) / abcScale + leftMargin + horizontalSeparation;
+    this.updateAbcHTML(pendingAbcEntries, abcScale, leftMargin, abcRenderMaxWidth, abcRender);
+
+    // --- Phase 3: Update metadata HTML elements ---
     this.updateMetaHTML(pendingMeta, leftMargin, totalSize.width);
 
     // Ensure totalSize.height accounts for metadata area
@@ -4319,6 +4447,10 @@ export class ChordProEditor extends ChordDrawer {
       this.chordBoxContainer.style.transform = transform;
       this.chordBoxContainer.style.transformOrigin = "0 0";
     }
+    if (this.abcContainer) {
+      this.abcContainer.style.transform = transform;
+      this.abcContainer.style.transformOrigin = "0 0";
+    }
   }
 
   private syncOverlayRootLayout() {
@@ -4350,6 +4482,14 @@ export class ChordProEditor extends ChordDrawer {
       this.chordBoxContainer.style.width = "0";
       this.chordBoxContainer.style.height = "0";
       this.chordBoxContainer.style.overflow = "visible";
+    }
+
+    if (this.abcContainer) {
+      this.abcContainer.style.left = left + "px";
+      this.abcContainer.style.top = top + "px";
+      this.abcContainer.style.width = "0";
+      this.abcContainer.style.height = "0";
+      this.abcContainer.style.overflow = "visible";
     }
   }
 
@@ -4577,6 +4717,92 @@ export class ChordProEditor extends ChordDrawer {
       const currentValue = this.chordPro.getMeta(styleName);
       if (el.value.value !== currentValue) el.value.value = currentValue;
       this.updateMetaInputWidth(styleName, currentValue);
+    }
+  }
+
+  // ---- Abc notation HTML methods ----
+
+  private updateAbcHTML(
+    entries: { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number }[],
+    abcScale: number,
+    leftMargin: number,
+    contentWidth: number,
+    abcRender: (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => HTMLImageElement | null
+  ) {
+    if (!this.abcContainer) return;
+
+    this.syncOverlayRootLayout();
+
+    const scale = this.getOverlayScale();
+    this.abcContainer.style.transform = scale !== 1 ? `scale(${scale})` : "";
+    this.abcContainer.style.transformOrigin = "0 0";
+
+    const staleKeys = new Set(this.abcDivElements.keys());
+
+    for (const entry of entries) {
+      const { line_obj, abcDiv, y } = entry;
+      staleKeys.delete(line_obj);
+
+      // Reuse existing div if already in the container for this abc line, otherwise adopt the new one
+      let existingDiv = this.abcDivElements.get(line_obj);
+      if (existingDiv) {
+        // Re-render at the correct width for readonly views
+        if (this.readOnly) {
+          existingDiv.innerHTML = "";
+          abcRender(line_obj, contentWidth, existingDiv);
+        } else {
+          existingDiv.innerHTML = abcDiv.innerHTML;
+        }
+        // Remove the temporary measurement div if it's different from the reused one
+        if (abcDiv !== existingDiv && abcDiv.parentNode) {
+          abcDiv.remove();
+        }
+      } else {
+        existingDiv = abcDiv;
+        // Re-render at the correct width for readonly views
+        if (this.readOnly) {
+          existingDiv.innerHTML = "";
+          abcRender(line_obj, contentWidth, existingDiv);
+        }
+        // The div was already appended to abcContainer during measurement; just register it
+        if (!existingDiv.parentNode) {
+          this.abcContainer.appendChild(existingDiv);
+        }
+        this.abcDivElements.set(line_obj, existingDiv);
+      }
+
+      existingDiv.style.position = "absolute";
+      existingDiv.style.left = leftMargin + "px";
+      existingDiv.style.top = y + "px";
+      existingDiv.style.transform = `scale(${abcScale})`;
+      existingDiv.style.transformOrigin = "0 0";
+      existingDiv.style.pointerEvents = "none";
+      const svg = existingDiv.querySelector("svg");
+      if (svg instanceof SVGSVGElement) {
+        const attrWidth = Number.parseFloat(svg.getAttribute("width") ?? "");
+        const intrinsicWidth = Number.isFinite(attrWidth) && attrWidth > 0 ? attrWidth : svg.width.baseVal.value;
+        existingDiv.style.width = intrinsicWidth > 0 ? intrinsicWidth + "px" : "";
+      } else {
+        existingDiv.style.width = "";
+      }
+      makeDark(existingDiv, this.isDark);
+    }
+
+    // Remove stale elements (but never close the active ABC editor during a redraw)
+    for (const key of staleKeys) {
+      if (this.activeAbcBlock === key) {
+        if (this.abcEditor?.isOpen) {
+          // Keep the entry alive while the editor is open — the user is actively editing
+          continue;
+        }
+        this.abcEditor?.close(false);
+        this.activeAbcBlock = null;
+      }
+      const el = this.abcDivElements.get(key);
+      if (el) {
+        el.remove();
+        this.abcDivElements.delete(key);
+      }
     }
   }
 

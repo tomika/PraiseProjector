@@ -14,6 +14,7 @@ const buildModeStampFile = path.join(
 );
 const watchDirs = [
   path.join(projectRoot, "client"),
+  path.join(projectRoot, "chordpro"),
   path.join(projectRoot, "common"),
   path.join(projectRoot, "db-common"),
 ];

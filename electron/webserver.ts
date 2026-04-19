@@ -169,9 +169,7 @@ export class WebServer {
   }
 
   private getChordProStylesRev() {
-    return this.settings.chordProStyles
-      ? crypto.createHash("md5").update(JSON.stringify(this.settings.chordProStyles)).digest("hex")
-      : "";
+    return this.settings.chordProStyles ? crypto.createHash("md5").update(JSON.stringify(this.settings.chordProStyles)).digest("hex") : "";
   }
 
   private setupRoutes() {

@@ -214,3 +214,511 @@
     opacity: 0;
     pointer-events: none;
 }
+
+/* ---- ABC WYSIWYG Editor (Modal) ---- */
+
+.abc-editor-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1060;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.abc-wysiwyg-editor {
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    max-width: none;
+    max-height: 100%;
+    min-width: 0;
+    min-height: 0;
+    box-shadow: none;
+}
+
+.abc-wysiwyg-editor.dark {
+    background: #1e1e1e;
+    border-color: #555;
+    color: #ddd;
+}
+
+/* Header */
+.abc-editor-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #e0e0e0;
+    border-bottom: 1px solid #ccc;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.dark .abc-editor-header {
+    background: #333;
+    border-bottom-color: #555;
+}
+
+.abc-editor-header-btns {
+    display: flex;
+    gap: 6px;
+}
+
+.abc-apply-btn {
+    background: #28a745 !important;
+    color: #fff !important;
+    border-color: #218838 !important;
+}
+
+.abc-apply-btn:hover {
+    background: #218838 !important;
+}
+
+.abc-cancel-btn {
+    background: #dc3545 !important;
+    color: #fff !important;
+    border-color: #c82333 !important;
+}
+
+.abc-cancel-btn:hover {
+    background: #c82333 !important;
+}
+
+/* Toolbar */
+.abc-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 4px 6px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    align-items: center;
+    min-height: 32px;
+}
+
+.dark .abc-toolbar {
+    background: #2d2d2d;
+    border-bottom-color: #444;
+}
+
+.abc-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 5px;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.abc-toolbar-btn:hover {
+    background: #e8e8e8;
+    border-color: #999;
+}
+
+.abc-toolbar-btn.active {
+    background: #1E90FF;
+    color: #fff;
+    border-color: #1873CC;
+}
+
+.dark .abc-toolbar-btn {
+    background: #3c3c3c;
+    color: #ddd;
+    border-color: #555;
+}
+
+.dark .abc-toolbar-btn:hover {
+    background: #4a4a4a;
+    border-color: #777;
+}
+
+.dark .abc-toolbar-btn.active {
+    background: #1E90FF;
+    color: #fff;
+    border-color: #1873CC;
+}
+
+.abc-toolbar-sep {
+    display: inline-block;
+    width: 1px;
+    height: 20px;
+    background: #ccc;
+    margin: 0 4px;
+}
+
+.dark .abc-toolbar-sep {
+    background: #555;
+}
+
+/* Canvas (SVG render area) */
+.abc-canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 0;
+    min-width: 0;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: auto;
+    cursor: default;
+    outline: none;
+}
+
+.abc-canvas:focus {
+    outline: 2px solid #1E90FF;
+    outline-offset: -2px;
+}
+
+.abc-canvas svg {
+    max-width: 100%;
+}
+
+/* Playback highlight */
+.abc-canvas .abcjs-highlight {
+    fill: #1E90FF !important;
+}
+
+.dark .abc-canvas .abcjs-highlight {
+    fill: #4DB8FF !important;
+}
+
+/* Properties Panel */
+.abc-properties {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 0;
+    padding: 4px 10px;
+    background: #fafafa;
+    border-top: 1px solid #ddd;
+    min-height: 24px;
+    font-size: 12px;
+}
+
+.dark .abc-properties {
+    background: #252525;
+    border-top-color: #444;
+}
+
+.abc-props-empty {
+    color: #999;
+    font-style: italic;
+}
+
+.abc-prop-sep {
+    margin: 0 6px;
+    color: #ccc;
+    font-size: 11px;
+    user-select: none;
+}
+
+.dark .abc-prop-sep {
+    color: #555;
+}
+
+.abc-prop-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    white-space: nowrap;
+}
+
+.abc-prop-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.dark .abc-prop-label {
+    color: #aaa;
+}
+
+.abc-prop-value {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+}
+
+.abc-prop-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+}
+
+.abc-prop-btn:hover {
+    background: #e8e8e8;
+}
+
+.dark .abc-prop-btn {
+    background: #3c3c3c;
+    color: #ddd;
+    border-color: #555;
+}
+
+.abc-prop-dur-row {
+    gap: 3px;
+}
+
+.abc-prop-dur-btn {
+    min-width: 26px;
+    font-size: 14px;
+}
+
+.abc-prop-dur-btn.active {
+    background: #1E90FF;
+    color: #fff;
+    border-color: #1873CC;
+}
+
+.abc-prop-chord-value {
+    cursor: pointer;
+    border-bottom: 1px dashed #888;
+    padding: 0 2px;
+}
+
+.abc-prop-chord-value:hover {
+    background: #e8e8e8;
+}
+
+.dark .abc-prop-chord-value:hover {
+    background: #4a4a4a;
+}
+
+/* Status Bar */
+.abc-status-bar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0;
+    padding: 3px 10px;
+    background: #e8e8e8;
+    border-top: 1px solid #ddd;
+    font-size: 11px;
+    color: #555;
+    min-height: 20px;
+}
+
+.dark .abc-status-bar {
+    background: #1a1a1a;
+    border-top-color: #444;
+    color: #999;
+}
+
+.abc-status-item {
+    padding: 0 6px;
+}
+
+.abc-status-inline-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.abc-status-inline-label {
+    color: #666;
+}
+
+.dark .abc-status-inline-label {
+    color: #aaa;
+}
+
+.abc-status-edit-input {
+    min-width: 88px;
+    height: 18px;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1;
+    background: #fff;
+    color: #222;
+}
+
+.dark .abc-status-edit-input {
+    background: #2d2d2d;
+    border-color: #555;
+    color: #ddd;
+}
+
+.abc-status-edit-btn {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    background: #fff;
+    color: #333;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.abc-status-edit-btn:hover {
+    background: #e8e8e8;
+}
+
+.dark .abc-status-edit-btn {
+    background: #3c3c3c;
+    border-color: #555;
+    color: #ddd;
+}
+
+.dark .abc-status-edit-btn:hover {
+    background: #4a4a4a;
+}
+
+.abc-status-action {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+}
+
+.abc-status-action:hover {
+    color: #222;
+}
+
+.dark .abc-status-action:hover {
+    color: #fff;
+}
+
+.abc-status-sep {
+    color: #bbb;
+    padding: 0 2px;
+}
+
+.dark .abc-status-sep {
+    color: #555;
+}
+
+/* Tutorial Splash */
+.abc-splash-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.abc-splash-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px 24px;
+    max-width: 640px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.abc-splash-tutorial {
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.abc-splash-tutorial h1 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 10px 0 4px 0;
+}
+
+.abc-splash-tutorial h2 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 8px 0 3px 0;
+}
+
+.abc-splash-tutorial h3,
+.abc-splash-tutorial h4 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 6px 0 2px 0;
+}
+
+.abc-splash-tutorial p {
+    margin: 4px 0;
+}
+
+.abc-splash-tutorial ul,
+.abc-splash-tutorial ol {
+    margin: 4px 0 6px 0;
+    padding-left: 22px;
+}
+
+.abc-splash-tutorial li {
+    margin: 2px 0;
+}
+
+.dark .abc-splash-card {
+    background: #2a2a2a;
+    color: #ddd;
+}
+
+.abc-splash-title {
+    margin: 0 0 14px 0;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.abc-splash-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 18px 0;
+}
+
+.abc-splash-list li {
+    padding: 5px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.abc-splash-icon {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+
+.abc-splash-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}

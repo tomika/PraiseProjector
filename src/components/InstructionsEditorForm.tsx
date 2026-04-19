@@ -59,7 +59,7 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     if (!editor) return;
 
     editor.darkMode(document.documentElement.getAttribute("data-theme") === "dark");
-    editor.installLocaleHandler((s: string) => tRef.current(("ChpMenu" + s.replace(/ /g, "")) as StringKey));
+    editor.installLocaleHandler((s: string) => tRef.current(s.replace(/ /g, "") as StringKey));
 
     editorRef.current = editor;
 

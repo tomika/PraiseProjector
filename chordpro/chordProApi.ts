@@ -23,6 +23,8 @@ const editors = new Map<HTMLDivElement, ChordProEditor>();
 let chordSelector: ChordSelector | null = null;
 let chordSelectorHost: HTMLDivElement | null = null;
 let currentLocaleHandler: ((s: string) => string) | null = null;
+let currentTooltipHandler: ((key: string) => string | undefined) | null = null;
+let currentAbcLocale: "en" | "hu" = "en";
 
 function setActiveEditor(editorDiv: HTMLDivElement | null) {
   activeEditorDiv = editorDiv;
@@ -124,6 +126,10 @@ function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean
   if (currentLocaleHandler) {
     editor.installLocaleHandler(currentLocaleHandler);
   }
+  if (currentTooltipHandler) {
+    editor.installTooltipHandler(currentTooltipHandler);
+  }
+  editor.setAbcLocale(currentAbcLocale);
   return editor;
 }
 
@@ -275,6 +281,16 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (instance) instance.installLocaleHandler(handler);
     },
+    installTooltipHandler: (handler: (key: string) => string | undefined) => {
+      currentTooltipHandler = handler;
+      const instance = getBoundEditor();
+      if (instance) instance.installTooltipHandler(handler);
+    },
+    setAbcLocale: (locale: "en" | "hu") => {
+      currentAbcLocale = locale;
+      const instance = getBoundEditor();
+      if (instance) instance.setAbcLocale(locale);
+    },
     darkMode: (dark: boolean) => {
       const instance = getBoundEditor();
       if (instance) instance.darkMode(dark);
@@ -342,6 +358,14 @@ export const chordProAPI = {
   installLocaleHandler(handler: (s: string) => string) {
     currentLocaleHandler = handler;
     editors.forEach((editor) => editor.installLocaleHandler(handler));
+  },
+  installTooltipHandler(handler: (key: string) => string | undefined) {
+    currentTooltipHandler = handler;
+    editors.forEach((editor) => editor.installTooltipHandler(handler));
+  },
+  setAbcLocale(locale: "en" | "hu") {
+    currentAbcLocale = locale;
+    editors.forEach((editor) => editor.setAbcLocale(locale));
   },
   darkMode(dark: boolean) {
     const instance = getEditorInstance();

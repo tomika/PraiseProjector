@@ -128,9 +128,12 @@ export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setLanguageSettingState(lang);
   }, []);
 
-  const getString = useCallback((key: StringKey): string => {
-    return translations[language][key] || translations.en[key] || key;
-  }, [language]);
+  const getString = useCallback(
+    (key: StringKey): string => {
+      return translations[language][key] || translations.en[key] || key;
+    },
+    [language]
+  );
 
   // Short alias for getString
   const t = getString;
@@ -140,9 +143,7 @@ export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     [language, languageSetting, setLanguageSetting, getString, t]
   );
 
-  return (
-    <LocalizationContext.Provider value={contextValue}>{children}</LocalizationContext.Provider>
-  );
+  return <LocalizationContext.Provider value={contextValue}>{children}</LocalizationContext.Provider>;
 };
 
 // Hook to use localization
