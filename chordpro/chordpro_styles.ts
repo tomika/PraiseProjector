@@ -60,8 +60,12 @@ export type ChordProStylesSettings = {
 type PrefixLocalizer = (key: string) => string;
 
 export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayProperties {
-  // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px)
-  const rootPx = typeof document !== "undefined" ? parseFloat(document.documentElement.style.fontSize || "16") || 16 : 16;
+  // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px).
+  // Prefer computed style so this still works even when font size comes from CSS, not inline style.
+  const rootPx =
+    typeof document !== "undefined"
+      ? parseFloat(getComputedStyle(document.documentElement).fontSize || document.documentElement.style.fontSize || "16") || 16
+      : 16;
   const scale = rootPx / 16;
   const px = (base: number) => `${Math.round(base * scale)}px`;
   const lineH = (base: number) => Math.round(base * scale);

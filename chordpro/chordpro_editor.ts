@@ -109,6 +109,15 @@ function make_abbrev(full: string) {
   if (m) a += " " + m[2] + "x";
   return a;
 }
+
+function getRootFontSizePx(): number {
+  if (typeof document === "undefined") return 16;
+  const computed = parseFloat(getComputedStyle(document.documentElement).fontSize || "");
+  if (Number.isFinite(computed) && computed > 0) return computed;
+  const inline = parseFloat(document.documentElement.style.fontSize || "");
+  if (Number.isFinite(inline) && inline > 0) return inline;
+  return 16;
+}
 /*
 function parseTag(tag: string | DifferentialText) {
   const split = (s: string) => {
@@ -559,6 +568,7 @@ export class ChordProEditor extends ChordDrawer {
   private localeHandler?: (s: string) => string;
   private tooltipHandler?: (key: string) => string | undefined;
   private abcLocale: "en" | "hu" = "en";
+  private stylesBaseRootFontPx = getRootFontSizePx();
 
   log(s: string) {
     if (this.onLog) this.onLog(s.toString());
@@ -1066,9 +1076,45 @@ export class ChordProEditor extends ChordDrawer {
 
   setStyles(styles: ChordProStylesSettings | null) {
     this.customStyles = styles;
+    // Remember the root font size at which these styles were authored/applied.
+    this.stylesBaseRootFontPx = getRootFontSizePx();
     this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
     this.draw();
+  }
+
+  private scalePxTokens(value: string, factor: number): string {
+    if (!value || !Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 0.0001) return value;
+    return value.replace(/(\d+(?:\.\d+)?)px/gi, (_match, num) => {
+      const parsed = parseFloat(num);
+      if (!Number.isFinite(parsed)) return _match;
+      return `${Math.max(1, Math.round(parsed * factor))}px`;
+    });
+  }
+
+  private applyRootFontScale(display: ChordProDisplayProperties, directives: ChordProDirectiveStyles) {
+    const base = this.stylesBaseRootFontPx || 16;
+    const current = getRootFontSizePx();
+    if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(current) || current <= 0) return;
+    const factor = current / base;
+    if (Math.abs(factor - 1) < 0.0001) return;
+
+    display.tagFont = this.scalePxTokens(display.tagFont, factor);
+    display.chordFont = this.scalePxTokens(display.chordFont, factor);
+    display.lyricsFont = this.scalePxTokens(display.lyricsFont, factor);
+    display.commentBorder = this.scalePxTokens(display.commentBorder, factor);
+    display.chordLineHeight = Math.max(1, Math.round(display.chordLineHeight * factor));
+    display.lyricsLineHeight = Math.max(1, Math.round(display.lyricsLineHeight * factor));
+    display.chordLyricSep = Math.max(0, Math.round(display.chordLyricSep * factor));
+    display.chordBorder = Math.max(0, Math.round(display.chordBorder * factor));
+
+    for (const key of Object.keys(directives)) {
+      const style = directives[key];
+      if (!style) continue;
+      if (style.font) style.font = this.scalePxTokens(style.font, factor);
+      if (typeof style.height === "number") style.height = Math.max(0, Math.round(style.height * factor));
+      if (typeof style.indent === "number") style.indent = Math.max(0, Math.round(style.indent * factor));
+    }
   }
 
   private applyStylesForCurrentTheme() {
@@ -1102,6 +1148,10 @@ export class ChordProEditor extends ChordDrawer {
         ...value,
       };
     }
+
+    // Keep custom styles visually aligned with UI font-size changes at runtime.
+    this.applyRootFontScale(this.displayProps, mergedDirectiveStyles);
+
     this.directiveStyles = mergedDirectiveStyles;
   }
 
