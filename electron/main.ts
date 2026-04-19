@@ -51,11 +51,21 @@ app.setName(stableAppName);
 // compositor.  A window resize (F11 → setFullScreen) forces a full recompose and restores
 // hit-testing until the next occlusion event.
 //
-// CalculateNativeWinOcclusion: disables the Windows occlusion tracker (primary fix).
-// disable-renderer-backgrounding: prevents the renderer from being deprioritized on idle
-//   (belt-and-suspenders — harmless on all platforms).
-app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+// CalculateNativeWinOcclusion: disables the Windows occlusion tracker (fixes the
+//   "mouse dies after ~30 min, F11 wakes it up" bug).
+// IntensiveWakeUpThrottling: after ~5 min with a window considered "hidden" Chromium
+//   clamps setTimeout/setInterval to ~1 wake-up/minute. When the user comes back to the
+//   main window the timer/RAF queue has been starved, manifesting as sluggish UI and
+//   missed mouse clicks until a focus/resize event forces a reschedule.
+// disable-renderer-backgrounding: prevents the renderer process from being deprioritized.
+// disable-background-timer-throttling: stops the 1 Hz clamp on setTimeout/setInterval in
+//   backgrounded frames (per-process belt-and-suspenders for backgroundThrottling:false).
+// disable-backgrounding-occluded-windows: prevents Chromium from treating a covered
+//   window as backgrounded (e.g. when the fullscreen projector sits on top).
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 // Single-instance lock to prevent multiple app instances
 // Uses Electron's built-in lock (doesn't rely on file flags, survives process crashes)
@@ -494,6 +504,7 @@ function openPrintWindow(): void {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -819,6 +830,11 @@ const createWindow = () => {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      // Prevent Chromium from throttling timers/RAF when the window loses focus or is
+      // occluded. PraiseProjector runs long-lived long-polls and timers even while the
+      // operator works in other windows; without this the UI appears to freeze until a
+      // focus/resize event reschedules work.
+      backgroundThrottling: false,
     },
   });
 
@@ -1089,6 +1105,7 @@ ipcMain.handle("show-display-window", async (_event, displayId: string, imageDat
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   });
 
