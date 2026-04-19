@@ -1143,11 +1143,14 @@ ipcMain.handle("show-display-window", async (_event, displayId: string, imageDat
   });
 
   // Ensure the latest frame is applied once the display window DOM is ready.
+  // Windows can lag during fullscreen/open transitions — the first paint can land
+  // before the <img> src is actually honoured, leaving a black screen until the next
+  // display change. Re-apply the latest frame a few times to survive the transition.
+  // These repeated calls are cheap: updateDisplayWindowImage coalesces concurrent calls
+  // so at most one executeJavaScript is in flight at a time regardless of how many
+  // times we call it.
   displayWindow.webContents.once("did-finish-load", () => {
-    const latest = pendingDisplayWindowImageDataUrl ?? lastNetDisplaySourceImageDataUrl;
-    updateDisplayWindowImage(latest);
-
-    // Windows can lag during fullscreen/open transitions; re-apply latest frame a few times.
+    updateDisplayWindowImage(pendingDisplayWindowImageDataUrl ?? lastNetDisplaySourceImageDataUrl);
     const retryDelays = [50, 150, 350, 700, 1200];
     for (const delayMs of retryDelays) {
       setTimeout(() => {
@@ -1301,19 +1304,28 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
   }
 });
 
-// Update the Electron display window image directly from the main process
+// Update the Electron display window image directly from the main process.
+//
+// Uses a single-in-flight guard with "latest wins" semantics: if a new frame arrives
+// while executeJavaScript is still pending, we remember it and apply it as soon as the
+// current call resolves, dropping any intermediate frames. This prevents bursts of
+// updates (e.g. during fullscreen transitions or rapid display changes) from queuing up
+// dozens of executeJavaScript round-trips that would otherwise starve the main-process
+// event loop and make the operator UI feel unresponsive.
+let updateDisplayWindowImageInFlight = false;
 function updateDisplayWindowImage(pngDataUrl: string | null): void {
   if (!displayWindow || displayWindow.isDestroyed()) return;
-  if (displayWindow.webContents.isLoadingMainFrame()) {
-    pendingDisplayWindowImageDataUrl = pngDataUrl;
-    return;
-  }
   pendingDisplayWindowImageDataUrl = pngDataUrl;
+  if (displayWindow.webContents.isLoadingMainFrame()) return;
+  if (updateDisplayWindowImageInFlight) return;
+
+  const target = pendingDisplayWindowImageDataUrl;
+  updateDisplayWindowImageInFlight = true;
 
   const js = `(() => {
     const img = document.querySelector('img');
     if (!img) return false;
-    const src = ${JSON.stringify(pngDataUrl)};
+    const src = ${JSON.stringify(target)};
     if (src) {
       img.src = src;
     } else {
@@ -1322,22 +1334,38 @@ function updateDisplayWindowImage(pngDataUrl: string | null): void {
     return true;
   })();`;
 
-  const tryApply = (attempt = 0) => {
-    if (!displayWindow || displayWindow.isDestroyed()) return;
+  const tryApply = (attempt: number): void => {
+    if (!displayWindow || displayWindow.isDestroyed()) {
+      updateDisplayWindowImageInFlight = false;
+      return;
+    }
     displayWindow.webContents
       .executeJavaScript(js)
       .then((applied) => {
-        if (applied) return;
-        if (attempt >= 20) return;
-        setTimeout(() => tryApply(attempt + 1), 50);
+        if (applied || attempt >= 4) {
+          finish();
+          return;
+        }
+        setTimeout(() => tryApply(attempt + 1), 100);
       })
       .catch(() => {
-        if (attempt >= 20) return;
-        setTimeout(() => tryApply(attempt + 1), 50);
+        if (attempt >= 4) {
+          finish();
+          return;
+        }
+        setTimeout(() => tryApply(attempt + 1), 100);
       });
   };
 
-  tryApply();
+  const finish = () => {
+    updateDisplayWindowImageInFlight = false;
+    // If a newer frame arrived while we were pending, apply it now.
+    if (pendingDisplayWindowImageDataUrl !== target) {
+      updateDisplayWindowImage(pendingDisplayWindowImageDataUrl);
+    }
+  };
+
+  tryApply(0);
 }
 
 // Internal Electron display window image update (lossless frame)
