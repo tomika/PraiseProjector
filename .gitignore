@@ -59,6 +59,7 @@ android/keystore.properties
 *.bak
 public/app/pp-api.js
 public/app/pp-api.js.map
+public/app/pp-api.css
 public/app/pp-api.css.map
 public/app/pp-api.build-mode
 proxy-config.json
