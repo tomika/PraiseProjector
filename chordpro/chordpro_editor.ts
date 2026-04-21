@@ -382,6 +382,9 @@ export class ChordProEditor extends ChordDrawer {
   private removeTouchEvents: (() => void) | null = null;
   private lastMouseDownHadHit = false;
   private touchActive = false;
+  private suppressNextClickTs = false;
+  private lastTouchTapTime = 0;
+  private lastTouchTapPos: Point | null = null;
   private keyEventTarget: HTMLElement | null = null;
   private composing = false;
   private cursorBlinkHandle: number | null = null;
@@ -915,6 +918,7 @@ export class ChordProEditor extends ChordDrawer {
 
     const onTouchStart = (e: TouchEvent) => {
       if (isFormElement(e)) return;
+      this.suppressNextClickTs = true;
       dispatchMouse("mousedown", e.changedTouches[0]);
       // After onMouseDown ran, check if an interactive element was hit
       this.touchActive = this.lastMouseDownHadHit;
@@ -935,7 +939,52 @@ export class ChordProEditor extends ChordDrawer {
     const onTouchEnd = (e: TouchEvent) => {
       if (e.changedTouches.length !== 1) return;
       if (this.touchActive) {
-        dispatchMouse("mouseup", e.changedTouches[0]);
+        const touch = e.changedTouches[0];
+        dispatchMouse("mouseup", touch);
+
+        // Mobile browsers don't reliably emit dblclick; detect a local double-tap.
+        const now = Date.now();
+        const pos = this.lastMouseDown ?? this.normalizeClientPos(touch.clientX, touch.clientY);
+        const prev = this.lastTouchTapPos;
+        const isDoubleTap =
+          this.lastTouchTapTime > 0 &&
+          now - this.lastTouchTapTime <= 500 &&
+          !!prev &&
+          Math.abs(prev.x - pos.x) <= 32 &&
+          Math.abs(prev.y - pos.y) <= 32;
+
+        if (isDoubleTap) {
+          this.lastTouchTapTime = 0;
+          this.lastTouchTapPos = null;
+          const dbl = new MouseEvent("dblclick", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 0,
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            screenX: touch.screenX,
+            screenY: touch.screenY,
+          });
+          // Touch: open ABC editor directly when tapping an ABC block.
+          // Fallback to line-hit detection because readOnly modes may not
+          // have AbcHitBox entries.
+          const abcHit = this.checkAbcHitAtPos(pos);
+          const abcLineHit = abcHit ? false : this.checkAbcLineHitAtPos(pos);
+          if (abcHit || abcLineHit) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.touchActive = false;
+            return;
+          }
+          // Avoid readOnly MIDI double-tap path on mobile (it can fail in webviews
+          // and is unrelated to opening the ABC editor).
+          if (!this.readOnly) this.onDoubleClick(dbl);
+        } else {
+          this.lastTouchTapTime = now;
+          this.lastTouchTapPos = pos;
+        }
+
         e.preventDefault();
         e.stopPropagation();
       }
@@ -944,6 +993,9 @@ export class ChordProEditor extends ChordDrawer {
 
     const onTouchCancel = () => {
       this.touchActive = false;
+      this.suppressNextClickTs = false;
+      this.lastTouchTapTime = 0;
+      this.lastTouchTapPos = null;
     };
 
     this.parent_div.addEventListener("touchstart", onTouchStart, listenerOpts);
@@ -1493,7 +1545,9 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private updateMouseDownPos(e: MouseEvent, skipTs?: boolean) {
-    if (!skipTs) {
+    const suppressTs = !!skipTs || this.suppressNextClickTs;
+    this.suppressNextClickTs = false;
+    if (!suppressTs) {
       const now = Date.now();
       if (now < this.prevClickTime + 500) {
         this.prevClickTime = 0;
@@ -1561,7 +1615,9 @@ export class ChordProEditor extends ChordDrawer {
       return;
     }
 
-    this.updateMouseDownPos(e);
+    const skipTs = this.suppressNextClickTs;
+    this.suppressNextClickTs = false;
+    this.updateMouseDownPos(e, skipTs);
     if (this.readOnly) return true;
 
     // Don't call focus() here — it's called in onMouseUp.
@@ -1778,9 +1834,32 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private checkAbcHit(e: MouseEvent): boolean {
-    const box = this.HitTest(e);
+    return this.checkAbcHitAtPos(this.normalizeMousePos(e));
+  }
+
+  private checkAbcHitAtPos(mp: Point): boolean {
+    const box = this.HitTestCoords(mp);
     if (box instanceof AbcHitBox) {
       this.openAbcEditor(box.abc);
+      return true;
+    }
+    return false;
+  }
+
+  private checkAbcLineHit(e: MouseEvent): boolean {
+    return this.checkAbcLineHitAtPos(this.normalizeMousePos(e));
+  }
+
+  private checkAbcLineHitAtPos(mp: Point): boolean {
+    let line_obj: ChordProLine | null = null;
+    for (const candidate of this.displayedLines)
+      if (candidate.yRange && candidate.yRange.top <= mp.y && mp.y < candidate.yRange.bottom) {
+        line_obj = candidate;
+        break;
+      }
+
+    if (line_obj instanceof ChordProAbc) {
+      this.openAbcEditor(line_obj);
       return true;
     }
     return false;
@@ -2063,7 +2142,21 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   normalizeMousePos(e: MouseEvent) {
-    return this.normalizePos(e.offsetX, e.offsetY);
+    if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+      return this.normalizeClientPos(e.clientX, e.clientY);
+    }
+    if (Number.isFinite(e.offsetX) && Number.isFinite(e.offsetY)) {
+      return this.normalizePos(e.offsetX, e.offsetY);
+    }
+    return this.normalizeClientPos(e.clientX, e.clientY);
+  }
+
+  normalizeClientPos(clientX: number, clientY: number): Point {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const size = this.normalizeSize(x, y);
+    return { x: size.width, y: size.height };
   }
 
   initialChordValue(line_obj: ChordProLine, cursorPos: number) {
@@ -4969,12 +5062,10 @@ export class ChordProEditor extends ChordDrawer {
       // Disable pointer events on the strip during drag so mouse events reach the canvas
       if (this.chordStripContainer) this.chordStripContainer.style.pointerEvents = "none";
 
-      // Compute canvas-coordinate position from the HTML element's position
-      const divRect = div.getBoundingClientRect();
-      const parentRect = this.parent_div.getBoundingClientRect();
-      const overlayScale = this.getOverlayScale();
-      const x = (divRect.left - parentRect.left + this.parent_div.scrollLeft) / overlayScale;
-      const y = (divRect.top - parentRect.top + this.parent_div.scrollTop) / overlayScale;
+      // Anchor drag to the pointer position for both mouse and touch-routed mousedown.
+      const startPos = this.normalizeClientPos(e.clientX, e.clientY);
+      const x = startPos.x;
+      const y = startPos.y;
 
       const drawCtx = this.canvas.getContext("2d");
       let width = this.displayProps.chordLineHeight; // fallback
