@@ -85,7 +85,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
 
   // For History mode: track selected indices for left and right panels
   const [leftVersionIndex, setLeftVersionIndex] = useState(0);
-  const [rightVersionIndex, setRightVersionIndex] = useState(Math.min(1, songsToCompare.length - 1));
+  const [rightVersionIndex, setRightVersionIndex] = useState(Math.max(0, Math.min(1, songsToCompare.length - 1)));
 
   // In History mode, all versions are in songsToCompare (including current)
   // Left panel shows the version at leftVersionIndex, right shows rightVersionIndex
@@ -156,7 +156,10 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const compactRight = rightContent.replace(/[^\S\r\n]+/g, " ");
   const codeDiffChunks = diffWords(compactLeft, compactRight).filter((chunk) => chunk.value.length > 0);
   const hasDifferences = leftContent !== rightContent;
-  const showDiffActive = showDiff && hasDifferences;
+  const hasPreviousVersionInHistory = versionList.length > 1;
+  const hasPreviousVersionInSongCheck = !isSongCheckMode || !!originalSong;
+  const canShowDifferences = hasDifferences && (!isHistoryMode || hasPreviousVersionInHistory) && hasPreviousVersionInSongCheck;
+  const showDiffActive = showDiff && canShowDifferences;
 
   // Get the actual Song objects for group ID comparison
   const leftSong: Song | null = isHistoryMode ? getLeftSongForHistory() || null : isComparePairsMode ? currentPair?.left || null : originalSong;
@@ -393,7 +396,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   &lt;&lt;
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)} disabled={!hasDifferences}>
+              <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)} disabled={!canShowDifferences}>
                 {showDiffActive ? t("HideDifferences") : t("ShowDifferences")}
               </button>
               <button className="btn btn-secondary" onClick={() => setShowCode(!showCode)}>
