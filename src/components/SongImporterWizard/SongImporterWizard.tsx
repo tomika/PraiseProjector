@@ -147,6 +147,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   const chordSelectorRef = useRef<ChordSelector | null>(null);
   const chordDrawerRef = useRef<ChordDrawer | null>(null);
   const activeChordSelectorTargetRef = useRef<string | null>(null);
+  const processedInitialFilesKeyRef = useRef<string | null>(null);
 
   // Services
   const documentImporter = useRef(new DocumentImporter());
@@ -403,6 +404,12 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   useEffect(() => {
     if (!initialFiles || initialFiles.length === 0) return;
+
+    // Guard against effect re-runs caused by callback dependency identity changes.
+    // Re-process only when the incoming initial file batch actually changes.
+    const initialFilesKey = initialFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`).join("|");
+    if (processedInitialFilesKeyRef.current === initialFilesKey) return;
+    processedInitialFilesKeyRef.current = initialFilesKey;
 
     const supportedFiles = initialFiles.filter((file) => DocumentImporter.isSupportedFile(file.name));
     if (supportedFiles.length === 0) {
