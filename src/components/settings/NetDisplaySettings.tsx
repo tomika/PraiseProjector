@@ -3,6 +3,7 @@ import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useProjectorRenderDims } from "../../state/CurrentSongStore";
 import "./NetDisplaySettings.css";
+import SafeSlider from "../SafeSlider";
 
 interface NetDisplaySettingsProps {
   settings: Settings;
@@ -107,8 +108,7 @@ const NetDisplaySettings: React.FC<NetDisplaySettingsProps> = ({ settings, updat
           {t("NetDisplayJpegQuality")}
         </label>
         <div className="d-flex align-items-center gap-2">
-          <input
-            type="range"
+          <SafeSlider
             className="form-range flex-grow-1"
             id="netDisplayJpegQuality"
             min={1}
@@ -126,8 +126,7 @@ const NetDisplaySettings: React.FC<NetDisplaySettingsProps> = ({ settings, updat
       <div className="form-group">
         <label htmlFor="netDisplayImageScale">{t("NetDisplayImageScale")}</label>
         <div className="d-flex align-items-center gap-2">
-          <input
-            type="range"
+          <SafeSlider
             className="form-range flex-grow-1"
             id="netDisplayImageScale"
             min={10}
@@ -146,8 +145,7 @@ const NetDisplaySettings: React.FC<NetDisplaySettingsProps> = ({ settings, updat
       <div className="form-group">
         <label htmlFor="netDisplayTransient">{t("NetDisplayTransient")}</label>
         <div className="d-flex align-items-center gap-2">
-          <input
-            type="range"
+          <SafeSlider
             className="form-range flex-grow-1"
             id="netDisplayTransient"
             min={0}

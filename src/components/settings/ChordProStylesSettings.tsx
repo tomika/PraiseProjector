@@ -12,6 +12,7 @@ import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useMessageBox } from "../../contexts/MessageBoxContext";
 import ChordProEditor from "../ChordProEditor/ChordProEditor";
+import SafeSlider from "../SafeSlider";
 import "./ChordProStylesSettings.css";
 
 interface ChordProStylesSettingsProps {
@@ -328,7 +329,7 @@ const SliderField: React.FC<{
         <span>{label}</span>
         <span className="chordpro-styles-slider-value">{Math.round(clamped * 100) / 100}</span>
       </div>
-      <input type="range" className="form-range" min={min} max={max} step={step} value={clamped} onChange={(e) => onChange(Number(e.target.value))} />
+      <SafeSlider className="form-range" min={min} max={max} step={step} value={clamped} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 };

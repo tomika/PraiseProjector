@@ -3,6 +3,7 @@ import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { generateQRCodeSVG } from "../../hooks/useSessionUrl";
 import "./ProjectingSettings.css";
+import SafeSlider from "../SafeSlider";
 
 const MAX_MARGIN_SUM = 95;
 
@@ -521,9 +522,8 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
                   <label className="form-label mb-1" htmlFor="qrCodeSizeSlider">
                     {t("SettingsQRCodeSize")}
                   </label>
-                  <input
+                  <SafeSlider
                     id="qrCodeSizeSlider"
-                    type="range"
                     className="form-range"
                     min={1}
                     max={100}
@@ -540,9 +540,8 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
                   <label className="form-label mb-1" htmlFor="qrCodeXSlider">
                     {t("SettingsQRCodeX")}
                   </label>
-                  <input
+                  <SafeSlider
                     id="qrCodeXSlider"
-                    type="range"
                     className="form-range"
                     min={0}
                     max={100}
@@ -559,9 +558,8 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
                   <label className="form-label mb-1" htmlFor="qrCodeYSlider">
                     {t("SettingsQRCodeY")}
                   </label>
-                  <input
+                  <SafeSlider
                     id="qrCodeYSlider"
-                    type="range"
                     className="form-range"
                     min={0}
                     max={100}
@@ -595,8 +593,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
               <div className="shadow-controls mt-3 ps-4 border-start border-2 border-secondary">
                 <div className="form-group">
                   <label htmlFor="displayTextShadowOffset">{t("SettingsTextShadowOffset")}</label>
-                  <input
-                    type="range"
+                  <SafeSlider
                     className="form-range"
                     id="displayTextShadowOffset"
                     min={0}
@@ -612,8 +609,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
 
                 <div className="form-group mt-3">
                   <label htmlFor="displayTextShadowBlur">{t("SettingsTextShadowBlur")}</label>
-                  <input
-                    type="range"
+                  <SafeSlider
                     className="form-range"
                     id="displayTextShadowBlur"
                     min={0}
@@ -641,8 +637,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
 
                 <div className="form-group mt-3">
                   <label htmlFor="displayTextShadowOpacity">{t("SettingsTextShadowOpacity")}</label>
-                  <input
-                    type="range"
+                  <SafeSlider
                     className="form-range"
                     id="displayTextShadowOpacity"
                     min={0}

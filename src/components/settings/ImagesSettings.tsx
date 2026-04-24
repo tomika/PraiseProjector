@@ -4,6 +4,7 @@ import { useLocalization } from "../../localization/LocalizationContext";
 import { useMessageBox } from "../../contexts/MessageBoxContext";
 import { imageStorageService, StoredImage, formatBytes, ImageImportOptions, ImageImportProgress } from "../../services/ImageStorage";
 import "./ImagesSettings.css";
+import SafeSlider from "../SafeSlider";
 
 interface ImagesSettingsProps {
   settings: Settings;
@@ -412,9 +413,8 @@ const ImagesSettings: React.FC<ImagesSettingsProps> = ({ settings, updateSetting
               <label className="form-label mb-1" htmlFor="importQualitySlider">
                 {(t("ImportQuality") || "JPEG Quality") + ` (${importQuality}%)`}
               </label>
-              <input
+              <SafeSlider
                 id="importQualitySlider"
-                type="range"
                 min={1}
                 max={100}
                 step={1}
