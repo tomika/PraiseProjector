@@ -10,14 +10,7 @@
   max-height: 100vh;
   max-height: 100dvh;
   overflow: hidden;
-}
-
-/* Avoid mobile page scroll from vertical shell padding on a fixed-height root. */
-@media (max-width: 799px) and (orientation: portrait) {
-  .pp-app-shell {
-    padding-top: 0.5rem !important;
-    padding-bottom: 0 !important;
-  }
+  padding: 0 !important;
 }
 
 .h-100 {

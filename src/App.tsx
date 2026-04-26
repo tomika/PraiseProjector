@@ -2057,9 +2057,9 @@ const AppContent: React.FC = () => {
     leftPanelRef.current?.updatePlaylist(playlist.items);
   }, [showConfirmAsync, t, updateSettingWithAutoSave]);
 
-  // Use paging mode only on portrait orientation with narrow width
-  // Always use 3-panel layout in landscape mode
-  const usePagingMode = width < 800 && orientation === "portrait";
+  // Use paging mode whenever the client area is portrait or width is small.
+  // Always use 3-panel layout in landscape mode.
+  const usePagingMode = orientation === "portrait" || width < 768;
 
   // Refresh editor display when switching to editor tab in paging mode
   // This fixes dark mode rendering issues when the editor canvas was hidden
@@ -2086,7 +2086,7 @@ const AppContent: React.FC = () => {
       <ResponsiveFontSizeManager />
       <UpdateNotification />
       <DndProvider backend={HTML5Backend}>
-        <div className="container-fluid vh-100 d-flex flex-column py-3 pp-app-shell">
+        <div className="container-fluid vh-100 d-flex flex-column pp-app-shell">
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}
           <div style={{ display: usePagingMode ? "flex" : "none", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
             <div className="btn-group mb-2">
