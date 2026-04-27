@@ -27,18 +27,11 @@ import {
 import { getKeyCodeString } from "./keycodes";
 import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
-import { Instrument, playChord, playMidiFile } from "./midi";
+import { Instrument, playChord } from "./midi";
 import { AbcWysiwygEditor } from "./abc_editor";
+import { renderAbc, synth, TuneObjectArray } from "abcjs";
 import { isVowel, knownVowelChars, removeDiacretics, simplifyString, splitTextToWords } from "../common/stringTools";
-import {
-  arrayBufferToBase64,
-  createDivElement,
-  DifferentialText,
-  DiffTextPreProcessor,
-  makeDark,
-  VersionedMap,
-  virtualKeyboard,
-} from "../common/utils";
+import { createDivElement, DifferentialText, DiffTextPreProcessor, makeDark, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
 import { ChordDetails, Key, Mode } from "./note_system";
 import { UnicodeSymbol } from "../common/symbols";
@@ -69,6 +62,7 @@ export {
 type WrapChunkBase = { text: string; breakCost?: number; overlay?: Rectangle };
 type WrapChunk = WrapChunkBase & { x: number; width: number; line: ChordProLine };
 type WrapChunkLine = Rectangle & { chunks: WrapChunk[] };
+type MidiPlaybackState = { stop: () => void; playing: boolean; currentTime: number; endTime: number };
 
 const static_ChordProEditor_diacritics = [
   { char: "A", base: /[\u00c0-\u00c6]/g },
@@ -96,6 +90,102 @@ function remove_diacritics(str: string) {
 
 function is_word_boundary_char(ch: string) {
   return !/\b/gi.exec(remove_diacritics(ch));
+}
+
+function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unknown) => void): MidiPlaybackState {
+  const state: MidiPlaybackState = {
+    stop: () => {
+      // Replaced after synth initialization.
+    },
+    playing: false,
+    currentTime: 0,
+    endTime: 0,
+  };
+
+  let progressTimer: ReturnType<typeof setInterval> | null = null;
+  let startTime = 0;
+  const stopTimer = () => {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  };
+
+  const cleanupContainer = (container: HTMLDivElement) => {
+    if (container.parentElement) container.parentElement.removeChild(container);
+  };
+
+  try {
+    const renderContainer = document.createElement("div");
+    renderContainer.style.display = "none";
+    document.body.appendChild(renderContainer);
+
+    const rendered = renderAbc(renderContainer, abcSource, {
+      add_classes: false,
+      responsive: "resize",
+    }) as TuneObjectArray;
+
+    cleanupContainer(renderContainer);
+
+    const visualObj = rendered?.[0];
+    if (!visualObj) {
+      throw new Error("Could not render ABC for synth playback.");
+    }
+
+    const midiBuffer = new synth.CreateSynth();
+    const options = {
+      ...(isNaN(bpm) ? {} : { qpm: bpm }),
+    };
+
+    state.stop = () => {
+      stopTimer();
+      try {
+        midiBuffer.stop();
+      } catch {
+        // Ignore stop errors during teardown.
+      }
+      state.playing = false;
+      state.currentTime = Math.min(state.currentTime, state.endTime || state.currentTime);
+    };
+
+    void midiBuffer
+      .init({
+        visualObj,
+        options,
+        onEnded: () => {
+          stopTimer();
+          state.playing = false;
+          state.currentTime = state.endTime;
+        },
+      })
+      .then(() => midiBuffer.prime())
+      .then(({ duration }) => {
+        state.endTime = duration;
+        state.currentTime = 0;
+        startTime = performance.now();
+        state.playing = true;
+        midiBuffer.start();
+
+        progressTimer = setInterval(() => {
+          if (!state.playing) return;
+          const elapsedSeconds = (performance.now() - startTime) / 1000;
+          state.currentTime = Math.min(elapsedSeconds, state.endTime || elapsedSeconds);
+          if (state.endTime > 0 && state.currentTime >= state.endTime) {
+            state.playing = false;
+            stopTimer();
+          }
+        }, 100);
+      })
+      .catch((error) => {
+        state.playing = false;
+        stopTimer();
+        onError?.(error);
+      });
+  } catch (error) {
+    onError?.(error);
+  }
+
+  return state;
 }
 
 function make_abbrev(full: string) {
@@ -567,7 +657,7 @@ export class ChordProEditor extends ChordDrawer {
   private maxDrawTime = 0;
   private readonly rxStartsWithChord: RegExp;
 
-  private midiPlayer?: ReturnType<typeof playMidiFile>;
+  private midiPlayer?: MidiPlaybackState;
   private localeHandler?: (s: string) => string;
   private tooltipHandler?: (key: string) => string | undefined;
   private abcLocale: "en" | "hu" = "en";
@@ -1812,8 +1902,8 @@ export class ChordProEditor extends ChordDrawer {
       if (line_obj) {
         if (line_obj instanceof ChordProAbc) {
           if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
-            const midiFile = "base64," + arrayBufferToBase64(line_obj.generateMidi());
-            this.midiPlayer = playMidiFile(midiFile, parseInt(line_obj.doc.getMeta("tempo"), 10), (error) => {
+            const abcSource = line_obj.getAbc(true, false);
+            this.midiPlayer = playAbcWithSynth(abcSource, parseInt(line_obj.doc.getMeta("tempo"), 10), (error) => {
               console.error("Midifile playing error: " + error);
               this.midiPlayer = undefined;
             });

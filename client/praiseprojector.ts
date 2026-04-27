@@ -12,6 +12,7 @@ import {
   HighlightingParams,
 } from "../chordpro/chordpro_editor";
 import { ChordSelector } from "../chordpro/chord_selector";
+import { setMidiSoundfontUrl } from "../chordpro/midi";
 import { getKeyCodeString, isNumLockEnabled } from "../chordpro/keycodes";
 import { ChordDetails } from "../chordpro/note_system";
 import { cloudApi } from "../common/cloudApi";
@@ -73,6 +74,9 @@ type ResultCallback = (result: string, ppHeaders: { [key: string]: string }) => 
 type ErrorCallback = (error: Error) => void;
 
 const debugLog = false;
+const clientSoundfontUrl = "./soundfont/";
+
+setMidiSoundfontUrl(clientSoundfontUrl);
 
 type LeaderPlaylist = PlayList & { leaderId: string; leaderName: string };
 type LeaderPlaylistWithVersion = LeaderPlaylist & { version: number };

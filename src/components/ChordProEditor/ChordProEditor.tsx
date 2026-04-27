@@ -6,6 +6,7 @@ import { Settings } from "../../types";
 import { useLocalization, StringKey, Language } from "../../localization/LocalizationContext";
 import { useTooltips, TooltipKey } from "../../localization/TooltipContext";
 import { Database } from "../../../db-common/Database";
+import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 import "./ChordProEditor.css";
 
 interface ChordProEditorProps {
@@ -180,6 +181,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   }
 
   componentDidMount() {
+    const baseUrl = import.meta.env.BASE_URL || "/";
+    const soundfontUrl = `${baseUrl}app/soundfont/`;
+    setMidiSoundfontUrl(soundfontUrl);
+
     this.loadSong();
     this.prepareWysiwygHost();
     this.setupThemeObserver();
