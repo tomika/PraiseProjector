@@ -179,7 +179,7 @@ export class SectionGenerator {
 
           // Try to include extra lines - match C# exactly: for (int i = rem; i > 0; --i)
           for (let i = rem; i > 0; --i) {
-            const p = lines.slice(offset, offset + Math.min(part_len + rem, lines.length - offset)).join("\r\n");
+            const p = lines.slice(offset, offset + Math.min(part_len + i, lines.length - offset)).join("\r\n");
             const p2 = this.splitter.modifyString(
               p,
               settings.fontFamily,
@@ -203,8 +203,8 @@ export class SectionGenerator {
             if (pSize.height <= settings.renderRectHeight) {
               label = p;
               part = p2;
-              part_len += rem;
-              extra += rem;
+              part_len += i;
+              extra += i;
               break;
             }
           }
@@ -280,7 +280,15 @@ export class SectionGenerator {
       }
 
       if (split) {
-        items.push(...this.generateSections(s.text, s.block, settings, s.from, s.type, minimalFontSize));
+        const generated = this.generateSections(s.text, s.block, settings, s.from, s.type, minimalFontSize);
+
+        // Keep split ranges inside the source section range.
+        for (const section of generated) {
+          section.from = Math.max(s.from, Math.min(section.from, s.to));
+          section.to = Math.max(section.from + 1, Math.min(section.to, s.to));
+        }
+
+        items.push(...generated);
       } else {
         items.push({
           text: s.text,
