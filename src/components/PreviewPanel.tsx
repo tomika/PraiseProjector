@@ -49,6 +49,7 @@ export interface PreviewPanelMethods {
   selectSectionByLine: (lineNumber: number) => boolean;
   getSelectedSectionIndex: () => number;
   setSelectedSectionIndex: (index: number) => void;
+  setSectionListFocused: () => void;
 }
 
 // Section display modes matching C# SectionListBox.Item.Mode
@@ -531,6 +532,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               updateDisplayState(index, sections[index]);
             }
           }
+        },
+        setSectionListFocused: (): void => {
+          sectionListRef.current?.focus();
         },
       }),
       [sections, updateDisplayState, selectedSectionIndex, onSelectedSectionIndexChange]

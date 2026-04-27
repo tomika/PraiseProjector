@@ -803,6 +803,7 @@ const AppContent: React.FC = () => {
     if (settings?.sectionSelByEditorLineSel && editedSong?.Id === projectedSong?.Id) {
       if (previewPanelRef.current) {
         previewPanelRef.current.selectSectionByLine(lineNumber);
+        previewPanelRef.current.setSectionListFocused();
       }
     }
   };
