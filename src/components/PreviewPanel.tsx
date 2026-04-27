@@ -1197,6 +1197,31 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             e.preventDefault();
             break;
           }
+
+          case "Backspace": {
+            // set selection to first section of current block
+            if (selectedSectionIndex >= 0) {
+              const currentBlock = sections[selectedSectionIndex].block;
+              let i = selectedSectionIndex;
+              while (i >= 0 && sections[i].block === currentBlock) i--;
+              if (i + 1 < sections.length) {
+                onSelectedSectionIndexChange?.(i + 1);
+                if (sections[i + 1]) {
+                  updateDisplayState(i + 1, sections[i + 1]);
+                }
+              }
+            }
+            e.preventDefault();
+            break;
+          }
+
+          case "Escape": {
+            // Clear selection
+            onSelectedSectionIndexChange?.(-1);
+            updateCurrentDisplay({ from: 0, to: 0, section: -1 });
+            e.preventDefault();
+            break;
+          }
         }
       },
       [sections, selectedSectionIndex, nextSectionIndex, getNextCheckedIndex, toggleSectionCheck, updateDisplayState, onSelectedSectionIndexChange]
