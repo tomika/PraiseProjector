@@ -68,14 +68,74 @@
   min-height: 0;
 }
 
+.compare-panel-collapsed {
+  /* specificity bump via double-class so this beats .compare-view-with-diff .compare-panel */
+}
+
+.compare-panel.compare-panel-collapsed {
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  min-width: 0;
+  max-width: 2.5rem;
+}
+
+.compare-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.compare-panel-header label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 0;
+}
+
+.compare-panel-collapsed .compare-panel-header {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.compare-panel-collapsed .compare-panel-header .compare-panel-collapse-btn {
+  order: -1;
+}
+
+.compare-panel-collapsed .compare-panel-header label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  max-height: 12rem;
+  flex: 0 0 auto;
+  cursor: default;
+}
+
+.compare-panel-collapse-btn {
+  flex: 0 0 auto;
+  padding: 0.15rem 0.35rem;
+  line-height: 1;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.compare-panel-collapse-btn:hover {
+  opacity: 1;
+}
+
 .compare-panel label {
   font-weight: bold;
   margin-bottom: 0.5rem;
 }
 
 .diff-panel {
-  flex: 1;
-  max-width: 33%;
+  flex: 1 1 auto;
   min-height: 0;
 }
 

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { diffWords } from "diff";
 import { Song, SongChange } from "../../db-common/Song";
 import { Database } from "../../db-common/Database";
@@ -82,6 +83,10 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const [currentIndex, setCurrentIndex] = useState(initialPairIndex);
   const [showDiff, setShowDiff] = useState(false);
   const [showCode, setShowCode] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const autoCollapsedForDiffRef = useRef(false);
+  const preDiffCollapseStateRef = useRef<{ leftCollapsed: boolean; rightCollapsed: boolean } | null>(null);
 
   // For History mode: track selected indices for left and right panels
   const [leftVersionIndex, setLeftVersionIndex] = useState(0);
@@ -249,6 +254,25 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
     }
   };
 
+  const handleToggleDiff = () => {
+    const nextShowDiff = !showDiff;
+    const usePagingModeNow = window.innerHeight > window.innerWidth || window.innerWidth < 768;
+    if (nextShowDiff && canShowDifferences && usePagingModeNow) {
+      preDiffCollapseStateRef.current = { leftCollapsed, rightCollapsed };
+      autoCollapsedForDiffRef.current = true;
+      setLeftCollapsed(true);
+      setRightCollapsed(true);
+    } else if (!nextShowDiff) {
+      if (autoCollapsedForDiffRef.current && leftCollapsed && rightCollapsed && preDiffCollapseStateRef.current) {
+        setLeftCollapsed(preDiffCollapseStateRef.current.leftCollapsed);
+        setRightCollapsed(preDiffCollapseStateRef.current.rightCollapsed);
+      }
+      autoCollapsedForDiffRef.current = false;
+      preDiffCollapseStateRef.current = null;
+    }
+    setShowDiff(nextShowDiff);
+  };
+
   const renderHistoryVersionSelector = (selectedIndex: number, onChange: (index: number) => void, ariaLabel: string) => {
     return (
       <select
@@ -272,41 +296,68 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
     // Always hide toolbar/tabs in CompareDialog (like C# PreviewOnly) - this is a compare view, not an editor
     const usePreviewOnly = true;
 
+    const leftPanelLabel =
+      leftLabel ||
+      (isSongCheckMode
+        ? t("SongCheckCurrentVersion")
+        : isImportMode
+          ? t("SongToImport")
+          : isComparePairsMode
+            ? t("OriginalVersion")
+            : mode === "Conflict"
+              ? t("LocallyModifiedVersion")
+              : t("ActualSong"));
+
+    const rightPanelLabel =
+      rightLabel ||
+      (isSongCheckMode
+        ? t("SongCheckProposedVersion")
+        : isImportMode
+          ? t("SimilarSongInDatabase")
+          : isComparePairsMode
+            ? t("NewVersionOnServer")
+            : mode === "Conflict"
+              ? t("NewVersionOnServer")
+              : t("SimilarSongInDatabase"));
+
     return (
       <div className={`compare-view ${showDiffActive ? "compare-view-with-diff" : ""}`}>
         {/* Left panel - Original/Local version */}
-        <div className="compare-panel">
-          {isHistoryMode ? (
-            renderHistoryVersionSelector(leftVersionIndex, setLeftVersionIndex, t("LeftVersion"))
-          ) : (
-            <label>
-              {leftLabel ||
-                (isSongCheckMode
-                  ? t("SongCheckCurrentVersion")
-                  : isImportMode
-                    ? t("SongToImport")
-                    : isComparePairsMode
-                      ? t("OriginalVersion")
-                      : mode === "Conflict"
-                        ? t("LocallyModifiedVersion")
-                        : t("ActualSong"))}
-            </label>
-          )}
-          {groupIdChanged && renderGroupChangeBadge(leftGroupId, leftSong)}
-          {showCode ? (
-            <textarea className="compare-code-textarea" value={leftContent} readOnly wrap="off" aria-label="Left ChordPro Code" />
-          ) : (
-            <ChordProEditor
-              key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
-              song={new Song(leftContent)}
-              initialEditMode={editableInConflict}
-              previewOnly={usePreviewOnly}
-            />
-          )}
-          {mode === "Conflict" && !showDiffActive && (
-            <button className="btn btn-primary mt-2" onClick={handleSaveLeft}>
-              {leftButtonLabel || t("KeepThisOne")}
+        <div className={`compare-panel${leftCollapsed ? " compare-panel-collapsed" : ""}`}>
+          <div className="compare-panel-header">
+            {isHistoryMode && !leftCollapsed ? (
+              renderHistoryVersionSelector(leftVersionIndex, setLeftVersionIndex, t("LeftVersion"))
+            ) : (
+              <label title={leftPanelLabel}>{leftPanelLabel}</label>
+            )}
+            <button
+              className="btn btn-sm compare-panel-collapse-btn"
+              onClick={() => setLeftCollapsed((c) => !c)}
+              title={leftCollapsed ? t("Expand") : t("Collapse")}
+              aria-label={leftCollapsed ? t("Expand") : t("Collapse")}
+            >
+              {leftCollapsed ? "▶" : "◀"}
             </button>
+          </div>
+          {!leftCollapsed && (
+            <>
+              {groupIdChanged && renderGroupChangeBadge(leftGroupId, leftSong)}
+              {showCode ? (
+                <textarea className="compare-code-textarea" value={leftContent} readOnly wrap="off" aria-label="Left ChordPro Code" />
+              ) : (
+                <ChordProEditor
+                  key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
+                  song={new Song(leftContent)}
+                  initialEditMode={editableInConflict}
+                  previewOnly={usePreviewOnly}
+                />
+              )}
+              {mode === "Conflict" && !showDiffActive && (
+                <button className="btn btn-primary mt-2" onClick={handleSaveLeft}>
+                  {leftButtonLabel || t("KeepThisOne")}
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -337,38 +388,41 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
         )}
 
         {/* Right panel - Compared/Server version */}
-        <div className="compare-panel">
-          {isHistoryMode ? (
-            renderHistoryVersionSelector(rightVersionIndex, setRightVersionIndex, t("RightVersion"))
-          ) : (
-            <label>
-              {rightLabel ||
-                (isSongCheckMode
-                  ? t("SongCheckProposedVersion")
-                  : isImportMode
-                    ? t("SimilarSongInDatabase")
-                    : isComparePairsMode
-                      ? t("NewVersionOnServer")
-                      : mode === "Conflict"
-                        ? t("NewVersionOnServer")
-                        : t("SimilarSongInDatabase"))}
-            </label>
-          )}
-          {groupIdChanged && renderGroupChangeBadge(rightGroupId, rightSong)}
-          {showCode ? (
-            <textarea className="compare-code-textarea" value={rightContent} readOnly wrap="off" aria-label="Right ChordPro Code" />
-          ) : (
-            <ChordProEditor
-              key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
-              song={new Song(rightContent)}
-              initialEditMode={editableInConflict}
-              previewOnly={usePreviewOnly}
-            />
-          )}
-          {mode === "Conflict" && !showDiffActive && (
-            <button className="btn btn-primary mt-2" onClick={handleSaveRight}>
-              {rightButtonLabel || t("KeepThisOne")}
+        <div className={`compare-panel${rightCollapsed ? " compare-panel-collapsed" : ""}`}>
+          <div className="compare-panel-header">
+            <button
+              className="btn btn-sm compare-panel-collapse-btn"
+              onClick={() => setRightCollapsed((c) => !c)}
+              title={rightCollapsed ? t("Expand") : t("Collapse")}
+              aria-label={rightCollapsed ? t("Expand") : t("Collapse")}
+            >
+              {rightCollapsed ? "◀" : "▶"}
             </button>
+            {isHistoryMode && !rightCollapsed ? (
+              renderHistoryVersionSelector(rightVersionIndex, setRightVersionIndex, t("RightVersion"))
+            ) : (
+              <label title={rightPanelLabel}>{rightPanelLabel}</label>
+            )}
+          </div>
+          {!rightCollapsed && (
+            <>
+              {groupIdChanged && renderGroupChangeBadge(rightGroupId, rightSong)}
+              {showCode ? (
+                <textarea className="compare-code-textarea" value={rightContent} readOnly wrap="off" aria-label="Right ChordPro Code" />
+              ) : (
+                <ChordProEditor
+                  key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
+                  song={new Song(rightContent)}
+                  initialEditMode={editableInConflict}
+                  previewOnly={usePreviewOnly}
+                />
+              )}
+              {mode === "Conflict" && !showDiffActive && (
+                <button className="btn btn-primary mt-2" onClick={handleSaveRight}>
+                  {rightButtonLabel || t("KeepThisOne")}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -378,7 +432,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   // Arrows are only for read-only browsing flows.
   const showNavButtons = mode === "ViewOnly" || isComparePairsMode;
 
-  return (
+  const dialogContent = (
     <div className="modal-backdrop show compare-dialog-backdrop">
       <div className="modal d-block">
         <div className="modal-dialog modal-xl">
@@ -396,7 +450,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   &lt;&lt;
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={() => setShowDiff(!showDiff)} disabled={!canShowDifferences}>
+              <button className="btn btn-secondary" onClick={handleToggleDiff} disabled={!canShowDifferences}>
                 {showDiffActive ? t("HideDifferences") : t("ShowDifferences")}
               </button>
               <button className="btn btn-secondary" onClick={() => setShowCode(!showCode)}>
@@ -451,6 +505,10 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(dialogContent, document.body);
 };
 
 export default CompareDialog;

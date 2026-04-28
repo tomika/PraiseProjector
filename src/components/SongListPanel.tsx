@@ -19,6 +19,14 @@ import "./SongListPanel.css";
 
 let addSongToPlaylistCallback: ((song: Song) => void) | null = null;
 
+type PersistedHistoryDialogState = {
+  historyOriginalSong: Song;
+  historyVersions: Song[];
+  showHistoryDialog: true;
+};
+
+let persistedHistoryDialogState: PersistedHistoryDialogState | null = null;
+
 export const setAddSongToPlaylist = (callback: (song: Song) => void) => {
   addSongToPlaylistCallback = callback;
 };
@@ -370,6 +378,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
   constructor(props: SongListPanelProps) {
     super(props);
+    const restoredHistory = persistedHistoryDialogState;
     this.state = {
       filter: props.filter ?? "",
       categories: [],
@@ -384,9 +393,9 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       contextMenuY: 0,
       isLoadingHistory: false,
       expandedGroups: {},
-      historyOriginalSong: null,
-      historyVersions: [],
-      showHistoryDialog: false,
+      historyOriginalSong: restoredHistory?.historyOriginalSong ?? null,
+      historyVersions: restoredHistory?.historyVersions ?? [],
+      showHistoryDialog: restoredHistory?.showHistoryDialog ?? false,
       clipboardImportAvailable: false,
       showInlineSearchOptions: false,
     };
@@ -443,6 +452,16 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }
     window.removeEventListener("focus", this.handleWindowFocus);
     window.removeEventListener("resize", this.handleWindowResize);
+
+    // App switches between paging and 3-panel modes by remounting panel trees.
+    // Preserve open history compare dialog state so the dialog survives layout switches.
+    if (this.state.showHistoryDialog && this.state.historyOriginalSong && this.state.historyVersions.length > 0) {
+      persistedHistoryDialogState = {
+        historyOriginalSong: this.state.historyOriginalSong,
+        historyVersions: this.state.historyVersions,
+        showHistoryDialog: true,
+      };
+    }
   }
 
   componentDidUpdate(prevProps: SongListPanelProps, prevState: SongListPanelState) {
@@ -682,6 +701,11 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
           showHistoryDialog: true,
           isLoadingHistory: false,
         });
+        persistedHistoryDialogState = {
+          historyOriginalSong: selectedSong,
+          historyVersions: historySongs,
+          showHistoryDialog: true,
+        };
       } else {
         // No history available
         console.info("App", "This song has no history");
@@ -694,6 +718,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   handleHistoryDialogClose() {
+    persistedHistoryDialogState = null;
     this.setState({
       showHistoryDialog: false,
       historyOriginalSong: null,
