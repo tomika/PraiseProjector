@@ -63,6 +63,7 @@ npm run install:ble-peripheral
 - `@abandonware/bleno` is intentionally not part of the default dependency set.
 - The app runs without it; BLE peripheral mode is optional.
 - If you need BLE peripheral support for local testing, install it explicitly:
+- Bluetooth support is not ready yet
 
 ```bash
 npm run install:ble-peripheral
