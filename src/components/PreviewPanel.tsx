@@ -7,7 +7,7 @@ import { SectionGenerator, SectionItem, DisplaySettings } from "../utils/Section
 import { SectionRenderer, RenderSettings } from "../utils/SectionRenderer";
 import { useSettings } from "../hooks/useSettings";
 import { Icon, IconType } from "../services/IconService";
-import { getProjectedSong, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims } from "../state/CurrentSongStore";
+import { getProjectedSong, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims, getCurrentDisplay } from "../state/CurrentSongStore";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
@@ -20,6 +20,7 @@ import { Panel, PanelGroup } from "react-resizable-panels";
 import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
+import { Display } from "../../common/pp-types";
 
 type PreviewTab = "format" | "image" | "message";
 
@@ -463,17 +464,18 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       async (sectionIndex: number, section: SectionItem) => {
         const song = getProjectedSong();
         if (!song) return;
-        updateCurrentDisplay({
+        const updateData: Partial<Display> = {
           songId: song.Id,
           from: section.from,
           to: section.to,
           section: sectionIndex,
-          transpose: selectedPlaylistItem?.transpose || 0,
-          capo: selectedPlaylistItem?.capo,
           song: song.Text,
           system: song.System,
-          instructions: selectedPlaylistItem?.instructions,
-        });
+        };
+        if (selectedPlaylistItem?.transpose) updateData.transpose = selectedPlaylistItem.transpose;
+        if (selectedPlaylistItem?.capo) updateData.capo = selectedPlaylistItem.capo;
+        if (selectedPlaylistItem?.instructions) updateData.instructions = selectedPlaylistItem.instructions;
+        updateCurrentDisplay(updateData);
       },
       [selectedPlaylistItem]
     );
