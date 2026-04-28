@@ -737,6 +737,11 @@ export class ChordProEditor extends ChordDrawer {
     this.canvas = canvas;
     this.canvas.addEventListener("focus", this.handleCanvasFocus);
 
+    // Ensure canvas is actually a child of parent_div before inserting other elements
+    if (!this.canvas.parentElement || this.canvas.parentElement !== this.parent_div) {
+      this.parent_div.appendChild(this.canvas);
+    }
+
     // Auto-redraw overlays when canvas transitions from hidden to visible
     this.canvasResizeObserver?.disconnect();
     this.lastCanvasOffsetWidth = 0;
@@ -3276,7 +3281,7 @@ export class ChordProEditor extends ChordDrawer {
       this.comparePositions(this.selectionStart, this.selectionEnd) !== 0;
 
     const dark = this.isDark;
-    const bgColor = dark ? "#2d2d2d" : "#ffffff";
+    const bgColor = dark ? "#212529" : "#ffffff";
     const hoverBg = dark ? "#3e3e3e" : "#e8e8e8";
     const textColor = dark ? "#cccccc" : "#1e1e1e";
     const disabledColor = dark ? "#666666" : "#a0a0a0";
