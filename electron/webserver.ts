@@ -39,6 +39,7 @@ export interface WebServerSettings {
   allClientsCanUseLeaderMode: boolean;
   leaderModeClients: string[];
   chordProStyles: ChordProStylesSettings | null;
+  stylesToClients: boolean;
 }
 
 // Connected client info (matching C# ClientInfo)
@@ -106,6 +107,7 @@ export class WebServer {
       allClientsCanUseLeaderMode: initialSettings?.allClientsCanUseLeaderMode ?? true,
       leaderModeClients: initialSettings?.leaderModeClients ?? [],
       chordProStyles: initialSettings?.chordProStyles ?? null,
+      stylesToClients: initialSettings?.stylesToClients ?? false,
     };
 
     this.verifyWebServerPath();
@@ -130,6 +132,15 @@ export class WebServer {
     this.app.get("/display_styles_query", (req, res) => {
       this.setCommonHeaders(res);
       const rev = (req.query.rev as string) || "";
+
+      if (!this.settings.stylesToClients) {
+        res.json({
+          rev: "",
+          changed: rev !== "",
+        });
+        return;
+      }
+
       const currentRev = this.getChordProStylesRev();
       if (rev && rev === currentRev) {
         res.json({ rev: currentRev, changed: false });
@@ -169,7 +180,10 @@ export class WebServer {
   }
 
   private getChordProStylesRev() {
-    return this.settings.chordProStyles ? crypto.createHash("md5").update(JSON.stringify(this.settings.chordProStyles)).digest("hex") : "";
+    if (!this.settings.stylesToClients || !this.settings.chordProStyles) {
+      return "";
+    }
+    return crypto.createHash("md5").update(JSON.stringify(this.settings.chordProStyles)).digest("hex");
   }
 
   private setupRoutes() {
@@ -728,7 +742,11 @@ export class WebServer {
           }
 
           const displayToSend = clientType !== "GUEST" ? newDisplay : { ...newDisplay, playlist: undefined, playlist_id: undefined }; // Hide playlist from non-admins
-          displayToSend.chordProStylesRev = stylesRev;
+          if (this.settings.stylesToClients && stylesRev) {
+            displayToSend.chordProStylesRev = stylesRev;
+          } else {
+            delete displayToSend.chordProStylesRev;
+          }
           delete displayToSend.chordProStyles;
           console.debug(
             `[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] display_query: responding with new display:`,

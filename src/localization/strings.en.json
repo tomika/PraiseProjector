@@ -245,6 +245,8 @@
   "ChordProStylesSpacingHelp": "Control line spacing, margins and chord diagram sizes for the selected theme.",
   "ChordProStylesDirectiveSection": "Directive styles",
   "ChordProStylesDirectiveHelp": "Title and metadata directives now have their own controls, including font family, size, colors, height and indentation.",
+  "ChordProStylesAdvertiseToClients": "Advertise style settings to clients",
+  "ChordProStylesAdvertiseToClientsHelp": "If disabled, ChordPro style settings are not sent to clients.",
   "ChordProStylesFontFamily": "Font family",
   "ChordProStylesFontSize": "Font size (Lyrics %)",
   "ChordProStylesBold": "Bold",

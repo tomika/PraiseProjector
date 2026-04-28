@@ -646,7 +646,7 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!settings?.externalWebDisplayEnabled || !settings.chordProStyles) return;
+    if (!settings?.externalWebDisplayEnabled || !settings.stylesToClients || !settings.chordProStyles) return;
     const leaderId = isGuest ? guestLeaderId : settings.selectedLeader;
     if (!leaderId) return;
 
@@ -656,7 +656,7 @@ const AppContent: React.FC = () => {
         chordProStyles: settings.chordProStyles,
       })
       .catch((err) => console.error("Cloud display styles update failed:", err));
-  }, [settings?.externalWebDisplayEnabled, settings?.selectedLeader, settings?.chordProStyles, isGuest, guestLeaderId]);
+  }, [settings?.externalWebDisplayEnabled, settings?.stylesToClients, settings?.selectedLeader, settings?.chordProStyles, isGuest, guestLeaderId]);
 
   useEffect(() => {
     if (pendingPlaylistSelectionIndexRef.current === null || !leftPanelRef.current) {

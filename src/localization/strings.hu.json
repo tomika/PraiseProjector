@@ -245,6 +245,8 @@
   "ChordProStylesSpacingHelp": "A kiválasztott témához itt szabályozhatod a sormagasságokat, margókat és az akkorddiagramok méretét.",
   "ChordProStylesDirectiveSection": "Direktíva stílusok",
   "ChordProStylesDirectiveHelp": "A cím és metaadat direktívák külön vezérlőket kaptak, beleértve a betűcsaládot, méretet, színeket, sor-magasságot és behúzást.",
+  "ChordProStylesAdvertiseToClients": "Stílusbeállítások küldése a klienseknek",
+  "ChordProStylesAdvertiseToClientsHelp": "Kikapcsolva a ChordPro stílusbeállítások nem kerülnek elküldésre kliensek felé.",
   "ChordProStylesFontFamily": "Betűcsalád",
   "ChordProStylesFontSize": "Betűméret (szövegméret %)",
   "ChordProStylesBold": "Félkövér",

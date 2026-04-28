@@ -163,6 +163,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       showImageInPreview: true,
       updateChannel: "stable",
       chordProStyles: createDefaultChordProStylesSettings((key) => t(key as never)),
+      stylesToClients: false,
     };
   }, [t]);
 

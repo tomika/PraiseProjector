@@ -98,6 +98,7 @@ export class UdpServer {
     const hostInfo: PpdHostInfo = {
       getHostId: () => this.getHostId(),
       getHostName: () => this.webServer.getSettings().currentLeader || hostname(),
+      shouldAdvertiseStyles: () => this.webServer.getSettings().stylesToClients,
     };
     this.protocolHandler = new PpdProtocolHandler(hostInfo);
     // Start in leader mode by default (electron always hosts a session)

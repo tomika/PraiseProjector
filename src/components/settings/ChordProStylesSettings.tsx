@@ -1111,6 +1111,21 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
               </div>
             </div>
           </section>
+
+          <section className="card chordpro-styles-card">
+            <div className="card-body">
+              <label className="form-check mb-1">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={!!settings.stylesToClients}
+                  onChange={(e) => updateSetting("stylesToClients", e.target.checked)}
+                />
+                <span className="form-check-label">{t("ChordProStylesAdvertiseToClients")}</span>
+              </label>
+              <p className="text-muted mb-0">{t("ChordProStylesAdvertiseToClientsHelp")}</p>
+            </div>
+          </section>
         </div>
       </div>
     </div>

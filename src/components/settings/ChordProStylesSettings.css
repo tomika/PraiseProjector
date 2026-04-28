@@ -264,7 +264,7 @@
   min-width: 14rem;
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 600px) {
   .chordpro-styles-main {
     flex-direction: column;
     overflow-y: auto;

@@ -58,6 +58,7 @@ export interface Settings {
   netDisplayJpegQuality: number;
   netDisplayImageScale: number;
   netDisplayTransient: number;
+  stylesToClients: boolean;
   useSectionColoring: boolean;
   verseSectionColor: string;
   chorusSectionColor: string;

@@ -153,4 +153,7 @@ export interface Settings {
 
   // Customizable ChordPro editor styles for light and dark themes
   chordProStyles: ChordProStylesSettings;
+
+  // If false, style revisions/settings are not advertised to clients.
+  stylesToClients: boolean;
 }

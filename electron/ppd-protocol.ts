@@ -30,6 +30,8 @@ export interface PpdHostInfo {
   getHostId(): string;
   /** Friendly display name for this device (leader name). */
   getHostName(): string;
+  /** Whether style metadata should be advertised to clients. */
+  shouldAdvertiseStyles(): boolean;
 }
 
 /** Tracks a remote viewer subscribed to our display (leader mode). */
@@ -198,16 +200,31 @@ export class PpdProtocolHandler {
 
   private sendDisplayToWatcher(watcher: PpdWatcher, display: Display): void {
     const now = Date.now();
-    const disp = JSON.stringify(display);
+    const clientDisplay = this.prepareDisplayForClient(display);
+    const disp = JSON.stringify(clientDisplay);
     watcher.lastDisplaySent = now;
     watcher.lastDisplay = disp;
     watcher.lastDisplayAcked = false;
     watcher.sendMessage({
       op: "display",
       name: this.host.getHostName(),
-      display,
+      display: clientDisplay,
       device: this.host.getHostId(),
     });
+  }
+
+  private prepareDisplayForClient(display: Display): Display {
+    const clientDisplay: Display = {
+      ...display,
+      playlist: display.playlist ? [...display.playlist] : display.playlist,
+    };
+
+    delete clientDisplay.chordProStyles;
+    if (!this.host.shouldAdvertiseStyles()) {
+      delete clientDisplay.chordProStylesRev;
+    }
+
+    return clientDisplay;
   }
 
   /** Periodic tick: retransmit unacked displays and prune stale watchers. */

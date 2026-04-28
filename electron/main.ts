@@ -1258,6 +1258,7 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
       allClientsCanUseLeaderMode: settings.allClientsCanUseLeaderMode,
       leaderModeClients: settings.leaderModeClients,
       chordProStyles: settings.chordProStyles,
+      stylesToClients: settings.stylesToClients,
     });
 
     // Re-encode and republish the latest net display frame when encode settings change.

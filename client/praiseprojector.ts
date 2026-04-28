@@ -2250,7 +2250,18 @@ export class App extends AppBase {
   }
 
   private async syncChordProStyles(stylesRev: string | undefined) {
-    if (!this.webRoot || !stylesRev || this.chordProStylesRev === stylesRev || this.pendingChordProStylesRev === stylesRev) return;
+    if (!this.webRoot) return;
+
+    if (!stylesRev) {
+      this.pendingChordProStylesRev = "";
+      this.chordProStylesRev = "";
+      this.currentDisplay.chordProStylesRev = "";
+      this.applyChordProStyles(null);
+      return;
+    }
+
+    if (this.chordProStylesRev === stylesRev || this.pendingChordProStylesRev === stylesRev) return;
+
     this.pendingChordProStylesRev = stylesRev;
     try {
       const response = await cloudApi.fetchDisplayStylesQuery({
@@ -2261,6 +2272,8 @@ export class App extends AppBase {
       this.currentDisplay.chordProStylesRev = response.rev;
       if (response.styles) {
         this.applyChordProStyles(response.styles as ChordProStylesSettings);
+      } else if (!response.rev) {
+        this.applyChordProStyles(null);
       }
     } catch (error) {
       this.log("Display styles query failed: " + error);
