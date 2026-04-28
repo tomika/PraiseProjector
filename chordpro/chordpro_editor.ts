@@ -1222,6 +1222,7 @@ export class ChordProEditor extends ChordDrawer {
     this.stylesBaseRootFontPx = getRootFontSizePx();
     this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    for (const lo of this.chordPro?.lines || []) lo.invalidateCache();
     this.draw();
   }
 
@@ -1300,6 +1301,7 @@ export class ChordProEditor extends ChordDrawer {
   refreshDisplayProps() {
     this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    for (const lo of this.chordPro?.lines || []) lo.invalidateCache();
     this.draw();
   }
 
