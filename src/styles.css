@@ -56,8 +56,6 @@
 
 .btn-toolbar {
   flex-shrink: 0;
-  background-color: #ffffff;
-  border-bottom: 0.0625rem solid #cccccc;
   padding: 0.25rem;
   display: grid !important;
   grid-template-columns: repeat(7, 1fr);
@@ -575,11 +573,6 @@
 /* ========================================
    DARK MODE OVERRIDES - styles.css
    ======================================== */
-
-[data-theme="dark"] .btn-toolbar {
-  background-color: var(--pp-toolbar-bg);
-  border-bottom-color: var(--pp-border-color);
-}
 
 [data-theme="dark"] .panel-border-right {
   border-right-color: var(--pp-border-color);

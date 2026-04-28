@@ -39,8 +39,13 @@
   border: 1px solid #ced4da;
 }
 
+.projecting-formats-container {
+  background-color: transparent;
+}
+
 .preview-tab-content {
   height: 120px; /* Fixed height for the container */
+  background-color: white;
 }
 
 .tab-pane-content {
@@ -427,6 +432,7 @@
   justify-content: space-between;
   height: 100%;
   overflow: auto;
+  background-color: transparent;
 }
 
 .preview-button-column .btn {
@@ -434,6 +440,11 @@
   min-width: 3rem;
   min-height: 3rem;
   position: relative;
+}
+
+/* Keep default button state transparent; hover/active/disabled can style themselves */
+.preview-button-column .btn:not(:hover):not(:active):not(.active):not(.btn-active):not(:disabled):not(.disabled) {
+  background-color: transparent !important;
 }
 
 .preview-button-column .btn-group-vertical {
@@ -453,6 +464,7 @@
   border-radius: 3px;
   line-height: 1;
 }
+
 /* ========================================
    DARK MODE OVERRIDES - PreviewPanel.css
    ======================================== */
@@ -512,13 +524,14 @@
 
 /* Preview button states in dark mode */
 [data-theme="dark"] .preview-button-column .btn-light {
-  background-color: var(--pp-bg-tertiary);
-  border-color: var(--pp-border-color);
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-color);
+  background-color: transparent;
 }
 
 [data-theme="dark"] .preview-button-column .btn-light:hover {
   background-color: var(--pp-bg-secondary);
+  border-color: var(--pp-button-border-color);
 }
 
 /* Active/toggled button state in dark mode - blue glow effect */
@@ -532,3 +545,8 @@
     0 0 10px 3px rgba(13, 110, 253, 0.5),
     inset 0 0 6px rgba(13, 110, 253, 0.3) !important;
 }
+
+[data-theme="dark"] .preview-tab-content {
+  background-color: var(--pp-bg-secondary);
+}
+

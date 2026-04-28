@@ -2087,7 +2087,7 @@ const AppContent: React.FC = () => {
       <ResponsiveFontSizeManager />
       <UpdateNotification />
       <DndProvider backend={HTML5Backend}>
-        <div className="container-fluid vh-100 d-flex flex-column pp-app-shell">
+        <div className="container-fluid vh-100 d-flex flex-column pp-app-shell p-1">
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}
           <div style={{ display: usePagingMode ? "flex" : "none", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
             <div className="btn-group mb-2">

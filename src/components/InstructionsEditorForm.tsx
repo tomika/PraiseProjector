@@ -166,7 +166,7 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
             <button type="button" className="btn btn-outline-secondary" onClick={handleClear}>
               {t("InstructionsEditorClear")}
             </button>
-            <button type="button" className="btn btn-outline-secondary ml-2" onClick={handleReset}>
+            <button type="button" className="btn btn-outline-secondary ml-1" onClick={handleReset}>
               {t("InstructionsEditorReset")}
             </button>
             <div className="form-check ml-3 mt-1">

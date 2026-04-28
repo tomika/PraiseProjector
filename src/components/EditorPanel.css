@@ -46,7 +46,7 @@
 
 .editor-toolbar {
   flex: 0 0 auto;
-  background-color: #ffffff;
+  background-color: var(--pp-panel-bg);
   border-bottom: 1px solid #cccccc;
   padding: var(--spacing-xs);
   display: grid;
@@ -177,7 +177,7 @@
 }
 
 [data-theme="dark"] .editor-toolbar {
-  background-color: var(--pp-toolbar-bg);
+  background-color: var(--pp-panel-bg);
   border-bottom-color: var(--pp-border-color);
 }
 

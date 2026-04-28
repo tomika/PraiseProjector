@@ -1745,7 +1745,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       <PlaylistDropTarget addSongToPlaylist={this.addSongToPlaylist}>
         <div className="playlist-panel-container h-100">
           <div className="playlist-body d-flex h-100">
-            <div className="btn-group-vertical playlist-buttons mr-2">
+            <div className="btn-group-vertical playlist-buttons mr-1">
               <button
                 className="btn btn-light"
                 aria-label="Load Playlist"
@@ -1848,7 +1848,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             </div>
             <div
               ref={this.playlistContainerRef}
-              className={`playlist-items-container flex-grow-1 overflow-auto${isDisabled ? " disabled" : ""}`}
+              className={`playlist-items-container flex-grow-1 mr-1 mb-1 overflow-auto${isDisabled ? " disabled" : ""}`}
               tabIndex={isDisabled ? -1 : 0}
               onKeyDown={(e) => !isDisabled && this.handleKeyDown(e.nativeEvent)}
               onFocus={() => {

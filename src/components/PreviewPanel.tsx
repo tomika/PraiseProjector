@@ -1938,7 +1938,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             onPreviewSplitSizeChange?.(sizes[0]);
           }}
         >
-          <Panel defaultSize={previewSplitSize ?? 60} minSize={20}>
+          <Panel defaultSize={previewSplitSize ?? 60} minSize={20} className="mb-1 ml-1">
             <div className="d-flex flex-grow-1 min-height-0 h-100">
               <div className={`flex-grow-1 preview-sections-container ${remoteHighlightController ? "remote-controlled" : ""}`}>
                 {/* Remote control indicator overlay - matching C# SectionListBox.Remote */}
@@ -1990,7 +1990,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                           <div className="d-flex align-items-start">
                             <input
                               type="checkbox"
-                              className={`section-checkbox ${!hasTypeColor ? "mr-2 mt-1" : ""}`}
+                              className={`section-checkbox ${!hasTypeColor ? "mr-1 mt-1" : ""}`}
                               checked={section.checked}
                               onClick={(e) => handleCheckboxClick(e, index)}
                               onChange={() => {}} // Controlled by onClick
@@ -2005,7 +2005,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                   )}
                 </div>
               </div>
-              <div className="d-flex flex-column ml-2 flex-shrink-0 preview-button-column">
+              <div className="d-flex flex-column ml-1 flex-shrink-0 preview-button-column">
                 <div className="btn-group-vertical">
                   {showSettingsButton && onSettingsClick && (
                     <button className="btn btn-light" aria-label="Settings" title={tt("toolbar_settings")} onClick={() => onSettingsClick()}>
@@ -2084,9 +2084,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             </div>
           </Panel>
           <ResizeHandle />
-          <Panel defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40} minSize={bottomMinSize}>
+          <Panel defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40} minSize={bottomMinSize} className="ml-1">
             <div className="d-flex flex-column h-100">
-              <div>
+              <div className="projecting-formats-container mt-1">
                 <ul className="nav nav-tabs">
                   <li className="nav-item">
                     <a

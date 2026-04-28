@@ -531,14 +531,14 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
   };
 
   return (
-    <fieldset className="border p-2 mt-3" disabled={!leader}>
+    <fieldset className="border p-1 mt-3" disabled={!leader}>
       {leader ? (
         <div className="d-flex flex-column flex-grow-1 song-preferences-inner">
           {/* Hide filter controls in merge mode - matching C# behavior */}
           {!isMergeMode && (
             <>
               <div className="d-flex align-items-center mb-1 flex-nowrap justify-content-between">
-                <div className="form-check mr-2">
+                <div className="form-check mr-1">
                   <input
                     className="form-check-input"
                     type="checkbox"
@@ -558,8 +558,8 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
                   &#x2764; {t("PreferFromPlaylists")}
                 </button>
               </div>
-              <div className="d-flex align-items-center mb-2">
-                <label htmlFor="songFilter" className="mr-2">
+              <div className="d-flex align-items-center mb-1">
+                <label htmlFor="songFilter" className="mr-1">
                   {t("Filter")}
                 </label>
                 <input
@@ -569,7 +569,7 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
                   value={songFilter}
                   onChange={(e) => setSongFilter(e.target.value)}
                 />
-                <button className="btn btn-outline-secondary ml-2" onClick={() => setSongFilter("")}>
+                <button className="btn btn-outline-secondary ml-1" onClick={() => setSongFilter("")}>
                   ✕
                 </button>
               </div>
@@ -578,7 +578,7 @@ const SongPreferencesEditor = forwardRef<SongPreferencesEditorHandle, SongPrefer
           <div className="d-flex flex-row flex-grow-1 song-preferences-editor-container">
             {/* Hide edit buttons in merge mode - matching C# behavior */}
             {!isMergeMode && (
-              <div className="btn-group-vertical song-pref-buttons mr-2">
+              <div className="btn-group-vertical song-pref-buttons mr-1">
                 <button
                   className="btn btn-light"
                   title="Edit Title"

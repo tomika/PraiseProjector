@@ -89,6 +89,7 @@
   --pp-text-color: #e9ecef;
   --pp-text-muted: #adb5bd;
   --pp-border-color: #495057;
+  --pp-button-border-color: #2f2630;
   --pp-panel-bg: #212529;
   --pp-input-bg: #2d2d2d;
   --pp-input-border: #495057;
@@ -436,33 +437,33 @@ h6 {
 
 /* Buttons */
 [data-theme="dark"] .btn-light {
-  background-color: var(--pp-bg-tertiary);
-  border-color: var(--pp-border-color);
+  background-color: transparent;
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-color);
 }
 
 [data-theme="dark"] .btn-light:hover {
   background-color: var(--pp-bg-secondary);
-  border-color: var(--pp-border-color);
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-color);
 }
 
 [data-theme="dark"] .btn-light:disabled,
 [data-theme="dark"] .btn-light.disabled {
   background-color: var(--pp-bg-tertiary);
-  border-color: var(--pp-border-color);
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-muted);
   opacity: 0.65;
 }
 
 [data-theme="dark"] .btn-outline-secondary {
-  border-color: var(--pp-border-color);
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-color);
 }
 
 [data-theme="dark"] .btn-outline-secondary:hover {
   background-color: var(--pp-bg-tertiary);
-  border-color: var(--pp-border-color);
+  border-color: var(--pp-button-border-color);
   color: var(--pp-text-color);
 }
 
@@ -533,6 +534,7 @@ h6 {
 
 [data-theme="dark"] .nav-tabs .nav-link {
   color: var(--pp-text-color);
+  border-color: transparent !important;
 }
 
 [data-theme="dark"] .nav-tabs .nav-link:hover {
@@ -540,7 +542,7 @@ h6 {
 }
 
 [data-theme="dark"] .nav-tabs .nav-link.active {
-  background-color: var(--pp-bg-color);
+  background-color: var(--pp-bg-secondary);
   border-color: var(--pp-border-color) var(--pp-border-color) var(--pp-bg-color);
   color: var(--pp-text-color);
 }

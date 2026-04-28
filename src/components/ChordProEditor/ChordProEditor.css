@@ -4,7 +4,6 @@
   flex-direction: column;
   height: 100%;
   min-height: 200px; /* Prevent collapse when content is empty */
-  background-color: #f8f9fa;
 }
 
 .chordpro-editor-container > .nav-tabs {
@@ -313,12 +312,7 @@
    DARK MODE OVERRIDES - ChordProEditor.css
    ======================================== */
 
-[data-theme="dark"] .chordpro-editor-container {
-  background-color: var(--pp-bg-secondary);
-}
-
 [data-theme="dark"] .chordpro-editor-container .nav-tabs {
-  background-color: var(--pp-bg-secondary);
   border-bottom-color: var(--pp-border-color);
 }
 

@@ -15,6 +15,7 @@
   flex: 0 0 auto; /* Do not grow, do not shrink */
   width: 2.5rem;
   max-width: 2.5rem;
+  background-color: transparent;
 }
 
 .playlist-buttons .btn {
@@ -25,6 +26,11 @@
   max-height: 2.5rem;
   margin-bottom: var(--spacing-xs);
   padding: var(--spacing-xs);
+}
+
+/* Keep default button state transparent; hover/active/disabled can style themselves */
+.playlist-buttons .btn:not(:hover):not(:active):not(.active):not(.btn-active):not(:disabled):not(.disabled) {
+  background-color: transparent !important;
 }
 
 .playlist-items-container {
@@ -159,4 +165,8 @@
 
 [data-theme="dark"] .playlist-items-container {
   background-color: var(--pp-panel-bg);
+}
+
+[data-theme="dark"] .playlist-buttons .btn-light {
+  background-color: transparent;
 }

@@ -1465,7 +1465,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     const settingsUpdaterAvailable = !!this.props.updateSettingWithAutoSave;
 
     return (
-      <div className="song-list-panel d-flex flex-column h-100" onClick={this.hideContextMenu}>
+      <div className="song-list-panel d-flex flex-column h-100 mr-1 mt-1" onClick={this.hideContextMenu}>
         <div
           className="input-group mb-2"
           ref={(el) => {

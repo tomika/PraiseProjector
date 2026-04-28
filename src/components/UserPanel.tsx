@@ -312,10 +312,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
   return (
     <div>
       <div className="form-group d-flex align-items-center mb-1">
-        <button className="btn btn-light mr-2 sidebar-icon-btn" aria-label="User" onClick={handleUserButtonClick}>
+        <button className="btn btn-light mr-1 sidebar-icon-btn" aria-label="User" onClick={handleUserButtonClick}>
           <Icon type={IconType.USER} />
         </button>
-        <div className="user-login-input-wrapper mr-2">
+        <div className="user-login-input-wrapper mr-1">
           <input
             type="text"
             readOnly
@@ -326,7 +326,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
           />
         </div>
         {showSyncControls && (
-          <div className="btn-group position-relative user-sync-group mr-2" ref={syncMenuRef}>
+          <div className="btn-group position-relative user-sync-group mr-1" ref={syncMenuRef}>
             <button className="btn btn-light user-sync-main-btn" aria-label="Sync" title={tt("toolbar_sync")} onClick={onSyncClick}>
               <Icon type={IconType.SYNC} />
               {localChangeCount && isAuthenticated ? (
@@ -430,7 +430,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
         )}
       </div>
       <div className="form-group d-flex align-items-center mb-1">
-        <button className="btn btn-light mr-2 sidebar-icon-btn" aria-label="Leader" onClick={handleLeaderSettingsClick}>
+        <button className="btn btn-light mr-1 sidebar-icon-btn" aria-label="Leader" onClick={handleLeaderSettingsClick}>
           <Icon type={IconType.LEADER} />
         </button>
         <div className="flex-grow-1 user-leader-select-wrapper">
