@@ -7,7 +7,9 @@ import { useLocalization, StringKey, Language } from "../../localization/Localiz
 import { useTooltips, TooltipKey } from "../../localization/TooltipContext";
 import { Database } from "../../../db-common/Database";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
+import { chordProAPI } from "../../../chordpro/chordProApi";
 import "./ChordProEditor.css";
+import { ChordProEditorEventHandlers } from "../../../chordpro/chordpro_editor";
 
 interface ChordProEditorProps {
   song: Song | null;
@@ -38,17 +40,8 @@ interface ChordProEditorState {
   metaData: Map<string, string>;
 }
 
-type ChordProExternalCallbacks = {
-  OnLineSel: (lineNumber: number) => void;
-  UpdateChordProData: (newText: string) => void;
-  LogFromWebEditor: (message: string) => void;
-  OnLineDblclk: (lineNumber: number) => void;
-  OnCopy: (chordpro: string) => boolean;
-  OnPaste: () => string;
-};
-
 type ChordProAPIBound = {
-  load: (chp: string, editable?: boolean, compareBase?: string) => void;
+  load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) => void;
   getText: () => string;
   setDisplay: (
     title: boolean,
@@ -158,8 +151,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private wysiwygInitialized = false;
   private pendingExternalSongReload = false;
   private isEditable = false;
-  private externalPreviousValues: Map<keyof ChordProExternalCallbacks, unknown> | null = null;
-  private externalObjectCreated = false;
   private initializingChordPro = false;
   private skipNextWysiwygSync = false;
   private pendingHighlight: { from: number; to: number } | null = null;
@@ -231,7 +222,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   componentWillUnmount() {
     this.cleanupResizeObserver();
     this.cancelScheduledRefresh();
-    this.restoreExternalCallbacks();
     this.cleanupThemeObserver();
     this.cleanupFontSizeObserver();
     this.getBoundChordProAPI()?.dispose?.();
@@ -310,10 +300,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     try {
       this.initializeChordProMarkup(this.chordProHost);
       await ensureChordProAssets();
-      if (!this.getChordProAPI()) {
-        console.error("Editor", "ChordPro API did not initialise as expected.");
-        return;
-      }
       await this.handleWysiwygLoad();
     } catch (error) {
       console.error("Editor", "Failed to prepare ChordPro editor host", error);
@@ -331,35 +317,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     container.dataset.initialised = "true";
   }
 
-  private restoreExternalCallbacks() {
-    if (!this.externalPreviousValues) {
-      return;
-    }
-
-    const win = window as unknown as { external?: Record<string, unknown> };
-    const external = win.external;
-    if (external && typeof external === "object") {
-      this.externalPreviousValues.forEach((value, key) => {
-        if (value === undefined) {
-          delete external[key as string];
-        } else {
-          external[key as string] = value;
-        }
-      });
-    }
-
-    if (this.externalObjectCreated) {
-      try {
-        win.external = undefined;
-      } catch {
-        /* ignore */
-      }
-    }
-
-    this.externalPreviousValues = null;
-    this.externalObjectCreated = false;
-  }
-
   private setChordProHostRef = (element: HTMLDivElement | null) => {
     this.cleanupResizeObserver();
     this.chordProHost = element;
@@ -370,9 +327,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   };
 
   private getBoundChordProAPI(editorDiv: HTMLDivElement | null = this.chordProHost): ChordProAPIBound | undefined {
-    const api = this.getChordProAPI() as { bind?: (editorDiv: HTMLDivElement) => ChordProAPIBound } | undefined;
-    if (!api?.bind || !editorDiv) return undefined;
-    return api.bind(editorDiv);
+    if (!editorDiv) return undefined;
+    return chordProAPI.bind(editorDiv) as ChordProAPIBound;
   }
 
   private cancelScheduledRefresh() {
@@ -404,10 +360,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
-  }
-
-  private getChordProAPI(): ChordProAPI | undefined {
-    return typeof window !== "undefined" ? window.chordProAPI : undefined;
   }
 
   loadSong() {
@@ -454,11 +406,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
     // Initialize database with known chord modifiers from editor
     try {
-      const chordApi = this.getChordProAPI();
-      if (chordApi) {
-        const boundChordApi = this.getBoundChordProAPI();
-        const chordPattern = boundChordApi?.getChordFindAndSplitPattern?.();
-        const modifiersList = boundChordApi?.getAllKnownChordModifier?.();
+      const boundChordApi = this.getBoundChordProAPI();
+      if (boundChordApi) {
+        const chordPattern = boundChordApi.getChordFindAndSplitPattern?.();
+        const modifiersList = boundChordApi.getAllKnownChordModifier?.();
 
         console.debug("Editor", "Chord pattern:", chordPattern);
         console.debug("Editor", "Known modifiers count:", modifiersList ? modifiersList.split("\n").length : 0);
@@ -469,24 +420,21 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         // _db.loadKnownChordModifiers(chordPattern, modifiersList.split('\n'));
         console.debug("Editor", "Database ready with editor chord data");
 
-        // Setup callback handlers for editor events
-        this.setupEditorCallbacks();
-
         // Install locale handler for context menu strings — reads this.props.t
         // on each call so it picks up language changes without reinstalling.
-        boundChordApi?.installLocaleHandler?.((s: string) => {
+        boundChordApi.installLocaleHandler?.((s: string) => {
           const key = s.replace(/ /g, "") as StringKey;
           return this.props.t?.(key) ?? s;
         });
 
         // Install tooltip handler for ABC editor toolbar
-        boundChordApi?.installTooltipHandler?.((key: string) => {
+        boundChordApi.installTooltipHandler?.((key: string) => {
           return this.props.tt?.(key as TooltipKey);
         });
 
         // Propagate active UI language to the ABC editor so it renders in hu/en.
         if (this.props.language) {
-          boundChordApi?.setAbcLocale?.(this.props.language);
+          boundChordApi.setAbcLocale?.(this.props.language);
         }
       }
     } catch (error) {
@@ -497,13 +445,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.skipNextWysiwygSync = false;
   };
 
-  setupEditorCallbacks() {
-    if (this.externalPreviousValues) {
-      return;
-    }
-
-    const assignments: ChordProExternalCallbacks = {
-      OnLineSel: async (lineNumber: number) => {
+  private getEditorEventHandlers(): ChordProEditorEventHandlers {
+    return {
+      OnLineSel: (lineNumber: number) => {
         console.debug("Editor", "OnLineSel called with line:", lineNumber);
         const { settings } = this.props;
         if (settings?.sectionSelByEditorLineSel && this.props.onLineSelect) {
@@ -519,7 +463,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       LogFromWebEditor: (message: string) => {
         console.debug("Editor", "WYSIWYG Editor:", message);
       },
-      OnLineDblclk: async (lineNumber: number) => {
+      OnLineDblclk: (lineNumber: number) => {
         console.debug("Editor", "OnLineDblclk called with line:", lineNumber);
         const { settings } = this.props;
         if (settings?.sectionSelByEditorDblclk && this.props.onLineSelect) {
@@ -528,33 +472,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       },
       OnCopy: () => {
         console.debug("Editor", "OnCopy called");
-        return true;
-      },
-      OnPaste: () => {
-        console.debug("Editor", "OnPaste called");
-        return "";
       },
     };
-
-    const win = window as unknown as { external?: Record<string, unknown> };
-    let external: Record<string, unknown>;
-    if (!win.external || typeof win.external !== "object") {
-      external = {};
-      try {
-        win.external = external;
-        this.externalObjectCreated = true;
-      } catch {
-        external = {};
-      }
-    } else {
-      external = win.external;
-    }
-
-    this.externalPreviousValues = new Map();
-    (Object.keys(assignments) as (keyof ChordProExternalCallbacks)[]).forEach((key) => {
-      this.externalPreviousValues?.set(key, external[key as string]);
-      external[key as string] = assignments[key];
-    });
   }
 
   loadSongToWysiwyg(chordProText?: string) {
@@ -570,7 +489,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         // so we always reload for a correct recompute.
         if (!this.hasLoadedDocument || !!compareBase) {
           // When compareBase is provided, show diff view (non-editable)
-          chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase);
+          chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase, this.getEditorEventHandlers());
           this.hasLoadedDocument = true;
           // Mark as initialized after load completes
           this.wysiwygInitialized = true;
@@ -607,7 +526,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         console.warn("Editor", `WYSIWYG API not available for method ${method}`);
         return;
       }
-      const fn = api[method as keyof ChordProAPI];
+      const fn = api[method as keyof ChordProAPIBound];
       if (typeof fn === "function") {
         (fn as (...fnArgs: unknown[]) => void)(...args);
       } else {

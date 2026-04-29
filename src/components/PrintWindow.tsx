@@ -4,6 +4,7 @@ import { Settings } from "../types";
 import { ChordProEditor } from "./ChordProEditor/ChordProEditor";
 import ChordProEditorWithLocalization from "./ChordProEditor/ChordProEditor";
 import { useLocalization } from "../localization/LocalizationContext";
+import { chordProAPI } from "../../chordpro/chordProApi";
 import "./PrintWindow.css";
 
 /** Key used to pass print data between the main window and the print window */
@@ -142,11 +143,9 @@ const PrintWindow: React.FC = () => {
   // Also ensure light mode is always active on the ChordPro API.
   useEffect(() => {
     if (!editorReady) return;
-    const api = typeof window !== "undefined" ? window.chordProAPI : undefined;
-    if (!api) return;
     // Always force light mode in the print window
-    api.darkMode?.(false);
-    api.setDisplay(printingTitle, printingMetaData, printingSuperScript, printingBB, printingMollMode, printingSectionLabels, 1.0, false);
+    chordProAPI.darkMode?.(false);
+    chordProAPI.setDisplay(printingTitle, printingMetaData, printingSuperScript, printingBB, printingMollMode, printingSectionLabels, 1.0, false);
   }, [editorReady, printingBB, printingTitle, printingMetaData, printingSuperScript, printingSectionLabels, printingMollMode]);
 
   // Mark editor as ready once it reports a line-select (signals load complete)
@@ -196,7 +195,7 @@ const PrintWindow: React.FC = () => {
   // change the ChordProEditor is NOT re-rendered.  Without this, every React
   // re-render triggers componentDidUpdate → prepareWysiwygHost → loadSongToWysiwyg
   // → setDisplay(defaults) which overwrites the print-specific display settings.
-  // Display updates are applied separately via window.chordProAPI.setDisplay() in
+  // Display updates are applied separately via chordProAPI.setDisplay() in
   // the useEffect above.
   const editorElement = useMemo(
     () => (

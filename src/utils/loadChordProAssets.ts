@@ -1,5 +1,3 @@
-import { chordProAPI } from "../../chordpro/chordProApi";
-
 const CSS_URLS = [
   { href: "./stylesheets/chordpro.css", dataAttr: "data-chordpro-css" },
   { href: "./stylesheets/chordselector.css", dataAttr: "data-chordselector-css" },
@@ -24,11 +22,6 @@ export function ensureChordProAssets(): Promise<void> {
   }
 
   ensureStyles();
-
-  const win = window as Window & { chordProAPI?: ChordProAPI };
-  if (!win.chordProAPI) {
-    win.chordProAPI = chordProAPI;
-  }
 
   return Promise.resolve();
 }

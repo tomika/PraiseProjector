@@ -456,6 +456,15 @@ export class Instructions {
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
 
+export interface ChordProEditorEventHandlers {
+  UpdateChordProData?: (text: string) => void;
+  LogFromWebEditor?: (message: string) => void;
+  OnLineSel?: (line: number) => void;
+  OnLineDblclk?: (line: number) => void;
+  OnCopy?: (chordProText: string) => unknown;
+  OnPaste?: () => unknown;
+}
+
 export class ChordProEditor extends ChordDrawer {
   private chordPro: ChordProDocument | null = null;
   private textarea: HTMLTextAreaElement | null = null;
@@ -678,10 +687,28 @@ export class ChordProEditor extends ChordDrawer {
     private drawingSuppressed?: boolean,
     referenceChp?: string,
     routeTouch = true,
-    private readonly bCorrectParentScroll = true
+    private readonly bCorrectParentScroll = true,
+    eventHandlers?: ChordProEditorEventHandlers
   ) {
     super(system, chordSelector, !editable);
     this.rxStartsWithChord = new RegExp("^" + system.chordLikeRegexPattern);
+
+    if (eventHandlers) {
+      this.onChange = eventHandlers.UpdateChordProData ? (s) => eventHandlers.UpdateChordProData?.(s) : null;
+      this.onLog = eventHandlers.LogFromWebEditor ? (s) => eventHandlers.LogFromWebEditor?.(s) : null;
+      this.onLineSel = eventHandlers.OnLineSel ? (p) => eventHandlers.OnLineSel?.(p) : null;
+      this.onLineDblclk = eventHandlers.OnLineDblclk ? (p) => eventHandlers.OnLineDblclk?.(p) : null;
+      this.onCopy = eventHandlers.OnCopy
+        ? (_plain, chordpro) => {
+            eventHandlers.OnCopy?.(chordpro ?? "");
+          }
+        : null;
+      this.onPaste = eventHandlers.OnPaste
+        ? () => {
+            eventHandlers.OnPaste?.();
+          }
+        : null;
+    }
 
     this.parent_div.tabIndex = -1;
 

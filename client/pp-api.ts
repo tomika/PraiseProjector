@@ -6,6 +6,7 @@ import {
   CHORDFORMAT_NOMMOL,
   CHORDFORMAT_SUBSCRIPT,
   ChordProEditor,
+  ChordProEditorEventHandlers,
 } from "../chordpro/chordpro_editor";
 import {
   createChordProEditor,
@@ -21,45 +22,17 @@ import { HostDevice } from "./host-device";
 
 let editor: ChordProEditor | undefined;
 const appNoteSystemCode = "G"; // TODO: this should not be fixed
-export function load(chp: string, editable?: boolean, compareBase?: string) {
+
+export function load(chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) {
   editor = createChordProEditor(
     document.getElementById("editor") as HTMLDivElement,
     chp,
     appNoteSystemCode,
     editable,
     document.getElementById("chordsel") as HTMLDivElement,
-    compareBase
+    compareBase,
+    eventHandlers
   );
-  if (editor) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const webview = (window as any)?.chrome?.webview;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const external = window.external as any;
-    editor.onChange = function (s) {
-      if (webview) webview.postMessage("UpdateChordProData\n" + s);
-      else external.UpdateChordProData(s);
-    };
-    editor.onLog = function (s) {
-      if (webview) webview.postMessage("LogFromWebEditor\n" + s);
-      else external.LogFromWebEditor(s);
-    };
-    editor.onLineSel = function (p) {
-      if (webview) webview.postMessage("OnLineSel\n" + p);
-      else external.OnLineSel(p);
-    };
-    editor.onLineDblclk = function (p) {
-      if (webview) webview.postMessage("OnLineDblclk\n" + p);
-      else external.OnLineDblclk(p);
-    };
-    editor.onCopy = function (p) {
-      if (webview) webview.postMessage("OnCopy\n" + p);
-      return external.OnCopy(p);
-    };
-    editor.onPaste = function () {
-      if (webview) webview.postMessage("OnPaste\n");
-      return external.OnPaste();
-    };
-  }
 }
 export function getMetadataList() {
   return getJoinedMetaDataDirectives(":");
@@ -131,11 +104,11 @@ export function setDisplay(
   }
 }
 
-export function editInstructions(song: string, instructions: string) {
+export function editInstructions(song: string, instructions: string, eventHandlers?: ChordProEditorEventHandlers) {
   const div = document.getElementById("instructionsEditor") as HTMLElement | null;
   if (div) {
     makeVisible(div);
-    load(song);
+    load(song, undefined, undefined, eventHandlers);
     if (editor) {
       makeVisible(editor.parentDiv, false);
       editor.setupInstructionsEditor(div, instructions);

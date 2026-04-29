@@ -9,6 +9,7 @@ import {
   CHORDFORMAT_SIMPLIFIED,
   CHORDFORMAT_SUBSCRIPT,
   ChordProEditor,
+  ChordProEditorEventHandlers,
   HighlightingParams,
 } from "../chordpro/chordpro_editor";
 import { ChordSelector } from "../chordpro/chord_selector";
@@ -127,7 +128,8 @@ class AppBase {
     chordProSource?: string,
     system?: ChordSystem | ChordSystemCode,
     editable?: boolean,
-    originalSource?: string
+    originalSource?: string,
+    eventHandlers?: ChordProEditorEventHandlers
   ) {
     if (system) {
       if (!(system instanceof ChordSystem)) system = getChordSystem(system);
@@ -141,7 +143,10 @@ class AppBase {
           undefined,
           this.chordSelector,
           false,
-          originalSource
+          originalSource,
+          true,
+          true,
+          eventHandlers
         );
       }
     } else if (divChordSel) this.initChordSelector(getChordSystem("S"), divChordSel);
@@ -188,9 +193,10 @@ export function createChordProEditor(
   systemCode: ChordSystemCode,
   editable?: boolean,
   selectorDiv?: HTMLDivElement,
-  compareBaseSource?: string
+  compareBaseSource?: string,
+  eventHandlers?: ChordProEditorEventHandlers
 ) {
-  const app = new AppBase(selectorDiv, editorDiv, chordProSource, systemCode, editable, compareBaseSource);
+  const app = new AppBase(selectorDiv, editorDiv, chordProSource, systemCode, editable, compareBaseSource, eventHandlers);
   return app.baseEditor;
 }
 

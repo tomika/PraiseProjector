@@ -4,6 +4,7 @@ import {
   CHORDFORMAT_NOMMOL,
   CHORDFORMAT_NOCHORDS,
   CHORDFORMAT_SUBSCRIPT,
+  ChordProEditorEventHandlers,
   ChordProEditor,
 } from "./chordpro_editor";
 import { getChordSystem, ChordSystem, ChordProDocument } from "./chordpro_base";
@@ -113,13 +114,20 @@ function ensureChordSelector(system: ChordSystem): ChordSelector | undefined {
   return chordSelector;
 }
 
-function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string) {
+function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) {
   const system = getChordSystem(NOTE_SYSTEM_CODE);
   const selector = ensureChordSelector(system);
 
   disposeEditor(editorDiv);
 
-  const editor = new ChordProEditor(system, editorDiv, chp, !!editable, undefined, selector, false, compareBase, true, false);
+  const editor = new ChordProEditor(system, editorDiv, chp, !!editable, undefined, selector, false, compareBase, true, false, eventHandlers);
+  if (eventHandlers?.OnCopy) {
+    editor.onCopy = (plain, chordpro) => {
+      // Write both MIME types to system clipboard (editor skips this when onCopy is set)
+      clipboard.writeItems(plain, chordpro).catch(() => {});
+      eventHandlers.OnCopy?.(chordpro ?? "");
+    };
+  }
   editors.set(editorDiv, editor);
   setActiveEditor(editorDiv);
   editor.darkMode(document.documentElement.getAttribute("data-theme") === "dark");
@@ -131,54 +139,6 @@ function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean
   }
   editor.setAbcLocale(currentAbcLocale);
   return editor;
-}
-
-function forwardToExternal(eventName: string, payload?: unknown) {
-  const webview = (window as unknown as { chrome?: { webview?: { postMessage: (message: string) => void } } }).chrome?.webview;
-  const message = payload !== undefined ? `${eventName}\n${payload}` : `${eventName}\n`;
-  if (webview) {
-    webview.postMessage(message);
-  } else {
-    const external = (window as unknown as { external?: Record<string, (data?: unknown) => unknown> }).external;
-    const handler = external?.[eventName];
-    if (typeof handler === "function") {
-      handler(payload);
-    }
-  }
-}
-
-function setupEditorCallbacks() {
-  if (!activeEditor) {
-    return;
-  }
-
-  activeEditor.onChange = (text) => {
-    forwardToExternal("UpdateChordProData", text);
-  };
-
-  activeEditor.onLog = (message) => {
-    forwardToExternal("LogFromWebEditor", message);
-  };
-
-  activeEditor.onLineSel = (line) => {
-    forwardToExternal("OnLineSel", line);
-  };
-
-  activeEditor.onLineDblclk = (line) => {
-    forwardToExternal("OnLineDblclk", line);
-  };
-
-  activeEditor.onCopy = (plain, chordpro) => {
-    // Write both MIME types to system clipboard (editor skips this when onCopy is set)
-    clipboard.writeItems(plain, chordpro).catch(() => {});
-    // Also forward chordpro text to external C# host if present
-    forwardToExternal("OnCopy", chordpro ?? "");
-  };
-
-  // Don't set editor.onPaste — when onPaste is set the editor calls it and
-  // returns without actually inserting anything (it was designed for the C#
-  // host that would call externalPaste() in response).  Leaving it null lets
-  // the editor use its built-in navigator.clipboard.readText() path.
 }
 
 function getRequiredEditor(editorDiv?: HTMLDivElement | null) {
@@ -224,7 +184,8 @@ function bindEditor(editorDiv: HTMLDivElement) {
   const getBoundEditor = () => getEditorInstance(editorDiv);
 
   return {
-    load: (chp: string, editable?: boolean, compareBase?: string) => chordProAPI.load(editorDiv, chp, editable, compareBase),
+    load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) =>
+      chordProAPI.load(editorDiv, chp, editable, compareBase, eventHandlers),
     getText: () => getBoundEditor()?.chordProCode ?? "",
     setDisplay: (
       title: boolean,
@@ -310,9 +271,8 @@ export const chordProAPI = {
   bind(editorDiv: HTMLDivElement) {
     return bindEditor(editorDiv);
   },
-  load(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string) {
-    createEditor(editorDiv, chp, editable, compareBase);
-    setupEditorCallbacks();
+  load(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) {
+    createEditor(editorDiv, chp, editable, compareBase, eventHandlers);
   },
   getText() {
     return getEditorInstance()?.chordProCode ?? "";
