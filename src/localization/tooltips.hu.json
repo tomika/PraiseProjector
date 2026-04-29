@@ -74,11 +74,11 @@
   
   "songtree": "Böngésszen és keressen a dalkönyvtárban.\nKattintson a dal betöltéséhez a szerkesztőbe.\nDupla kattintás a dal hozzáadása a lejátszási listához és azonnali vetítéséhez.\nJobb klikk a további lehetőségekért.",
   "playlist": "Kattintson a kijelöléshez és megjelenítéshez.\nHúzza az átrendezéshez.\nJobb klikk a transzponáláshoz, capóhoz és egyebekhez.",
-  "sectionlist": "Kattintson a szakasz kivetítéséhez.\nA bejelölt szakaszok sorrendben haladnak.\nA színek jelzik, hogy a szakasz elfér-e a képernyőn.",
+  "sectionlist": "Kattintson a szakasz kivetítéséhez.\nA színek jelzik az akt./köv. szakaszt\nilletve hogy a jelenlegi beállításokkal\na szakasz hogyan fér el a képernyőn.\n* Enter - következő szakaszra ugrás\n* Nyilak - következő szakasz mozgatása\n* Oldalváltó gombok - dal blokk váltás\n* Visszatörlés - ugrás a dal blokk elejére\n* Esc - kijelölés törlése",
 
   "preview_no_qrcode": "Kattintson a QR kód megjelenítéséhez a kivetítőn.\nA nézők telefonjukkal beolvashatják\nés saját képernyőjükön követhetik a dalszöveget.",
   "preview_qrcode": "Húzással mozgatható · Görgővel átméretezhető · Kattintással elrejthető",
-
+ 
   "imagelist_expand": "Képlista nagyítása",
   "imagelist_external_image": "Külső kép a mappából",
 
