@@ -326,7 +326,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
           />
         </div>
         {showSyncControls && (
-          <div className="btn-group position-relative user-sync-group mr-1" ref={syncMenuRef}>
+          <div className="btn-group position-relative user-sync-group" ref={syncMenuRef}>
             <button className="btn btn-light user-sync-main-btn" aria-label="Sync" title={tt("toolbar_sync")} onClick={onSyncClick}>
               <Icon type={IconType.SYNC} />
               {localChangeCount && isAuthenticated ? (

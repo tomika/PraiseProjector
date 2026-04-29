@@ -298,7 +298,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
                 settings={settings}
               />
             </Panel>
-            <ResizeHandle />
+            <ResizeHandle className="mt-1 mb-1" />
             <Panel defaultSize={songListPanelSize ?? 40} minSize={20}>
               <SongListPanel
                 ref={songListPanelRef}

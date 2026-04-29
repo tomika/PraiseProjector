@@ -1848,7 +1848,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             </div>
             <div
               ref={this.playlistContainerRef}
-              className={`playlist-items-container flex-grow-1 mr-1 mb-1 overflow-auto${isDisabled ? " disabled" : ""}`}
+              className={`playlist-items-container flex-grow-1 overflow-auto${isDisabled ? " disabled" : ""}`}
               tabIndex={isDisabled ? -1 : 0}
               onKeyDown={(e) => !isDisabled && this.handleKeyDown(e.nativeEvent)}
               onFocus={() => {

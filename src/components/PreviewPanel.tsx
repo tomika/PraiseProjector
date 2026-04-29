@@ -1938,7 +1938,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             onPreviewSplitSizeChange?.(sizes[0]);
           }}
         >
-          <Panel defaultSize={previewSplitSize ?? 60} minSize={20} className="mb-1 ml-1">
+          <Panel defaultSize={previewSplitSize ?? 60} minSize={20}>
             <div className="d-flex flex-grow-1 min-height-0 h-100">
               <div className={`flex-grow-1 preview-sections-container ${remoteHighlightController ? "remote-controlled" : ""}`}>
                 {/* Remote control indicator overlay - matching C# SectionListBox.Remote */}
@@ -2083,10 +2083,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               </div>
             </div>
           </Panel>
-          <ResizeHandle />
-          <Panel defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40} minSize={bottomMinSize} className="ml-1">
+          <ResizeHandle className="mt-1 mb-1" />
+          <Panel defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40} minSize={bottomMinSize}>
             <div className="d-flex flex-column h-100">
-              <div className="projecting-formats-container mt-1">
+              <div className="projecting-formats-container">
                 <ul className="nav nav-tabs">
                   <li className="nav-item">
                     <a

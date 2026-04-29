@@ -2228,7 +2228,7 @@ const AppContent: React.FC = () => {
                 </div>
               </div>
             </Panel>
-            <ResizeHandle />
+            <ResizeHandle className="mr-1 ml-1" />
             <Panel defaultSize={editorPanelSize} minSize={30}>
               {!usePagingMode && (
                 <div className="d-flex flex-column h-100">
@@ -2260,7 +2260,7 @@ const AppContent: React.FC = () => {
                 </div>
               )}
             </Panel>
-            <ResizeHandle />
+            <ResizeHandle className="ml-1 mr-1" />
             <Panel defaultSize={previewPanelSize} minSize={25}>
               {!usePagingMode && (
                 <PreviewPanel
