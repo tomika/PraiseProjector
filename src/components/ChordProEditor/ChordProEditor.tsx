@@ -750,6 +750,14 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     }
   }
 
+  /**
+   * Recompute layout-dependent drawing without reloading the document.
+   * Useful for container resize scenarios (e.g. dedicated print window).
+   */
+  public refreshLayout() {
+    this.scheduleEditorRefresh();
+  }
+
   handleEditToggle = () => {
     if (this.isEditable) {
       this.leaveEditMode();

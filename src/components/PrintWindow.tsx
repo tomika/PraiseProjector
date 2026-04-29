@@ -49,6 +49,7 @@ const PrintWindow: React.FC = () => {
   // Track whether the editor has initialised so we can apply display settings
   const editorRef = useRef<ChordProEditor | null>(null);
   const [editorReady, setEditorReady] = useState(false);
+  const editorAreaRef = useRef<HTMLDivElement>(null);
 
   // Force light mode + set document title
   useEffect(() => {
@@ -154,6 +155,47 @@ const PrintWindow: React.FC = () => {
     const timer = setTimeout(() => setEditorReady(true), 500);
     return () => clearTimeout(timer);
   }, [song]);
+
+  // Keep the embedded editor layout synced to print window/container resizing.
+  useEffect(() => {
+    if (!editorReady) return;
+
+    let frame: number | null = null;
+    const requestLayoutRefresh = () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        editorRef.current?.refreshLayout();
+      });
+    };
+
+    const handleWindowResize = () => {
+      requestLayoutRefresh();
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+
+    let editorAreaResizeObserver: ResizeObserver | null = null;
+    if (editorAreaRef.current && typeof ResizeObserver !== "undefined") {
+      editorAreaResizeObserver = new ResizeObserver(() => {
+        requestLayoutRefresh();
+      });
+      editorAreaResizeObserver.observe(editorAreaRef.current);
+    }
+
+    // Run one sync after observers/listeners are attached.
+    requestLayoutRefresh();
+
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      editorAreaResizeObserver?.disconnect();
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+    };
+  }, [editorReady]);
 
   /** Persist current printer settings into localStorage so they survive across sessions */
   const savePrinterSettings = useCallback(() => {
@@ -357,7 +399,9 @@ const PrintWindow: React.FC = () => {
 
       {/* ChordPro Editor – preview only, memoized so checkbox changes don't
           trigger componentDidUpdate which would reset display via loadSongToWysiwyg */}
-      <div className="print-editor-area">{editorElement}</div>
+      <div className="print-editor-area" ref={editorAreaRef}>
+        {editorElement}
+      </div>
     </div>
   );
 };

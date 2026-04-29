@@ -5,6 +5,8 @@ import LogViewerPage from "./components/LogViewerPage";
 import PrintWindow from "./components/PrintWindow";
 import { LocalizationProvider } from "./localization/LocalizationContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SettingsProvider } from "./contexts/SettingsContext";
+import { TooltipProvider } from "./localization/TooltipContext";
 import { installConsoleInterceptor, subscribeToLogs } from "../common/logger";
 import "./index.css";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -49,7 +51,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     ) : isPrintWindow ? (
       <ThemeProvider>
         <LocalizationProvider>
-          <PrintWindow />
+          <SettingsProvider>
+            <TooltipProvider>
+              <PrintWindow />
+            </TooltipProvider>
+          </SettingsProvider>
         </LocalizationProvider>
       </ThemeProvider>
     ) : (
