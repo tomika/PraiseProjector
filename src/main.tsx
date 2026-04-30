@@ -11,6 +11,7 @@ import { installConsoleInterceptor, subscribeToLogs } from "../common/logger";
 import "./index.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "font-awesome/css/font-awesome.min.css";
+import "./App.css";
 import { cloudApi } from "../common/cloudApi";
 
 // Install console interceptor early to capture all logs

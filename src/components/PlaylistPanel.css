@@ -36,6 +36,7 @@
 .playlist-items-container {
   flex-grow: 1;
   overflow-y: auto;
+  border-radius: 0.375rem;
 }
 
 .playlist-items-container:focus > td {
@@ -116,6 +117,15 @@
 
 .playlist-row {
   cursor: move;
+  border-radius: 0.375rem;
+}
+
+.playlist-row td:first-child {
+  border-radius: 0.375rem 0 0 0.375rem;
+}
+
+.playlist-row td:last-child {
+  border-radius: 0 0.375rem 0.375rem 0;
 }
 
 .playlist-row.dragging {

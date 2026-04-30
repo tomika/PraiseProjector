@@ -2090,7 +2090,7 @@ const AppContent: React.FC = () => {
         <div className="container-fluid vh-100 d-flex flex-column pp-app-shell p-1">
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}
           <div style={{ display: usePagingMode ? "flex" : "none", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
-            <div className="btn-group mb-2">
+            <div className="main-paging-buttons btn-group mb-2">
               <button className={`btn ${activePanel === "side" ? "btn-primary" : "btn-secondary"}`} onClick={() => setActivePanel("side")}>
                 {t("TabSongs")}
               </button>

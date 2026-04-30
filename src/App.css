@@ -6,6 +6,12 @@
   min-height: 0;
 }
 
+.main-paging-buttons > .btn {
+  min-height: 1.5rem !important;
+  max-height: 2.5rem !important;
+  padding: 0.125rem 0.5rem !important;
+}
+
 .editor-wrapper {
   min-height: 0;
   display: flex;

@@ -957,7 +957,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
               <Icon type={IconType.EDIT} />
             </button>
             <ul className="nav nav-tabs">
-              <li className="nav-item">
+              <li className="nav-item single-line">
                 <a
                   className={`nav-link ${activeTab === "wysiwyg" ? "active" : ""}`}
                   href="#"
@@ -969,7 +969,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
                   {t("WYSWYGEditor")}
                 </a>
               </li>
-              <li className="nav-item">
+              <li className="nav-item single-line">
                 <a
                   className={`nav-link ${activeTab === "meta" ? "active" : ""}`}
                   href="#"
@@ -981,7 +981,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
                   {t("MetaDataTab")}
                 </a>
               </li>
-              <li className="nav-item">
+              <li className="nav-item single-line">
                 <a
                   className={`nav-link ${activeTab === "chordpro" ? "active" : ""}`}
                   href="#"

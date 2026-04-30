@@ -420,7 +420,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
         )}
         {onSettingsClick && (
           <button
-            className="btn btn-light user-sync-main-btn user-sync-height-btn"
+            className="btn btn-light user-sync-main-btn user-sync-height-btn ml-1"
             aria-label="Settings"
             title={tt("toolbar_settings")}
             onClick={onSettingsClick}

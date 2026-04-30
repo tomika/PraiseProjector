@@ -20,6 +20,7 @@
 
 .editor-tabs-header > .nav-tabs {
   flex: 1 1 auto;
+  min-width: 0;
   border-bottom: 0;
   flex-wrap: nowrap;
   align-items: stretch;
@@ -27,15 +28,20 @@
 
 .editor-tabs-header .nav-item {
   display: flex;
+  flex: 1 1 33.3333%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .editor-tabs-header .nav-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   height: 100%;
   min-height: 2.5rem;
-  text-align: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .edit-toggle-button {
