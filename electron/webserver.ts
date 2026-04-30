@@ -6,7 +6,7 @@ import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import { app, ipcMain, Net } from "electron";
+import { app, ipcMain } from "electron";
 import { Server } from "http";
 import { getMachineIpAddress } from "./utils";
 import { flushAllDisplayChangeListeners, getCurrentDisplay, waitForDisplayChange } from "./display";
@@ -47,13 +47,6 @@ export interface ConnectedClient {
   id: string; // MAC address or IP
   deviceName: string;
   validTo: number; // timestamp
-}
-
-// Pending display query request with metadata
-interface PendingDisplayRequest {
-  res: express.Response;
-  includePlaylist: boolean;
-  timeoutId: NodeJS.Timeout;
 }
 
 interface ClientIdentity {
@@ -162,7 +155,7 @@ export class WebServer {
     });
 
     // Add global error handler for unhandled errors
-    this.app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    this.app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
       console.error("[WebServer] Unhandled error:", err);
       res.status(500).json({ error: "Internal server error" });
     });

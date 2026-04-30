@@ -28,7 +28,7 @@ const LazyExternalImage: React.FC<{
   onSelect: () => void;
   title: string;
   externalBadgeTitle?: string;
-}> = ({ image, imageId, isSelected, onSelect, title, externalBadgeTitle }) => {
+}> = ({ image, imageId: _imageId, isSelected, onSelect, title, externalBadgeTitle }) => {
   const [dataUrl, setDataUrl] = useState<string | undefined>(image.dataUrl);
   const [isLoading, setIsLoading] = useState(false);
   const [shouldLoad, setShouldLoad] = useState(false);

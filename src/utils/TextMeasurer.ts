@@ -97,7 +97,6 @@ export class TextMeasurer {
           if (wordMetrics.width > maxWidth) {
             // Single word exceeds width - this will cause line breaks within the word
             // For simplicity, we'll count this as multiple lines based on estimated character count
-            const avgCharWidth = wordMetrics.width / word.length;
             const estimatedLines = Math.ceil(wordMetrics.width / maxWidth);
             linesInThisBlock += estimatedLines - 1; // -1 because we already counted one line
             maxLineWidth = Math.max(maxLineWidth, maxWidth);

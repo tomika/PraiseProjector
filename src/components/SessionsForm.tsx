@@ -53,8 +53,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const [isElectron, setIsElectron] = useState(false);
   const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
   // Check for Web Bluetooth availability (works in browser without pairing)
-  const [hasWebBluetooth, setHasWebBluetooth] = useState(false);
-  const [bleConnecting, setBleConnecting] = useState(false);
+  const [_hasWebBluetooth, setHasWebBluetooth] = useState(false);
+  const [_bleConnecting, setBleConnecting] = useState(false);
 
   // Detect Electron and Web Bluetooth on mount
   useEffect(() => {
@@ -398,14 +398,14 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   };
 
   // Open OS Bluetooth settings for device pairing (Classic Bluetooth/SPP)
-  const handleOpenBluetoothSettings = async () => {
+  const _handleOpenBluetoothSettings = async () => {
     if (window.electronAPI?.openBluetoothSettings) {
       await window.electronAPI.openBluetoothSettings();
     }
   };
 
   // Connect via Web Bluetooth (BLE) - no pairing required!
-  const handleWebBluetoothConnect = async () => {
+  const _handleWebBluetoothConnect = async () => {
     if (!webBluetoothService.isAvailable()) {
       console.warn("Web Bluetooth not available");
       return;

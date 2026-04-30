@@ -45,7 +45,7 @@ export class SongPreference {
     return this.capo >= 0 ? this.capo.toString() : "";
   }
 
-  public toUpdate(): any {
+  public toUpdate(): Record<string, unknown> {
     return {
       songId: this.songId,
       capo: this.capo,

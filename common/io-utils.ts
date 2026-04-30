@@ -8,7 +8,7 @@ function truncateText(text: string, maxLength: number): string {
 function summarizeValue(value: unknown): string {
   if (value === undefined) return "undefined";
   if (value === null) return "null";
-  if (typeof value === "string") return `string(\"${truncateText(value, 40)}\")`;
+  if (typeof value === "string") return `string("${truncateText(value, 40)}")`;
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return `${typeof value}(${String(value)})`;
   if (typeof value === "symbol") return "symbol";
   if (typeof value === "function") return "function";
@@ -95,8 +95,8 @@ export function parseAndDecode<T, O, I>(codec: t.Type<T, O, I>, jsonString: stri
   let json: unknown;
   try {
     json = JSON.parse(jsonString);
-  } catch (e: any) {
-    throw new Error(`Failed to parse JSON: ${e.message}`);
+  } catch (e) {
+    throw new Error(`Failed to parse JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
   return decode(codec, json as I);
 }

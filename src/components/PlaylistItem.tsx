@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { useDrag, useDrop, DropTargetMonitor } from "react-dnd";
+import { useDrag, useDrop, DragSourceMonitor, DropTargetMonitor } from "react-dnd";
 import { XYCoord } from "dnd-core";
 import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 
@@ -55,7 +55,7 @@ const PlaylistItem: React.FC<PlaylistItemProps> = ({ item, index, moveItem, remo
     item: () => {
       return { songId: item.songId, index };
     },
-    collect: (monitor: any) => ({
+    collect: (monitor: DragSourceMonitor) => ({
       isDragging: monitor.isDragging(),
     }),
   });

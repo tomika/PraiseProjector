@@ -7,7 +7,7 @@ import { SectionGenerator, SectionItem, DisplaySettings } from "../utils/Section
 import { SectionRenderer, RenderSettings } from "../utils/SectionRenderer";
 import { useSettings } from "../hooks/useSettings";
 import { Icon, IconType } from "../services/IconService";
-import { getProjectedSong, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims, getCurrentDisplay } from "../state/CurrentSongStore";
+import { getProjectedSong, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims } from "../state/CurrentSongStore";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";

@@ -16,7 +16,6 @@
  */
 
 import { Display, PpdMessage } from "../common/pp-types";
-import { getEmptyDisplay } from "../common/pp-utils";
 import { getCurrentDisplay, registerDisplayChangeListener } from "./display";
 
 export type { PpdMessage };

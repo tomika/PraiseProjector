@@ -10,7 +10,7 @@ const About: React.FC = () => {
       <p>Version: {version} (Electron)</p>
       <p>Build Date: {buildDate}</p>
       <p>Cross-platform praise presentation software.</p>
-      <p>For more information, visit the project's website.</p>
+      <p>For more information, visit the project&apos;s website.</p>
       <p>&copy; 2024-{new Date().getFullYear()}</p>
     </div>
   );

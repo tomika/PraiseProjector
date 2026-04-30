@@ -187,7 +187,7 @@ export function deserializePlaylist(playlistRaw: unknown): PlaylistEntry[] | und
     } else if (trimmed.startsWith("{")) {
       try {
         normalized = [JSON.parse(trimmed)];
-      } catch (error) {
+      } catch {
         // Support legacy newline-delimited JSON object entries.
         normalized = trimmed.split("\n");
       }

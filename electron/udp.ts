@@ -158,7 +158,9 @@ export class UdpServer {
     for (const listener of this.sessionChangeListeners) {
       try {
         listener("discovered", session.id, session.name);
-      } catch {}
+      } catch {
+        /* listener errors are intentionally ignored */
+      }
     }
   }
 
@@ -169,7 +171,9 @@ export class UdpServer {
       for (const listener of this.sessionChangeListeners) {
         try {
           listener("disappeared", message.device, name);
-        } catch {}
+        } catch {
+          /* listener errors are intentionally ignored */
+        }
       }
     }
   }

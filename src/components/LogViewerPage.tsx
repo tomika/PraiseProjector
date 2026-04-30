@@ -158,25 +158,9 @@ function highlightText(text: string, term: string): React.ReactNode {
   );
 }
 
-function isExpandable(log: TaggedLogEntry): boolean {
-  if (log.message.includes("\n")) return true;
-  if (log.args?.some((a) => a !== null && a !== undefined && typeof a === "object")) return true;
-  return false;
-}
-
 function getFirstLine(message: string): string {
   const nl = message.indexOf("\n");
   return nl >= 0 ? message.substring(0, nl) : message;
-}
-
-function stringifyLogArg(arg: unknown): string {
-  if (arg === undefined) return "undefined";
-  if (typeof arg === "string") return arg;
-  try {
-    return JSON.stringify(arg, null, 2) ?? String(arg);
-  } catch {
-    return String(arg);
-  }
 }
 
 // ── LogViewerPage Component ──────────────────────────────────────────────────

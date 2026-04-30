@@ -64,14 +64,13 @@ import { getAboutBoxHtml } from "./about";
 import { DeviceMessage, PpdPacket, HostDevice, Nearby, NearbyMessageParam, HostDeviceInfoType } from "./host-device";
 import { Settings } from "../common/settings";
 import { formatLocalDateLabel } from "../common/date-only";
-import { entryIsFound, getEmptyDisplay, verifyPlaylist } from "../common/pp-utils";
+import { entryIsFound, getEmptyDisplay } from "../common/pp-utils";
 import { ChordBoxType } from "../chordpro/chord_drawer";
 import { NoteHitBox } from "../chordpro/ui_base";
 import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 
 export const praiseProjectorOrigin = "https://praiseprojector.com";
 
-type ResultCallback = (result: string, ppHeaders: { [key: string]: string }) => void;
 type ErrorCallback = (error: Error) => void;
 
 const debugLog = false;
@@ -978,7 +977,7 @@ export class App extends AppBase {
     this.chkUseInstructions = document.getElementById("chkInstructions") as HTMLInputElement;
     if (this.chkUseInstructions) {
       const chkInstructions = this.chkUseInstructions;
-      chkInstructions.onclick = (e) => {
+      chkInstructions.onclick = (_e) => {
         const btnEditInstructions = this.btnEditInstructions;
         if (btnEditInstructions && this.chkAdmin?.checked) {
           makeVisible(chkInstructions, false);
@@ -1341,7 +1340,7 @@ export class App extends AppBase {
     }
 
     this.switchDarkMode(undefined);
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (_e) => {
       this.switchDarkMode(undefined);
     });
   }
@@ -3249,7 +3248,7 @@ export class App extends AppBase {
     }
   }
 
-  private lastDisplayRequest: any = null;
+  private lastDisplayRequest: { abort: () => void } | null | undefined = null;
 
   private async watchDisplay(forced: boolean = false) {
     if (this.mode === "App") {

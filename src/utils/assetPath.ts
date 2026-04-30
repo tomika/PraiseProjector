@@ -8,7 +8,7 @@ export function getAssetPath(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
 
   // In Electron mode, check if we're loading from dev server or built files
-  if (typeof window !== "undefined" && (window as any).electron) {
+  if (typeof window !== "undefined" && (window as { electron?: unknown }).electron) {
     // If we're loading from localhost (dev server), use absolute paths
     if (window.location.protocol === "http:" && window.location.hostname === "localhost") {
       return normalizedPath; // /assets/image.png

@@ -1,4 +1,4 @@
-import { TextMeasurer, TextSplitter, ChunkData } from "./TextMeasurer";
+import { TextMeasurer, TextSplitter } from "./TextMeasurer";
 import { Song } from "../../db-common/Song";
 
 /**

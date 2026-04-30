@@ -10,8 +10,8 @@
  */
 
 import { hostname } from "os";
-import { UdpServer, LocalSessionInfo as UdpSessionInfo } from "./udp";
-import { BluetoothServer, BluetoothDeviceInfo, isBluetoothAvailable, getBluetoothServerInstance } from "./bluetooth";
+import { UdpServer } from "./udp";
+import { BluetoothServer } from "./bluetooth";
 import { WebServer } from "./webserver";
 
 // Transport type prefixes for endpoint IDs

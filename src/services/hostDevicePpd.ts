@@ -206,14 +206,18 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
       for (const cb of nearbyChangeListeners) {
         try {
           cb("discovered", data.id, data.name);
-        } catch {}
+        } catch {
+          /* listener errors are intentionally ignored */
+        }
       }
     } else if (data.event === "disappeared") {
       discoveredSessions.delete(data.id);
       for (const cb of nearbyChangeListeners) {
         try {
           cb("disappeared", data.id, data.name);
-        } catch {}
+        } catch {
+          /* listener errors are intentionally ignored */
+        }
       }
     }
     return;
@@ -244,7 +248,9 @@ export const initHostDevicePpd = async () => {
     try {
       const payload = JSON.parse(raw) as { op: string; param: unknown };
       void onDeviceMessage(payload);
-    } catch {}
+    } catch {
+      /* malformed payloads are intentionally ignored */
+    }
   };
 
   // Electron (contextIsolation): preload dispatches a CustomEvent on the shared DOM.

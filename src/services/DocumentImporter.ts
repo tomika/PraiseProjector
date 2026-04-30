@@ -58,7 +58,7 @@ export class DocumentImporter {
       const textContent = await page.getTextContent();
 
       // Sort items by Y position to maintain line order
-      const items = textContent.items as any[];
+      const items = textContent.items as Array<{ str: string; transform: number[] }>;
       items.sort((a, b) => {
         // Sort by Y first (top to bottom), then X (left to right)
         if (Math.abs(a.transform[5] - b.transform[5]) > 2) {
