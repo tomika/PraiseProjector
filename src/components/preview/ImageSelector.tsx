@@ -142,6 +142,10 @@ const ImageSelector: React.FC<ImageSelectorProps> = ({ selectedImageId, onSelect
 
   // Load external images list from picture folder (Electron only)
   // Note: We only load the file list here, actual image data is loaded lazily
+  // INTENTIONAL: depend only on `pictureFolder`, not the whole `settings` object.
+  // Broadening to `settings` would re-create this callback (and refetch images) on
+  // every unrelated settings change. The React Compiler advisory is acceptable here.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const loadExternalImages = useCallback(async () => {
     if (!isElectron || !settings?.pictureFolder || !window.electronAPI?.listImagesInFolder) {
       setExternalImages([]);

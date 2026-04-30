@@ -2025,7 +2025,7 @@ const PlaylistItemRow: React.FC<{
       ref.current.style.scrollMarginTop = `${headerHeight}px`;
       ref.current.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
-  }, [isFocused]);
+  }, [isFocused, headerRef]);
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "playlist-item",
@@ -2083,10 +2083,15 @@ const PlaylistItemRow: React.FC<{
     }, 100);
   };
 
+  // INTENTIONAL: synchronous read of headerRef during render is required to compute
+  // scrollMarginTop for the very first render (used by scrollIntoView in the effect above).
+  // Moving this to state+effect would cause a visible scroll jump on initial focus.
+  // eslint-disable-next-line react-hooks/refs
   const headerHeight = headerRef.current ? headerRef.current.offsetHeight : 0;
 
   const cellStyleWithMargin = {
     ...cellStyle,
+    // eslint-disable-next-line react-hooks/refs
     scrollMarginTop: `${headerHeight}px`,
   };
 

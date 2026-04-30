@@ -21,6 +21,11 @@ const marginHandleToSides: Record<MarginHandle, MarginSide[]> = {
   "bottom-left": ["bottom", "left"],
 };
 
+const clampMarginValue = (value: number, oppositeValue: number) => {
+  const normalizedValue = Number.isFinite(value) ? value : 0;
+  return Math.max(0, Math.min(MAX_MARGIN_SUM - oppositeValue, Math.round(normalizedValue)));
+};
+
 interface ProjectingSettingsProps {
   settings: Settings;
   updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -43,11 +48,6 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
   const [marginPreviewSize, setMarginPreviewSize] = React.useState({ width: 0, height: 0 });
   const qrDragRef = React.useRef({ startX: 0, startY: 0, startQrX: 0, startQrY: 0 });
   const marginPreviewQrRef = React.useRef<HTMLDivElement | null>(null);
-
-  const clampMarginValue = (value: number, oppositeValue: number) => {
-    const normalizedValue = Number.isFinite(value) ? value : 0;
-    return Math.max(0, Math.min(MAX_MARGIN_SUM - oppositeValue, Math.round(normalizedValue)));
-  };
 
   const updateDisplayMargin = React.useCallback(
     (side: MarginSide, nextValue: number) => {
@@ -259,7 +259,7 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [clampMarginValue, draggingMarginHandle, settings.displayBorderRect, updateSetting]);
+  }, [draggingMarginHandle, settings.displayBorderRect, updateSetting]);
 
   React.useEffect(() => {
     if (!draggingBox) {

@@ -19,7 +19,9 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
   const { tt } = useTooltips();
   const { t } = useLocalization();
   const tRef = useRef(t);
-  tRef.current = t;
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
   const [storeInProfile, setStoreInProfile] = useState(isInProfile ? true : true);
 
   // Refs for the three panes

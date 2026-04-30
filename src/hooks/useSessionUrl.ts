@@ -58,6 +58,11 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
   const { settings } = useSettings();
   const { guestLeaderId } = useLeader();
 
+  // INTENTIONAL: depend only on the specific settings fields used to build the URL,
+  // not the whole `settings` object. Broadening would recompute (and re-render
+  // dependents) on unrelated settings changes. The React Compiler advisory and
+  // exhaustive-deps suggestion are both acceptable here.
+  /* eslint-disable react-hooks/preserve-manual-memoization, react-hooks/exhaustive-deps */
   return useMemo(() => {
     const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 
@@ -75,4 +80,5 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
     }
     return buildCloudUrl(guestLeaderId);
   }, [mode, settings?.iWebEnabled, settings?.webServerDomainName, settings?.webServerPort, settings?.webServerPath, guestLeaderId]);
+  /* eslint-enable react-hooks/preserve-manual-memoization, react-hooks/exhaustive-deps */
 }
