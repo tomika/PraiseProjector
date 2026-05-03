@@ -21,6 +21,7 @@ import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { Display } from "../../common/pp-types";
+import { last } from "fp-ts/lib/ReadonlyNonEmptyArray";
 
 type PreviewTab = "format" | "image" | "message";
 
@@ -272,6 +273,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const nextNavigatedByKeyRef = useRef(false);
     const projectorChannelRef = useRef<BroadcastChannel | null>(null);
     const previewDataUrlRef = useRef<string | null>(null); // Ref to access latest preview in callbacks
+    const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
     // Splitter: compute bottom panel minSize as a percentage from actual container height
     const panelGroupRef = useRef<HTMLDivElement | null>(null);
@@ -1237,13 +1239,16 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const toggleButton = (
       currentState: boolean,
       setter: (value: boolean) => void,
-      settingKey?: keyof Pick<Settings, "contentBasedSections" | "projectInstructions" | "showTextInPreview" | "showImageInPreview">
+      settingKey?: keyof Pick<Settings, "contentBasedSections" | "projectInstructions" | "showTextInPreview" | "showImageInPreview">,
+      focusElement?: HTMLElement | null
     ) => {
       const newState = !currentState;
       setter(newState);
       if (settingKey) {
         updateSettingWithAutoSave(settingKey, newState);
       }
+      if (!focusElement) focusElement = sectionListRef.current;
+      focusElement?.focus();
     };
 
     // Projector button handler - matching C# OnSwitchButtonClicked + UpdateDisplaySetting
@@ -1449,6 +1454,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           }
         }
       }
+      sectionListRef.current?.focus();
     };
 
     // Update projector window when preview changes - use BroadcastChannel for cross-reload support
@@ -1512,21 +1518,30 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     <button
                       className={`btn flex-fill ${settings?.displayFontBold ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Bold"
-                      onClick={() => updateSettingWithAutoSave("displayFontBold", !settings?.displayFontBold)}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontBold", !settings?.displayFontBold);
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.BOLD} />
                     </button>
                     <button
                       className={`btn flex-fill ${settings?.displayFontItalic ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Italic"
-                      onClick={() => updateSettingWithAutoSave("displayFontItalic", !settings?.displayFontItalic)}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontItalic", !settings?.displayFontItalic);
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.ITALIC} />
                     </button>
                     <button
                       className={`btn flex-fill ${settings?.displayFontUnderline ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Underline"
-                      onClick={() => updateSettingWithAutoSave("displayFontUnderline", !settings?.displayFontUnderline)}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontUnderline", !settings?.displayFontUnderline);
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.UNDERLINE} />
                     </button>
@@ -1537,7 +1552,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                   <select
                     className="form-control form-control-sm font-size-input"
                     value={Math.max(1, Math.min(99, settings?.displayFontSize || 16))}
-                    onChange={(e) => updateSettingWithAutoSave("displayFontSize", parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      updateSettingWithAutoSave("displayFontSize", parseInt(e.target.value, 10));
+                      sectionListRef.current?.focus();
+                    }}
                     aria-label="Font Size"
                   >
                     {Array.from({ length: 99 }, (_, i) => i + 1).map((size) => (
@@ -1551,7 +1569,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                       type="color"
                       className="font-color-picker-hidden"
                       value={settings?.textColor || "#FFFFFF"}
-                      onChange={(e) => updateSettingWithAutoSave("textColor", e.target.value)}
+                      onChange={(e) => {
+                        updateSettingWithAutoSave("textColor", e.target.value);
+                        sectionListRef.current?.focus();
+                      }}
                       title={tt("format_text_color")}
                       aria-label="Text Color"
                     />
@@ -1561,21 +1582,30 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     <button
                       className={`btn flex-fill ${(settings?.displayFontAlign || "center") === "left" ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Align Left"
-                      onClick={() => updateSettingWithAutoSave("displayFontAlign", "left")}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontAlign", "left");
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.ALIGN_LEFT} />
                     </button>
                     <button
                       className={`btn flex-fill ${(settings?.displayFontAlign || "center") === "center" ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Align Center"
-                      onClick={() => updateSettingWithAutoSave("displayFontAlign", "center")}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontAlign", "center");
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.ALIGN_CENTER} />
                     </button>
                     <button
                       className={`btn flex-fill ${(settings?.displayFontAlign || "center") === "right" ? "btn-light btn-active" : "btn-light"}`}
                       aria-label="Align Right"
-                      onClick={() => updateSettingWithAutoSave("displayFontAlign", "right")}
+                      onClick={() => {
+                        updateSettingWithAutoSave("displayFontAlign", "right");
+                        sectionListRef.current?.focus();
+                      }}
                     >
                       <Icon type={IconType.ALIGN_RIGHT} />
                     </button>
@@ -1601,6 +1631,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                   } else {
                     setBgImage(null);
                   }
+                  sectionListRef.current?.focus();
                 }}
               />
             </div>
@@ -1613,6 +1644,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 placeholder={t("EnterMessagePlaceholder")}
                 value={settings?.message || ""}
                 onChange={(e) => updateSettingWithAutoSave("message", e.target.value)}
+                onFocus={(e) => {
+                  lastFocusedElementRef.current = e.target as HTMLElement;
+                }}
               ></textarea>
             </div>
           );
@@ -1985,6 +2019,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                           data-bg-color={bgColor}
                           data-type-color={typeColor}
                           onClick={() => handleSectionClick(index)}
+                          onFocus={() => {
+                            lastFocusedElementRef.current = null;
+                          }}
                           title={tt("sectionlist")}
                         >
                           <div className="d-flex align-items-start">
@@ -2075,7 +2112,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                   <button
                     className={`btn ${displayMessageEnabled ? "btn-light btn-active" : "btn-light"}`}
                     aria-label="Message"
-                    onClick={() => toggleButton(displayMessageEnabled, setDisplayMessageEnabled)}
+                    onClick={() =>
+                      toggleButton(
+                        displayMessageEnabled,
+                        setDisplayMessageEnabled,
+                        undefined,
+                        activeTab === "message" ? lastFocusedElementRef.current : undefined
+                      )
+                    }
                   >
                     <Icon type={IconType.MESSAGE} />
                   </button>
