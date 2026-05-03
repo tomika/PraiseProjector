@@ -352,6 +352,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       [clampQrContextMenuPosition]
     );
 
+    const getFontOptionClassName = useCallback((font: string) => {
+      return `preview-panel-font-option-${font.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+    }, []);
+
     // Available fonts for the font picker
     const [availableFonts, setAvailableFonts] = useState<string[]>(["Arial", "Times New Roman", "Verdana", "Georgia", "Courier New"]);
 
@@ -460,6 +464,29 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
       detectFonts();
     }, []);
+
+    useEffect(() => {
+      const styleElementId = "preview-panel-font-option-styles";
+      let styleElement = document.getElementById(styleElementId) as HTMLStyleElement | null;
+
+      if (!styleElement) {
+        styleElement = document.createElement("style");
+        styleElement.id = styleElementId;
+        document.head.appendChild(styleElement);
+      }
+
+      const escapeCssValue = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+      styleElement.textContent = availableFonts
+        .map((font) => {
+          const className = getFontOptionClassName(font);
+          return [
+            `select.preview-panel-font-family-select option.${className} { font-family: "${escapeCssValue(font)}", sans-serif; }`,
+            `select.preview-panel-font-family-select.${className} { font-family: "${escapeCssValue(font)}", sans-serif; }`,
+          ].join("\n");
+        })
+        .join("\n");
+    }, [availableFonts, getFontOptionClassName]);
 
     // Update display state when section changes
     const updateDisplayState = useCallback(
@@ -1503,13 +1530,15 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 {/* Left column: font family + style buttons */}
                 <div className="d-flex flex-column format-col">
                   <select
-                    className="form-control form-control-sm"
+                    className={`form-control form-control-sm preview-panel-font-family-select ${getFontOptionClassName(
+                      settings?.displayFontName || "Arial"
+                    )}`}
                     aria-label="Font Family"
                     value={settings?.displayFontName || "Arial"}
                     onChange={(e) => updateSettingWithAutoSave("displayFontName", e.target.value)}
                   >
                     {availableFonts.map((font) => (
-                      <option key={font} value={font}>
+                      <option key={font} value={font} className={getFontOptionClassName(font)}>
                         {font}
                       </option>
                     ))}
