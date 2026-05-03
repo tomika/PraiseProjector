@@ -2470,7 +2470,7 @@ export class App extends AppBase {
       this.capoVal = this.selCapo.selectedIndex - 1;
       if (this.chkAdmin?.checked) {
         if (this.chkUseCapo) this.chkUseCapo.checked = true;
-        if (this.capoVal >= 0) this.capoRequest(this.capoVal);
+        this.capoRequest(this.capoVal);
       }
       this.updateCapoLabel();
       this.storeDisplaySettings();
