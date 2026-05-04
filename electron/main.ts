@@ -1408,9 +1408,10 @@ ipcMain.on("sync-leader-name", (_event, leaderName: string) => {
 });
 
 // Get connected clients from webserver (for leader-mode client selection)
-ipcMain.handle("get-connected-clients", () => {
+ipcMain.handle("get-connected-clients", (_event, countOnly = false) => {
   const webServer = getWebServerInstance();
-  return webServer?.getConnectedClients() ?? [];
+  if (!webServer) return countOnly ? 0 : [];
+  return countOnly ? webServer.getConnectedClients(true) : webServer.getConnectedClients(false);
 });
 
 // Highlight access control - respond to user's permission decision

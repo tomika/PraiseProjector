@@ -145,6 +145,7 @@ export interface Settings {
   qrCodeX: number; // X position as percentage of image width (0–100), left edge of QR
   qrCodeY: number; // Y position as percentage of image height (0–100), top edge of QR
   qrCodeSizePercent: number; // Size as percentage of image height (5–50)
+  warningFlashInPreview: boolean;
   showTextInPreview: boolean;
   showImageInPreview: boolean;
 

@@ -371,6 +371,7 @@
   "SettingsQRCodeSize": "QR méret (%)",
   "SettingsQRCodeSizeHelp": "A QR kód mérete a kép magasságának százalékában",
   "SettingsQRCodePreviewHelp": "Húzással mozgatás. Görgővel a QR-en (vagy a csúszkával) méretezés.",
+  "SettingsWarningFlash": "Figyelmeztető villogás az előnézetben amikor nem történik valós vetítés",
   "SettingsTextShadowEnabled": "Árnyék engedélyezése a szövegen",
   "SettingsTextShadowOffset": "Árnyék eltolása",
   "SettingsTextShadowOffsetHelp": "Az árnyék távolsága a szövegtől",

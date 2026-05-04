@@ -653,6 +653,18 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
               </div>
             )}
           </div>
+          <div className="form-check mt-2">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="warningFlashInPreview"
+              checked={settings.warningFlashInPreview}
+              onChange={(e) => updateSetting("warningFlashInPreview", e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="warningFlashInPreview">
+              {t("SettingsWarningFlash")}
+            </label>
+          </div>
         </div>
       </div>
     </div>

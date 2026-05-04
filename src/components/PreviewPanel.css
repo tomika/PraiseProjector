@@ -224,10 +224,26 @@
   user-select: none;
 }
 
+.preview-image-wrapper-hidden {
+  visibility: hidden;
+}
+
 .preview-display-image {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.preview-display-container-flash {
+  transition: background-color 0.04s linear;
+}
+
+.preview-display-container-flash-black {
+  background: #000000;
+}
+
+.preview-display-container-flash-white {
+  background: #ffffff;
 }
 
 .qr-code-overlay {

@@ -21,7 +21,6 @@ import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { Display } from "../../common/pp-types";
-import { last } from "fp-ts/lib/ReadonlyNonEmptyArray";
 
 type PreviewTab = "format" | "image" | "message";
 
@@ -136,6 +135,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       }
     }, [selectedSectionIndex, sections]);
 
+    const lastSelectionIndexRef = useRef<number>(selectedSectionIndex);
+
     // Track previous projectedSong to detect when it changes
     const prevProjectedSongIdRef = useRef<string | null>(null);
 
@@ -178,12 +179,30 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Projector state - matching C# DisplayForm
     const [projectorEnabled, setProjectorEnabled] = useState(false);
+    // Connected net-display clients (Electron only; stays false in web mode)
+    const [hasConnectedClients, setHasConnectedClients] = useState(false);
     const [currentMonitorIndex, setCurrentMonitorIndex] = useState(-1);
     const [availableMonitors, setAvailableMonitors] = useState<MonitorDisplay[]>([]);
     const [projectorWindowRef, setProjectorWindowRef] = useState<Window | null>(null);
     const [_displayAspectRatio, setDisplayAspectRatio] = useState(16 / 9); // Default aspect ratio
     const [projectorWidth, setProjectorWidth] = useState(1920);
     const [projectorHeight, setProjectorHeight] = useState(1080);
+
+    // Poll connected clients every 7 s (Electron only — in web mode we can't know)
+    useEffect(() => {
+      if (!window.electronAPI?.getConnectedClients) return;
+      const poll = async () => {
+        try {
+          const clientCount = await window.electronAPI!.getConnectedClients!(true);
+          setHasConnectedClients(clientCount > 0);
+        } catch {
+          // ignore transient errors
+        }
+      };
+      void poll(); // immediate first check
+      const id = setInterval(poll, 5000);
+      return () => clearInterval(id);
+    }, []);
 
     // When no projector window is open, render at the user-configured net display resolution
     useEffect(() => {
@@ -317,6 +336,45 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const fontColorSwatchRef = useRef<HTMLSpanElement | null>(null);
     // Throttle ref for QR-interaction canvas re-renders (max once per 100ms)
     const lastQrRenderRef = useRef(0);
+
+    // Flash overlay state: null = show normal preview, 'black'/'white' = solid flash frame
+    const [flashOverlay, setFlashOverlay] = useState<"black" | "white" | null>(null);
+    const flashTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+    const triggerFlash = useCallback(() => {
+      // Cancel any in-progress flash sequence
+      for (const t of flashTimersRef.current) clearTimeout(t);
+      flashTimersRef.current = [];
+
+      // 3 x (black 125ms – image 125ms – white 125ms – image 125ms) = 1500ms
+      const stepMs = 125;
+      // sequence: B I W I  B I W I  B I W I  then null to restore
+      const sequence: Array<"black" | "white" | null> = [
+        "black",
+        null,
+        "white",
+        null,
+        "black",
+        null,
+        "white",
+        null,
+        "black",
+        null,
+        "white",
+        null,
+        null,
+      ];
+      sequence.forEach((frame, i) => {
+        flashTimersRef.current.push(setTimeout(() => setFlashOverlay(frame), i * stepMs));
+      });
+    }, []);
+
+    useEffect(() => {
+      return () => {
+        for (const t of flashTimersRef.current) clearTimeout(t);
+        flashTimersRef.current = [];
+      };
+    }, []);
 
     // QR size context menu state
     const [qrContextMenu, setQrContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1105,6 +1163,25 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       liveQrY,
       selectedImageId,
     ]);
+
+    // Flash only when section selection changes (not when toggling text/projector settings)
+    useEffect(() => {
+      const previousSelectionIndex = lastSelectionIndexRef.current;
+      lastSelectionIndexRef.current = selectedSectionIndex;
+
+      if (previousSelectionIndex === selectedSectionIndex) {
+        return;
+      }
+
+      if (
+        settings?.warningFlashInPreview &&
+        !freezePreview &&
+        selectedSectionIndex >= 0 &&
+        (!showText || (!projectorEnabled && !hasConnectedClients))
+      ) {
+        triggerFlash();
+      }
+    }, [selectedSectionIndex, settings?.warningFlashInPreview, freezePreview, showText, projectorEnabled, hasConnectedClients, triggerFlash]);
 
     const handleSectionClick = (index: number) => {
       onSelectedSectionIndexChange?.(index);
@@ -2200,11 +2277,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 </ul>
                 <div className="tab-content p-2 border border-top-0 preview-tab-content">{renderTabContent()}</div>
               </div>
-              <div className="flex-grow-1 preview-display-container" ref={containerRefCallback}>
+              <div
+                className={`flex-grow-1 preview-display-container${flashOverlay ? ` preview-display-container-flash preview-display-container-flash-${flashOverlay}` : ""}`}
+                ref={containerRefCallback}
+              >
                 {previewDataUrl ? (
                   <div
                     ref={previewWrapperRef}
-                    className="preview-image-wrapper"
+                    className={`preview-image-wrapper${flashOverlay ? " preview-image-wrapper-hidden" : ""}`}
                     onClick={handlePreviewWrapperClick}
                     onContextMenu={handlePreviewContextMenu}
                     title={!settings?.qrCodeInPreview && qrRawUrl ? tt("preview_no_qrcode") : undefined}

@@ -371,6 +371,7 @@
   "SettingsQRCodeSize": "QR Size (%)",
   "SettingsQRCodeSizeHelp": "Size of the QR code as a percentage of image height",
   "SettingsQRCodePreviewHelp": "Drag QR to move it. Use mouse wheel on QR (or the slider) to resize.",
+  "SettingsWarningFlash": "Warning flash on preview when real projection is not happening",
   "SettingsTextShadowEnabled": "Enable drop shadow on text",
   "SettingsTextShadowOffset": "Drop Shadow Offset",
   "SettingsTextShadowOffsetHelp": "Distance of the shadow from the text",

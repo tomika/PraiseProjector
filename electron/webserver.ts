@@ -1232,8 +1232,19 @@ export class WebServer {
    * Get list of connected clients for admin selection
    * Returns combined list of current clients and admin clients
    */
-  public getConnectedClients(): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> {
+  public getConnectedClients(countOnly: true): number;
+  public getConnectedClients(countOnly?: false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>;
+  public getConnectedClients(countOnly = false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> | number {
     const now = Date.now();
+
+    if (countOnly) {
+      let count = 0;
+      for (const client of this.connectedClients.values()) {
+        if (client.validTo > now) ++count;
+      }
+      return count;
+    }
+
     const result: Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> = [];
 
     // Add currently connected clients that are not already leader-mode clients

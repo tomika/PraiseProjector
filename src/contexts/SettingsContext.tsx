@@ -159,6 +159,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       qrCodeX: 85, // QR code X position (% of image width)
       qrCodeY: 82, // QR code Y position (% of image height)
       qrCodeSizePercent: 15, // QR code size (% of image height)
+      warningFlashInPreview: true,
       showTextInPreview: true,
       showImageInPreview: true,
       updateChannel: "stable",
