@@ -40,6 +40,12 @@ interface GroupFolder {
 // A category item is either a standalone song or a group folder containing multiple songs
 type CategoryItem = { type: "song"; songFound: SongFound } | { type: "group"; folder: GroupFolder };
 
+type VirtualRow = {
+  key: string;
+  height: number;
+  render: () => React.ReactNode;
+};
+
 interface CategoryNode {
   reason: FoundReason;
   songs: SongFound[];
@@ -68,6 +74,8 @@ interface SongListPanelState {
   showHistoryDialog: boolean;
   clipboardImportAvailable: boolean;
   showInlineSearchOptions: boolean;
+  virtualScrollTop: number;
+  virtualViewportHeight: number;
 }
 
 // Draggable Song Item Component (also a drop target for grouping)
@@ -221,6 +229,7 @@ const GroupFolderNode: React.FC<{
   onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
   onHeartClick: (song: Song) => void;
   onSelectedRefChange: (node: HTMLDivElement | null) => void;
+  renderChildren?: boolean;
 }> = ({
   folder,
   onToggle,
@@ -233,6 +242,7 @@ const GroupFolderNode: React.FC<{
   onSongContextMenu,
   onHeartClick,
   onSelectedRefChange,
+  renderChildren = true,
 }) => {
   const [{ isOver, canDrop }, drop] = useDrop(
     () => ({
@@ -265,7 +275,7 @@ const GroupFolderNode: React.FC<{
         <span className="group-folder-label">{folderLabel}</span>
         <span className="group-folder-count ms-1">({folder.songs.length})</span>
       </div>
-      {folder.expanded && (
+      {renderChildren && folder.expanded && (
         <div className="group-folder-songs">
           {folder.songs.map((sf) => {
             const isSelected = selectedSong?.Id === sf.song.Id;
@@ -327,8 +337,17 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   private keyboardSelectionDebounceTimer: number | null = null;
   private keyboardNavRafId: number | null = null;
   private pendingKeyboardNavDelta = 0;
+  private filterUpdateDebounceTimer: number | null = null;
+  private updateCategoriesRequestSeq = 0;
+  private virtualScrollRafId: number | null = null;
 
   private static readonly KEYBOARD_SELECTION_DEBOUNCE_MS = 180;
+  private static readonly FILTER_UPDATE_DEBOUNCE_MS = 140;
+  private static readonly VIRTUAL_HEADER_ROW_HEIGHT = 34;
+  private static readonly VIRTUAL_GROUP_ROW_HEIGHT = 30;
+  private static readonly VIRTUAL_SONG_ROW_HEIGHT = 32;
+  private static readonly VIRTUAL_SONG_SNIPPET_ROW_HEIGHT = 46;
+  private static readonly VIRTUAL_OVERSCAN_PX = 260;
 
   private getPageNavigationStep(): number {
     const container = this.scrollContainerRef;
@@ -398,6 +417,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       showHistoryDialog: restoredHistory?.showHistoryDialog ?? false,
       clipboardImportAvailable: false,
       showInlineSearchOptions: false,
+      virtualScrollTop: 0,
+      virtualViewportHeight: 0,
     };
 
     this.handleFilterChange = this.handleFilterChange.bind(this);
@@ -421,6 +442,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.updateInlineSearchOptionsVisibility = this.updateInlineSearchOptionsVisibility.bind(this);
     this.handleWindowResize = this.handleWindowResize.bind(this);
+    this.handleTreeScroll = this.handleTreeScroll.bind(this);
+    this.syncVirtualViewport = this.syncVirtualViewport.bind(this);
   }
 
   componentDidMount() {
@@ -434,6 +457,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     window.addEventListener("focus", this.handleWindowFocus);
     window.addEventListener("resize", this.handleWindowResize);
     this.updateInlineSearchOptionsVisibility();
+    this.syncVirtualViewport();
   }
 
   componentWillUnmount() {
@@ -445,10 +469,18 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       window.clearTimeout(this.keyboardSelectionDebounceTimer);
       this.keyboardSelectionDebounceTimer = null;
     }
+    if (this.filterUpdateDebounceTimer !== null) {
+      window.clearTimeout(this.filterUpdateDebounceTimer);
+      this.filterUpdateDebounceTimer = null;
+    }
     if (this.keyboardNavRafId !== null) {
       window.cancelAnimationFrame(this.keyboardNavRafId);
       this.keyboardNavRafId = null;
       this.pendingKeyboardNavDelta = 0;
+    }
+    if (this.virtualScrollRafId !== null) {
+      window.cancelAnimationFrame(this.virtualScrollRafId);
+      this.virtualScrollRafId = null;
     }
     window.removeEventListener("focus", this.handleWindowFocus);
     window.removeEventListener("resize", this.handleWindowResize);
@@ -527,10 +559,33 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     // Keep this out of generic updates: it reads layout and can hurt key-repeat responsiveness.
     // It is updated on mount and window resize instead.
+    if (prevState.categories !== this.state.categories) {
+      this.syncVirtualViewport();
+    }
   }
 
   private handleWindowResize() {
     this.updateInlineSearchOptionsVisibility();
+    this.syncVirtualViewport();
+  }
+
+  private handleTreeScroll() {
+    if (this.virtualScrollRafId !== null) return;
+    this.virtualScrollRafId = window.requestAnimationFrame(() => {
+      this.virtualScrollRafId = null;
+      const top = this.scrollContainerRef?.scrollTop ?? 0;
+      if (top !== this.state.virtualScrollTop) {
+        this.setState({ virtualScrollTop: top });
+      }
+    });
+  }
+
+  private syncVirtualViewport() {
+    const viewportHeight = this.scrollContainerRef?.clientHeight ?? 0;
+    const scrollTop = this.scrollContainerRef?.scrollTop ?? 0;
+    if (viewportHeight !== this.state.virtualViewportHeight || scrollTop !== this.state.virtualScrollTop) {
+      this.setState({ virtualViewportHeight: viewportHeight, virtualScrollTop: scrollTop });
+    }
   }
 
   private updateInlineSearchOptionsVisibility() {
@@ -588,9 +643,19 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }
     // Always update internal state for local rendering
     this.setState({ filter: newFilter }, () => {
-      this.updateCategories();
+      this.scheduleFilterDrivenUpdateCategories();
       this.scrollAfterFilterChange(oldFilter, newFilter.toLowerCase());
     });
+  }
+
+  private scheduleFilterDrivenUpdateCategories() {
+    if (this.filterUpdateDebounceTimer !== null) {
+      window.clearTimeout(this.filterUpdateDebounceTimer);
+    }
+    this.filterUpdateDebounceTimer = window.setTimeout(() => {
+      this.filterUpdateDebounceTimer = null;
+      void this.updateCategories();
+    }, SongListPanel.FILTER_UPDATE_DEBOUNCE_MS);
   }
 
   /**
@@ -897,6 +962,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   async updateCategories() {
+    const requestSeq = ++this.updateCategoriesRequestSeq;
     const { filter, showSongs, showTextOnly, showMarked, preferenceFilter, orderMode } = this.state;
     const db = Database.getInstance();
 
@@ -917,6 +983,11 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       order,
       this.props.settings // Pass settings for search configuration
     );
+
+    // Ignore stale async results when a newer updateCategories() run has started.
+    if (requestSeq !== this.updateCategoriesRequestSeq) {
+      return;
+    }
 
     // Filter to preferred-only songs if toggle is active
     let songsToGroup: SongFound[] = filteredSongs;
@@ -959,7 +1030,9 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       return { reason, songs, items, expanded: true };
     });
 
-    this.setState({ categories });
+    if (requestSeq === this.updateCategoriesRequestSeq) {
+      this.setState({ categories });
+    }
   }
 
   // Build items with group folders for songs sharing a GroupId
@@ -1278,6 +1351,175 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (file) this.props.onExternalFilesDropped?.([file]);
   };
 
+  private buildVirtualRows(hasLeader: boolean, selectedSong: Song | null): VirtualRow[] {
+    const rows: VirtualRow[] = [];
+    const selectedLeader = this.props.selectedLeader ?? null;
+
+    for (const categoryNode of this.state.categories) {
+      rows.push({
+        key: `category-${categoryNode.reason}`,
+        height: SongListPanel.VIRTUAL_HEADER_ROW_HEIGHT,
+        render: () => (
+          <div className="category-node">
+            <div className="category-header user-select-none" onClick={() => this.toggleCategory(categoryNode.reason)}>
+              <span className="category-icon me-1">
+                <Icon type={IconType.FOLDER} />
+              </span>
+              <i className={`fa fa-chevron-${categoryNode.expanded ? "down" : "right"} me-1`}></i>
+              {this.getReasonName(categoryNode.reason)} ({categoryNode.songs.length})
+            </div>
+          </div>
+        ),
+      });
+
+      if (!categoryNode.expanded) continue;
+
+      for (const item of categoryNode.items) {
+        if (item.type === "group") {
+          const groupId = item.folder.groupId;
+          rows.push({
+            key: `group-${groupId}`,
+            height: SongListPanel.VIRTUAL_GROUP_ROW_HEIGHT,
+            render: () => (
+              <GroupFolderNode
+                folder={item.folder}
+                onToggle={() => this.toggleGroupFolder(groupId)}
+                onDropSongOnFolder={this.handleDropSongOnFolder}
+                onDropSongOnSong={this.handleDropSongOnSong}
+                selectedSong={selectedSong}
+                hasLeader={hasLeader}
+                selectedLeader={selectedLeader}
+                onSongClick={this.handleSongClick}
+                onSongDoubleClick={this.handleDoubleClick}
+                onSongContextMenu={this.handleSongContextMenu}
+                onHeartClick={this.handleHeartClick}
+                onSelectedRefChange={(node) => {
+                  this.selectedItemElement = node;
+                }}
+                renderChildren={false}
+              />
+            ),
+          });
+
+          if (!item.folder.expanded) continue;
+          for (const groupedSong of item.folder.songs) {
+            const songFound = groupedSong;
+            const isSelected = selectedSong?.Id === songFound.song.Id;
+            rows.push({
+              key: `song-${songFound.song.Id}`,
+              height: songFound.snippet ? SongListPanel.VIRTUAL_SONG_SNIPPET_ROW_HEIGHT : SongListPanel.VIRTUAL_SONG_ROW_HEIGHT,
+              render: () => (
+                <DraggableSongItem
+                  songFound={songFound}
+                  isSelected={isSelected}
+                  preferenceType={songFound.preference.type}
+                  hasLeader={hasLeader}
+                  onHeartClick={() => this.handleHeartClick(songFound.song)}
+                  onDoubleClick={() => this.handleDoubleClick(songFound.song)}
+                  onClick={() => this.handleSongClick(songFound.song)}
+                  onContextMenu={(e) => this.handleSongContextMenu(e, songFound.song)}
+                  onDropSong={this.handleDropSongOnSong}
+                  indented
+                  onRefChange={
+                    isSelected
+                      ? (node) => {
+                          this.selectedItemElement = node;
+                        }
+                      : undefined
+                  }
+                />
+              ),
+            });
+          }
+          continue;
+        }
+
+        const songFound = item.songFound;
+        const isSelected = selectedSong?.Id === songFound.song.Id;
+        rows.push({
+          key: `song-${songFound.song.Id}`,
+          height: songFound.snippet ? SongListPanel.VIRTUAL_SONG_SNIPPET_ROW_HEIGHT : SongListPanel.VIRTUAL_SONG_ROW_HEIGHT,
+          render: () => (
+            <DraggableSongItem
+              songFound={songFound}
+              isSelected={isSelected}
+              preferenceType={songFound.preference.type}
+              hasLeader={hasLeader}
+              onHeartClick={() => this.handleHeartClick(songFound.song)}
+              onDoubleClick={() => this.handleDoubleClick(songFound.song)}
+              onClick={() => this.handleSongClick(songFound.song)}
+              onContextMenu={(e) => this.handleSongContextMenu(e, songFound.song)}
+              onDropSong={this.handleDropSongOnSong}
+              onRefChange={
+                isSelected
+                  ? (node) => {
+                      this.selectedItemElement = node;
+                    }
+                  : undefined
+              }
+            />
+          ),
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  private renderVirtualizedSongTree(hasLeader: boolean, selectedSong: Song | null) {
+    const rows = this.buildVirtualRows(hasLeader, selectedSong);
+    if (rows.length === 0) return null;
+
+    const positions: number[] = new Array(rows.length);
+    let totalHeight = 0;
+    for (let i = 0; i < rows.length; i++) {
+      positions[i] = totalHeight;
+      totalHeight += rows[i]!.height;
+    }
+
+    const overscan = SongListPanel.VIRTUAL_OVERSCAN_PX;
+    const viewportStart = Math.max(0, this.state.virtualScrollTop - overscan);
+    const viewportEnd = this.state.virtualScrollTop + Math.max(this.state.virtualViewportHeight, 1) + overscan;
+
+    let startIndex = 0;
+    while (startIndex < rows.length && positions[startIndex]! + rows[startIndex]!.height < viewportStart) {
+      startIndex++;
+    }
+
+    let endIndex = startIndex;
+    while (endIndex < rows.length && positions[endIndex]! < viewportEnd) {
+      endIndex++;
+    }
+
+    const visibleRows = rows.slice(startIndex, endIndex);
+    const topSpacerHeight = startIndex > 0 ? positions[startIndex]! : 0;
+    const renderedRowsHeight = visibleRows.reduce((acc, row) => acc + row.height, 0);
+    const bottomSpacerHeight = Math.max(0, totalHeight - topSpacerHeight - renderedRowsHeight);
+
+    return (
+      <>
+        {topSpacerHeight > 0 && this.renderVirtualSpacer("top", topSpacerHeight)}
+        {visibleRows.map((row) => (
+          <React.Fragment key={row.key}>{row.render()}</React.Fragment>
+        ))}
+        {bottomSpacerHeight > 0 && this.renderVirtualSpacer("bottom", bottomSpacerHeight)}
+      </>
+    );
+  }
+
+  private renderVirtualSpacer(kind: "top" | "bottom", heightPx: number) {
+    return (
+      <div
+        key={`virtual-spacer-${kind}`}
+        className="songlist-virtual-spacer"
+        aria-hidden="true"
+        ref={(el) => {
+          if (el) el.style.height = `${heightPx}px`;
+        }}
+      />
+    );
+  }
+
   renderContextMenu() {
     const { contextMenuVisible, contextMenuX, contextMenuY, showSongs, showTextOnly, showMarked, orderMode, selectedSong } = this.state;
     const { t } = this.props;
@@ -1458,7 +1700,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   render() {
-    const { filter, categories, selectedSong, preferenceFilter, showInlineSearchOptions } = this.state;
+    const { filter, selectedSong, preferenceFilter, showInlineSearchOptions } = this.state;
     const hasLeader = !!this.props.selectedLeader;
     const searchMethod = this.props.settings.searchMethod;
     const isTraditionalSearch = searchMethod === "traditional";
@@ -1554,7 +1796,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
                   this.props.onFilterChange("");
                 }
                 this.setState({ filter: "" }, () => {
-                  this.updateCategories();
+                  this.scheduleFilterDrivenUpdateCategories();
                   this.scrollAfterFilterChange(oldFilter, "");
                 });
                 // Focus the input after clearing
@@ -1573,73 +1815,14 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
           ref={(el) => {
             this.scrollContainerRef = el;
           }}
+          onScroll={this.handleTreeScroll}
           onContextMenu={this.handleContextMenu}
           onDragOver={this.handleExternalDragOver}
           onDrop={this.handleExternalFileDrop}
           onKeyDown={this.handleKeyDown}
           tabIndex={0}
         >
-          {categories.map((categoryNode) => (
-            <div key={categoryNode.reason} className="category-node">
-              <div className="category-header user-select-none" onClick={() => this.toggleCategory(categoryNode.reason)}>
-                <span className="category-icon me-1">
-                  <Icon type={IconType.FOLDER} />
-                </span>
-                <i className={`fa fa-chevron-${categoryNode.expanded ? "down" : "right"} me-1`}></i>
-                {this.getReasonName(categoryNode.reason)} ({categoryNode.songs.length})
-              </div>
-              {categoryNode.expanded && (
-                <div className="category-songs">
-                  {categoryNode.items.map((item) => {
-                    if (item.type === "group") {
-                      return (
-                        <GroupFolderNode
-                          key={`group-${item.folder.groupId}`}
-                          folder={item.folder}
-                          onToggle={() => this.toggleGroupFolder(item.folder.groupId)}
-                          onDropSongOnFolder={this.handleDropSongOnFolder}
-                          onDropSongOnSong={this.handleDropSongOnSong}
-                          selectedSong={selectedSong}
-                          hasLeader={hasLeader}
-                          selectedLeader={this.props.selectedLeader ?? null}
-                          onSongClick={this.handleSongClick}
-                          onSongDoubleClick={this.handleDoubleClick}
-                          onSongContextMenu={this.handleSongContextMenu}
-                          onHeartClick={this.handleHeartClick}
-                          onSelectedRefChange={(node) => {
-                            this.selectedItemElement = node;
-                          }}
-                        />
-                      );
-                    }
-                    const songFound = item.songFound;
-                    const isSelected = selectedSong?.Id === songFound.song.Id;
-                    return (
-                      <DraggableSongItem
-                        key={songFound.song.Id}
-                        songFound={songFound}
-                        isSelected={isSelected}
-                        preferenceType={songFound.preference.type}
-                        hasLeader={hasLeader}
-                        onHeartClick={() => this.handleHeartClick(songFound.song)}
-                        onDoubleClick={() => this.handleDoubleClick(songFound.song)}
-                        onClick={() => this.handleSongClick(songFound.song)}
-                        onContextMenu={(e) => this.handleSongContextMenu(e, songFound.song)}
-                        onDropSong={this.handleDropSongOnSong}
-                        onRefChange={
-                          isSelected
-                            ? (node) => {
-                                this.selectedItemElement = node;
-                              }
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
+          {this.renderVirtualizedSongTree(hasLeader, selectedSong)}
         </div>
         {this.renderContextMenu()}
 
