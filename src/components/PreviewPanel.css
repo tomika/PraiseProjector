@@ -110,6 +110,13 @@
   padding-bottom: 0;
   line-height: 1;
   box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+/* Keep glow in front when active and adjacent buttons overlap in btn-group. */
+.format-col .btn-group .btn.btn-active {
+  z-index: 3;
 }
 
 /* Right column: 3-column grid for exact alignment */
