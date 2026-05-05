@@ -76,7 +76,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
   }, [items, position, maxHeight, resolvedPosition.x, resolvedPosition.y, resolvedMaxHeight]);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handlePointerOutside = (e: MouseEvent | TouchEvent | PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
@@ -88,11 +88,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("mousedown", handlePointerOutside);
+    document.addEventListener("touchstart", handlePointerOutside);
     document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("mousedown", handlePointerOutside);
+      document.removeEventListener("touchstart", handlePointerOutside);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
@@ -114,7 +116,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
         maxWidth: maxWidth ? `${maxWidth}px` : undefined,
       }}
     >
-      {items.map((item, index) => (
+      {items.map((item, index) =>
         item.separator ? (
           <div key={index} className="context-menu-separator" role="separator" aria-hidden="true" />
         ) : (
@@ -130,7 +132,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
             )}
           </div>
         )
-      ))}
+      )}
     </div>
   );
 };

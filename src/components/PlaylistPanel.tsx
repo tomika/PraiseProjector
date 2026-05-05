@@ -797,10 +797,14 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     event.preventDefault();
     event.stopPropagation();
 
+    this.openItemContextMenuAt(index, event.clientX, event.clientY);
+  }
+
+  private openItemContextMenuAt(index: number, clientX: number, clientY: number) {
     const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor } = this.state;
     const item = currentPlaylist.items[index];
 
-    const placement = this.computeContextMenuPlacement(event.clientX, event.clientY);
+    const placement = this.computeContextMenuPlacement(clientX, clientY);
 
     const shouldSelect = !selectedItems.has(index);
     const nextSelectedItems = shouldSelect ? new Set<number>([index]) : selectedItems;
@@ -2110,6 +2114,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                       backgroundColor={this.state.itemColors.get(index) || "transparent"}
                       onClick={(event) => this.handleItemClick(index, event)}
                       onContextMenu={(event) => this.handleItemContextMenu(index, event)}
+                      onLongPressContextMenu={(clientX, clientY) => this.openItemContextMenuAt(index, clientX, clientY)}
                       moveItem={this.movePlaylistItem}
                       onTitleChange={(newTitle) => this.handleTitleChange(index, newTitle)}
                       onTitleBlur={this.handleTitleBlur}
@@ -2204,6 +2209,7 @@ const PlaylistItemRow: React.FC<{
   backgroundColor: string;
   onClick: (event: React.MouseEvent<HTMLTableRowElement>) => void;
   onContextMenu: (event: React.MouseEvent<HTMLTableRowElement>) => void;
+  onLongPressContextMenu: (clientX: number, clientY: number) => void;
   moveItem: (dragIndex: number, hoverIndex: number) => void;
   onTitleChange: (newTitle: string) => void;
   onTitleBlur: () => void;
@@ -2223,6 +2229,7 @@ const PlaylistItemRow: React.FC<{
   backgroundColor,
   onClick,
   onContextMenu,
+  onLongPressContextMenu,
   moveItem,
   onTitleChange,
   onTitleBlur,
@@ -2231,13 +2238,24 @@ const PlaylistItemRow: React.FC<{
   headerRef,
 }) => {
   const ref = React.useRef<HTMLTableRowElement | null>(null);
+  const [dragSuppressed, setDragSuppressed] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [editValue, setEditValue] = React.useState(title);
   const [isInstructionsHovered, setIsInstructionsHovered] = React.useState(false);
   const clickTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const confirmingRef = React.useRef(false);
+  const longPressTimerRef = React.useRef<number | null>(null);
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const suppressClickUntilRef = React.useRef(0);
   const { t } = useLocalization();
   const { tt } = useTooltips();
+
+  const clearLongPressTimer = React.useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
 
   React.useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -2258,9 +2276,16 @@ const PlaylistItemRow: React.FC<{
     }
   }, [isFocused, headerRef]);
 
+  React.useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
+
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "playlist-item",
     item: { index },
+    canDrag: () => !dragSuppressed,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -2331,8 +2356,54 @@ const PlaylistItemRow: React.FC<{
       ref={dragDropRef}
       className={rowClasses}
       style={cellStyleWithMargin}
-      onClick={(e) => onClick(e)}
+      onClick={(e) => {
+        if (Date.now() < suppressClickUntilRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onClick(e);
+      }}
       onContextMenu={onContextMenu}
+      onTouchStart={(e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        if (!touch) return;
+
+        setDragSuppressed(true);
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+        clearLongPressTimer();
+        longPressTimerRef.current = window.setTimeout(() => {
+          const start = touchStartRef.current;
+          if (!start) return;
+          suppressClickUntilRef.current = Date.now() + 500;
+          onLongPressContextMenu(start.x, start.y);
+        }, 420);
+      }}
+      onTouchMove={(e) => {
+        const start = touchStartRef.current;
+        if (!start) return;
+
+        const touch = e.touches[0];
+        if (!touch) return;
+
+        const deltaX = Math.abs(touch.clientX - start.x);
+        const deltaY = Math.abs(touch.clientY - start.y);
+        if (deltaX > 10 || deltaY > 10) {
+          setDragSuppressed(false);
+          clearLongPressTimer();
+        }
+      }}
+      onTouchEnd={() => {
+        setDragSuppressed(false);
+        clearLongPressTimer();
+        touchStartRef.current = null;
+      }}
+      onTouchCancel={() => {
+        setDragSuppressed(false);
+        clearLongPressTimer();
+        touchStartRef.current = null;
+      }}
       title={tt("playlist")}
     >
       {isEditing ? (

@@ -84,6 +84,7 @@ const DraggableSongItem: React.FC<{
   onDoubleClick: () => void;
   onClick: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
+  onLongPressContextMenu?: (clientX: number, clientY: number) => void;
   isSelected: boolean;
   preferenceType: SongPreference["type"];
   hasLeader: boolean;
@@ -96,6 +97,7 @@ const DraggableSongItem: React.FC<{
   onDoubleClick,
   onClick,
   onContextMenu,
+  onLongPressContextMenu,
   isSelected,
   preferenceType,
   hasLeader,
@@ -104,9 +106,11 @@ const DraggableSongItem: React.FC<{
   onDropSong,
   indented,
 }) => {
+  const [dragSuppressed, setDragSuppressed] = React.useState(false);
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "song",
     item: songFound.song,
+    canDrag: () => !dragSuppressed,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -137,6 +141,22 @@ const DraggableSongItem: React.FC<{
 
   const song = songFound.song;
   const { tt } = useTooltips();
+  const longPressTimerRef = React.useRef<number | null>(null);
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const suppressClickUntilRef = React.useRef(0);
+
+  const clearLongPressTimer = React.useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
 
   let iconType: IconType;
   if (song.Notes && song.Notes.trim() !== "") {
@@ -175,8 +195,56 @@ const DraggableSongItem: React.FC<{
       ref={setRefs}
       className={`song-item ${isDragging ? "dragging" : ""} ${isSelected ? "selected" : ""} ${costClass}${dropHighlight ? " drop-hover" : ""}${indented ? " song-item-indented" : ""}`}
       onDoubleClick={onDoubleClick}
-      onClick={onClick}
+      onClick={(e) => {
+        if (Date.now() < suppressClickUntilRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onClick();
+      }}
       onContextMenu={onContextMenu}
+      onTouchStart={(e) => {
+        if (!onLongPressContextMenu) return;
+        if (e.touches.length !== 1) return;
+
+        const touch = e.touches[0];
+        if (!touch) return;
+
+        setDragSuppressed(true);
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+        clearLongPressTimer();
+        longPressTimerRef.current = window.setTimeout(() => {
+          const start = touchStartRef.current;
+          if (!start) return;
+          suppressClickUntilRef.current = Date.now() + 500;
+          onLongPressContextMenu(start.x, start.y);
+        }, 420);
+      }}
+      onTouchMove={(e) => {
+        const start = touchStartRef.current;
+        if (!start) return;
+
+        const touch = e.touches[0];
+        if (!touch) return;
+
+        const deltaX = Math.abs(touch.clientX - start.x);
+        const deltaY = Math.abs(touch.clientY - start.y);
+        if (deltaX > 10 || deltaY > 10) {
+          setDragSuppressed(false);
+          clearLongPressTimer();
+        }
+      }}
+      onTouchEnd={() => {
+        setDragSuppressed(false);
+        clearLongPressTimer();
+        touchStartRef.current = null;
+      }}
+      onTouchCancel={() => {
+        setDragSuppressed(false);
+        clearLongPressTimer();
+        touchStartRef.current = null;
+      }}
       title={tt("songtree")}
     >
       {hasLeader ? (
@@ -227,6 +295,7 @@ const GroupFolderNode: React.FC<{
   onSongClick: (song: Song) => void;
   onSongDoubleClick: (song: Song) => void;
   onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
+  onSongLongPressContextMenu: (song: Song, clientX: number, clientY: number) => void;
   onHeartClick: (song: Song) => void;
   onSelectedRefChange: (node: HTMLDivElement | null) => void;
   renderChildren?: boolean;
@@ -240,6 +309,7 @@ const GroupFolderNode: React.FC<{
   onSongClick,
   onSongDoubleClick,
   onSongContextMenu,
+  onSongLongPressContextMenu,
   onHeartClick,
   onSelectedRefChange,
   renderChildren = true,
@@ -290,6 +360,7 @@ const GroupFolderNode: React.FC<{
                 onDoubleClick={() => onSongDoubleClick(sf.song)}
                 onClick={() => onSongClick(sf.song)}
                 onContextMenu={(e) => onSongContextMenu(e, sf.song)}
+                onLongPressContextMenu={(clientX, clientY) => onSongLongPressContextMenu(sf.song, clientX, clientY)}
                 onDropSong={onDropSongOnSong}
                 indented
                 onRefChange={isSelected ? onSelectedRefChange : undefined}
@@ -856,24 +927,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   handleContextMenu(event: React.MouseEvent) {
     event.preventDefault();
 
-    // Calculate position that keeps menu within viewport
-    const menuHeight = 300; // Approximate max height of context menu
-    const menuWidth = 200; // Approximate width of context menu
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    // Adjust Y if menu would go below viewport
-    if (y + menuHeight > viewportHeight) {
-      y = Math.max(0, viewportHeight - menuHeight);
-    }
-
-    // Adjust X if menu would go outside right edge
-    if (x + menuWidth > viewportWidth) {
-      x = Math.max(0, viewportWidth - menuWidth);
-    }
+    const { x, y } = this.computeContextMenuPosition(event.clientX, event.clientY);
 
     this.setState({
       contextMenuVisible: true,
@@ -882,19 +936,15 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     });
   }
 
-  // Handle right-click on a specific song item - selects the song and shows context menu
-  handleSongContextMenu(event: React.MouseEvent, song: Song) {
-    event.preventDefault();
-    event.stopPropagation();
-
+  private computeContextMenuPosition(clientX: number, clientY: number): { x: number; y: number } {
     // Calculate position that keeps menu within viewport
     const menuHeight = 300; // Approximate max height of context menu
     const menuWidth = 200; // Approximate width of context menu
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
 
-    let x = event.clientX;
-    let y = event.clientY;
+    let x = clientX;
+    let y = clientY;
 
     // Adjust Y if menu would go below viewport
     if (y + menuHeight > viewportHeight) {
@@ -906,6 +956,12 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       x = Math.max(0, viewportWidth - menuWidth);
     }
 
+    return { x, y };
+  }
+
+  private openSongContextMenuAt(song: Song, clientX: number, clientY: number) {
+    const { x, y } = this.computeContextMenuPosition(clientX, clientY);
+
     // Select the song and show the context menu
     this.setState({
       selectedSong: song,
@@ -913,8 +969,16 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       contextMenuX: x,
       contextMenuY: y,
     });
+
     // Also notify parent about the selection
     this.props.onSongSelected(song);
+  }
+
+  // Handle right-click on a specific song item - selects the song and shows context menu
+  handleSongContextMenu(event: React.MouseEvent, song: Song) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.openSongContextMenuAt(song, event.clientX, event.clientY);
   }
 
   hideContextMenu() {
@@ -1392,6 +1456,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
                 onSongClick={this.handleSongClick}
                 onSongDoubleClick={this.handleDoubleClick}
                 onSongContextMenu={this.handleSongContextMenu}
+                onSongLongPressContextMenu={(song, clientX, clientY) => this.openSongContextMenuAt(song, clientX, clientY)}
                 onHeartClick={this.handleHeartClick}
                 onSelectedRefChange={(node) => {
                   this.selectedItemElement = node;
@@ -1418,6 +1483,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
                   onDoubleClick={() => this.handleDoubleClick(songFound.song)}
                   onClick={() => this.handleSongClick(songFound.song)}
                   onContextMenu={(e) => this.handleSongContextMenu(e, songFound.song)}
+                  onLongPressContextMenu={(clientX, clientY) => this.openSongContextMenuAt(songFound.song, clientX, clientY)}
                   onDropSong={this.handleDropSongOnSong}
                   indented
                   onRefChange={
@@ -1449,6 +1515,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
               onDoubleClick={() => this.handleDoubleClick(songFound.song)}
               onClick={() => this.handleSongClick(songFound.song)}
               onContextMenu={(e) => this.handleSongContextMenu(e, songFound.song)}
+              onLongPressContextMenu={(clientX, clientY) => this.openSongContextMenuAt(songFound.song, clientX, clientY)}
               onDropSong={this.handleDropSongOnSong}
               onRefChange={
                 isSelected
