@@ -47,6 +47,12 @@ interface CompareDialogProps {
   songCheckIsOwnUpload?: boolean;
   /** SongCheck mode: the current state of the pending song */
   songCheckState?: PendingSongState;
+  /** SongCheck mode: username of the person who submitted the song */
+  requesterName?: string;
+  /** Optional external prev navigation (shows << button when provided) */
+  onNavigatePrev?: () => void;
+  /** Optional external next navigation (shows >> button when provided) */
+  onNavigateNext?: () => void;
 }
 
 // Helper to get version display text from song's Change property
@@ -78,6 +84,9 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   onSongCheckDecision,
   songCheckIsOwnUpload,
   songCheckState,
+  requesterName,
+  onNavigatePrev,
+  onNavigateNext,
 }) => {
   const { t } = useLocalization();
   const [currentIndex, setCurrentIndex] = useState(initialPairIndex);
@@ -429,8 +438,8 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
     );
   };
 
-  // Arrows are only for read-only browsing flows.
-  const showNavButtons = mode === "ViewOnly" || isComparePairsMode;
+  // Arrows are for read-only browsing flows, or when external navigation callbacks are provided.
+  const showNavButtons = mode === "ViewOnly" || isComparePairsMode || !!(onNavigatePrev || onNavigateNext);
 
   const dialogContent = (
     <div className="modal-backdrop show compare-dialog-backdrop">
@@ -440,13 +449,16 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
             <div className="modal-header">
               <h5 className="modal-title">
                 {isSongCheckMode ? t("SongCheckTitle") : isHistoryMode ? t("SongHistory") : isImportMode ? t("ImportSong") : t("CompareSongs")}
+                {isSongCheckMode && requesterName && (
+                  <span className="compare-dialog-requester text-muted fw-normal fs-6 ms-2">({requesterName})</span>
+                )}
               </h5>
               <button type="button" className="btn-close" aria-label="Close" onClick={() => onClose()}></button>
             </div>
             <div className="modal-body">{renderContent()}</div>
             <div className="modal-footer">
               {showNavButtons && (
-                <button className="btn btn-secondary" onClick={handlePrev} disabled={currentIndex === 0}>
+                <button className="btn btn-secondary" onClick={onNavigatePrev ?? handlePrev} disabled={onNavigatePrev ? false : currentIndex === 0}>
                   &lt;&lt;
                 </button>
               )}
@@ -457,7 +469,11 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                 {showCode ? t("ShowWysiwyg") : t("ShowChordProCode")}
               </button>
               {showNavButtons && (
-                <button className="btn btn-secondary" onClick={handleNext} disabled={currentIndex >= navItemCount - 1}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={onNavigateNext ?? handleNext}
+                  disabled={onNavigateNext ? false : currentIndex >= navItemCount - 1}
+                >
                   &gt;&gt;
                 </button>
               )}

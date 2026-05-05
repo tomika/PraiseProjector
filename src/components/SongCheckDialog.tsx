@@ -62,14 +62,17 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
     [username]
   );
 
-  const fetchPendingSongs = useCallback(async () => {
+  const fetchPendingSongs = useCallback(async (): Promise<SongDBPendingEntry[]> => {
     try {
       setLoading(true);
       const list = await cloudApi.fetchPendingSongs();
-      setPendingSongs(sortPendingSongs(list));
+      const sorted = sortPendingSongs(list);
+      setPendingSongs(sorted);
+      return sorted;
     } catch (error) {
       console.error("SongCheck", "Failed to fetch pending songs", error);
       setPendingSongs([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -111,6 +114,10 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
     const confirmed = await showConfirmAsync(t("Confirm"), t(getConfirmMessage(decision, selectedEntry.state)));
     if (!confirmed) return;
 
+    const decidedSongId = selectedEntry.songId;
+    const decidedVersion = selectedEntry.version;
+    const decidedIndex = pendingSongs.findIndex((e) => e.songId === decidedSongId && e.version === decidedVersion);
+
     try {
       setProcessing(true);
       const operation = determineOperation(selectedEntry, decision);
@@ -118,8 +125,17 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
       if (error) {
         showMessage(t("Error"), error);
       } else {
-        setSelectedEntry(null);
-        await fetchPendingSongs();
+        const refreshedSongs = await fetchPendingSongs();
+        const remainingSongs = refreshedSongs.filter((e) => !(e.songId === decidedSongId && e.version === decidedVersion));
+
+        if (remainingSongs.length === 0) {
+          setSelectedEntry(null);
+          onClose();
+        } else {
+          const nextIndex = decidedIndex >= 0 && decidedIndex < remainingSongs.length ? decidedIndex : remainingSongs.length - 1;
+          setSelectedEntry(remainingSongs[nextIndex]);
+        }
+
         // Notify UserPanel to refresh its pending count badge
         window.dispatchEvent(new Event("pp-pending-songs-changed"));
       }
@@ -133,6 +149,12 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   const handleCompareClose = () => {
     setSelectedEntry(null);
   };
+
+  const selectedIndex = selectedEntry ? pendingSongs.findIndex((e) => e.songId === selectedEntry.songId && e.version === selectedEntry.version) : -1;
+
+  const handleNavigatePrev = selectedIndex > 0 ? () => setSelectedEntry(pendingSongs[selectedIndex - 1]) : undefined;
+  const handleNavigateNext =
+    selectedIndex >= 0 && selectedIndex < pendingSongs.length - 1 ? () => setSelectedEntry(pendingSongs[selectedIndex + 1]) : undefined;
 
   const formatDate = (isoDate: string): string => {
     try {
@@ -215,6 +237,9 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
           onSongCheckDecision={handleSongCheckDecision}
           songCheckIsOwnUpload={isOwnUpload(selectedEntry)}
           songCheckState={selectedEntry.state}
+          requesterName={selectedEntry.uploader}
+          onNavigatePrev={handleNavigatePrev}
+          onNavigateNext={handleNavigateNext}
         />
       )}
     </>
