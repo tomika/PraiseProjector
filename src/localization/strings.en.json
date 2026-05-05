@@ -401,6 +401,7 @@
   "InstructionsEditorReset": "Reset",
   "InstructionsEditorStoreInProfile": "Store instructions in profile",
   "PlaylistRemove": "Delete",
+  "ConfirmDeletePlaylistItems": "Are you sure you want to delete {count} selected playlist item(s)?",
   "Username": "Username",
   "Password": "Password",
   "None": "None",

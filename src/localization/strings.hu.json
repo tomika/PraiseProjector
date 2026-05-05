@@ -401,6 +401,7 @@
   "InstructionsEditorReset": "Visszaállítás",
   "InstructionsEditorStoreInProfile": "Utasítások mentése a profilba",
   "PlaylistRemove": "Törlés",
+  "ConfirmDeletePlaylistItems": "Biztosan törölni szeretné a kijelölt {count} műsortételt?",
   "Username": "Felhasználó",
   "Password": "Jelszó",
   "None": "Nincs",

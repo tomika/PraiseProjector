@@ -115,11 +115,15 @@ interface PlaylistPanelState {
   showScheduleDialog: boolean;
   scheduleDialogMode: "save" | "load" | null;
   scheduleDate: Date | null; // Remembered date when playlist was loaded from or saved to a leader profile
-  contextMenu: { position: { x: number; y: number }; targetIndex: number } | null;
+  contextMenu: { position: { x: number; y: number }; targetIndex: number; maxHeight: number; maxWidth: number } | null;
 }
 
 class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelState> {
   private pendingSelectedIndex: number = -1;
+  private undoStack: Playlist[] = [];
+  private redoStack: Playlist[] = [];
+  private isApplyingHistory = false;
+  private static readonly PLAYLIST_HISTORY_MAX = 50;
   constructor(props: PlaylistPanelProps) {
     super(props);
 
@@ -161,6 +165,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.handleInstructionsSave = this.handleInstructionsSave.bind(this);
     this.handleInstructionsClose = this.handleInstructionsClose.bind(this);
     this.handleItemContextMenu = this.handleItemContextMenu.bind(this);
+    this.handleContainerContextMenu = this.handleContainerContextMenu.bind(this);
     this.hideContextMenu = this.hideContextMenu.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleLoadPlaylist = this.handleLoadPlaylist.bind(this);
@@ -407,6 +412,100 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private pendingKeyboardNavDelta: number = 0;
   private pendingKeyboardNavShift: boolean = false;
 
+  private clonePlaylist(playlist: Playlist): Playlist {
+    return Playlist.fromJSON(playlist.toJSON());
+  }
+
+  private arePlaylistsEqual(a: Playlist, b: Playlist): boolean {
+    return JSON.stringify(a.toJSON()) === JSON.stringify(b.toJSON());
+  }
+
+  private recordPlaylistSnapshotForUndo() {
+    if (this.isApplyingHistory) return;
+
+    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const last = this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1] : null;
+    if (last && this.arePlaylistsEqual(last, current)) return;
+
+    this.undoStack.push(current);
+    if (this.undoStack.length > PlaylistPanel.PLAYLIST_HISTORY_MAX) {
+      this.undoStack.splice(0, this.undoStack.length - PlaylistPanel.PLAYLIST_HISTORY_MAX);
+    }
+    this.redoStack = [];
+  }
+
+  private restorePlaylistFromHistory(target: Playlist) {
+    this.isApplyingHistory = true;
+    this.setState(
+      {
+        currentPlaylist: this.clonePlaylist(target),
+        selectedItems: new Set<number>(),
+        focusedIndex: -1,
+        selectionAnchor: -1,
+      },
+      () => {
+        this.savePlaylist(this.state.currentPlaylist);
+        this.updatePlaylistItemStates();
+        this.emitPlaylistSelectionChange(null, -1, "programmatic", true);
+        this.isApplyingHistory = false;
+      }
+    );
+  }
+
+  private handleUndo() {
+    if (this.undoStack.length === 0) return;
+
+    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const target = this.undoStack.pop();
+    if (!target) return;
+
+    this.redoStack.push(current);
+    if (this.redoStack.length > PlaylistPanel.PLAYLIST_HISTORY_MAX) {
+      this.redoStack.splice(0, this.redoStack.length - PlaylistPanel.PLAYLIST_HISTORY_MAX);
+    }
+
+    this.restorePlaylistFromHistory(target);
+  }
+
+  private handleRedo() {
+    if (this.redoStack.length === 0) return;
+
+    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const target = this.redoStack.pop();
+    if (!target) return;
+
+    this.undoStack.push(current);
+    if (this.undoStack.length > PlaylistPanel.PLAYLIST_HISTORY_MAX) {
+      this.undoStack.splice(0, this.undoStack.length - PlaylistPanel.PLAYLIST_HISTORY_MAX);
+    }
+
+    this.restorePlaylistFromHistory(target);
+  }
+
+  private handleSelectAll() {
+    const { currentPlaylist } = this.state;
+    if (currentPlaylist.items.length === 0) return;
+
+    const allIndices = new Set<number>();
+    for (let i = 0; i < currentPlaylist.items.length; i++) {
+      allIndices.add(i);
+    }
+
+    const focusedIndex = this.state.focusedIndex >= 0 ? this.state.focusedIndex : 0;
+    const selectedItem = currentPlaylist.items[focusedIndex] ?? null;
+
+    this.setState(
+      {
+        selectedItems: allIndices,
+        focusedIndex,
+        selectionAnchor: 0,
+      },
+      () => {
+        this.emitPlaylistSelectionChange(selectedItem, selectedItem ? focusedIndex : -1, "keyboard", true);
+      }
+    );
+  }
+
   private colorUpdateTimer: NodeJS.Timeout | null = null;
   private checkedPlayListItems: Set<number> = new Set();
   private headerRef = React.createRef<HTMLTableSectionElement>();
@@ -504,6 +603,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   doAddSongToPlaylist(song: Song) {
     const { currentPlaylist } = this.state;
+    this.recordPlaylistSnapshotForUndo();
 
     const newEntry = new PlaylistEntry(song.Id);
     newEntry.title = song.Title;
@@ -533,6 +633,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   movePlaylistItem(dragIndex: number, hoverIndex: number) {
     const { currentPlaylist, selectedItems } = this.state;
+    this.recordPlaylistSnapshotForUndo();
     const updatedPlaylist = new Playlist(currentPlaylist.name, [...currentPlaylist.items], currentPlaylist.id);
     const [draggedItem] = updatedPlaylist.items.splice(dragIndex, 1);
     updatedPlaylist.items.splice(hoverIndex, 0, draggedItem);
@@ -587,6 +688,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   removePlaylistItem(index: number) {
     const { currentPlaylist, selectedItems } = this.state;
+    this.recordPlaylistSnapshotForUndo();
     const newItems = [...currentPlaylist.items];
     newItems.splice(index, 1);
     const updatedPlaylist = new Playlist(currentPlaylist.name, newItems, currentPlaylist.id);
@@ -626,6 +728,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   updatePlaylistItem(index: number, item: PlaylistEntry) {
     const { currentPlaylist, focusedIndex } = this.state;
+    this.recordPlaylistSnapshotForUndo();
     const newItems = [...currentPlaylist.items];
     newItems[index] = item;
     const updatedPlaylist = new Playlist(currentPlaylist.name, newItems, currentPlaylist.id);
@@ -697,22 +800,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor } = this.state;
     const item = currentPlaylist.items[index];
 
-    // Calculate position that keeps menu within viewport
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    const menuHeight = Math.min(320, Math.max(0, viewportHeight - 12)); // Approximate max height of context menu
-    const menuWidth = 260; // Approximate width of context menu
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    if (y + menuHeight > viewportHeight) {
-      y = Math.max(0, viewportHeight - menuHeight);
-    }
-
-    if (x + menuWidth > viewportWidth) {
-      x = Math.max(0, viewportWidth - menuWidth);
-    }
+    const placement = this.computeContextMenuPlacement(event.clientX, event.clientY);
 
     const shouldSelect = !selectedItems.has(index);
     const nextSelectedItems = shouldSelect ? new Set<number>([index]) : selectedItems;
@@ -724,7 +812,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         selectedItems: nextSelectedItems,
         focusedIndex: nextFocusedIndex,
         selectionAnchor: nextSelectionAnchor,
-        contextMenu: { position: { x, y }, targetIndex: index },
+        contextMenu: {
+          position: { x: placement.x, y: placement.y },
+          targetIndex: index,
+          maxHeight: placement.maxHeight,
+          maxWidth: placement.maxWidth,
+        },
       },
       () => {
         if (shouldSelect) {
@@ -732,6 +825,48 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         }
       }
     );
+  }
+
+  handleContainerContextMenu(event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const placement = this.computeContextMenuPlacement(event.clientX, event.clientY);
+    const targetIndex = -1;
+
+    this.setState({
+      contextMenu: {
+        position: { x: placement.x, y: placement.y },
+        targetIndex,
+        maxHeight: placement.maxHeight,
+        maxWidth: placement.maxWidth,
+      },
+    });
+  }
+
+  private computeContextMenuPlacement(clientX: number, clientY: number): { x: number; y: number; maxHeight: number; maxWidth: number } {
+    const menuWidthEstimate = 260;
+    const edgePadding = 4;
+    const minMenuHeight = 60;
+
+    // Clamp against whole app client area (window viewport), not just playlist panel bounds.
+    const left = 0;
+    const right = window.innerWidth;
+    const top = 0;
+    const bottom = window.innerHeight;
+
+    const minX = left + edgePadding;
+    const maxX = Math.max(minX, right - edgePadding - menuWidthEstimate);
+    const x = Math.min(Math.max(clientX, minX), maxX);
+
+    const minY = top + edgePadding;
+    const maxY = Math.max(minY, bottom - edgePadding - minMenuHeight);
+    const y = Math.min(Math.max(clientY, minY), maxY);
+
+    // Allow using the full app client height; actual top is already clamped.
+    const maxHeight = Math.max(minMenuHeight, Math.floor(bottom - top - edgePadding * 2));
+    const maxWidth = Math.max(140, Math.floor(right - x - edgePadding));
+    return { x, y, maxHeight, maxWidth };
   }
 
   hideContextMenu() {
@@ -936,6 +1071,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   // Also updates leader preferences for changed items (matching C# behavior from ProjectorForm.PlayModeChangedByLeader)
   private updatePlaylistItems(newItems: PlaylistEntry[], modifiedIndices: Set<number> | number[], updateLeaderProfile: boolean = true) {
     const { currentPlaylist, focusedIndex } = this.state;
+    this.recordPlaylistSnapshotForUndo();
     const updatedPlaylist = new Playlist(currentPlaylist.name, newItems, currentPlaylist.id);
     updatedPlaylist.modified = Date.now();
 
@@ -1103,6 +1239,24 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   handleRemove() {
     const selectedIndices = this.getSelectedIndices();
     if (selectedIndices.length === 0) return;
+
+    if (selectedIndices.length > 1 && this.props.showConfirm) {
+      const t = this.props.t || ((key: string) => key);
+      this.props.showConfirm(
+        t("Confirm"),
+        t("ConfirmDeletePlaylistItems").replace("{count}", selectedIndices.length.toString()),
+        () => this.performRemoveSelectedItems(selectedIndices),
+        undefined,
+        { confirmText: t("DeleteSelected"), confirmDanger: true }
+      );
+      return;
+    }
+
+    this.performRemoveSelectedItems(selectedIndices);
+  }
+
+  private performRemoveSelectedItems(selectedIndices: number[]) {
+    this.recordPlaylistSnapshotForUndo();
 
     const { currentPlaylist } = this.state;
     const newItems = [...currentPlaylist.items];
@@ -1371,6 +1525,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Load playlist data - matching C# LoadPlaylistData
   loadPlaylistData(data: string) {
+    this.recordPlaylistSnapshotForUndo();
     const playlist = this.loadPlaylistFromString(data);
     this.savePlaylist(playlist);
   }
@@ -1391,6 +1546,27 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const { selectedItems, currentPlaylist, focusedIndex } = this.state;
     const isSpaceKey = e.key === " " || e.key === "Spacebar";
     const pageStep = this.getPageNavigationStep();
+    const isAccel = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+
+    // Standard accelerators: Select All / Undo / Redo
+    if (isAccel && key === "a") {
+      e.preventDefault();
+      this.handleSelectAll();
+      return;
+    }
+
+    if (isAccel && key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      this.handleUndo();
+      return;
+    }
+
+    if ((isAccel && key === "y") || (isAccel && e.shiftKey && key === "z")) {
+      e.preventDefault();
+      this.handleRedo();
+      return;
+    }
 
     // Navigation keys - ArrowUp/ArrowDown for selection
     if (e.key === "ArrowUp" && !e.ctrlKey && !e.altKey) {
@@ -1427,6 +1603,14 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       return;
     }
 
+    // Delete should work regardless of anchor/index so long as anything is selected.
+    if (e.key === "Delete") {
+      if (selectedItems.size === 0) return;
+      e.preventDefault();
+      this.handleRemove();
+      return;
+    }
+
     // The rest requires at least one item selected
     if (selectedItems.size === 0) return;
 
@@ -1452,16 +1636,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     else if (e.altKey && e.key === "ArrowDown") {
       e.preventDefault();
       this.handleTransposeDown();
-    }
-    // Delete: Remove item
-    else if (e.key === "Delete") {
-      e.preventDefault();
-      this.handleRemove();
-    }
-    // Ctrl+A: Select all (future enhancement if needed)
-    else if (e.ctrlKey && e.key === "a") {
-      e.preventDefault();
-      // TODO: Implement select all if multi-select is added
     }
   }
 
@@ -1667,79 +1841,124 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const canMoveUp = hasSelection && this.getFirstSelectedIndex() > 0;
     const canMoveDown = hasSelection && this.getLastSelectedIndex() < currentPlaylist.items.length - 1;
     const t = this.props.t || ((key: string) => key);
-    const contextTargetItem = contextMenu ? currentPlaylist.items[contextMenu.targetIndex] : null;
+    const contextTargetItem = contextMenu && contextMenu.targetIndex >= 0 ? currentPlaylist.items[contextMenu.targetIndex] : null;
+    const contextOnItem = !!contextMenu && contextMenu.targetIndex >= 0;
+    const showShortcutHints = (contextMenu?.maxWidth ?? 0) >= 250;
 
     const currentTranspose = contextTargetItem?.transpose ?? 0;
     const currentCapo = contextTargetItem?.capo ?? -1;
 
-    const contextMenuItems: ContextMenuItem[] = contextMenu
-      ? [
-          { label: t("PlaylistMoveUp"), value: "move_up", disabled: isDisabled || !canMoveUp, iconClass: "fa fa-arrow-up" },
-          { label: t("PlaylistMoveDown"), value: "move_down", disabled: isDisabled || !canMoveDown, iconClass: "fa fa-arrow-down" },
-          {
-            label: "",
-            value: "_transpose",
-            customContent: (
-              <>
-                <i className="context-menu-icon fa fa-music" aria-hidden="true"></i>
-                {t("Transpose")}
-                <select
-                  className="context-menu-select"
-                  title="Transpose"
-                  value={currentTranspose}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    this.handleSetTranspose(val);
-                    this.hideContextMenu();
-                  }}
-                >
-                  {Array.from({ length: 23 }, (_, i) => {
-                    const val = 11 - i;
-                    const label = val > 0 ? `#${val}` : val < 0 ? `b${Math.abs(val)}` : "0";
-                    return (
-                      <option key={val} value={val}>
-                        {label}
+    const undoRedoItems: ContextMenuItem[] = [
+      {
+        label: t("ChpMenuUndo"),
+        value: "undo",
+        disabled: isDisabled || this.undoStack.length === 0,
+        iconClass: "fa fa-undo",
+        shortcut: showShortcutHints ? "Ctrl/Cmd+Z" : undefined,
+      },
+      {
+        label: t("ChpMenuRedo"),
+        value: "redo",
+        disabled: isDisabled || this.redoStack.length === 0,
+        iconClass: "fa fa-repeat",
+        shortcut: showShortcutHints ? "Ctrl+Y / Cmd+Shift+Z" : undefined,
+      },
+    ];
+
+    const contextMenuItems: ContextMenuItem[] = !contextMenu
+      ? []
+      : contextOnItem
+        ? [
+            { label: t("PlaylistMoveUp"), value: "move_up", disabled: isDisabled || !canMoveUp, iconClass: "fa fa-arrow-up" },
+            { label: t("PlaylistMoveDown"), value: "move_down", disabled: isDisabled || !canMoveDown, iconClass: "fa fa-arrow-down" },
+            {
+              label: "",
+              value: "_transpose",
+              customContent: (
+                <>
+                  <i className="context-menu-icon fa fa-music" aria-hidden="true"></i>
+                  {t("Transpose")}
+                  <select
+                    className="context-menu-select"
+                    title="Transpose"
+                    value={currentTranspose}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      this.handleSetTranspose(val);
+                      this.hideContextMenu();
+                    }}
+                  >
+                    {Array.from({ length: 23 }, (_, i) => {
+                      const val = 11 - i;
+                      const label = val > 0 ? `#${val}` : val < 0 ? `b${Math.abs(val)}` : "0";
+                      return (
+                        <option key={val} value={val}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </>
+              ),
+            },
+            {
+              label: "",
+              value: "_capo",
+              customContent: (
+                <>
+                  <i className="context-menu-icon fa fa-caret-up" aria-hidden="true"></i>
+                  {t("Capo")}
+                  <select
+                    className="context-menu-select"
+                    title="Capo"
+                    value={currentCapo}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      this.handleSetCapo(val);
+                      this.hideContextMenu();
+                    }}
+                  >
+                    <option value={-1}>-</option>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {i}
                       </option>
-                    );
-                  })}
-                </select>
-              </>
-            ),
-          },
-          {
-            label: "",
-            value: "_capo",
-            customContent: (
-              <>
-                <i className="context-menu-icon fa fa-caret-up" aria-hidden="true"></i>
-                {t("Capo")}
-                <select
-                  className="context-menu-select"
-                  title="Capo"
-                  value={currentCapo}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    this.handleSetCapo(val);
-                    this.hideContextMenu();
-                  }}
-                >
-                  <option value={-1}>-</option>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i} value={i}>
-                      {i}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ),
-          },
-          { label: t("PlaylistEditTitle"), value: "edit", disabled: isDisabled || !hasSelection, iconClass: "fa fa-pencil" },
-          { label: t("PlaylistEditInstructions"), value: "instructions", disabled: isDisabled || !hasSelection, iconClass: "fa fa-sticky-note-o" },
-          { label: t("PlaylistRemove"), value: "remove", disabled: isDisabled || !hasSelection, iconClass: "fa fa-trash" },
-        ]
-      : [];
+                    ))}
+                  </select>
+                </>
+              ),
+            },
+            { label: t("PlaylistEditTitle"), value: "edit", disabled: isDisabled || !hasSelection, iconClass: "fa fa-pencil" },
+            { label: t("PlaylistEditInstructions"), value: "instructions", disabled: isDisabled || !hasSelection, iconClass: "fa fa-sticky-note-o" },
+            {
+              label: t("DeleteSelected"),
+              value: "remove",
+              disabled: isDisabled || !hasSelection,
+              iconClass: "fa fa-trash",
+              shortcut: showShortcutHints ? "Del" : undefined,
+            },
+            { separator: true, label: "", value: "__separator_playlist_main" },
+            {
+              label: t("SelectAll"),
+              value: "select_all",
+              disabled: isDisabled || currentPlaylist.items.length === 0,
+              iconClass: "fa fa-check-square-o",
+              shortcut: showShortcutHints ? "Ctrl/Cmd+A" : undefined,
+            },
+            ...undoRedoItems,
+          ]
+        : [
+            {
+              label: t("SelectAll"),
+              value: "select_all",
+              disabled: isDisabled || currentPlaylist.items.length === 0,
+              iconClass: "fa fa-check-square-o",
+              shortcut: showShortcutHints ? "Ctrl/Cmd+A" : undefined,
+            },
+            ...undoRedoItems,
+          ];
 
     return (
       <PlaylistDropTarget addSongToPlaylist={this.addSongToPlaylist}>
@@ -1851,6 +2070,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               className={`playlist-items-container flex-grow-1 overflow-auto${isDisabled ? " disabled" : ""}`}
               tabIndex={isDisabled ? -1 : 0}
               onKeyDown={(e) => !isDisabled && this.handleKeyDown(e.nativeEvent)}
+              onContextMenu={(e) => !isDisabled && this.handleContainerContextMenu(e)}
               onFocus={() => {
                 if (isDisabled) return;
                 // Auto-focus and select first item if nothing is focused
@@ -1906,6 +2126,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             <ContextMenu
               items={contextMenuItems}
               position={contextMenu.position}
+              maxHeight={contextMenu.maxHeight}
+              maxWidth={contextMenu.maxWidth}
               onSelect={(value) => {
                 if (value.startsWith("transpose_set:")) {
                   const newVal = parseInt(value.split(":")[1], 10);
@@ -1917,6 +2139,15 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                   switch (value) {
                     case "remove":
                       this.handleRemove();
+                      break;
+                    case "select_all":
+                      this.handleSelectAll();
+                      break;
+                    case "undo":
+                      this.handleUndo();
+                      break;
+                    case "redo":
+                      this.handleRedo();
                       break;
                     case "move_up":
                       this.handleMoveUp();
