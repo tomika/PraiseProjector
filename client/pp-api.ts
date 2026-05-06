@@ -123,7 +123,50 @@ export function getInstructions() {
 export function initServiceWorker() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("sw.js", { scope: "./" }).catch((err) => console.log("service worker register failed: " + err));
+      let hasReloadedForUpdate = false;
+      const reloadForUpdate = () => {
+        if (hasReloadedForUpdate) return;
+        hasReloadedForUpdate = true;
+        window.location.reload();
+      };
+
+      const setupAutoUpdate = (reg: ServiceWorkerRegistration) => {
+        if (reg.waiting) {
+          reg.waiting.postMessage("skipWaiting");
+        }
+
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              newWorker.postMessage("skipWaiting");
+            }
+          });
+        });
+
+        setInterval(() => {
+          reg.update().catch(() => {});
+        }, 60 * 1000);
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") {
+            reg.update().catch(() => {});
+          }
+        });
+
+        window.addEventListener("focus", () => {
+          reg.update().catch(() => {});
+        });
+      };
+
+      navigator.serviceWorker.addEventListener("controllerchange", reloadForUpdate);
+
+      navigator.serviceWorker
+        .register("sw.js", { scope: "./" })
+        .then((reg) => setupAutoUpdate(reg))
+        .catch((err) => console.log("service worker register failed: " + err));
     });
   }
 }

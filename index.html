@@ -123,8 +123,54 @@
       // Register service worker for PWA support (web mode only)
       if ('serviceWorker' in navigator && window.location.pathname.startsWith('/webapp')) {
         window.addEventListener('load', () => {
+          let hasReloadedForUpdate = false;
+          const reloadForUpdate = () => {
+            if (hasReloadedForUpdate) return;
+            hasReloadedForUpdate = true;
+            window.location.reload();
+          };
+
+          const setupAutoUpdate = (reg) => {
+            // If an update is already waiting, activate it immediately.
+            if (reg.waiting) {
+              reg.waiting.postMessage('skipWaiting');
+            }
+
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+
+              newWorker.addEventListener('statechange', () => {
+                // Installed while a controller exists means an update is ready.
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  newWorker.postMessage('skipWaiting');
+                }
+              });
+            });
+
+            // Poll for updates and also check on foreground transitions.
+            setInterval(() => {
+              reg.update().catch(() => {});
+            }, 60 * 1000);
+
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') {
+                reg.update().catch(() => {});
+              }
+            });
+
+            window.addEventListener('focus', () => {
+              reg.update().catch(() => {});
+            });
+          };
+
+          navigator.serviceWorker.addEventListener('controllerchange', reloadForUpdate);
+
           navigator.serviceWorker.register('/webapp/sw.js', { scope: '/webapp/' })
-            .then(reg => console.log('SW registered:', reg.scope))
+            .then(reg => {
+              setupAutoUpdate(reg);
+              console.log('SW registered:', reg.scope);
+            })
             .catch(err => console.log('SW registration failed:', err));
         });
       }
