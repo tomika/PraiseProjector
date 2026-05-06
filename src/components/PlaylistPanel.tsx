@@ -32,6 +32,34 @@ enum DisplayMode {
   Crops = 2,
 }
 
+const MOBILE_LONG_PRESS_TIMEOUT_MS = 420;
+const MOBILE_TOUCH_MOVE_TOLERANCE_PX = 10;
+const MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX = 24;
+const MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS = 2600;
+
+type MobilePlaylistTouchSession = {
+  sourceIndex: number;
+  onDragOverDifferentItem: () => void;
+};
+
+let activeMobilePlaylistTouchSession: MobilePlaylistTouchSession | null = null;
+
+function registerMobilePlaylistTouchSession(sourceIndex: number, onDragOverDifferentItem: () => void): void {
+  activeMobilePlaylistTouchSession = { sourceIndex, onDragOverDifferentItem };
+}
+
+function clearMobilePlaylistTouchSession(sourceIndex?: number): void {
+  if (!activeMobilePlaylistTouchSession) return;
+  if (sourceIndex !== undefined && activeMobilePlaylistTouchSession.sourceIndex !== sourceIndex) return;
+  activeMobilePlaylistTouchSession = null;
+}
+
+function notifyMobilePlaylistDragOverDifferentItem(sourceIndex: number): void {
+  if (!activeMobilePlaylistTouchSession || activeMobilePlaylistTouchSession.sourceIndex !== sourceIndex) return;
+  activeMobilePlaylistTouchSession.onDragOverDifferentItem();
+  activeMobilePlaylistTouchSession = null;
+}
+
 // Calculate contrasting text color (black or white) based on background luminance
 function getContrastTextColor(bgColor: string): string {
   // Parse color - supports hex (#RGB, #RRGGBB) and rgb/rgba formats
@@ -2246,7 +2274,11 @@ const PlaylistItemRow: React.FC<{
   const confirmingRef = React.useRef(false);
   const longPressTimerRef = React.useRef<number | null>(null);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const dragStartedRef = React.useRef(false);
+  const movedOverOtherItemRef = React.useRef(false);
+  const significantMoveRef = React.useRef(false);
   const suppressClickUntilRef = React.useRef(0);
+  const suppressContextMenuUntilRef = React.useRef(0);
   const { t } = useLocalization();
   const { tt } = useTooltips();
 
@@ -2255,6 +2287,10 @@ const PlaylistItemRow: React.FC<{
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  }, []);
+
+  const markMovedOverOtherItem = React.useCallback(() => {
+    movedOverOtherItemRef.current = true;
   }, []);
 
   React.useEffect(() => {
@@ -2279,12 +2315,13 @@ const PlaylistItemRow: React.FC<{
   React.useEffect(() => {
     return () => {
       clearLongPressTimer();
+      clearMobilePlaylistTouchSession(index);
     };
-  }, [clearLongPressTimer]);
+  }, [clearLongPressTimer, index]);
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "playlist-item",
-    item: { index },
+    item: { index, sourceIndex: index },
     canDrag: () => !dragSuppressed,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
@@ -2293,8 +2330,9 @@ const PlaylistItemRow: React.FC<{
 
   const [, drop] = useDrop(() => ({
     accept: "playlist-item",
-    hover: (draggedItem: { index: number }) => {
+    hover: (draggedItem: { index: number; sourceIndex: number }) => {
       if (draggedItem.index !== index) {
+        notifyMobilePlaylistDragOverDifferentItem(draggedItem.sourceIndex);
         moveItem(draggedItem.index, index);
         draggedItem.index = index;
       }
@@ -2364,21 +2402,32 @@ const PlaylistItemRow: React.FC<{
         }
         onClick(e);
       }}
-      onContextMenu={onContextMenu}
+      onContextMenu={(e) => {
+        if (Date.now() < suppressContextMenuUntilRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onContextMenu(e);
+      }}
       onTouchStart={(e) => {
         if (e.touches.length !== 1) return;
         const touch = e.touches[0];
         if (!touch) return;
 
+        dragStartedRef.current = false;
+        movedOverOtherItemRef.current = false;
+        significantMoveRef.current = false;
+        suppressContextMenuUntilRef.current = Date.now() + MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS;
         setDragSuppressed(true);
         touchStartRef.current = { x: touch.clientX, y: touch.clientY };
         clearLongPressTimer();
+        clearMobilePlaylistTouchSession(index);
+        registerMobilePlaylistTouchSession(index, markMovedOverOtherItem);
         longPressTimerRef.current = window.setTimeout(() => {
-          const start = touchStartRef.current;
-          if (!start) return;
-          suppressClickUntilRef.current = Date.now() + 500;
-          onLongPressContextMenu(start.x, start.y);
-        }, 420);
+          setDragSuppressed(false);
+          // Let native DnD start; context menu decision happens on drag end.
+        }, MOBILE_LONG_PRESS_TIMEOUT_MS);
       }}
       onTouchMove={(e) => {
         const start = touchStartRef.current;
@@ -2389,7 +2438,13 @@ const PlaylistItemRow: React.FC<{
 
         const deltaX = Math.abs(touch.clientX - start.x);
         const deltaY = Math.abs(touch.clientY - start.y);
-        if (deltaX > 10 || deltaY > 10) {
+
+        const travel = Math.hypot(deltaX, deltaY);
+        if (travel > MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX) {
+          significantMoveRef.current = true;
+        }
+
+        if (deltaX > MOBILE_TOUCH_MOVE_TOLERANCE_PX || deltaY > MOBILE_TOUCH_MOVE_TOLERANCE_PX) {
           setDragSuppressed(false);
           clearLongPressTimer();
         }
@@ -2397,11 +2452,38 @@ const PlaylistItemRow: React.FC<{
       onTouchEnd={() => {
         setDragSuppressed(false);
         clearLongPressTimer();
-        touchStartRef.current = null;
+        if (!dragStartedRef.current) clearMobilePlaylistTouchSession(index);
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
+        if (!dragStartedRef.current) touchStartRef.current = null;
       }}
       onTouchCancel={() => {
         setDragSuppressed(false);
         clearLongPressTimer();
+        if (!dragStartedRef.current) clearMobilePlaylistTouchSession(index);
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
+        if (!dragStartedRef.current) touchStartRef.current = null;
+      }}
+      onDragStart={() => {
+        dragStartedRef.current = true;
+        clearLongPressTimer();
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 1200);
+      }}
+      onDragEnd={() => {
+        const started = dragStartedRef.current;
+        const start = touchStartRef.current;
+        const shouldOpenContextMenu = started && !!start && !movedOverOtherItemRef.current && !significantMoveRef.current;
+
+        dragStartedRef.current = false;
+        setDragSuppressed(false);
+        clearMobilePlaylistTouchSession(index);
+
+        if (shouldOpenContextMenu && start) {
+          suppressClickUntilRef.current = Date.now() + 500;
+          suppressContextMenuUntilRef.current = Date.now() + 1200;
+          onLongPressContextMenu(start.x, start.y);
+        }
+
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
         touchStartRef.current = null;
       }}
       title={tt("playlist")}

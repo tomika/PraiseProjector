@@ -19,6 +19,34 @@ import "./SongListPanel.css";
 
 let addSongToPlaylistCallback: ((song: Song) => void) | null = null;
 
+const MOBILE_LONG_PRESS_TIMEOUT_MS = 420;
+const MOBILE_TOUCH_MOVE_TOLERANCE_PX = 10;
+const MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX = 24;
+const MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS = 2600;
+
+type MobileSongTouchSession = {
+  sourceSongId: string;
+  onDragOverDifferentItem: () => void;
+};
+
+let activeMobileSongTouchSession: MobileSongTouchSession | null = null;
+
+function registerMobileSongTouchSession(sourceSongId: string, onDragOverDifferentItem: () => void): void {
+  activeMobileSongTouchSession = { sourceSongId, onDragOverDifferentItem };
+}
+
+function clearMobileSongTouchSession(sourceSongId?: string): void {
+  if (!activeMobileSongTouchSession) return;
+  if (sourceSongId !== undefined && activeMobileSongTouchSession.sourceSongId !== sourceSongId) return;
+  activeMobileSongTouchSession = null;
+}
+
+function notifyMobileSongDragOverDifferentItem(sourceSongId: string): void {
+  if (!activeMobileSongTouchSession || activeMobileSongTouchSession.sourceSongId !== sourceSongId) return;
+  activeMobileSongTouchSession.onDragOverDifferentItem();
+  activeMobileSongTouchSession = null;
+}
+
 type PersistedHistoryDialogState = {
   historyOriginalSong: Song;
   historyVersions: Song[];
@@ -126,6 +154,11 @@ const DraggableSongItem: React.FC<{
         if (targetGroup && targetGroup === item.GroupId) return false;
         return true;
       },
+      hover: (item: Song) => {
+        if (item.Id !== songFound.song.Id) {
+          notifyMobileSongDragOverDifferentItem(item.Id);
+        }
+      },
       drop: (item: Song) => {
         if (onDropSong) {
           onDropSong(item, songFound.song);
@@ -143,6 +176,9 @@ const DraggableSongItem: React.FC<{
   const { tt } = useTooltips();
   const longPressTimerRef = React.useRef<number | null>(null);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const dragStartedRef = React.useRef(false);
+  const movedOverOtherItemRef = React.useRef(false);
+  const significantMoveRef = React.useRef(false);
   const suppressClickUntilRef = React.useRef(0);
   const suppressContextMenuUntilRef = React.useRef(0);
 
@@ -153,11 +189,16 @@ const DraggableSongItem: React.FC<{
     }
   }, []);
 
+  const markMovedOverOtherItem = React.useCallback(() => {
+    movedOverOtherItemRef.current = true;
+  }, []);
+
   React.useEffect(() => {
     return () => {
       clearLongPressTimer();
+      clearMobileSongTouchSession(songFound.song.Id);
     };
-  }, [clearLongPressTimer]);
+  }, [clearLongPressTimer, songFound.song.Id]);
 
   let iconType: IconType;
   if (song.Notes && song.Notes.trim() !== "") {
@@ -219,17 +260,19 @@ const DraggableSongItem: React.FC<{
         const touch = e.touches[0];
         if (!touch) return;
 
+        dragStartedRef.current = false;
+        movedOverOtherItemRef.current = false;
+        significantMoveRef.current = false;
+        suppressContextMenuUntilRef.current = Date.now() + MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS;
         setDragSuppressed(true);
         touchStartRef.current = { x: touch.clientX, y: touch.clientY };
         clearLongPressTimer();
+        clearMobileSongTouchSession(songFound.song.Id);
+        registerMobileSongTouchSession(songFound.song.Id, markMovedOverOtherItem);
         longPressTimerRef.current = window.setTimeout(() => {
-          const start = touchStartRef.current;
-          if (!start) return;
-          suppressClickUntilRef.current = Date.now() + 500;
-          suppressContextMenuUntilRef.current = Date.now() + 1200;
-          onLongPressContextMenu(start.x, start.y);
-          touchStartRef.current = null;
-        }, 420);
+          setDragSuppressed(false);
+          // Let native DnD start; context menu decision happens on drag end.
+        }, MOBILE_LONG_PRESS_TIMEOUT_MS);
       }}
       onTouchMove={(e) => {
         const start = touchStartRef.current;
@@ -240,7 +283,13 @@ const DraggableSongItem: React.FC<{
 
         const deltaX = Math.abs(touch.clientX - start.x);
         const deltaY = Math.abs(touch.clientY - start.y);
-        if (deltaX > 10 || deltaY > 10) {
+
+        const travel = Math.hypot(deltaX, deltaY);
+        if (travel > MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX) {
+          significantMoveRef.current = true;
+        }
+
+        if (deltaX > MOBILE_TOUCH_MOVE_TOLERANCE_PX || deltaY > MOBILE_TOUCH_MOVE_TOLERANCE_PX) {
           setDragSuppressed(false);
           clearLongPressTimer();
         }
@@ -248,11 +297,38 @@ const DraggableSongItem: React.FC<{
       onTouchEnd={() => {
         setDragSuppressed(false);
         clearLongPressTimer();
-        touchStartRef.current = null;
+        if (!dragStartedRef.current) clearMobileSongTouchSession(songFound.song.Id);
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
+        if (!dragStartedRef.current) touchStartRef.current = null;
       }}
       onTouchCancel={() => {
         setDragSuppressed(false);
         clearLongPressTimer();
+        if (!dragStartedRef.current) clearMobileSongTouchSession(songFound.song.Id);
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
+        if (!dragStartedRef.current) touchStartRef.current = null;
+      }}
+      onDragStart={() => {
+        dragStartedRef.current = true;
+        clearLongPressTimer();
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 1200);
+      }}
+      onDragEnd={() => {
+        const started = dragStartedRef.current;
+        const start = touchStartRef.current;
+        const shouldOpenContextMenu = started && !!start && !movedOverOtherItemRef.current && !significantMoveRef.current;
+
+        dragStartedRef.current = false;
+        setDragSuppressed(false);
+        clearMobileSongTouchSession(songFound.song.Id);
+
+        if (shouldOpenContextMenu && start) {
+          suppressClickUntilRef.current = Date.now() + 500;
+          suppressContextMenuUntilRef.current = Date.now() + 1200;
+          onLongPressContextMenu?.(start.x, start.y);
+        }
+
+        suppressContextMenuUntilRef.current = Math.max(suppressContextMenuUntilRef.current, Date.now() + 600);
         touchStartRef.current = null;
       }}
       title={tt("songtree")}
