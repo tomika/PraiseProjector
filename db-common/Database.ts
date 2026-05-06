@@ -1269,6 +1269,7 @@ class Database {
     settings: DatabaseSettings
   ): Promise<SongFoundList> {
     const res = new SongFoundList();
+    const bestBySongId = new Map<string, SongFound>();
     const maxResults = settings.searchMaxResults ?? 0;
     const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
@@ -1286,7 +1287,20 @@ class Database {
       if (leaderFilter && leaderFilter.has(song)) continue;
 
       const reason = Database.TYPESENSE_TYPE_TO_REASON[hit.found.type] ?? FoundReason.Lyrics;
-      res.addSong(song, reason, hit.found.cost, leader, hit.found.snippet);
+      const candidate = new SongFound(song, leader?.getPreference(song.Id) ?? null, reason, hit.found.cost, hit.found.snippet);
+      const existing = bestBySongId.get(song.Id);
+      if (
+        !existing ||
+        candidate.reason < existing.reason ||
+        (candidate.reason === existing.reason && candidate.cost < existing.cost) ||
+        (candidate.reason === existing.reason && candidate.cost === existing.cost && !!candidate.snippet && !existing.snippet)
+      ) {
+        bestBySongId.set(song.Id, candidate);
+      }
+    }
+
+    for (const songFound of bestBySongId.values()) {
+      res.addSong(songFound.song, songFound.reason, songFound.cost, leader, songFound.snippet);
     }
 
     // Sorting

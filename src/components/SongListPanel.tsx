@@ -1075,6 +1075,9 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       );
     }
 
+    // Defensive dedupe: ensure a song appears at most once in the rendered tree.
+    songsToGroup = this.dedupeSongFoundById(songsToGroup);
+
     // Group by FoundReason
     const categoriesMap = new Map<FoundReason, SongFound[]>();
 
@@ -1107,6 +1110,30 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (requestSeq === this.updateCategoriesRequestSeq) {
       this.setState({ categories });
     }
+  }
+
+  private dedupeSongFoundById(items: SongFound[]): SongFound[] {
+    const byId = new Map<string, SongFound>();
+
+    for (const item of items) {
+      const key = item.song.Id;
+      const existing = byId.get(key);
+      if (!existing) {
+        byId.set(key, item);
+        continue;
+      }
+
+      const shouldReplace =
+        item.reason < existing.reason ||
+        (item.reason === existing.reason && item.cost < existing.cost) ||
+        (item.reason === existing.reason && item.cost === existing.cost && !!item.snippet && !existing.snippet);
+
+      if (shouldReplace) {
+        byId.set(key, item);
+      }
+    }
+
+    return Array.from(byId.values());
   }
 
   // Build items with group folders for songs sharing a GroupId
