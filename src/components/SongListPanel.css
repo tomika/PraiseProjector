@@ -363,6 +363,12 @@
   max-height: var(--song-filter-control-height);
 }
 
+.song-list-panel .song-filter-input:focus {
+  border-color: #3b82f6;
+  box-shadow: inset 0 0 0 1px #3b82f6;
+  z-index: 3;
+}
+
 .song-list-panel .input-group > .input-group-prepend > .btn,
 .song-list-panel .input-group > .input-group-append > .btn {
   height: var(--song-filter-control-height);
@@ -573,6 +579,11 @@
   background-color: var(--pp-input-bg);
   border-color: var(--pp-input-border);
   color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .song-filter-input:focus {
+  border-color: #58a8ff;
+  box-shadow: inset 0 0 0 1px #58a8ff;
 }
 
 [data-theme="dark"] .song-search-toggle-btn {
