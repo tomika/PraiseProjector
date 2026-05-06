@@ -1326,9 +1326,11 @@ const AppContent: React.FC = () => {
                   onDecision: (decision) => {
                     setCompareDialogState(null);
                     current.version = 0;
-                    db.updateSong(current);
+                    const savedSong = current.clone();
+                    db.updateSong(savedSong);
                     if (decision.action === "import-and-group" && decision.groupWithSong) {
-                      db.MakeGroup(current, decision.groupWithSong);
+                      db.MakeGroup(savedSong, decision.groupWithSong);
+                      current.GroupId = savedSong.GroupId;
                     }
                     setEditedSong(current);
                     const projected = getProjectedSong();
@@ -1342,7 +1344,8 @@ const AppContent: React.FC = () => {
             }
 
             current.version = 0;
-            db.updateSong(current);
+            const savedSong = current.clone();
+            db.updateSong(savedSong);
             setEditedSong(current);
 
             // If this is also the projected song, update it too
@@ -1409,11 +1412,13 @@ const AppContent: React.FC = () => {
 
       const db = Database.getInstance();
       editedSong.version = 0;
-      db.updateSong(editedSong);
+      const savedSong = editedSong.clone();
+      db.updateSong(savedSong);
 
       // If user chose to group with an existing song, create the group
       if (groupWithSong) {
-        db.MakeGroup(editedSong, groupWithSong);
+        db.MakeGroup(savedSong, groupWithSong);
+        editedSong.GroupId = savedSong.GroupId;
       }
 
       // Database now has the saved version - no need to track separately
