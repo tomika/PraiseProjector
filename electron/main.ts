@@ -555,25 +555,35 @@ function loadReleasesUrl(): void {
 }
 
 // Track the current update channel (stable or testing)
-let currentUpdateChannel: string = "stable";
+type UpdateChannel = Settings["updateChannel"];
 
-/**
- * Apply update channel by setting the appropriate feed URL.
- * Stable channel uses default latest.yml, testing uses testing/latest.yml subfolder.
- */
-function applyUpdateChannel(channel: string): void {
+let currentUpdateChannel: UpdateChannel = "stable";
+let activeFeedChannel: UpdateChannel = "stable";
+let pendingUpdateChannel: UpdateChannel | null = null;
+
+function setFeedForChannel(channel: UpdateChannel): void {
   if (!releasesBaseUrl) {
     console.warn("Releases base URL not loaded, cannot apply channel:", channel);
     return;
   }
 
-  currentUpdateChannel = channel;
   const feedUrl = channel === "testing" ? `${releasesBaseUrl}/testing` : releasesBaseUrl;
+  activeFeedChannel = channel;
 
-  console.log(`Applying update channel: ${channel}`);
+  console.log(`Applying update feed channel: ${channel}`);
   console.log(`Feed base URL: ${feedUrl}`);
 
   autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
+}
+
+/**
+ * Apply update channel by setting the appropriate feed URL.
+ * Stable channel uses default latest.yml, testing uses testing/latest.yml subfolder.
+ */
+function applyUpdateChannel(channel: UpdateChannel): void {
+  currentUpdateChannel = channel;
+  pendingUpdateChannel = null;
+  setFeedForChannel(channel);
 }
 
 function getMetadataFileName(): string {
@@ -597,13 +607,13 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
-function buildChannelMetadataUrl(channel: string): string | null {
+function buildChannelMetadataUrl(channel: UpdateChannel): string | null {
   if (!releasesBaseUrl) return null;
   const metadataFileName = getMetadataFileName();
   return channel === "testing" ? `${releasesBaseUrl}/testing/${metadataFileName}` : `${releasesBaseUrl}/${metadataFileName}`;
 }
 
-async function fetchChannelVersionFromMetadata(channel: string): Promise<string | null> {
+async function fetchChannelVersionFromMetadata(channel: UpdateChannel): Promise<string | null> {
   const metadataUrl = buildChannelMetadataUrl(channel);
   if (!metadataUrl) return null;
 
@@ -620,7 +630,22 @@ async function fetchChannelVersionFromMetadata(channel: string): Promise<string 
   }
 }
 
-async function checkForUpdatesWithFallback(): Promise<{ available: boolean; version?: string; error?: string }> {
+async function checkForUpdatesWithFallback(): Promise<{
+  available: boolean;
+  version?: string;
+  channel?: UpdateChannel;
+  error?: string;
+}> {
+  pendingUpdateChannel = null;
+
+  // Keep checks aligned with the user's selected channel unless a specific
+  // fallback channel is selected later for the offered update.
+  if (activeFeedChannel !== currentUpdateChannel) {
+    setFeedForChannel(currentUpdateChannel);
+  }
+
+  let channelToOffer: UpdateChannel = currentUpdateChannel;
+
   try {
     const result = await autoUpdater.checkForUpdates();
     let serverVersion = result?.updateInfo?.version;
@@ -631,19 +656,42 @@ async function checkForUpdatesWithFallback(): Promise<{ available: boolean; vers
       serverVersion = (await fetchChannelVersionFromMetadata(currentUpdateChannel)) ?? undefined;
     }
 
-    // If on testing channel, also check stable channel for newer versions
-    if (currentUpdateChannel === "testing" && serverVersion) {
+    // If on testing channel, also check stable channel for newer versions.
+    // This ensures users on testing still see a stable update when stable is ahead.
+    if (currentUpdateChannel === "testing") {
       const stableVersion = await fetchChannelVersionFromMetadata("stable");
-      if (stableVersion && compareVersions(stableVersion, serverVersion) > 0) {
-        console.log(`Newer stable version available: ${stableVersion} (testing has ${serverVersion})`);
+      if (stableVersion && (!serverVersion || compareVersions(stableVersion, serverVersion) > 0)) {
+        console.log(`Offering stable update while testing channel selected: stable=${stableVersion}, testing=${serverVersion ?? "n/a"}`);
         serverVersion = stableVersion;
+        channelToOffer = "stable";
       }
     }
 
     const available = !!serverVersion && serverVersion !== app.getVersion();
-    return { available, version: serverVersion };
+    if (available) pendingUpdateChannel = channelToOffer;
+    return { available, version: serverVersion, channel: channelToOffer };
   } catch (err) {
     console.error("Update check failed:", err);
+
+    // Metadata-only fallback even if updater provider check fails.
+    let serverVersion = (await fetchChannelVersionFromMetadata(currentUpdateChannel)) ?? undefined;
+    if (currentUpdateChannel === "testing") {
+      const stableVersion = await fetchChannelVersionFromMetadata("stable");
+      if (stableVersion && (!serverVersion || compareVersions(stableVersion, serverVersion) > 0)) {
+        console.log(
+          `Provider check failed, but stable metadata is newer; offering stable update: stable=${stableVersion}, testing=${serverVersion ?? "n/a"}`
+        );
+        serverVersion = stableVersion;
+        channelToOffer = "stable";
+      }
+    }
+
+    const available = !!serverVersion && serverVersion !== app.getVersion();
+    if (available) {
+      pendingUpdateChannel = channelToOffer;
+      return { available: true, version: serverVersion, channel: channelToOffer, error: (err as Error).message };
+    }
+
     return { available: false, error: (err as Error).message };
   }
 }
@@ -729,6 +777,14 @@ async function setupAutoUpdater() {
       console.log("Update check completed");
       console.log("Server version:", result.version);
       console.log("Update available:", result.available);
+
+      // Ensure fallback-derived availability (e.g. stable newer than testing)
+      // is reflected in the renderer even if updater events reported otherwise.
+      if (result.available && result.version) {
+        mainWindow?.webContents.send("update-available", { version: result.version });
+      } else {
+        mainWindow?.webContents.send("update-not-available");
+      }
     })
     .catch((err) => {
       console.error("Auto-update check failed:", err.message);
@@ -762,16 +818,40 @@ async function setupAutoUpdater() {
 
 // IPC handlers for auto-update
 ipcMain.handle("check-for-updates", async () => {
-  return checkForUpdatesWithFallback();
+  const result = await checkForUpdatesWithFallback();
+
+  // Mirror computed result to renderer so it stays consistent with fallback logic.
+  if (result.available && result.version) {
+    mainWindow?.webContents.send("update-available", { version: result.version });
+  } else {
+    mainWindow?.webContents.send("update-not-available");
+  }
+
+  return result;
 });
 
 ipcMain.handle("download-update", async () => {
+  const downloadChannel = pendingUpdateChannel ?? currentUpdateChannel;
+  const shouldRestoreFeedAfterDownload = downloadChannel !== currentUpdateChannel;
+
   try {
+    if (activeFeedChannel !== downloadChannel) {
+      console.log(`Temporarily switching update feed for download: ${activeFeedChannel} -> ${downloadChannel}`);
+      setFeedForChannel(downloadChannel);
+    }
+
+    // Ensure updater/provider state matches the channel we are about to download from.
+    await autoUpdater.checkForUpdates();
     await autoUpdater.downloadUpdate();
     return { success: true };
   } catch (err) {
     console.error("Update download failed:", err);
     return { success: false, error: (err as Error).message };
+  } finally {
+    // Keep the normal updater feed aligned to the selected settings channel.
+    if (shouldRestoreFeedAfterDownload && activeFeedChannel !== currentUpdateChannel) {
+      setFeedForChannel(currentUpdateChannel);
+    }
   }
 });
 
