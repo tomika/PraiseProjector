@@ -144,6 +144,7 @@ const DraggableSongItem: React.FC<{
   const longPressTimerRef = React.useRef<number | null>(null);
   const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const suppressClickUntilRef = React.useRef(0);
+  const suppressContextMenuUntilRef = React.useRef(0);
 
   const clearLongPressTimer = React.useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -203,7 +204,14 @@ const DraggableSongItem: React.FC<{
         }
         onClick();
       }}
-      onContextMenu={onContextMenu}
+      onContextMenu={(e) => {
+        if (Date.now() < suppressContextMenuUntilRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onContextMenu(e);
+      }}
       onTouchStart={(e) => {
         if (!onLongPressContextMenu) return;
         if (e.touches.length !== 1) return;
@@ -218,7 +226,9 @@ const DraggableSongItem: React.FC<{
           const start = touchStartRef.current;
           if (!start) return;
           suppressClickUntilRef.current = Date.now() + 500;
+          suppressContextMenuUntilRef.current = Date.now() + 1200;
           onLongPressContextMenu(start.x, start.y);
+          touchStartRef.current = null;
         }, 420);
       }}
       onTouchMove={(e) => {
@@ -1599,8 +1609,25 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     const menu = (
       <>
-        <div className="songlist-context-menu-overlay" onClick={this.hideContextMenu} />
-        <div className="songlist-context-menu" style={{ left: `${contextMenuX}px`, top: `${contextMenuY}px` }}>
+        <div
+          className="songlist-context-menu-overlay"
+          onClick={this.hideContextMenu}
+          onMouseDown={this.hideContextMenu}
+          onTouchStart={this.hideContextMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.hideContextMenu();
+          }}
+        />
+        <div
+          className="songlist-context-menu"
+          style={{ left: `${contextMenuX}px`, top: `${contextMenuY}px` }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
           {/* Preference row — only shown when a leader and song are selected */}
           {leader && selectedSong && (
             <>
