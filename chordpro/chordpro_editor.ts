@@ -2936,7 +2936,8 @@ export class ChordProEditor extends ChordDrawer {
     if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && code_string === "INSERT") {
       this.paste();
       this.draw();
-      return;
+      e.preventDefault();
+      return true;
     }
 
     if (
