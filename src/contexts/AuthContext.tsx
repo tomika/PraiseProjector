@@ -62,6 +62,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [authStatus, setAuthStatus] = useState<AuthStatus>("guest");
   const [isLoading, setIsLoading] = useState(true);
   const [onLoginSuccess, setOnLoginSuccessCallback] = useState<((leaderId?: string) => void) | undefined>();
+  const guestCookieCleanupRetriedRef = useRef(false);
 
   const setOnLoginSuccess = useCallback((callback: (leaderId?: string) => void) => {
     setOnLoginSuccessCallback(() => callback);
@@ -233,9 +234,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsLoading(false);
         return false;
       }
+      const clientId = await getDeviceClientId();
+      cloudApi.setClientId(clientId);
       // Explicit user switch/login: clear fixed expected-user header so the
       // session request is not constrained by the previous authenticated user.
       cloudApi.setFixedHeader("X-PP-Expected-User", "");
+      // Clear active HttpOnly cookie auth before switching users so the new
+      // login cannot be shadowed by stale cookies from a previous account.
+      try {
+        cloudApi.setToken(null);
+        await cloudApi.logoutSession(clientId);
+      } catch {
+        // Ignore pre-login logout errors and continue with explicit credentials.
+      }
       // Clear proxy cookie jar before explicit login so stale session cookies
       // from a previous user don't shadow the Basic auth credentials.
       await window.electronAPI?.clearPersistedCookies?.();
@@ -271,9 +282,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     setIsLoading(true);
     try {
-      if (token) {
-        await cloudApi.logoutSession(await getDeviceClientId());
-      }
+      const clientId = await getDeviceClientId();
+      cloudApi.setClientId(clientId);
+      cloudApi.setToken(null);
+      await cloudApi.logoutSession(clientId);
     } catch (error) {
       console.error("Auth", "Logout API call failed", error);
     } finally {
@@ -336,6 +348,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await logout();
     return null;
   };
+
+  // One-shot hardening for guest mode: if a previous authenticated cookie
+  // survived an offline transition, retry server-side logout once when online.
+  useEffect(() => {
+    const isGuestMode = authStatus === "guest" && !username;
+    if (!isGuestMode) {
+      guestCookieCleanupRetriedRef.current = false;
+      return;
+    }
+    if (isLoading || guestCookieCleanupRetriedRef.current) return;
+
+    const tryGuestCookieCleanup = async () => {
+      if (guestCookieCleanupRetriedRef.current) return;
+      guestCookieCleanupRetriedRef.current = true;
+      try {
+        const clientId = await getDeviceClientId();
+        cloudApi.setClientId(clientId);
+        cloudApi.setToken(null);
+        cloudApi.setFixedHeader("X-PP-Expected-User", "");
+        await cloudApi.logoutSession(clientId);
+      } catch (error) {
+        console.debug("[Auth] guest cleanup retry failed", error);
+      }
+    };
+
+    if (navigator.onLine) {
+      void tryGuestCookieCleanup();
+      return;
+    }
+
+    const handleOnline = () => {
+      window.removeEventListener("online", handleOnline);
+      void tryGuestCookieCleanup();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [authStatus, username, isLoading]);
 
   // Listen for automatic token refresh events from cloudApi.
   // When cloudApi transparently refreshes the access token via the refresh cookie,

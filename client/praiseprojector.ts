@@ -4685,12 +4685,20 @@ export class App extends AppBase {
       const username = login.value;
       const password = key.value;
       if (username && password) {
+        const clientId = this.clientId ?? "";
+        cloudApi.setFixedHeader("X-PP-Expected-User", "");
+        // Clear any active cookie-based auth so explicit user switching does
+        // not inherit stale HttpOnly cookies from the previous account.
+        try {
+          cloudApi.setToken(null);
+          await cloudApi.logoutSession(clientId);
+        } catch {
+          // Ignore cleanup errors; explicit login below can still proceed.
+        }
         cloudApi.setToken("Basic " + btoa(username + ":" + password));
         let has_net = true;
         try {
           if (store?.checked) this.verifyClientId();
-          const clientId = this.clientId ?? "";
-          cloudApi.setFixedHeader("X-PP-Expected-User", "");
           const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true })) as SessionResponse;
           if (res && isErrorResponse(res)) throw res.error;
           this.login = res.login;
