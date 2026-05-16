@@ -12,6 +12,7 @@ import {
   ChordProProperties,
   ChordProCommentType,
   ChordProAbc,
+  ChordProSectionInfo,
   fixChordProText,
 } from "./chordpro_base";
 import {
@@ -384,33 +385,70 @@ type ActionTarget =
 
 const canvases = new Map<HTMLDivElement, HTMLCanvasElement>();
 
-export type InstructionItem = { value: string; multiplier?: number };
+export type InstructionItem = { value: string; multiplier?: number; info?: ChordProSectionInfo };
 export class Instructions {
   constructor(readonly items: InstructionItem[] = []) {}
+
+  private static itemKey(item: InstructionItem) {
+    return item.info ? item.info.withoutMultiplier() : item.value;
+  }
+
+  static findSection(doc: ChordProDocument, tag: string): ChordProSectionInfo | undefined {
+    if (!tag) return undefined;
+    const probe = new ChordProSectionInfo("start_of_chorus:" + tag);
+    const target = probe.withoutMultiplier().toLocaleLowerCase();
+    if (!target) return undefined;
+    for (const si of doc.sectionInfo.values()) {
+      const info = si.info;
+      if (info.tag && info.withoutMultiplier().toLocaleLowerCase() === target) return info;
+    }
+    return undefined;
+  }
+
+  static createSectionItem(doc: ChordProDocument, tag: string, multiplier = 1): InstructionItem {
+    const info = Instructions.findSection(doc, tag);
+    return info ? { value: info.withoutMultiplier(), multiplier, info } : { value: tag, multiplier };
+  }
+
+  static matchesSection(line: ChordProLine, item: InstructionItem) {
+    if (line.isComment || item.multiplier == null) return false;
+    if (item.info) {
+      const lineInfo = line.getSectionInfo();
+      if (lineInfo === item.info) return true;
+      return lineInfo.withoutMultiplier().toLocaleLowerCase() === item.info.withoutMultiplier().toLocaleLowerCase();
+    }
+    return line.getTagInfo().tag.toString().toLocaleLowerCase() === item.value.toLocaleLowerCase();
+  }
+
   format() {
     this.normalize();
-    return this.items.map((x) => x.value + ((x.multiplier ?? 0) > 1 ? " " + x.multiplier + "x" : "")).join("\n");
+    return this.items
+      .map((x) => {
+        const base = x.info ? x.info.withoutMultiplier() : x.value;
+        return base + ((x.multiplier ?? 0) > 1 ? " " + x.multiplier + "x" : "");
+      })
+      .join("\n");
   }
-  parse(data: string, sections: string[]) {
+  parse(data: string, doc: ChordProDocument) {
     try {
       data = JSON.parse('"' + data + '"');
     } catch {
       // ignore parse errors
     }
     this.items.splice(0, this.items.length);
-    const sectionNames = new Map(sections.map((x) => [x.trim().toLocaleLowerCase(), x.trim()]));
     for (const line of data.split("\n")) {
       const trimmedLine = line.trim();
-      const m = /^(.*)[ \t]+([0-9]+)[*xX]$/.exec(trimmedLine);
       const item: InstructionItem = { value: trimmedLine };
-      let sectionName: string | undefined;
-      if (m && (sectionName = sectionNames.get(m[1].toLowerCase()))) {
-        item.multiplier = parseInt(m[2], 10);
-        if (item.multiplier < 1) item.multiplier = undefined;
-        item.value = sectionName;
-      } else if ((sectionName = sectionNames.get(trimmedLine.toLowerCase()))) {
-        item.multiplier = 1;
-        item.value = sectionName;
+      if (trimmedLine) {
+        const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
+        const canonical = probe.withoutMultiplier();
+        const section = Instructions.findSection(doc, canonical || trimmedLine);
+        if (section) {
+          item.info = section;
+          item.value = section.withoutMultiplier();
+          item.multiplier = probe.multiplier ?? 1;
+          if (item.multiplier < 1) item.multiplier = 1;
+        }
       }
       this.items.push(item);
     }
@@ -421,8 +459,9 @@ export class Instructions {
     for (let i = 0; i < this.items.length; ++i) {
       const item = this.items[i];
       if (item.multiplier != null) {
+        const myKey = Instructions.itemKey(item);
         let next: InstructionItem | undefined;
-        while ((next = this.items[i + 1])?.multiplier != null && item.value === next.value) {
+        while ((next = this.items[i + 1])?.multiplier != null && Instructions.itemKey(next) === myKey) {
           item.multiplier += next.multiplier;
           this.items.splice(i + 1, 1);
           if (normalized_index >= i + 1) --normalized_index;
@@ -2285,16 +2324,14 @@ export class ChordProEditor extends ChordDrawer {
 
   initialChordValue(line_obj: ChordProLine, cursorPos: number) {
     if (!this.chordPro) return "";
-    const rx = /^(.*) [0-9]+$/g,
-      key = line_obj.getTagInfo().key,
-      m = rx.exec(key);
+    const key = line_obj.getTagInfo().key,
+      parsed = line_obj.getSectionInfo();
     let ch = "";
-    if (m) {
+    if (parsed.familyKey) {
       let enabled = true,
         j: number,
         i = line_obj.getLineIndex();
-      const p = m[1],
-        signatures = this.chordPro.sectionInfo,
+      const signatures = this.chordPro.sectionInfo,
         sign = signatures.get(key)?.signature ?? "";
 
       for (const chord of line_obj.chords)
@@ -2316,7 +2353,7 @@ export class ChordProEditor extends ChordDrawer {
       if (enabled)
         while (--i >= 0) {
           const k = this.chordPro.lines[i].getTagInfo().key;
-          if (k !== key && rx.test(k) && k.startsWith(p)) {
+          if (k !== key && this.chordPro.lines[i].getSectionInfo().familyKey === parsed.familyKey) {
             let s = signatures.get(k)?.signature ?? "";
             const slen = sign.length;
             if (s.startsWith(sign)) {
@@ -5928,9 +5965,7 @@ export class ChordProEditor extends ChordDrawer {
         for (const lo of lines) {
           if (instruction != null) {
             const matching4instruction =
-              instruction.multiplier == null
-                ? lo.isComment && lo.text === instruction.value
-                : !lo.isComment && lo.getTagInfo().tag.toString().toLowerCase() === instruction.value.toLowerCase();
+              instruction.multiplier == null ? lo.isComment && lo.text === instruction.value : Instructions.matchesSection(lo, instruction);
             if (!matching4instruction) continue;
           }
 
@@ -5950,7 +5985,9 @@ export class ChordProEditor extends ChordDrawer {
             tagCell.dataset.section = tag;
             if (prevTag !== tag) {
               prevTag = tag;
-              const tagLabel = this.showTag && this.abbrevTag && typeof tag === "string" ? make_abbrev(tag) : tag;
+              // When an instruction overrides the multiplier, strip the line's authored multiplier from the label.
+              const labelBase = instruction?.multiplier != null ? line_obj.getSectionInfo().withoutMultiplier() : tag;
+              const tagLabel = this.showTag && this.abbrevTag && typeof labelBase === "string" ? make_abbrev(labelBase) : labelBase;
               tagCell.innerText = tagLabel + ((instruction?.multiplier ?? 0) > 1 ? " " + instruction?.multiplier + "x" : "");
               insertLineSeparator = !!tagLabel;
 
@@ -6299,7 +6336,10 @@ export class ChordProEditor extends ChordDrawer {
             this.buildInstructions(instructionsEditor, onChange);
           }
         } else if (dndItem.tagName) {
-          instructions.insertBefore({ value: dndItem.tagName, multiplier: 1 }, item);
+          instructions.insertBefore(
+            this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 },
+            item
+          );
           this.buildInstructions(instructionsEditor, onChange);
         }
       };
@@ -6328,7 +6368,7 @@ export class ChordProEditor extends ChordDrawer {
           this.buildInstructions(instructionsEditor, onChange);
         }
       } else if (dndItem.tagName) {
-        instructions.add({ value: dndItem.tagName, multiplier: 1 });
+        instructions.add(this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 });
         this.buildInstructions(instructionsEditor, onChange);
       }
     };
@@ -6372,7 +6412,7 @@ export class ChordProEditor extends ChordDrawer {
     if (this.chordPro) {
       if (instructions) {
         if (!this.instructions) this.instructions = new Instructions();
-        this.instructions.parse(instructions, Array.from(this.chordPro.getSections()));
+        this.instructions.parse(instructions, this.chordPro);
       } else this.instructions = undefined;
       this.instructedLines = undefined;
       if (draw) this.draw();
@@ -6389,10 +6429,10 @@ export class ChordProEditor extends ChordDrawer {
         const line_obj = doc.lines[i];
         if (line_obj.isComment) lines.push(line_obj.text);
         else {
-          const tag = line_obj.getTagInfo().tag;
-          if (tag) {
-            while (i + 1 < doc.lines.length && doc.lines[i + 1].getTagInfo().tag === tag) ++i;
-            lines.push(tag.toString());
+          const info = line_obj.getSectionInfo();
+          if (info.tag) {
+            while (i + 1 < doc.lines.length && doc.lines[i + 1].getSectionInfo() === info) ++i;
+            lines.push(info.normalized());
           }
         }
       }
@@ -6498,7 +6538,7 @@ export class ChordProEditor extends ChordDrawer {
         } else if (!firstLines.has(item.value)) {
           let firstLine: ChordProLine | null = null;
           for (const line_obj of this.chordPro.lines) {
-            if (!line_obj.isComment && line_obj.getTagInfo().tag === item.value) {
+            if (Instructions.matchesSection(line_obj, item)) {
               if (!firstLine) firstLine = line_obj;
               const line = line_obj instanceof ChordProAbc ? line_obj.toGrid(true) : line_obj.clone(true);
               line.multiplierOverride = item.multiplier;

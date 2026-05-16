@@ -77,6 +77,34 @@ export class Song {
   private static rxEmptyLines = /(\r?\n)+/g;
   private static rxNotes = /^# notes:(.*)$/m;
   private static rxInstructionMultiplier = /^(.*)[ \t]*[-:]?[ \t]*[(]?[ \t]*([0-9]+)[xX*][ \t]*[)]?[ \t]*$/;
+  private static rxSectionMultiplierToken = /^[(]?[0-9]+[xX*][)]?$/;
+  private static rxSectionTransposeToken = /^[(]?[+\-#b\u266f\u266d][0-9]+[)]?$/;
+
+  // Canonicalize a section tag by stripping trailing multiplier/transpose tokens
+  // (with or without surrounding parens) and lowercasing. Used to match instruction
+  // lines against authored section tags regardless of how the multiplier is formatted.
+  private static canonicalSectionKey(tag: string): string {
+    if (!tag) return "";
+    const parts = tag.trim().split(/[ \t]+/).filter((p) => !!p);
+    let end = parts.length - 1;
+    let hadMul = false;
+    let hadTrans = false;
+    while (end >= 0) {
+      const token = parts[end];
+      if (!hadMul && Song.rxSectionMultiplierToken.test(token)) {
+        hadMul = true;
+        --end;
+        continue;
+      }
+      if (!hadTrans && Song.rxSectionTransposeToken.test(token)) {
+        hadTrans = true;
+        --end;
+        continue;
+      }
+      break;
+    }
+    return parts.slice(0, end + 1).join(" ").toLocaleLowerCase();
+  }
 
   constructor(t: string, s: ChordSystemCode = "G", change?: SongChange) {
     this._text = t.replace(Song.rxEmptyLines, "\n");
@@ -413,10 +441,12 @@ export class Song {
     this._sectionsMap = new Map<string, InstanceType<typeof Song.Section>[]>();
     for (const section of this._sections) {
       if (section.tag) {
-        if (!this._sectionsMap.has(section.tag)) {
-          this._sectionsMap.set(section.tag, []);
+        const key = Song.canonicalSectionKey(section.tag);
+        if (!key) continue;
+        if (!this._sectionsMap.has(key)) {
+          this._sectionsMap.set(key, []);
         }
-        this._sectionsMap.get(section.tag)!.push(section);
+        this._sectionsMap.get(key)!.push(section);
       }
     }
   }
@@ -445,23 +475,49 @@ export class Song {
 
   public InstructedSections(instructions: string): InstanceType<typeof Song.Section>[] {
     const sections: InstanceType<typeof Song.Section>[] = [];
-    if (this._sectionsMap) {
-      for (const line of instructions.split("\n")) {
-        let id = line.trim();
+    if (!this._sectionsMap) return sections;
+
+    // When no explicit instructions are provided, fall back to the song's
+    // built-in defaults: emit each section once in document order, repeated
+    // by the multiplier authored on its tag (e.g. "Chorus (2x)" => twice).
+    if (!instructions || !instructions.trim()) {
+      for (const section of this._sections) {
         let multiplier = 1;
-        const match = id.match(Song.rxInstructionMultiplier);
-        if (match && match[1] && match[2]) {
-          id = match[1].trim();
-          const parsedMultiplier = parseInt(match[2], 10);
-          if (!isNaN(parsedMultiplier)) {
-            multiplier = parsedMultiplier;
+        if (section.tag) {
+          const match = section.tag.match(Song.rxInstructionMultiplier);
+          if (match && match[2]) {
+            const parsed = parseInt(match[2], 10);
+            if (!isNaN(parsed) && parsed > 0) multiplier = parsed;
           }
         }
-        if (this._sectionsMap.has(id)) {
-          const ss = this._sectionsMap.get(id)!;
-          while (multiplier-- > 0) {
-            sections.push(...ss);
-          }
+        while (multiplier-- > 0) sections.push(section);
+      }
+      return sections;
+    }
+
+    for (const line of instructions.split("\n")) {
+      let id = line.trim();
+      let multiplier = 1;
+      const match = id.match(Song.rxInstructionMultiplier);
+      if (match && match[1] && match[2]) {
+        id = match[1].trim();
+        const parsedMultiplier = parseInt(match[2], 10);
+        if (!isNaN(parsedMultiplier)) {
+          multiplier = parsedMultiplier;
+        }
+      }
+      if (this._sectionsMap.has(id)) {
+        const ss = this._sectionsMap.get(id)!;
+        while (multiplier-- > 0) {
+          sections.push(...ss);
+        }
+        continue;
+      }
+      const key = Song.canonicalSectionKey(id);
+      if (key && this._sectionsMap.has(key)) {
+        const ss = this._sectionsMap.get(key)!;
+        while (multiplier-- > 0) {
+          sections.push(...ss);
         }
       }
     }

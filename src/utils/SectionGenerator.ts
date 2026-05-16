@@ -265,9 +265,11 @@ export class SectionGenerator {
       ? Math.max(settings.displayMinimumFontSize || 0, Math.floor(settings.fontSize * ((settings.displayMinimumFontSizePercent || 70) / 100)))
       : null;
 
-    // Get sections (normal or instructed)
+    // Get sections (normal or instructed). When useInstructions is enabled but
+    // no explicit instruction string is supplied, Song.InstructedSections falls
+    // back to the song's built-in defaults (authored multipliers on section tags).
     let sections = song.Sections;
-    if (useInstructions && instructions) {
+    if (useInstructions) {
       sections = song.InstructedSections(instructions);
     }
 

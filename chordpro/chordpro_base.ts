@@ -389,6 +389,7 @@ export class ChordProLine {
   modifyRanges: { start: number; added?: boolean }[] | null = null;
   wordsWithBoxes: ChordProLineWords | null = null;
   multiplierOverride?: number;
+  private sectionInfoCache: ChordProSectionInfo | null = null;
 
   constructor(public doc: ChordProDocument) {}
 
@@ -462,7 +463,7 @@ export class ChordProLine {
           break;
         }
       if (typeof tag === "string" && this.multiplierOverride != null) {
-        tag = tag.replace(/[ \t]+[0-9]+[xX*]$/, "");
+        tag = this.getSectionInfo().withoutMultiplier();
         if (this.multiplierOverride > 1) tag += " " + this.multiplierOverride + "x";
       }
       return { name, tag, key };
@@ -478,7 +479,20 @@ export class ChordProLine {
   invalidateCache() {
     this.sectionChordDuplicate = null;
     this.posCache = null;
+    this.sectionInfoCache = null;
     this.doc.invalidateCache();
+  }
+
+  getSectionInfo(): ChordProSectionInfo {
+    if (this.sectionInfoCache) return this.sectionInfoCache;
+    let key = "";
+    for (const name of this.styles.keys(true))
+      if (name.startsWith("start_of_")) {
+        const tag = this.styles.get(name, true);
+        key = name + (name !== "start_of_grid" && tag ? ":" + tag : "");
+        break;
+      }
+    return (this.sectionInfoCache = this.doc.getSectionInfoFor(key));
   }
 
   transpose(shift: number): this {
@@ -907,8 +921,127 @@ export class ChordProAbc extends ChordProLine {
   }
 }
 
-export type SectionInfo = { signature: string; baseTag?: string; duplicate?: boolean };
+export type SectionInfo = { signature: string; baseTag?: string; duplicate?: boolean; info: ChordProSectionInfo };
 export type SectionInfoMap = Map<string, SectionInfo>;
+
+export class ChordProSectionInfo {
+  private static sectionMultiplierTokenRegex = /^[(]?([0-9]+)[xX*][)]?$/;
+  private static sectionTransposeTokenRegex = /^[(]?([+\-#b♯♭])([0-9]+)[)]?$/;
+
+  readonly key: string;
+  readonly baseTag: string;
+  readonly variant?: string | number;
+  readonly multiplier?: number;
+  readonly transpose?: number;
+  private readonly isSection: boolean;
+
+  constructor(key: string) {
+    this.key = key;
+
+    const sep = key.indexOf(":");
+    const name = sep >= 0 ? key.substring(0, sep) : key;
+    const rawTag = sep >= 0 ? key.substring(sep + 1) : "";
+
+    const tag = rawTag.trim();
+    const parts = tag ? tag.split(/[ \t]+/).filter((part) => !!part) : [];
+
+    let end = parts.length - 1;
+    let multiplier: number | undefined;
+    let transpose: number | undefined;
+
+    while (end >= 0) {
+      const token = parts[end];
+      if (multiplier === undefined) {
+        const match = ChordProSectionInfo.sectionMultiplierTokenRegex.exec(token);
+        if (match) {
+          multiplier = parseInt(match[1], 10);
+          --end;
+          continue;
+        }
+      }
+
+      if (transpose === undefined) {
+        const match = ChordProSectionInfo.sectionTransposeTokenRegex.exec(token);
+        if (match) {
+          const sign = match[1];
+          const amount = parseInt(match[2], 10);
+          transpose = sign === "-" || sign === "b" || sign === UnicodeSymbol.flat ? -amount : amount;
+          --end;
+          continue;
+        }
+      }
+
+      break;
+    }
+
+    const mainParts = parts.slice(0, end + 1);
+    let baseTag = "";
+    let variant: string | number | undefined;
+    if (mainParts.length > 0) {
+      baseTag = mainParts[0];
+      if (mainParts.length > 1) {
+        const rawVariant = mainParts
+          .slice(1)
+          .join(" ")
+          .replace(/^-+\s*/, "")
+          .trim();
+        if (rawVariant) variant = /^[0-9]+$/.test(rawVariant) ? parseInt(rawVariant, 10) : rawVariant;
+      } else {
+        const inlineVariant = /^([^\-\s]+)-(.+)$/.exec(baseTag);
+        if (inlineVariant) {
+          baseTag = inlineVariant[1];
+          const rawVariant = inlineVariant[2].trim();
+          if (rawVariant) variant = /^[0-9]+$/.test(rawVariant) ? parseInt(rawVariant, 10) : rawVariant;
+        }
+      }
+    }
+
+    this.baseTag = baseTag || tag;
+    this.variant = variant;
+    this.multiplier = multiplier;
+    this.transpose = transpose;
+    this.isSection = name.startsWith("start_of_") && name !== "start_of_grid";
+  }
+
+  get name() {
+    const sep = this.key.indexOf(":");
+    return sep >= 0 ? this.key.substring(0, sep) : this.key;
+  }
+
+  get tag() {
+    const sep = this.key.indexOf(":");
+    return sep >= 0 ? this.key.substring(sep + 1) : "";
+  }
+
+  get familyKey() {
+    return this.isSection && this.baseTag ? this.name + ":" + this.baseTag : undefined;
+  }
+
+  withoutModifiers() {
+    return this.compose(false, false);
+  }
+
+  withoutMultiplier() {
+    return this.compose(false, true);
+  }
+
+  withoutTranspose() {
+    return this.compose(true, false);
+  }
+
+  normalized() {
+    return this.compose(true, true);
+  }
+
+  private compose(includeMultiplier: boolean, includeTranspose: boolean) {
+    if (!this.baseTag) return this.tag;
+    const parts = [this.baseTag];
+    if (this.variant != null && String(this.variant).trim()) parts.push(String(this.variant).trim());
+    if (includeMultiplier && this.multiplier !== undefined) parts.push(this.multiplier + "x");
+    if (includeTranspose && this.transpose !== undefined) parts.push((this.transpose >= 0 ? "+" : "-") + Math.abs(this.transpose));
+    return parts.filter((part) => !!part).join(" ");
+  }
+}
 export class ChordProDocument {
   private static directiveAbbrevations = {
     t: "title",
@@ -972,7 +1105,14 @@ export class ChordProDocument {
   private metaData = new ChordProProperties();
   output = new ChordProProperties();
   private sectionInfoMap: SectionInfoMap | null = null;
+  private sectionInfoInstances = new Map<string, ChordProSectionInfo>();
   customChordModifers = new Map<string, ChordInfo>();
+
+  getSectionInfoFor(key: string): ChordProSectionInfo {
+    let info = this.sectionInfoInstances.get(key);
+    if (!info) this.sectionInfoInstances.set(key, (info = new ChordProSectionInfo(key)));
+    return info;
+  }
 
   constructor(
     readonly system: ChordSystem,
@@ -1081,17 +1221,17 @@ export class ChordProDocument {
               signature += ch;
             }
           }
-          if (!info) m.set(current, { signature });
+          if (!info) m.set(current, { signature, info: this.getSectionInfoFor(current) });
           else info.signature = signature;
         }
       });
 
     const autoBaseTags = new Map<string, SectionInfo>();
     const uniqueBaseTags = new Map<string, boolean>();
-    m.forEach((info, tag) => {
-      const match = /^(.*) [0-9]+$/g.exec(tag);
-      if (match) {
-        info.baseTag = match[1];
+    for (const info of m.values()) {
+      const parsed = info.info;
+      if (parsed.familyKey) {
+        info.baseTag = parsed.familyKey;
         const unique = uniqueBaseTags.get(info.baseTag);
         if (!unique) {
           const baseInfo = m.get(info.baseTag) ?? autoBaseTags.get(info.baseTag);
@@ -1099,7 +1239,7 @@ export class ChordProDocument {
           else uniqueBaseTags.set(info.baseTag, baseInfo.signature !== info.signature);
         }
       }
-    });
+    }
 
     const usedBaseTags = new Set<string>();
     m.forEach((info, tag) => {
@@ -1112,10 +1252,10 @@ export class ChordProDocument {
 
   getSections() {
     const sections: string[] = [];
-    for (const key of this.sectionInfo.keys()) {
-      const sep = key.indexOf(":");
-      if (sep >= 0) sections.push(key.substring(sep + 1));
-      else if (key.startsWith("start_of_")) sections.push(key.substring(9));
+    for (const info of this.sectionInfo.values()) {
+      const parsed = info.info;
+      if (parsed.tag) sections.push(parsed.tag);
+      else if (parsed.name.startsWith("start_of_")) sections.push(parsed.name.substring(9));
     }
     return sections;
   }
