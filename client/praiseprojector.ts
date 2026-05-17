@@ -2591,8 +2591,8 @@ export class App extends AppBase {
 
   private updateHighlight(draw = true) {
     if (!this.editor) return;
-    if (this.chkHighlight?.checked) this.editor.highlight(this.currentDisplay.from, this.currentDisplay.to, draw);
-    else this.editor.highlight(0, 0, draw);
+    if (this.chkHighlight?.checked) this.editor.highlight(this.currentDisplay.from, this.currentDisplay.to, this.currentDisplay.section, draw);
+    else this.editor.highlight(0, 0, undefined, draw);
   }
 
   private chkHighlightClicked() {
@@ -3124,6 +3124,9 @@ export class App extends AppBase {
           this.loadSong(display.songId, display.song, display.system, { preferredCapo: display.capo, forceUpdate: forced, drawingSuppressed: true });
         this.currentDisplay.transpose = 0;
         this.currentDisplay.capo = display.capo;
+        // The editor was just replaced inside loadSong, so its instruction state is reset.
+        // Force the instructions comparison below to re-apply by invalidating the cached string.
+        this.currentDisplay.instructions = undefined;
         this.updateSelectedSongInList();
       }
 
@@ -3139,7 +3142,11 @@ export class App extends AppBase {
         this.applyInstructions(display.instructions, false);
       }
 
-      changeDetected = changeDetected || this.currentDisplay.from != display.from || this.currentDisplay.to != display.to;
+      changeDetected =
+        changeDetected ||
+        this.currentDisplay.from != display.from ||
+        this.currentDisplay.to != display.to ||
+        this.currentDisplay.section !== display.section;
 
       this.currentDisplay.from = display.from;
       this.currentDisplay.to = display.to;

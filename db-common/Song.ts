@@ -43,6 +43,15 @@ export class Song {
   } as const;
 
   public static Section = class {
+    /**
+     * For sections produced by `InstructedSections()`, the 0-based index of
+     * the originating `Instructions.items[]` entry. Lets the projector tag
+     * each generated SectionItem with the same canonical section number that
+     * the editor's instructed line rendering uses, so highlights line up
+     * regardless of how the projector paginates a section across screens or
+     * how many times a multiplier expands it.
+     */
+    public instructedIndex?: number;
     constructor(
       public text: string,
       public from: number,
@@ -428,7 +437,7 @@ export class Song {
     for (const section of this._sections) {
       if (!section.tag) continue;
       const info = Instructions.findSection(this.doc, section.tag);
-      const key = info ? info.withoutMultiplier().toLocaleLowerCase() : section.tag.trim().toLocaleLowerCase();
+      const key = info ? info.withoutModifiers().toLocaleLowerCase() : section.tag.trim().toLocaleLowerCase();
       if (!key) continue;
       if (!this._sectionsMap.has(key)) this._sectionsMap.set(key, []);
       this._sectionsMap.get(key)!.push(section);
@@ -469,14 +478,23 @@ export class Song {
 
     const list = new Instructions();
     list.parse(source, this.doc);
-    for (const item of list.items) {
+    for (let i = 0; i < list.items.length; ++i) {
+      const item = list.items[i];
       // Free-form comment lines (no resolved section info) do not appear in
       // the section list — they are display-only annotations.
       if (item.multiplier == null || !item.info) continue;
-      const key = item.info.withoutMultiplier().toLocaleLowerCase();
+      const key = item.info.withoutModifiers().toLocaleLowerCase();
       const ss = this._sectionsMap.get(key);
       if (!ss) continue;
-      for (let n = item.multiplier; n > 0; --n) sections.push(...ss);
+      for (let n = item.multiplier; n > 0; --n) {
+        for (const s of ss) {
+          // Clone the cached Section so we can stamp the instruction index
+          // without mutating the shared canonical instance.
+          const clone = new Song.Section(s.text, s.from, s.to, s.block, s.type, s.tag);
+          clone.instructedIndex = i;
+          sections.push(clone);
+        }
+      }
     }
     return sections;
   }

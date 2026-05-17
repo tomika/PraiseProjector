@@ -389,6 +389,16 @@ export class ChordProLine {
   modifyRanges: { start: number; added?: boolean }[] | null = null;
   wordsWithBoxes: ChordProLineWords | null = null;
   multiplierOverride?: number;
+  transposeOverride?: number;
+  /**
+   * For lines synthesized by `ChordProEditor.getInstructedLines()`, the
+   * 0-based index of the `Instructions.items[]` entry that produced this
+   * line. Used to align highlight/projection across the Electron projector
+   * and the editor's instructed rendering (both use the instruction index
+   * as the canonical section number, independent of how the projector
+   * paginates a section across multiple screens).
+   */
+  instructedSectionIndex?: number;
   private sectionInfoCache: ChordProSectionInfo | null = null;
 
   constructor(public doc: ChordProDocument) {}
@@ -402,6 +412,8 @@ export class ChordProLine {
     targetLine.commentDirectiveType = this.commentDirectiveType;
     targetLine.sourceLineNumber = this.sourceLineNumber;
     targetLine.multiplierOverride = this.multiplierOverride;
+    targetLine.transposeOverride = this.transposeOverride;
+    targetLine.instructedSectionIndex = this.instructedSectionIndex;
     if (!dataOnly) {
       targetLine.sectionChordDuplicate = this.sectionChordDuplicate;
       targetLine.yRange = { ...this.yRange };
@@ -462,9 +474,10 @@ export class ChordProLine {
           if (name !== "start_of_grid") key = name + (tag ? ":" + tag : "");
           break;
         }
-      if (typeof tag === "string" && this.multiplierOverride != null) {
-        tag = this.getSectionInfo().withoutMultiplier();
-        if (this.multiplierOverride > 1) tag += " " + this.multiplierOverride + "x";
+      if (typeof tag === "string" && (this.multiplierOverride != null || this.transposeOverride != null)) {
+        tag = this.getSectionInfo().withoutModifiers();
+        if (this.transposeOverride) tag += " " + (this.transposeOverride > 0 ? "#" : "b") + Math.abs(this.transposeOverride);
+        if (this.multiplierOverride != null && this.multiplierOverride > 1) tag += " " + this.multiplierOverride + "x";
       }
       return { name, tag, key };
     };

@@ -634,6 +634,7 @@ export class CloudApiService {
     songId: string;
     from: number;
     to: number;
+    section?: number;
     transpose?: number;
     leaderId?: string;
     playlist?: PlaylistEntry[];
@@ -652,6 +653,9 @@ export class CloudApiService {
 
     if (data.transpose !== undefined && data.transpose !== 0) {
       values.transpose = data.transpose.toString();
+    }
+    if (data.section !== undefined) {
+      values.section = data.section.toString();
     }
     if (data.leaderId) {
       values.leader = data.leaderId;

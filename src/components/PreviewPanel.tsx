@@ -47,7 +47,7 @@ interface PreviewPanelProps {
 
 // Define ref methods that can be called from parent
 export interface PreviewPanelMethods {
-  selectSectionByLine: (lineNumber: number) => boolean;
+  selectSectionByLine: (lineNumber: number, section?: number) => boolean;
   getSelectedSectionIndex: () => number;
   setSelectedSectionIndex: (index: number) => void;
   setSectionListFocused: () => void;
@@ -551,11 +551,17 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       async (sectionIndex: number, section: SectionItem) => {
         const song = getProjectedSong();
         if (!song) return;
+        // Only emit a canonical section number when this SectionItem was
+        // derived from instructions (each instruction-item has a stable
+        // index shared with the editor's instructed-line rendering). For
+        // non-instructed sections the editor lines have no
+        // `instructedSectionIndex` to compare against, so leaving `section`
+        // unset lets the highlight fall back to the source line range.
         const updateData: Partial<Display> = {
           songId: song.Id,
           from: section.from,
           to: section.to,
-          section: sectionIndex,
+          section: section.instructedIndex,
           song: song.Text,
           system: song.System,
         };
@@ -596,7 +602,19 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     useImperativeHandle(
       ref,
       () => ({
-        selectSectionByLine: (lineNumber: number): boolean => {
+        selectSectionByLine: (lineNumber: number, section?: number): boolean => {
+          // Prefer the canonical instruction-item section index when provided
+          // — this disambiguates repeated sections / transposed clones that
+          // share the same source line range.
+          if (section != null) {
+            for (let i = 0; i < sections.length; i++) {
+              if (sections[i].instructedIndex === section) {
+                onSelectedSectionIndexChange?.(i);
+                updateDisplayState(i, sections[i]);
+                return true;
+              }
+            }
+          }
           // Find section that contains the given line number
           // Matching C# ChangeHighlightByLine logic
           for (let i = 0; i < sections.length; i++) {

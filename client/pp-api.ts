@@ -49,8 +49,8 @@ export function getUnknownChords() {
 export function getAboutBoxHtml() {
   return ppGetAboutBoxHtml();
 }
-export function highlight(f: number, t: number) {
-  if (editor) editor.highlight(f, t);
+export function highlight(f: number, t: number, section?: number) {
+  if (editor) editor.highlight(f, t, section);
 }
 export function update(chp: string) {
   if (editor) {

@@ -70,63 +70,6 @@
   overflow: auto;
 }
 
-.instructions-line {
-  position: relative;
-  height: 1.5em;
-  margin-right: 0.5em;
-  color: black;
-  font-style: italic;
-  align-content: center;
-}
-
-.instructions-content {
-  margin-left: 1.5em;
-  display: inline-block;
-  min-width: 3em;
-  padding: 0 0.2em;
-}
-
-.instructions-insert {
-  height: 0.5em;
-  text-align: center;
-  color: #888;
-  cursor: pointer;
-}
-
-.instructions-insert:hover {
-  background: #eee;
-}
-
-.instructions-section {
-  background: #f0f0f0;
-  border-radius: 0.3em;
-  margin: 0.1em 0;
-}
-
-.instructions-line .button {
-  position: absolute;
-  right: 0;
-  width: 1.5em;
-  height: 1.5em;
-  text-align: center;
-  cursor: pointer;
-  background: #ddd;
-  border-radius: 0.2em;
-  line-height: 1.5em;
-}
-
-.instructions-line .plus {
-  right: 3em;
-}
-
-.instructions-line .expand {
-  right: 4.5em;
-}
-
-.instructions-line .minus {
-  right: 1.5em;
-}
-
 .instructions-line .button:hover {
   background: #ccc;
 }

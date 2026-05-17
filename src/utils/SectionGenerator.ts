@@ -11,6 +11,14 @@ export interface SectionItem {
   block: number;
   type: number; // Song.Section.Type
   label: string | null; // Original label before modification
+  /**
+   * For section items derived from `Song.InstructedSections()`, the 0-based
+   * index of the originating `Instructions.items[]` entry. Multiple
+   * pagination items produced from the same instructed section share the
+   * same `instructedIndex`. Used as the canonical "section" number when
+   * communicating the projected fragment to remote clients.
+   */
+  instructedIndex?: number;
 }
 
 /**
@@ -288,6 +296,7 @@ export class SectionGenerator {
         for (const section of generated) {
           section.from = Math.max(s.from, Math.min(section.from, s.to));
           section.to = Math.max(section.from + 1, Math.min(section.to, s.to));
+          section.instructedIndex = s.instructedIndex;
         }
 
         items.push(...generated);
@@ -299,6 +308,7 @@ export class SectionGenerator {
           block: s.block,
           type: s.type,
           label: s.text,
+          instructedIndex: s.instructedIndex,
         });
       }
     }

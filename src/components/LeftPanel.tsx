@@ -255,6 +255,9 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
           system: song.System,
           from: 0,
           to: 0,
+          transpose: item.transpose ?? 0,
+          capo: item.capo ?? -1,
+          instructions: item.instructions ?? "",
         });
       }
     };

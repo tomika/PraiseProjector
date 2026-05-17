@@ -694,6 +694,7 @@ const AppContent: React.FC = () => {
               songId: display.songId,
               from: display.from,
               to: display.to,
+              section: display.section,
               transpose: display.transpose,
               leaderId: isGuest ? guestLeaderId : settings.selectedLeader,
               playlist: display.playlist,
@@ -995,7 +996,8 @@ const AppContent: React.FC = () => {
         updateLeaderPreferenceFromPlaylist(data.id);
         // 2. Select the section matching the requested line range - this drives
         //    PreviewPanel's updateDisplayState → updateCurrentDisplay → backend sync
-        if (data.from) previewPanelRef.current?.selectSectionByLine(data.from);
+        if (data.section != null) previewPanelRef.current?.selectSectionByLine(data.from ?? 0, data.section);
+        else if (data.from) previewPanelRef.current?.selectSectionByLine(data.from);
         // 3. Ensure correct transpose/capo/instructions (selectedPlaylistItem props may be stale)
         updateCurrentDisplay({
           transpose: data.transpose ?? currentDisplay.transpose,

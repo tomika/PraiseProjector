@@ -4,6 +4,7 @@ import { ChordProEditor } from "../../chordpro/chordpro_editor";
 import { getChordSystem } from "../../chordpro/chordpro_base";
 import { useTooltips } from "../localization/TooltipContext";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
+import { ensureChordProAssets } from "../utils/loadChordProAssets";
 import "./InstructionsEditorForm.css";
 import { NoteSystemCode } from "../../chordpro/note_system";
 
@@ -42,6 +43,10 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     if (!songDivRef.current || !listDivRef.current || !previewDivRef.current) return;
 
     if (!song) return;
+
+    // Ensure chordpro.css (which provides the dynamically-injected
+    // instructions/editor element styles) is loaded for this form.
+    void ensureChordProAssets();
 
     // Create editor
     const chordSystem = getChordSystem((song.System || "G") as NoteSystemCode);

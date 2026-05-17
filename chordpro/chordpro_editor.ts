@@ -386,7 +386,7 @@ const canvases = new Map<HTMLDivElement, HTMLCanvasElement>();
 
 export { Instructions } from "./chordpro_instructions";
 export type { InstructionItem } from "./chordpro_instructions";
-import { InstructionItem, Instructions } from "./chordpro_instructions";
+import { clampTranspose, InstructionItem, Instructions } from "./chordpro_instructions";
 
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
@@ -409,6 +409,14 @@ export class ChordProEditor extends ChordDrawer {
   private currentShift = 0;
   private instructions?: Instructions;
   private instructedLines?: ChordProLine[];
+  /**
+   * For each `Instructions.items[i]`, the index of the first instruction item
+   * that shares its repeat group (same section value + transpose). Used by
+   * highlight matching so that a projection targeting one occurrence of a
+   * repeated section also lights up other occurrences (e.g. the original
+   * expanded block when projecting onto its ellipsis preview, and vice versa).
+   */
+  private instructedSectionGroups?: number[];
 
   private systemPasteContent = "";
   private clipboardTextArea: HTMLTextAreaElement | null = null;
@@ -561,7 +569,7 @@ export class ChordProEditor extends ChordDrawer {
   private multiChordChangeEnabled = true;
   private currentlyMarked?: Set<ChordProLine | ChordProChord>;
   private chordBoxType: ChordBoxType = "";
-  private highlighted: { from: number; to: number } | null = null;
+  private highlighted: { from: number; to: number; section?: number } | null = null;
   private lastMouseDown: { x: number; y: number } | null = null;
   private prevClickTime = 0;
 
@@ -899,6 +907,7 @@ export class ChordProEditor extends ChordDrawer {
       } else this.chordPro = new ChordProDocument(this.system, chp);
 
       this.instructedLines = undefined;
+      this.instructedSectionGroups = undefined;
 
       let m = /# notes:(.*)/.exec(chp);
       if (m && m[1]) {
@@ -1430,6 +1439,7 @@ export class ChordProEditor extends ChordDrawer {
 
       this.clearActionState();
       this.instructedLines = undefined;
+      this.instructedSectionGroups = undefined;
       this.chordPro = new ChordProDocument(this.system, state.data);
       this.cursorPos = state.cursorPos;
 
@@ -1778,8 +1788,15 @@ export class ChordProEditor extends ChordDrawer {
                 lyrics: lines.join("\n"),
                 from: this.displayedLines[from].sourceLineNumber,
                 to: this.displayedLines[to].sourceLineNumber + 1,
+                section: line_obj.instructedSectionIndex,
               });
-            } else this.onLyricsHit({ lyrics: line_obj.lyrics.trim(), from: line_obj.sourceLineNumber, to: line_obj.sourceLineNumber + 1 });
+            } else
+              this.onLyricsHit({
+                lyrics: line_obj.lyrics.trim(),
+                from: line_obj.sourceLineNumber,
+                to: line_obj.sourceLineNumber + 1,
+                section: line_obj.instructedSectionIndex,
+              });
             e.preventDefault();
             rv = false;
           }
@@ -3585,6 +3602,7 @@ export class ChordProEditor extends ChordDrawer {
   externalUpdate(text: string) {
     if (this.chordPro) this.saveState();
     this.instructedLines = undefined;
+    this.instructedSectionGroups = undefined;
     this.chordPro = new ChordProDocument(this.system, text);
     this.prevText = this.chordProCode;
     this.draw();
@@ -3715,13 +3733,59 @@ export class ChordProEditor extends ChordDrawer {
     return tagValue + " " + cnt;
   }
 
-  highlight(from: number, to: number, draw = true) {
-    if (!this.readOnly) from = to = 0;
-    if ((this.highlighted?.from || 0) !== from || (this.highlighted?.to || 0) !== to) {
-      this.highlighted = { from, to };
+  highlight(from: number, to: number, draw?: boolean): void;
+  highlight(from: number, to: number, section: number | undefined, draw?: boolean): void;
+  highlight(from: number, to: number, sectionOrDraw: number | boolean | undefined = true, draw = true) {
+    let section: number | undefined;
+    if (typeof sectionOrDraw === "boolean") {
+      draw = sectionOrDraw;
+    } else {
+      section = sectionOrDraw;
+    }
+    if (!this.readOnly) {
+      from = to = 0;
+      section = undefined;
+    }
+    const prevSection = this.highlighted?.section;
+    if ((this.highlighted?.from || 0) !== from || (this.highlighted?.to || 0) !== to || prevSection !== section) {
+      this.highlighted = { from, to, section };
       if (draw) this.draw();
       this.scrollHighlightedIntoView();
     }
+  }
+
+  /**
+   * Returns true if the given displayed line is currently highlighted by the
+   * stored projection range.
+   *
+   * - Lines that carry no `instructedSectionIndex` (raw rendering, instruction
+   *   mode off) ignore the section filter and fall back to plain source-line
+   *   range matching.
+   * - Ellipsis-preview lines (`sourceLineNumber === -1`, emitted in FIRST_LINE
+   *   mode for repeated sections) light up ONLY when the projection targets
+   *   that exact preview's instruction item. They are not lit when the
+   *   projection targets the original expanded block or a different repeat.
+   * - Normal instructed lines light up when their repeat group matches the
+   *   projected section's repeat group AND the source line falls in the
+   *   projected `from`/`to` range. This means projecting any occurrence of a
+   *   repeated section also lights up the original expanded block (and, via
+   *   the exact-match rule above, the specific ellipsis preview being
+   *   projected — but not other previews of the same section).
+   */
+  private isHighlightedLine(line: ChordProLine): boolean {
+    if (!this.highlighted) return false;
+    const hlSection = this.highlighted.section;
+    if (line.sourceLineNumber === -1) {
+      // Ellipsis-preview lines: exact instruction-item match only.
+      return hlSection != null && line.instructedSectionIndex === hlSection;
+    }
+    if (hlSection != null && line.instructedSectionIndex != null) {
+      const groups = this.instructedSectionGroups;
+      const lineGroup = groups?.[line.instructedSectionIndex] ?? line.instructedSectionIndex;
+      const hlGroup = groups?.[hlSection] ?? hlSection;
+      if (lineGroup !== hlGroup) return false;
+    }
+    return line.sourceLineNumber >= this.highlighted.from && line.sourceLineNumber < this.highlighted.to;
   }
 
   private scrollHighlightedIntoView() {
@@ -3732,7 +3796,7 @@ export class ChordProEditor extends ChordDrawer {
     let lastHighlightedLine: ChordProLine | null = null;
 
     for (const line of this.displayedLines) {
-      if (line.sourceLineNumber >= this.highlighted.from && line.sourceLineNumber < this.highlighted.to) {
+      if (this.isHighlightedLine(line)) {
         if (!firstHighlightedLine) firstHighlightedLine = line;
         lastHighlightedLine = line;
       }
@@ -3918,7 +3982,31 @@ export class ChordProEditor extends ChordDrawer {
 
     if (!this.chordPro) return totalSize;
 
-    const lines = this.getInstructedLines() ?? this.chordPro.lines;
+    let lines = this.getInstructedLines();
+    if (!lines) {
+      // When no instructed-line synthesis is active, still honor section-tag
+      // transpose modifiers (e.g. `{soc: Chorus +2}`) in readonly rendering so
+      // the displayed chords reflect the authored transpose without requiring
+      // the user to enable the instructions feature.
+      if (this.readOnly) {
+        const raw = this.chordPro.lines;
+        let mutated = false;
+        const synthesized: ChordProLine[] = new Array(raw.length);
+        for (let i = 0; i < raw.length; ++i) {
+          const lo = raw[i];
+          const t = lo.getSectionInfo().transpose;
+          if (t) {
+            const cloned = lo instanceof ChordProAbc ? lo.toGrid(true) : lo.clone(true);
+            cloned.transpose(t);
+            synthesized[i] = cloned;
+            mutated = true;
+          } else synthesized[i] = lo;
+        }
+        lines = mutated ? synthesized : raw;
+      } else {
+        lines = this.chordPro.lines;
+      }
+    }
     this.displayedLines = lines;
 
     ctx.textBaseline = "middle";
@@ -3966,7 +4054,7 @@ export class ChordProEditor extends ChordDrawer {
       boxHitLineIndex = -1,
       tagWidth = 0;
     const lineTops = [y],
-      lineTags: { name: string; text: string | DifferentialText; width: number }[] = [];
+      lineTags: { name: string; text: string | DifferentialText; width: number; identity: string | DifferentialText }[] = [];
 
     if (
       this.dragData &&
@@ -3979,7 +4067,8 @@ export class ChordProEditor extends ChordDrawer {
     ctx.font = this.displayProps.tagFont;
 
     let prevTag: string | DifferentialText = "",
-      highlightbox: ChordProLineRange | null = null; // tslint:disable-next-line: no-bitwise
+      highlightContiguous = false; // tslint:disable-next-line: no-bitwise
+    const highlightboxes: ChordProLineRange[] = [];
     const noSectionDup = this.readOnly && (this.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
 
     const abcScale = 2 / 3;
@@ -4011,7 +4100,7 @@ export class ChordProEditor extends ChordDrawer {
       // tslint:disable-next-line: no-bitwise
       if (this.readOnly && (this.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS) {
         line_obj.sectionChordDuplicate = null;
-        lineTags.push({ name: "", text: "", width: 0 });
+        lineTags.push({ name: "", text: "", width: 0, identity: "" });
         if (!line_obj.isInstrumental) y += Math.max(2, this.displayProps.chordLineHeight / 2);
       } else {
         if (line_obj.isComment) line_height += this.displayProps.chordLineHeight / 2;
@@ -4049,6 +4138,29 @@ export class ChordProEditor extends ChordDrawer {
         const info = line_obj.getTagInfo(this.differentialDisplay),
           infoName = suppressTagLabel ? "" : info.name;
         let tag = suppressTagLabel ? "" : info.tag;
+        // Identity used for tag-header change detection. Includes the line's
+        // effective transpose so a same-section repeat with a different
+        // transpose still triggers a fresh header even though we strip the
+        // transpose modifier from the visible label in readonly mode.
+        let tagIdentity: string | DifferentialText = tag;
+
+        // In readonly rendering, hide the transpose modifier from the displayed
+        // section label (e.g. "Chorus +2" → "Chorus") since the modifier is
+        // already reflected in the transposed chords on screen. Multiplier
+        // overrides (e.g. "2x") stay visible.
+        if (!suppressTagLabel && this.readOnly && typeof tag === "string") {
+          const si = line_obj.getSectionInfo();
+          const effectiveTranspose = line_obj.transposeOverride ?? si.transpose;
+          if (effectiveTranspose != null) {
+            let stripped = si.withoutModifiers();
+            const effectiveMultiplier = line_obj.multiplierOverride ?? si.multiplier;
+            if (effectiveMultiplier != null && effectiveMultiplier > 1) {
+              stripped += " " + effectiveMultiplier + "x";
+            }
+            tag = stripped;
+            tagIdentity = stripped + "@" + effectiveTranspose;
+          }
+        }
 
         // tslint:disable-next-line: no-bitwise
         if (!this.readOnly || (this.chordFormat & CHORDFORMAT_NOCHORDS) === 0) {
@@ -4059,24 +4171,27 @@ export class ChordProEditor extends ChordDrawer {
 
         let infoWidth = 0;
         if (tag) {
-          if (!DifferentialText.equals(prevTag, tag)) {
+          if (!DifferentialText.equals(prevTag, tagIdentity)) {
             line_height += 10;
-            prevTag = tag;
+            prevTag = tagIdentity;
           }
           if (this.showTag) {
             if (this.abbrevTag && typeof tag === "string") tag = make_abbrev(tag);
             tagWidth = Math.max((infoWidth = ctx.measureText(typeof tag === "string" ? tag : tag.flatten()).width), tagWidth);
           }
         }
-        lineTags.push({ name: infoName, text: tag, width: infoWidth });
+        lineTags.push({ name: infoName, text: tag, width: infoWidth, identity: tagIdentity });
       }
 
       line_obj.yRange = { top: y, bottom: y + line_height };
       y += line_height;
 
-      if (this.highlighted && this.highlighted.from <= line_obj.sourceLineNumber && line_obj.sourceLineNumber < this.highlighted.to) {
-        if (highlightbox) highlightbox.bottom = y;
-        else highlightbox = { ...line_obj.yRange };
+      if (this.isHighlightedLine(line_obj)) {
+        if (highlightContiguous && highlightboxes.length) highlightboxes[highlightboxes.length - 1].bottom = y;
+        else highlightboxes.push({ ...line_obj.yRange });
+        highlightContiguous = true;
+      } else {
+        highlightContiguous = false;
       }
 
       lineTops.push(y);
@@ -4101,11 +4216,16 @@ export class ChordProEditor extends ChordDrawer {
 
     this.tagWidth = tagWidth + leftMargin;
 
-    // draw highlighted background for currently highlighted range
-    if (highlightbox) {
+    // draw highlighted background for currently highlighted range(s).
+    // Multiple non-contiguous boxes are rendered separately so that gaps
+    // (e.g. an unrelated section between a repeated section's expanded block
+    // and its ellipsis preview) are not painted over.
+    if (highlightboxes.length) {
       const backup = ctx.fillStyle;
       ctx.fillStyle = this.displayProps.highlightColor;
-      ctx.fillRect(leftMargin, highlightbox.top, this.canvas.width - 2 * leftMargin, highlightbox.bottom - highlightbox.top);
+      for (const box of highlightboxes) {
+        ctx.fillRect(leftMargin, box.top, this.canvas.width - 2 * leftMargin, box.bottom - box.top);
+      }
       ctx.fillStyle = backup;
     }
 
@@ -4137,7 +4257,8 @@ export class ChordProEditor extends ChordDrawer {
         const tagInfo = lineTags[line];
         if (
           tagInfo.text &&
-          (!prevTagInfo || (!DifferentialText.equals(tagInfo.text, prevTagInfo.text) && tagInfo.text.toString() !== prevTagInfo.text.toString()))
+          (!prevTagInfo ||
+            (!DifferentialText.equals(tagInfo.identity, prevTagInfo.identity) && tagInfo.identity.toString() !== prevTagInfo.identity.toString()))
         ) {
           const startPos = x + tagWidth - tagInfo.width;
           this._drawText(
@@ -5868,7 +5989,18 @@ export class ChordProEditor extends ChordDrawer {
           // tslint:disable-next-line: no-bitwise
           if (this.readOnly && (this.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS && lo.isInstrumental) continue;
 
-          const line_obj = lo instanceof ChordProAbc ? lo.toGrid(true) : lo;
+          let line_obj = lo instanceof ChordProAbc ? lo.toGrid(true) : lo;
+          // Apply effective transpose: explicit instruction.transpose overrides the
+          // section tag's own transpose modifier (e.g. `{soc: Chorus +2}`). When the
+          // instruction omits a transpose, fall back to the section tag's transpose
+          // so authored tag modifiers are honored in readonly rendering too.
+          const tagTranspose = lo.getSectionInfo().transpose;
+          const effectiveTranspose = instruction?.transpose ?? tagTranspose;
+          if (effectiveTranspose) {
+            // Clone before transposing so we don't mutate the document line.
+            if (line_obj === lo) line_obj = lo.clone(true);
+            line_obj.transpose(effectiveTranspose);
+          }
 
           const tagCell = createDivElement({ className: "song-tag", parent: songContent });
           tagCell.style.font = this.displayProps.tagFont;
@@ -5881,9 +6013,14 @@ export class ChordProEditor extends ChordDrawer {
             tagCell.dataset.section = tag;
             if (prevTag !== tag) {
               prevTag = tag;
-              // When an instruction overrides the multiplier, strip the line's authored multiplier from the label.
-              const labelBase = instruction?.multiplier != null ? line_obj.getSectionInfo().withoutMultiplier() : tag;
+              // When an instruction overrides the multiplier or transpose, strip both authored modifiers
+              // from the label so the displayed suffix reflects the instruction-applied values.
+              const hasModifier = instruction?.multiplier != null || instruction?.transpose || tagTranspose;
+              const labelBase = hasModifier ? line_obj.getSectionInfo().withoutModifiers() : tag;
               const tagLabel = this.showTag && this.abbrevTag && typeof labelBase === "string" ? make_abbrev(labelBase) : labelBase;
+              // Show only the multiplier suffix in the section label; the transpose
+              // suffix is intentionally suppressed since the transposed chords are
+              // already visible on the rendered line.
               tagCell.innerText = tagLabel + ((instruction?.multiplier ?? 0) > 1 ? " " + instruction?.multiplier + "x" : "");
               insertLineSeparator = !!tagLabel;
 
@@ -6118,7 +6255,10 @@ export class ChordProEditor extends ChordDrawer {
 
       const content = createDivElement({ className: "instructions-content", parent: div });
       content.id = instructionsEditor.id + ".ppc-" + itemIndex;
-      content.innerText = item.value + ((item.multiplier ?? 0) > 1 ? " " + item.multiplier + "x" : "");
+      content.innerText =
+        item.value +
+        ((item.multiplier ?? 0) > 1 ? " " + item.multiplier + "x" : "") +
+        (item.transpose ? " " + (item.transpose > 0 ? "#" : "b") + Math.abs(item.transpose) : "");
       content.contentEditable = item.multiplier == null ? "true" : "false";
       content.tabIndex = itemIndex;
 
@@ -6146,6 +6286,22 @@ export class ChordProEditor extends ChordDrawer {
           ++item.multiplier!;
           e.stopPropagation();
           e.preventDefault();
+          this.buildInstructions(instructionsEditor, onChange);
+        };
+
+        const raise = createDivElement({ className: "raise", classList: ["button"], innerText: "♯", parent: div });
+        raise.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          item.transpose = clampTranspose((item.transpose ?? 0) + 1);
+          this.buildInstructions(instructionsEditor, onChange);
+        };
+
+        const lower = createDivElement({ className: "lower", classList: ["button"], innerText: "♭", parent: div });
+        lower.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          item.transpose = clampTranspose((item.transpose ?? 0) - 1);
           this.buildInstructions(instructionsEditor, onChange);
         };
 
@@ -6311,6 +6467,7 @@ export class ChordProEditor extends ChordDrawer {
         this.instructions.parse(instructions, this.chordPro);
       } else this.instructions = undefined;
       this.instructedLines = undefined;
+      this.instructedSectionGroups = undefined;
       if (draw) this.draw();
     }
   }
@@ -6423,6 +6580,8 @@ export class ChordProEditor extends ChordDrawer {
         instructions.parse(defaultStr, doc);
       }
       const firstLines = new Map<string, ChordProLine | null>();
+      const groupFirstIndex = new Map<string, number>();
+      const groups: number[] = new Array(instructions.items.length);
       const lines: ChordProLine[] = [];
       const genComment = (text: string, type: ChordProCommentType = "") => {
         const line_obj = new ChordProLine(doc);
@@ -6431,36 +6590,59 @@ export class ChordProEditor extends ChordDrawer {
         line_obj.genText();
         return line_obj;
       };
-      for (const item of instructions.items) {
+      for (let i = 0; i < instructions.items.length; ++i) {
+        const item = instructions.items[i];
+        groups[i] = i;
         if (item.multiplier == null) {
-          lines.push(genComment(item.value, "italic"));
-        } else if (!firstLines.has(item.value)) {
-          let firstLine: ChordProLine | null = null;
-          for (const line_obj of this.chordPro.lines) {
-            if (Instructions.matchesSection(line_obj, item)) {
-              if (!firstLine) firstLine = line_obj;
-              const line = line_obj instanceof ChordProAbc ? line_obj.toGrid(true) : line_obj.clone(true);
-              line.multiplierOverride = item.multiplier;
-              lines.push(line);
-            }
-          }
-          firstLines.set(item.value, firstLine);
+          const cl = genComment(item.value, "italic");
+          cl.instructedSectionIndex = i;
+          lines.push(cl);
         } else {
-          if (this.instructionsRenderMode === "FIRST_LINE") {
-            const first = firstLines.get(item.value);
-            if (first) {
-              const line = first instanceof ChordProAbc ? first.toGrid(false)[0] : first.clone();
-              line.insertString(line.text.length, " ...");
-              line.multiplierOverride = item.multiplier;
-              line.sourceLineNumber = -1; // to prevent from highlight
-              lines.push(line);
-              continue;
+          // Key by section value AND effective transpose so a same-section repeat
+          // with a different transpose still emits the full transposed block,
+          // while a repeat with the same transpose collapses to the first-line
+          // preview (or label comment) like any other repeat.
+          const repeatKey = item.value + "@" + (item.transpose ?? 0);
+          const groupFirst = groupFirstIndex.get(repeatKey);
+          if (groupFirst != null) groups[i] = groupFirst;
+          else groupFirstIndex.set(repeatKey, i);
+          if (!firstLines.has(repeatKey)) {
+            let firstLine: ChordProLine | null = null;
+            for (const line_obj of this.chordPro.lines) {
+              if (Instructions.matchesSection(line_obj, item)) {
+                const line = line_obj instanceof ChordProAbc ? line_obj.toGrid(true) : line_obj.clone(true);
+                line.multiplierOverride = item.multiplier;
+                if (item.transpose) {
+                  line.transposeOverride = item.transpose;
+                  line.transpose(item.transpose);
+                }
+                line.instructedSectionIndex = i;
+                if (!firstLine) firstLine = line;
+                lines.push(line);
+              }
             }
+            firstLines.set(repeatKey, firstLine);
+          } else {
+            if (this.instructionsRenderMode === "FIRST_LINE") {
+              const first = firstLines.get(repeatKey);
+              if (first) {
+                const line = first.clone();
+                line.insertString(line.text.length, " ...");
+                line.multiplierOverride = item.multiplier;
+                line.sourceLineNumber = -1; // to prevent from highlight via from/to
+                line.instructedSectionIndex = i;
+                lines.push(line);
+                continue;
+              }
+            }
+            const cl = genComment(item.value + (item.multiplier > 1 ? ` ${item.multiplier}x` : ""));
+            cl.instructedSectionIndex = i;
+            lines.push(cl);
           }
-          lines.push(genComment(item.value + (item.multiplier > 1 ? ` ${item.multiplier}x` : "")));
         }
       }
       this.instructedLines = lines;
+      this.instructedSectionGroups = groups;
     }
     return this.instructedLines;
   }
