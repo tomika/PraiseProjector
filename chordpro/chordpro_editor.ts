@@ -12,7 +12,6 @@ import {
   ChordProProperties,
   ChordProCommentType,
   ChordProAbc,
-  ChordProSectionInfo,
   fixChordProText,
 } from "./chordpro_base";
 import {
@@ -385,112 +384,9 @@ type ActionTarget =
 
 const canvases = new Map<HTMLDivElement, HTMLCanvasElement>();
 
-export type InstructionItem = { value: string; multiplier?: number; info?: ChordProSectionInfo };
-export class Instructions {
-  constructor(readonly items: InstructionItem[] = []) {}
-
-  private static itemKey(item: InstructionItem) {
-    return item.info ? item.info.withoutMultiplier() : item.value;
-  }
-
-  static findSection(doc: ChordProDocument, tag: string): ChordProSectionInfo | undefined {
-    if (!tag) return undefined;
-    const probe = new ChordProSectionInfo("start_of_chorus:" + tag);
-    const target = probe.withoutMultiplier().toLocaleLowerCase();
-    if (!target) return undefined;
-    for (const si of doc.sectionInfo.values()) {
-      const info = si.info;
-      if (info.tag && info.withoutMultiplier().toLocaleLowerCase() === target) return info;
-    }
-    return undefined;
-  }
-
-  static createSectionItem(doc: ChordProDocument, tag: string, multiplier = 1): InstructionItem {
-    const info = Instructions.findSection(doc, tag);
-    return info ? { value: info.withoutMultiplier(), multiplier, info } : { value: tag, multiplier };
-  }
-
-  static matchesSection(line: ChordProLine, item: InstructionItem) {
-    if (line.isComment || item.multiplier == null) return false;
-    if (item.info) {
-      const lineInfo = line.getSectionInfo();
-      if (lineInfo === item.info) return true;
-      return lineInfo.withoutMultiplier().toLocaleLowerCase() === item.info.withoutMultiplier().toLocaleLowerCase();
-    }
-    return line.getTagInfo().tag.toString().toLocaleLowerCase() === item.value.toLocaleLowerCase();
-  }
-
-  format() {
-    this.normalize();
-    return this.items
-      .map((x) => {
-        const base = x.info ? x.info.withoutMultiplier() : x.value;
-        return base + ((x.multiplier ?? 0) > 1 ? " " + x.multiplier + "x" : "");
-      })
-      .join("\n");
-  }
-  parse(data: string, doc: ChordProDocument) {
-    try {
-      data = JSON.parse('"' + data + '"');
-    } catch {
-      // ignore parse errors
-    }
-    this.items.splice(0, this.items.length);
-    for (const line of data.split("\n")) {
-      const trimmedLine = line.trim();
-      const item: InstructionItem = { value: trimmedLine };
-      if (trimmedLine) {
-        const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
-        const canonical = probe.withoutMultiplier();
-        const section = Instructions.findSection(doc, canonical || trimmedLine);
-        if (section) {
-          item.info = section;
-          item.value = section.withoutMultiplier();
-          item.multiplier = probe.multiplier ?? 1;
-          if (item.multiplier < 1) item.multiplier = 1;
-        }
-      }
-      this.items.push(item);
-    }
-    this.normalize();
-  }
-  normalize(index?: number) {
-    let normalized_index = index ?? -1;
-    for (let i = 0; i < this.items.length; ++i) {
-      const item = this.items[i];
-      if (item.multiplier != null) {
-        const myKey = Instructions.itemKey(item);
-        let next: InstructionItem | undefined;
-        while ((next = this.items[i + 1])?.multiplier != null && Instructions.itemKey(next) === myKey) {
-          item.multiplier += next.multiplier;
-          this.items.splice(i + 1, 1);
-          if (normalized_index >= i + 1) --normalized_index;
-        }
-      }
-    }
-    return normalized_index >= 0 ? normalized_index : undefined;
-  }
-  insertBefore(item: InstructionItem, before: InstructionItem, normalize = true) {
-    const i = this.items.indexOf(before);
-    this.items.splice(i, 0, item);
-    return normalize ? this.normalize(i) : i;
-  }
-  insertAfter(item: InstructionItem, after: InstructionItem, normalize = true) {
-    const i = this.items.indexOf(after);
-    this.items.splice(i + 1, 0, item);
-    return normalize ? this.normalize(i + 1) : i + 1;
-  }
-  deleteItem(item: InstructionItem, normalize = true) {
-    const i = this.items.indexOf(item);
-    if (i >= 0) this.items.splice(i, 1);
-    if (normalize) this.normalize();
-  }
-  add(item: InstructionItem, normalize = true) {
-    this.items.push(item);
-    if (normalize) this.normalize();
-    return this.items.length - 1;
-  }
-}
+export { Instructions } from "./chordpro_instructions";
+export type { InstructionItem } from "./chordpro_instructions";
+import { InstructionItem, Instructions } from "./chordpro_instructions";
 
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
@@ -6423,21 +6319,7 @@ export class ChordProEditor extends ChordDrawer {
     if (!this.chordPro) return "";
     const doc = this.chordPro;
 
-    const genDefault = () => {
-      const lines: string[] = [];
-      for (let i = 0; i < doc.lines.length; ++i) {
-        const line_obj = doc.lines[i];
-        if (line_obj.isComment) lines.push(line_obj.text);
-        else {
-          const info = line_obj.getSectionInfo();
-          if (info.tag) {
-            while (i + 1 < doc.lines.length && doc.lines[i + 1].getSectionInfo() === info) ++i;
-            lines.push(info.normalized());
-          }
-        }
-      }
-      return lines.join("\n");
-    };
+    const genDefault = () => doc.getDefaultInstructions();
 
     switch (mode) {
       case "PRESET":
@@ -6447,7 +6329,13 @@ export class ChordProEditor extends ChordDrawer {
       case "SETTING":
         if (this.instructions) {
           const current = this.instructions.format();
-          return genDefault() === current ? "" : current;
+          // Compare semantically by round-tripping the defaults through the
+          // same parse+normalize+format pipeline. This collapses adjacent
+          // same-section blocks (e.g. "Chorus\nChorus") into the canonical
+          // "Chorus 2x" form, so an unchanged editor still saves as "".
+          const dflt = new Instructions();
+          dflt.parse(genDefault(), doc);
+          return dflt.format() === current ? "" : current;
         }
         return "";
       default:
@@ -6520,9 +6408,20 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private getInstructedLines() {
-    if (!this.chordPro || !this.readOnly || !this.instructions || !this.instructionsRenderMode) return null;
+    if (!this.chordPro || !this.readOnly || !this.instructionsRenderMode) return null;
     if (!this.instructedLines) {
       const doc = this.chordPro;
+      // When no explicit instructions are bound, fall back to the song's
+      // built-in defaults (comments + section list) so the rendering pipeline
+      // still honors {c: …} directive comments without requiring the playlist
+      // to carry an explicit instructions string.
+      let instructions = this.instructions;
+      if (!instructions) {
+        const defaultStr = doc.getDefaultInstructions();
+        if (!defaultStr) return null;
+        instructions = new Instructions();
+        instructions.parse(defaultStr, doc);
+      }
       const firstLines = new Map<string, ChordProLine | null>();
       const lines: ChordProLine[] = [];
       const genComment = (text: string, type: ChordProCommentType = "") => {
@@ -6532,7 +6431,7 @@ export class ChordProEditor extends ChordDrawer {
         line_obj.genText();
         return line_obj;
       };
-      for (const item of this.instructions.items) {
+      for (const item of instructions.items) {
         if (item.multiplier == null) {
           lines.push(genComment(item.value, "italic"));
         } else if (!firstLines.has(item.value)) {

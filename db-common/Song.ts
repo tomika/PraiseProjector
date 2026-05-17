@@ -5,6 +5,8 @@ import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../common/pp-t
 import { decode } from "../common/io-utils";
 import * as t from "io-ts";
 import { chordSystemCodec, songDataCodec, uniType } from "../common/pp-codecs";
+import { ChordProDocument, getChordSystem } from "../chordpro/chordpro_base";
+import { Instructions } from "../chordpro/chordpro_instructions";
 
 export const songStoreCodec = uniType(
   {
@@ -76,34 +78,12 @@ export class Song {
   private static rxTagged = /\[([^\]]*)\]/g;
   private static rxEmptyLines = /(\r?\n)+/g;
   private static rxNotes = /^# notes:(.*)$/m;
-  private static rxInstructionMultiplier = /^(.*)[ \t]*[-:]?[ \t]*[(]?[ \t]*([0-9]+)[xX*][ \t]*[)]?[ \t]*$/;
-  private static rxSectionMultiplierToken = /^[(]?[0-9]+[xX*][)]?$/;
-  private static rxSectionTransposeToken = /^[(]?[+\-#b\u266f\u266d][0-9]+[)]?$/;
 
-  // Canonicalize a section tag by stripping trailing multiplier/transpose tokens
-  // (with or without surrounding parens) and lowercasing. Used to match instruction
-  // lines against authored section tags regardless of how the multiplier is formatted.
-  private static canonicalSectionKey(tag: string): string {
-    if (!tag) return "";
-    const parts = tag.trim().split(/[ \t]+/).filter((p) => !!p);
-    let end = parts.length - 1;
-    let hadMul = false;
-    let hadTrans = false;
-    while (end >= 0) {
-      const token = parts[end];
-      if (!hadMul && Song.rxSectionMultiplierToken.test(token)) {
-        hadMul = true;
-        --end;
-        continue;
-      }
-      if (!hadTrans && Song.rxSectionTransposeToken.test(token)) {
-        hadTrans = true;
-        --end;
-        continue;
-      }
-      break;
-    }
-    return parts.slice(0, end + 1).join(" ").toLocaleLowerCase();
+  // Lazily built ChordPro AST for this song. Invalidated whenever `_text` changes.
+  private _doc?: ChordProDocument;
+  private get doc(): ChordProDocument {
+    if (!this._doc) this._doc = new ChordProDocument(getChordSystem(this._system), this._text);
+    return this._doc;
   }
 
   constructor(t: string, s: ChordSystemCode = "G", change?: SongChange) {
@@ -255,6 +235,7 @@ export class Song {
     this._lyrics = "";
     this._metadata = new Map();
     this._sectionsMap = new Map();
+    this._doc = undefined;
     this.version = 0;
     this.parse();
   }
@@ -438,16 +419,19 @@ export class Song {
     this._sections = slist.filter((s) => s.text.trim() !== "");
     this._sectionSignatures = null;
 
+    // Key sections by their canonical (multiplier-stripped) form so that an
+    // instruction line like "Chorus 3x" matches an authored section tagged
+    // "Chorus (2x)". Canonicalization is delegated to ChordProSectionInfo via
+    // a fresh per-parse ChordProDocument lookup.
     this._sectionsMap = new Map<string, InstanceType<typeof Song.Section>[]>();
+    if (linesToRemove.size > 0) this._doc = undefined; // _text was mutated above
     for (const section of this._sections) {
-      if (section.tag) {
-        const key = Song.canonicalSectionKey(section.tag);
-        if (!key) continue;
-        if (!this._sectionsMap.has(key)) {
-          this._sectionsMap.set(key, []);
-        }
-        this._sectionsMap.get(key)!.push(section);
-      }
+      if (!section.tag) continue;
+      const info = Instructions.findSection(this.doc, section.tag);
+      const key = info ? info.withoutMultiplier().toLocaleLowerCase() : section.tag.trim().toLocaleLowerCase();
+      if (!key) continue;
+      if (!this._sectionsMap.has(key)) this._sectionsMap.set(key, []);
+      this._sectionsMap.get(key)!.push(section);
     }
   }
 
@@ -477,49 +461,22 @@ export class Song {
     const sections: InstanceType<typeof Song.Section>[] = [];
     if (!this._sectionsMap) return sections;
 
-    // When no explicit instructions are provided, fall back to the song's
-    // built-in defaults: emit each section once in document order, repeated
-    // by the multiplier authored on its tag (e.g. "Chorus (2x)" => twice).
-    if (!instructions || !instructions.trim()) {
-      for (const section of this._sections) {
-        let multiplier = 1;
-        if (section.tag) {
-          const match = section.tag.match(Song.rxInstructionMultiplier);
-          if (match && match[2]) {
-            const parsed = parseInt(match[2], 10);
-            if (!isNaN(parsed) && parsed > 0) multiplier = parsed;
-          }
-        }
-        while (multiplier-- > 0) sections.push(section);
-      }
-      return sections;
-    }
+    // When no explicit instructions are supplied, derive the song's built-in
+    // defaults from the ChordPro document (one entry per comment line plus
+    // one normalized entry per distinct section block, in source order).
+    const source = instructions && instructions.trim() ? instructions : this.doc.getDefaultInstructions();
+    if (!source.trim()) return sections;
 
-    for (const line of instructions.split("\n")) {
-      let id = line.trim();
-      let multiplier = 1;
-      const match = id.match(Song.rxInstructionMultiplier);
-      if (match && match[1] && match[2]) {
-        id = match[1].trim();
-        const parsedMultiplier = parseInt(match[2], 10);
-        if (!isNaN(parsedMultiplier)) {
-          multiplier = parsedMultiplier;
-        }
-      }
-      if (this._sectionsMap.has(id)) {
-        const ss = this._sectionsMap.get(id)!;
-        while (multiplier-- > 0) {
-          sections.push(...ss);
-        }
-        continue;
-      }
-      const key = Song.canonicalSectionKey(id);
-      if (key && this._sectionsMap.has(key)) {
-        const ss = this._sectionsMap.get(key)!;
-        while (multiplier-- > 0) {
-          sections.push(...ss);
-        }
-      }
+    const list = new Instructions();
+    list.parse(source, this.doc);
+    for (const item of list.items) {
+      // Free-form comment lines (no resolved section info) do not appear in
+      // the section list — they are display-only annotations.
+      if (item.multiplier == null || !item.info) continue;
+      const key = item.info.withoutMultiplier().toLocaleLowerCase();
+      const ss = this._sectionsMap.get(key);
+      if (!ss) continue;
+      for (let n = item.multiplier; n > 0; --n) sections.push(...ss);
     }
     return sections;
   }
