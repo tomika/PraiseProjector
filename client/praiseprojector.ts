@@ -983,7 +983,13 @@ export class App extends AppBase {
       this.zoomSettingsCloseBtn.onclick = () => endModal(this.zoomSettingsDialog!, "");
     }
     if (this.zoomSettingsOkBtn && this.zoomSettingsDialog) {
-      this.zoomSettingsOkBtn.onclick = () => endModal(this.zoomSettingsDialog!, "");
+      this.zoomSettingsOkBtn.onclick = () => {
+        if (this.chkMaxText && !this.chkMaxText.checked) {
+          this.chkMaxText.checked = true;
+          this.displayChanged();
+        }
+        endModal(this.zoomSettingsDialog!, "");
+      };
     }
     if (this.zoomSettingsDialog) {
       // Pinching inside the open zoom settings dialog should also adjust the font size live.
