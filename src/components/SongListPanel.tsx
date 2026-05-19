@@ -1919,10 +1919,10 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
                 aria-label="Cycle preference filter"
                 title={
                   preferenceFilter === "preferred-only"
-                    ? "Showing preferred only"
+                    ? this.props.tt?.("song_filter_show_preferred_only") || "Showing preferred only"
                     : preferenceFilter === "show-ignored"
-                      ? "Showing all including ignored"
-                      : "Show all songs"
+                      ? this.props.tt?.("song_filter_show_all_including_ignored") || "Showing all including ignored"
+                      : this.props.tt?.("song_filter_show_all") || "Show all songs"
                 }
                 onClick={this.cyclePreferenceFilter}
               >

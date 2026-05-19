@@ -58,6 +58,9 @@
   "instructions_store_profile": "Mentés a dicséretvezető profiljába",
   
   "song_filter": "Dalok szűrése cím vagy tartalom alapján",
+  "song_filter_show_all": "Összes dal megjelenítése",
+  "song_filter_show_preferred_only": "Csak kedvelt dalok megjelenítése",
+  "song_filter_show_all_including_ignored": "Összes dal megjelenítése, a figyelmen kívül hagyottakkal együtt",
   "song_filter_clear": "Szűrő törlése",
   "song_preference_neutral": "Semleges",
   "song_preference_preferred": "Kedvelt",

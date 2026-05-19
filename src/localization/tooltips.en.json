@@ -58,6 +58,9 @@
   "instructions_store_profile": "Store instructions in leader profile",
   
   "song_filter": "Filter songs by title or content",
+  "song_filter_show_all": "Show all songs",
+  "song_filter_show_preferred_only": "Showing preferred only",
+  "song_filter_show_all_including_ignored": "Showing all including ignored",
   "song_filter_clear": "Clear filter",
   "song_preference_neutral": "Neutral",
   "song_preference_preferred": "Preferred",
