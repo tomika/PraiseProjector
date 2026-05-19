@@ -3890,9 +3890,7 @@ export class ChordProEditor extends ChordDrawer {
 
     const currentSectionToken = this.getHighlightSectionToken(firstHighlightedLine);
     const lastSectionToken = this.lastHighlightScrollSectionToken;
-    if (lastSectionToken !== undefined && lastSectionToken === currentSectionToken) {
-      return;
-    }
+    const sameSectionAsLast = lastSectionToken !== undefined && lastSectionToken === currentSectionToken;
     this.lastHighlightScrollSectionToken = currentSectionToken;
 
     // Highlight range, in canvas-local Y coordinates.
@@ -3936,6 +3934,63 @@ export class ChordProEditor extends ChordDrawer {
 
     const viewportHeight = scrollTarget.clientHeight;
 
+    if (!sameSectionAsLast) {
+      this.runSectionAwareCentering(
+        firstHighlightedLine,
+        highlightTop,
+        highlightTopInTarget,
+        highlightBottomInTarget,
+        canvasOffsetWithinTarget,
+        logicalToDisplay,
+        viewportHeight,
+        scrollTarget
+      );
+    }
+
+    // Visibility safety net: regardless of whatever the section-aware
+    // centering above decided (including the no-op "same section as last"
+    // case), make sure the highlighted range is actually inside the viewport.
+    // If it isn't, scroll the minimum amount required to bring it in. This
+    // covers the case where a section is taller than the viewport and the
+    // highlight moved within it but is now off-screen.
+    {
+      const effectiveScrollTop =
+        this.highlightScrollAnim?.target === scrollTarget && this.highlightScrollAnim ? this.highlightScrollAnim.toTop : scrollTarget.scrollTop;
+      const viewTop = effectiveScrollTop;
+      const viewBottom = effectiveScrollTop + viewportHeight;
+      const hlAboveView = highlightTopInTarget < viewTop;
+      const hlBelowView = highlightBottomInTarget > viewBottom;
+      if (hlAboveView || hlBelowView) {
+        let safetyTarget: number;
+        if (highlightBottomInTarget - highlightTopInTarget > viewportHeight) {
+          // Highlight is taller than the viewport — anchor its top.
+          safetyTarget = highlightTopInTarget;
+        } else if (hlAboveView) {
+          // Highlight above current view — align its top to viewport top.
+          safetyTarget = highlightTopInTarget;
+        } else {
+          // Highlight below current view — align its bottom to viewport bottom.
+          safetyTarget = highlightBottomInTarget - viewportHeight;
+        }
+        const maxScrollSafety = Math.max(0, scrollTarget.scrollHeight - viewportHeight);
+        safetyTarget = Math.max(0, Math.min(safetyTarget, maxScrollSafety));
+        if (Math.abs(safetyTarget - effectiveScrollTop) >= 2) {
+          this.animateScrollTo(scrollTarget, safetyTarget, viewportHeight);
+        }
+      }
+    }
+  }
+
+  private runSectionAwareCentering(
+    firstHighlightedLine: ChordProLine,
+    highlightTop: number,
+    highlightTopInTarget: number,
+    highlightBottomInTarget: number,
+    canvasOffsetWithinTarget: number,
+    logicalToDisplay: number,
+    viewportHeight: number,
+    scrollTarget: HTMLElement
+  ) {
     // Prefer scrolling with section context when instruction indices are
     // available: try to fit previous+current+next section, then
     // current+next, then current.
