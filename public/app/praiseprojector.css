@@ -457,14 +457,21 @@ tbody tr {
         justify-content: flex-start !important;
         order: unset !important;
     }
+    .split .mainTable .editorContainer {
+        overflow: auto !important;
+    }
     .split .mainTable .editor {
         width: 100% !important;
-        max-height: 100% !important;  
-        height: unset !important;  
+        max-width: 100% !important;
+        max-height: none !important;
+        height: auto !important;
+        aspect-ratio: auto !important;
     }
     .split .mainTable .chordpro-editor-canvas {
-        max-height: 100% !important;
-        width: unset !important;
+        width: 100% !important;
+        height: auto !important;
+        max-width: 100% !important;
+        max-height: none !important;
     }    
     .split #btnOptions {
         display: none !important;
