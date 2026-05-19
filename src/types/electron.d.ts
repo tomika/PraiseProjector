@@ -18,6 +18,7 @@ export type DisplayUpdateRequest = {
   id: string;
   from: number;
   to: number;
+  section?: number;
   transpose?: number;
   capo?: number;
   instructions?: string;

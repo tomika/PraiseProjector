@@ -131,6 +131,23 @@ interface PlaylistPanelProps {
   selectedLeader?: Leader | null; // Current leader context
 }
 
+type PlaylistReorderDragItem = {
+  index: number;
+  sourceIndex: number;
+};
+
+const isPlaylistReorderDragItem = (value: unknown): value is PlaylistReorderDragItem => {
+  if (!value || typeof value !== "object") return false;
+  const maybe = value as Partial<PlaylistReorderDragItem>;
+  return typeof maybe.index === "number" && typeof maybe.sourceIndex === "number";
+};
+
+const isSongDragItem = (value: unknown): value is Song => {
+  if (!value || typeof value !== "object") return false;
+  const maybe = value as Partial<Song>;
+  return typeof maybe.Id === "string" && typeof maybe.Title === "string";
+};
+
 interface PlaylistPanelState {
   currentPlaylist: Playlist;
   selectedItems: Set<number>; // Set of selected item indices
@@ -581,7 +598,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
   }
 
-  addSongToPlaylist(song: Song) {
+  addSongToPlaylist(song: Song, insertIndex?: number) {
     const { currentPlaylist } = this.state;
     const t = this.props.t || ((key: string) => key);
 
@@ -597,7 +614,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
           t("AskPlaylistAddAgain"),
           () => {
             // User confirmed - add the song anyway
-            this.doAddSongToPlaylist(song);
+            this.doAddSongToPlaylist(song, insertIndex);
           },
           () => {
             // User cancelled - select the existing item instead
@@ -626,20 +643,38 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       return;
     }
 
-    this.doAddSongToPlaylist(song);
+    this.doAddSongToPlaylist(song, insertIndex);
   }
 
-  doAddSongToPlaylist(song: Song) {
+  private createPlaylistEntryFromSong(song: Song): PlaylistEntry {
+    const newEntry = new PlaylistEntry(song.Id);
+    newEntry.title = song.Title;
+
+    const pref = this.props.selectedLeader?.getPreference(song.Id);
+    if (pref) {
+      if ((pref.title || "").trim()) newEntry.title = pref.title;
+      newEntry.transpose = pref.transpose ?? 0;
+      newEntry.capo = pref.capo ?? -1;
+      newEntry.instructions = pref.instructions ?? "";
+    }
+
+    return newEntry;
+  }
+
+  doAddSongToPlaylist(song: Song, insertIndex?: number) {
     const { currentPlaylist } = this.state;
     this.recordPlaylistSnapshotForUndo();
 
-    const newEntry = new PlaylistEntry(song.Id);
-    newEntry.title = song.Title;
-    const updatedPlaylist = new Playlist(currentPlaylist.name, [...currentPlaylist.items, newEntry], currentPlaylist.id);
+    const newEntry = this.createPlaylistEntryFromSong(song);
+    const newItems = [...currentPlaylist.items];
+    const targetIndex = Math.max(0, Math.min(insertIndex ?? newItems.length, newItems.length));
+    newItems.splice(targetIndex, 0, newEntry);
+
+    const updatedPlaylist = new Playlist(currentPlaylist.name, newItems, currentPlaylist.id);
     updatedPlaylist.modified = Date.now();
 
     // Select the newly added song and project it immediately
-    const newIndex = updatedPlaylist.items.length - 1;
+    const newIndex = targetIndex;
     const newSelectedItems = new Set<number>([newIndex]);
 
     this.setState(
@@ -1510,7 +1545,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const result = await window.electronAPI.savePlaylistFile(playlistStr);
       if (result.success) {
         console.info("Playlist", "Playlist saved to:", result.filePath);
-} else if (this.isDialogCancellation(result.error)) {
+      } else if (this.isDialogCancellation(result.error)) {
         return;
       } else {
         console.error("Playlist", "Failed to save playlist", result.error);
@@ -1537,7 +1572,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const result = await window.electronAPI.loadPlaylistFile();
       if (result.success && result.content) {
         this.loadPlaylistData(result.content);
-} else if (this.isDialogCancellation(result.error)) {
+      } else if (this.isDialogCancellation(result.error)) {
         return;
       } else if (result.error) {
         console.error("Playlist", "Failed to load playlist", result.error);
@@ -2154,6 +2189,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                       onContextMenu={(event) => this.handleItemContextMenu(index, event)}
                       onLongPressContextMenu={(clientX, clientY) => this.openItemContextMenuAt(index, clientX, clientY)}
                       moveItem={this.movePlaylistItem}
+                      insertSongAtIndex={(song, targetIndex) => this.addSongToPlaylist(song, targetIndex)}
                       onTitleChange={(newTitle) => this.handleTitleChange(index, newTitle)}
                       onTitleBlur={this.handleTitleBlur}
                       onTitleEdit={() => this.setState({ editingIndex: index })}
@@ -2249,6 +2285,7 @@ const PlaylistItemRow: React.FC<{
   onContextMenu: (event: React.MouseEvent<HTMLTableRowElement>) => void;
   onLongPressContextMenu: (clientX: number, clientY: number) => void;
   moveItem: (dragIndex: number, hoverIndex: number) => void;
+  insertSongAtIndex: (song: Song, index: number) => void;
   onTitleChange: (newTitle: string) => void;
   onTitleBlur: () => void;
   onTitleEdit: () => void;
@@ -2269,6 +2306,7 @@ const PlaylistItemRow: React.FC<{
   onContextMenu,
   onLongPressContextMenu,
   moveItem,
+  insertSongAtIndex,
   onTitleChange,
   onTitleBlur,
   onTitleEdit,
@@ -2339,13 +2377,27 @@ const PlaylistItemRow: React.FC<{
   }));
 
   const [, drop] = useDrop(() => ({
-    accept: "playlist-item",
-    hover: (draggedItem: { index: number; sourceIndex: number }) => {
-      if (draggedItem.index !== index) {
+    accept: ["playlist-item", "song"],
+    hover: (draggedItem: unknown, monitor) => {
+      if (monitor.getItemType() !== "playlist-item") return;
+      if (isPlaylistReorderDragItem(draggedItem) && draggedItem.index !== index) {
         notifyMobilePlaylistDragOverDifferentItem(draggedItem.sourceIndex);
         moveItem(draggedItem.index, index);
         draggedItem.index = index;
       }
+    },
+    drop: (draggedItem: unknown, monitor) => {
+      if (monitor.didDrop()) return;
+      if (monitor.getItemType() !== "song" || !isSongDragItem(draggedItem)) return;
+
+      let insertIndex = index;
+      const pointer = monitor.getClientOffset();
+      const rowRect = ref.current?.getBoundingClientRect();
+      if (pointer && rowRect && pointer.y >= rowRect.top + rowRect.height / 2) {
+        insertIndex = index + 1;
+      }
+
+      insertSongAtIndex(draggedItem, insertIndex);
     },
   }));
 
@@ -2600,8 +2652,9 @@ const PlaylistDropTarget: React.FC<{
 }> = ({ children, addSongToPlaylist }) => {
   const [, drop] = useDrop(() => ({
     accept: "song",
-    drop: (item: Song) => {
-      addSongToPlaylist(item);
+    drop: (item: unknown, monitor) => {
+      if (monitor.didDrop()) return;
+      if (isSongDragItem(item)) addSongToPlaylist(item);
     },
   }));
 

@@ -905,6 +905,27 @@ const AppContent: React.FC = () => {
     const leader = selectedLeaderRef.current;
     const settings = settingsRef.current;
 
+    const applyLeaderPreferencesToRemotePlaylist = (playlist: NonNullable<DisplayUpdateRequest["playlist"]>) => {
+      if (!playlist || !leader) return playlist;
+
+      return playlist.map((entry) => {
+        const pref = leader.getPreference(entry.songId);
+        if (!pref) return entry;
+
+        const song = db.getSongById(entry.songId);
+        const incomingTitle = entry.title || "";
+        const usesDefaultTitle = !!song && incomingTitle === song.Title;
+
+        return {
+          ...entry,
+          title: usesDefaultTitle && pref.title ? pref.title : incomingTitle,
+          transpose: entry.transpose ?? pref.transpose ?? 0,
+          capo: entry.capo ?? pref.capo ?? -1,
+          instructions: entry.instructions == null ? (pref.instructions ?? "") : entry.instructions,
+        };
+      });
+    };
+
     const updateLeaderPreferenceFromPlaylist = (songId: string) => {
       if (!leader) return;
       const mode = settings?.leaderProfileUpdateMode || "allSources";
@@ -962,7 +983,7 @@ const AppContent: React.FC = () => {
     }
     if (data.command === "display_update") {
       if (data.playlist) {
-        leftPanelRef.current?.updatePlaylist(data.playlist);
+        leftPanelRef.current?.updatePlaylist(applyLeaderPreferencesToRemotePlaylist(data.playlist));
       } else if (currentDisplay.songId !== data.id) {
         const _db = Database.getInstance();
         const song = _db.getSongById(data.id);
