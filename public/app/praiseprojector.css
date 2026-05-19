@@ -267,6 +267,29 @@ tbody tr {
     overflow: auto;
 }
 
+.editorContainer::-webkit-scrollbar {
+    width: 0.6em;
+    height: 0.6em;
+}
+.editorContainer::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+.editorContainer::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+}
+body.dark .editorContainer {
+    scrollbar-color: #4d4d4d #1a1a1a;
+}
+body.dark .editorContainer::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+body.dark .editorContainer::-webkit-scrollbar-thumb {
+    background: #4d4d4d;
+}
+body.dark .editorContainer::-webkit-scrollbar-thumb:hover {
+    background: #6d6d6d;
+}
+
 #preview {
     position: absolute;
     overflow: hidden scroll;
@@ -472,7 +495,7 @@ tbody tr {
         height: auto !important;
         max-width: 100% !important;
         max-height: none !important;
-    }    
+    }
     .split #btnOptions {
         display: none !important;
     }
