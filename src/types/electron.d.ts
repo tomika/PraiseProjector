@@ -89,11 +89,8 @@ export interface IElectronAPI {
   ) => void;
 
   // Get connected clients from webserver (for leader-mode client selection)
-  getConnectedClients?: {
-    (): Promise<Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>>;
-    (countOnly: true): number;
-    (countOnly?: false): Promise<Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>>;
-  };
+  getProjectingClientsCount?: () => Promise<number>;
+  getConnectedClients?: () => Promise<Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>>;
 
   // Highlight access control - matching C# WebServer HighlightAccessRequest/HighlightChanged pattern
   onHighlightAccessRequest?: (callback: (data: { clientId: string }) => void) => () => void;

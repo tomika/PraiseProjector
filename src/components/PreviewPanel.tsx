@@ -188,19 +188,19 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const [projectorWidth, setProjectorWidth] = useState(1920);
     const [projectorHeight, setProjectorHeight] = useState(1080);
 
-    // Poll connected clients every 7 s (Electron only — in web mode we can't know)
+    // Poll connected clients every 2 s (Electron only — in web mode we can't know)
     useEffect(() => {
-      if (!window.electronAPI?.getConnectedClients) return;
+      if (!window.electronAPI?.getProjectingClientsCount) return;
       const poll = async () => {
         try {
-          const clientCount = await window.electronAPI!.getConnectedClients!(true);
+          const clientCount = await window.electronAPI!.getProjectingClientsCount!();
           setHasConnectedClients(clientCount > 0);
         } catch {
           // ignore transient errors
         }
       };
       void poll(); // immediate first check
-      const id = setInterval(poll, 5000);
+      const id = setInterval(poll, 2000);
       return () => clearInterval(id);
     }, []);
 

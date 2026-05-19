@@ -47,6 +47,7 @@ export interface ConnectedClient {
   id: string; // MAC address or IP
   deviceName: string;
   validTo: number; // timestamp
+  projecting: boolean; // whether client is currently projecting (based on recent /display_query activity)
 }
 
 interface ClientIdentity {
@@ -596,6 +597,13 @@ export class WebServer {
     }
   }
 
+  private async registerAndidentifyClient(req: express.Request, projecting: boolean) {
+    const clientIdentity = await this.resolveClientIdentity(req.socket);
+    const deviceName = (req.headers["x_pp_device_name"] as string) || (req.headers["x-pp-device-name"] as string) || "";
+    if ((deviceName || projecting) && clientIdentity.id) this.registerClient(clientIdentity.id, deviceName ?? clientIdentity.id, projecting);
+    return clientIdentity;
+  }
+
   private setupDisplayRoutes() {
     // Serve /netdisplay page (matching C# netdisplay handler)
     // Returns image.html with bgcolor and startupImageId customization from query params
@@ -631,7 +639,7 @@ export class WebServer {
     //   2. Client sets background-image: url(/image?c=<id>) → browser loads image
     //   3. GET /image?c=<id> → responds with PNG data (id param is empty)
     //   4. GET /image?id=<currentId> → long-poll, waits for image change
-    this.app.get("/image", (req, res) => {
+    this.app.get("/image", async (req, res) => {
       this.setCommonHeaders(res);
 
       // No id param (browser image load via ?c=...): serve actual image data
@@ -652,11 +660,14 @@ export class WebServer {
         return;
       }
 
+      const clientIdentity = await this.registerAndidentifyClient(req, true);
+
       // Long-poll: id matches, wait for image to change
       const timeoutMs = (this.settings.longPollTimeout || 30) * 1000;
       const timeout = setTimeout(() => {
-        this.removePendingImageRequest(res);
+        this.pendingImageRequests = this.pendingImageRequests.filter((p) => p.res !== res);
         res.json(this.getNetDisplayResponse());
+        this.unregisterClient(clientIdentity.id);
       }, timeoutMs);
 
       this.pendingImageRequests.push({ res, imgid, timeout });
@@ -665,7 +676,7 @@ export class WebServer {
     this.app.get("/display_query", async (req, res) => {
       console.debug(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] /display_query received`, req.query);
 
-      const clientIdentity = await this.resolveClientIdentity(req.socket);
+      const clientIdentity = await this.registerAndidentifyClient(req, false);
       let clientType = this.getClientType(req.socket, clientIdentity);
       const forced = req.query.forced === "true";
 
@@ -676,10 +687,6 @@ export class WebServer {
           clientDisplay.playlist = currentDisplay.playlist ? [...currentDisplay.playlist] : [];
         }
       };
-
-      // Track connected clien
-      const deviceName = (req.headers["x_pp_device_name"] as string) || (req.headers["x-pp-device-name"] as string) || "";
-      if (deviceName && clientIdentity.id) this.trackClient(clientIdentity.id, deviceName);
 
       try {
         const stylesRev = this.getChordProStylesRev();
@@ -751,7 +758,7 @@ export class WebServer {
         console.error(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] display_query error:`, error);
         res.status(500).json({ error: "Internal server error" });
       } finally {
-        this.trackClient(clientIdentity.id);
+        this.unregisterClient(clientIdentity.id);
       }
     });
 
@@ -1191,6 +1198,10 @@ export class WebServer {
         pending.res.json(this.getNetDisplayResponse());
       } catch {
         // Client may have disconnected
+      } finally {
+        if (pending.res.req.socket.remoteAddress) {
+          this.unregisterClient(pending.res.req.socket.remoteAddress);
+        }
       }
     }
     this.pendingImageRequests = [];
@@ -1204,10 +1215,6 @@ export class WebServer {
     };
   }
 
-  private removePendingImageRequest(res: express.Response): void {
-    this.pendingImageRequests = this.pendingImageRequests.filter((p) => p.res !== res);
-  }
-
   /**
    * Get playlist ID for change detection
    */
@@ -1218,29 +1225,29 @@ export class WebServer {
   /**
    * Track connected client
    */
-  public trackClient(clientId: string, deviceName?: string): void {
-    if (deviceName) {
-      const forever = new Date("9999-12-31").getTime();
-      this.connectedClients.set(clientId, { id: clientId, deviceName, validTo: forever });
-    } else {
-      const existing = this.connectedClients.get(clientId);
-      if (existing) existing.validTo = Date.now() + 3000; // Extend validity a bit
-    }
+  public registerClient(clientId: string, deviceName: string, projecting = false): void {
+    const forever = new Date("9999-12-31").getTime();
+    this.connectedClients.set(clientId, { id: clientId, deviceName, validTo: forever, projecting });
+  }
+
+  public unregisterClient(clientId: string): void {
+    const existing = this.connectedClients.get(clientId);
+    if (existing) existing.validTo = Date.now() + 3000; // Extend validity a bit
   }
 
   /**
    * Get list of connected clients for admin selection
    * Returns combined list of current clients and admin clients
    */
-  public getConnectedClients(countOnly: true): number;
-  public getConnectedClients(countOnly?: false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>;
-  public getConnectedClients(countOnly = false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> | number {
+  public getConnectedClients(projectingOnly: true): number;
+  public getConnectedClients(projectingOnly?: false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>;
+  public getConnectedClients(projectingOnly = false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> | number {
     const now = Date.now();
 
-    if (countOnly) {
+    if (projectingOnly) {
       let count = 0;
       for (const client of this.connectedClients.values()) {
-        if (client.validTo > now) ++count;
+        if (client.projecting && client.validTo > now) ++count;
       }
       return count;
     }

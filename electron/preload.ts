@@ -104,7 +104,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // Get connected clients from webserver (for admin client selection)
-  getConnectedClients: (countOnly = false) => ipcRenderer.invoke("get-connected-clients", countOnly),
+  getProjectingClientsCount: () => ipcRenderer.invoke("get-connected-clients", true),
+  getConnectedClients: () => ipcRenderer.invoke("get-connected-clients", false),
 
   // Highlight access control
   onHighlightAccessRequest: (callback: (data: { clientId: string }) => void) => {

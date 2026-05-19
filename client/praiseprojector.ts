@@ -4962,14 +4962,14 @@ export class App extends AppBase {
     this.restoreSessionInfo().then(startup).catch(startup);
     this.onResize();
 
-    if (this.hostDevice) {
-      this.hostDevice.pageLoadedSuccessfully();
-      if (this.mode === "Client") {
-        const name = this.hostDevice.getName() ?? this.hostDevice.getModel();
-        if (name) cloudApi.setFixedHeader("X-PP-Device-Name", name);
-      } else if (this.mode === "App") setTimeout(() => this.hostDeviceCheck(), 2000);
-      this.loadingCircleMaxLevel = 3;
-    }
+    if (this.hostDevice) this.hostDevice.pageLoadedSuccessfully();
+    if (this.mode === "Client") {
+      const nav = typeof navigator !== "undefined" ? navigator : undefined;
+      const browserId = nav?.userAgent || nav?.appVersion || nav?.platform || "";
+      const name = this.hostDevice?.getName?.() || this.hostDevice?.getModel?.() || browserId || "Unknown Device";
+      if (name) cloudApi.setFixedHeader("X-PP-Device-Name", name);
+    } else if (this.mode === "App") setTimeout(() => this.hostDeviceCheck(), 2000);
+    this.loadingCircleMaxLevel = 3;
   }
 
   private async hostDeviceCheck() {
