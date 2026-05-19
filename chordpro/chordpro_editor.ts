@@ -613,6 +613,7 @@ export class ChordProEditor extends ChordDrawer {
   private activeAbcBlock: ChordProAbc | null = null;
   private canvasResizeObserver: ResizeObserver | null = null;
   private lastCanvasOffsetWidth = 0;
+  private parentResizeObserver: ResizeObserver | null = null;
 
   private cursorBox: { left: number; top: number; width: number; height: number } | null = null;
   private chordStripWidth = 0;
@@ -736,6 +737,16 @@ export class ChordProEditor extends ChordDrawer {
       }
     });
     this.canvasResizeObserver.observe(this.canvas);
+
+    // Keep an active highlight in view when the parent container resizes
+    // (e.g. window resize, split-pane toggle, orientation change). The
+    // same-section guard inside `scrollHighlightedIntoView` skips recentering
+    // and only the visibility safety net runs.
+    this.parentResizeObserver?.disconnect();
+    this.parentResizeObserver = new ResizeObserver(() => {
+      if (this.highlighted) this.scrollHighlightedIntoView();
+    });
+    this.parentResizeObserver.observe(this.parent_div);
 
     // Create metadata container for HTML-based metadata display/editing
     const existingMetaContainer = this.parent_div.querySelector(".chordpro-meta-container") as HTMLDivElement | null;
@@ -1160,6 +1171,11 @@ export class ChordProEditor extends ChordDrawer {
     if (this.canvasResizeObserver) {
       this.canvasResizeObserver.disconnect();
       this.canvasResizeObserver = null;
+    }
+
+    if (this.parentResizeObserver) {
+      this.parentResizeObserver.disconnect();
+      this.parentResizeObserver = null;
     }
 
     if (this.removeTouchEvents) {
