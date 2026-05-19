@@ -1277,6 +1277,298 @@ input:checked + label > img {
     text-align: right;
 }
 
+/* Zoom settings dialog
+   ---------------------
+   Designed to be language-neutral: every row is represented by a single
+   expressive icon plus a control (checkbox or select). The dialog overrides
+   the heavy `.chordSelector` defaults (which force `display:table` on inner
+   divs and 100% width on inputs) using ID-scoped selectors with `!important`
+   where necessary so the icon-based layout survives those baseline rules. */
+#zoomSettingsDialog.hidden {
+    display: none !important;
+}
+
+#zoomSettingsDialog {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45em;
+    padding: 1.6em 1em 0.9em;
+    z-index: 150;
+    border-radius: 0.6em;
+    top: 4rem;
+    min-width: 0;
+    width: -moz-fit-content !important;
+    width: fit-content !important;
+    max-width: min(22rem, 92vw);
+    transform: translate(-50%, 0);
+    background-color: #ffffff;
+    color: #111;
+    border: 2px solid #888;
+    position: relative;
+}
+
+/* Close (×) button in the upper-right corner of the dialog. */
+#zoomSettingsDialog .zoom-close-btn {
+    position: absolute;
+    top: 0.25em;
+    right: 0.4em;
+    width: 1.6em;
+    height: 1.6em;
+    padding: 0;
+    line-height: 1;
+    font-size: 1.2em;
+    font-weight: bold;
+    background: transparent;
+    color: inherit;
+    border: none;
+    cursor: pointer;
+    border-radius: 0.3em;
+}
+#zoomSettingsDialog .zoom-close-btn:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+}
+.dark #zoomSettingsDialog .zoom-close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* OK button row at the bottom. */
+#zoomSettingsDialog .zoom-settings-actions {
+    display: flex !important;
+    justify-content: center;
+    margin-top: 0.4em;
+}
+#zoomSettingsDialog .zoom-ok-btn {
+    min-width: 5em;
+    padding: 0.35em 1.2em;
+    font-size: 1em;
+    font-weight: bold;
+    background-color: #e0e0e0;
+    color: inherit;
+    border: 1px solid currentColor;
+    border-radius: 0.3em;
+    cursor: pointer;
+}
+.dark #zoomSettingsDialog .zoom-ok-btn {
+    background-color: #2a2a2a;
+}
+#zoomSettingsDialog .zoom-ok-btn:hover {
+    background-color: #d0d0d0;
+}
+.dark #zoomSettingsDialog .zoom-ok-btn:hover {
+    background-color: #3a3a3a;
+}
+
+/* Dark-mode follows the `.dark` class applied to <body> by switchDarkMode(). */
+.dark #zoomSettingsDialog {
+    background-color: #1c1c1c;
+    color: #f0f0f0;
+    border-color: #555;
+}
+
+#zoomSettingsDialog .zoom-settings-row {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8em;
+    min-height: 2.6em;
+    width: auto !important;
+    padding: 0.25em 0.4em;
+    border-radius: 0.4em;
+}
+
+/* Visible toggle look: when the corresponding checkbox is checked, give the
+   row a subtle highlight so users see what is currently active even without
+   reading the slash overlay. */
+#zoomSettingsDialog .zoom-settings-row input[type="checkbox"]:checked ~ label {
+    color: #d33;
+}
+.dark #zoomSettingsDialog .zoom-settings-row input[type="checkbox"]:checked ~ label {
+    color: #ff7a7a;
+}
+
+#zoomSettingsDialog .zoom-settings-row input[type="checkbox"] {
+    /* Visually hide the raw checkbox — the adjacent <label> still receives
+       clicks (via `for=`) and toggles state, and our `:checked ~ label`
+       selector still drives the slash overlay. */
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Tag mode row: three buttons sharing the dialog row width, with the same
+   pill border as the previous `.zoom-tag-sample` label used. */
+#zoomSettingsDialog .zoom-tag-row {
+    gap: 0.5em;
+    align-self: stretch;
+}
+#zoomSettingsDialog .zoom-tag-btn {
+    flex: 1 1 auto;
+    min-width: 3.5em;
+    min-height: 2em;
+    padding: 0.25em 0.8em;
+    font-weight: bold;
+    font-size: 1em;
+    line-height: 1.2;
+    background-color: transparent;
+    color: inherit;
+    border: 0.1em solid currentColor;
+    border-radius: 0.25em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#zoomSettingsDialog .zoom-tag-btn.active {
+    background-color: #d33;
+    color: #fff;
+    border-color: #d33;
+}
+.dark #zoomSettingsDialog .zoom-tag-btn.active {
+    background-color: #ff7a7a;
+    color: #111;
+    border-color: #ff7a7a;
+}
+#zoomSettingsDialog .zoom-tag-btn-empty {
+    min-width: 2em;
+}
+
+#zoomSettingsDialog .zoom-settings-row select {
+    font-size: 1.1em !important;
+    flex: 1;
+    width: auto !important;
+    display: inline-block !important;
+    height: auto !important;
+    padding: 0.25em 0.4em;
+    background-color: inherit;
+    color: inherit;
+    border: 1px solid currentColor;
+    border-radius: 0.3em;
+}
+
+#zoomSettingsDialog .zoom-settings-row label {
+    cursor: pointer;
+    display: inline-flex !important;
+    align-items: center;
+    flex: 0 0 auto;
+    height: auto !important;
+    font-size: 1em;
+}
+
+#zoomSettingsDialog .zoom-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    font-size: 1.6em;
+    min-width: 2.6em;
+    height: 2.2em;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+#zoomSettingsDialog .zoom-icon-title .zoom-icon-sample {
+    font-weight: bold;
+    font-size: 1.3em;
+    letter-spacing: 0.02em;
+}
+
+#zoomSettingsDialog .zoom-icon-title .zoom-icon-sample small {
+    font-size: 0.55em;
+    margin-left: 0.05em;
+    vertical-align: super;
+    font-weight: bold;
+}
+
+#zoomSettingsDialog .zoom-icon-meta .btnImg {
+    width: 2em;
+    height: 2em;
+}
+
+/* Heavy red diagonal bar drawn across the icon when the matching checkbox is
+   checked. Implemented as a centered, transform-rotated pseudo-element so it
+   renders crisply on every zoom level (the previous gradient approach
+   collapsed to a hairline on small icons). */
+#zoomSettingsDialog .zoom-icon-slash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+}
+#zoomSettingsDialog .zoom-icon-slash::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 130%;
+    height: 4px;
+    background: #d33;
+    border-radius: 2px;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+#zoomSettingsDialog .zoom-settings-row input[type="checkbox"]:checked ~ label .zoom-icon-slash {
+    display: block;
+}
+
+#zoomSettingsDialog .zoom-tag-sample {
+    border: 0.1em solid currentColor;
+    border-radius: 0.25em;
+    padding: 0.05em 0.4em;
+    font-weight: bold;
+    font-size: 0.9em;
+    line-height: 1.2;
+}
+
+#zoomSettingsDialog .zoom-icon-wrap {
+    font-size: 2em;
+    font-weight: bold;
+}
+
+#zoomSettingsDialog .btnImg {
+    width: 2em;
+    height: 2em;
+}
+
+/* The meta SVG and longlist SVG are dark by default. Invert in dark mode so
+   the icon remains visible on the dark dialog background. */
+.dark #zoomSettingsDialog .btnImg {
+    filter: invert(1);
+}
+
+.editor.scrollMode {
+    max-height: none;
+    height: unset !important;
+}
+
+.editor.scrollMode > canvas {
+    max-height: unset;
+    height: auto;
+}
+
+.editorContainer.scrollMode {
+    overflow: auto;
+}
+
+.editorContainer.scrollMode > .editor {
+    max-height: none;
+    height: unset !important;
+    width: 100%;
+    max-width: 100%;
+}
+
+.editorContainer.scrollMode > .editor > canvas {
+    max-height: unset;
+    max-width: 100%;
+    height: auto;
+}
+
 #loginDialog {
     display: flex;        
     flex-direction: column;

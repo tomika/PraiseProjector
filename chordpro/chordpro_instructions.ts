@@ -64,9 +64,12 @@ export class Instructions {
   static matchesSection(line: ChordProLine, item: InstructionItem) {
     if (line.isComment || item.multiplier == null) return false;
     if (item.info) {
+      const targetTag = item.info.withoutModifiers().toLocaleLowerCase();
+      const lineTag = line.getTagInfo().tag.toString().toLocaleLowerCase();
+      if (lineTag === targetTag) return true;
       const lineInfo = line.getSectionInfo();
       if (lineInfo === item.info) return true;
-      return lineInfo.withoutModifiers().toLocaleLowerCase() === item.info.withoutModifiers().toLocaleLowerCase();
+      return lineInfo.withoutModifiers().toLocaleLowerCase() === targetTag;
     }
     return line.getTagInfo().tag.toString().toLocaleLowerCase() === item.value.toLocaleLowerCase();
   }

@@ -164,7 +164,7 @@
             </div>
         </div>
         <div class="mainTable">
-            <div class="widthProtect">
+            <div class="widthProtect" id="mainToolbar">
                 <div id="btnPrev" class="btnDiv">
                     <img class="btnImg" src="images/left.svg" alt="Prev" />
                 </div>
@@ -240,6 +240,47 @@
     <div id="fontSizeDialog" class="chordSelector hidden">
         <div><div>A</div><div>A</div></div>
         <input type="range" min="12" max="24" class="slider" id="baseFontSizeSlider" />
+    </div>
+    <div id="zoomSettingsDialog" class="chordSelector hidden">
+        <button type="button" id="zoomSettingsClose" class="zoom-close-btn" title="Close" aria-label="Close">&times;</button>
+        <div class="zoom-settings-row">
+            <input type="checkbox" id="chkZoomHideTitle"/>
+            <label for="chkZoomHideTitle" title="hideTitle">
+                <span class="zoom-icon zoom-icon-title">
+                    <span class="zoom-icon-sample">Title</span>
+                    <span class="zoom-icon-slash"></span>
+                </span>
+            </label>
+        </div>
+        <div class="zoom-settings-row">
+            <input type="checkbox" id="chkZoomHideMeta"/>
+            <label for="chkZoomHideMeta" title="hideMeta">
+                <span class="zoom-icon zoom-icon-meta">
+                    <span class="zoom-icon-sample">Meta</span>
+                    <span class="zoom-icon-slash"></span>
+                </span>
+            </label>
+        </div>
+        <div class="zoom-settings-row zoom-tag-row">
+            <button type="button" class="zoom-tag-btn" id="btnZoomTagVisible" data-tagmode="VISIBLE" title="tagMode">Verse</button>
+            <button type="button" class="zoom-tag-btn" id="btnZoomTagAbbrev" data-tagmode="ABBREV" title="tagMode">V</button>
+            <button type="button" class="zoom-tag-btn zoom-tag-btn-empty" id="btnZoomTagHidden" data-tagmode="HIDDEN" title="tagMode" aria-label="No tag"></button>
+        </div>
+        <!--div class="zoom-settings-row">
+            <input type="checkbox" id="chkZoomAutoSplit"/>
+            <label for="chkZoomAutoSplit" title="autoSplit">
+                <span class="zoom-icon zoom-icon-wrap">&#x21B5;</span>
+            </label>
+        </div-->
+        <div class="zoom-settings-row">
+            <input type="checkbox" id="chkZoomScroll"/>
+            <label for="chkZoomScroll" title="scroll">
+                <img class="btnImg" src="images/longlist.svg" alt="Scroll" />
+            </label>
+        </div>
+        <div class="zoom-settings-actions">
+            <button type="button" id="zoomSettingsOk" class="zoom-ok-btn">OK</button>
+        </div>
     </div>
     <div id="aboutBox" class="aboutBox hidden">
         <div id="aboutBoxContent">

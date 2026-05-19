@@ -530,70 +530,86 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return window.btoa(binary);
 }
 
-interface TouchPoint {
-  identifier: number;
-  pageX: number;
-  pageY: number;
-}
-
-type TouchCacheContext = {
-  touchCache: Map<number, TouchPoint>;
-  callback: (diff: number) => void;
-  lastCallbackValue?: number;
+type PinchContext = {
+  startDistance?: number;
+  lastSteps?: number;
+  pixelsPerStep: number;
+  onPinch: (steps: number, gestureStart: boolean) => void;
 };
 
-const touchCacheForElements = new Map<HTMLElement, TouchCacheContext>();
-function getTouchContext(ev: TouchEvent) {
-  const context = touchCacheForElements.get(ev.target as HTMLElement);
-  return context ?? touchCacheForElements.get(document.body);
-}
+const pinchContexts = new Map<HTMLElement, PinchContext>();
 
-function handleTouchStart(ev: TouchEvent) {
-  const context = getTouchContext(ev);
-  if (context) {
-    for (let i = 0; i < ev.changedTouches.length; ++i) {
-      const touch = ev.changedTouches[i];
-      context.touchCache.set(touch.identifier, touch);
+function findPinchContext(target: EventTarget | null): { el: HTMLElement; ctx: PinchContext } | undefined {
+  let node = target as Node | null;
+  while (node) {
+    if (node instanceof HTMLElement) {
+      const ctx = pinchContexts.get(node);
+      if (ctx) return { el: node, ctx };
     }
+    node = node.parentNode;
   }
+  return undefined;
 }
 
-function handleTouchMove(ev: TouchEvent) {
+function pinchDistance(t1: Touch, t2: Touch): number {
+  return Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+}
+
+function onPinchTouchStart(ev: TouchEvent) {
   if (ev.touches.length === 2) {
-    const context = getTouchContext(ev);
-    if (context) {
-      const touch1 = context.touchCache.get(ev.touches[0].identifier);
-      const touch2 = context.touchCache.get(ev.touches[1].identifier);
-      if (touch1 && touch2) {
-        const dist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
-        context.callback(dist);
-      }
+    const found = findPinchContext(ev.currentTarget);
+    if (!found) return;
+    found.ctx.startDistance = pinchDistance(ev.touches[0], ev.touches[1]);
+    found.ctx.lastSteps = 0;
+    found.ctx.onPinch(0, true);
+  }
+}
+
+function onPinchTouchMove(ev: TouchEvent) {
+  if (ev.touches.length === 2) {
+    const found = findPinchContext(ev.currentTarget);
+    if (!found) return;
+    if (found.ctx.startDistance === undefined) {
+      // gesture started before handler was watching (e.g. first touch landed elsewhere)
+      found.ctx.startDistance = pinchDistance(ev.touches[0], ev.touches[1]);
+      found.ctx.lastSteps = 0;
+      found.ctx.onPinch(0, true);
+      return;
+    }
+    const dist = pinchDistance(ev.touches[0], ev.touches[1]);
+    const steps = Math.round((dist - found.ctx.startDistance) / found.ctx.pixelsPerStep);
+    if (steps !== found.ctx.lastSteps) {
+      found.ctx.lastSteps = steps;
+      found.ctx.onPinch(steps, false);
+    }
+    if (ev.cancelable) ev.preventDefault();
+  }
+}
+
+function onPinchTouchEnd(ev: TouchEvent) {
+  if (ev.touches.length < 2) {
+    const found = findPinchContext(ev.currentTarget);
+    if (found) {
+      found.ctx.startDistance = undefined;
+      found.ctx.lastSteps = undefined;
     }
   }
 }
 
-function handleTouchEnd(ev: TouchEvent) {
-  const context = getTouchContext(ev);
-  if (context) {
-    for (let i = 0; i < ev.changedTouches.length; ++i) {
-      const touch = ev.changedTouches[i];
-      context.touchCache.delete(touch.identifier);
-    }
-  }
-}
-
-export function installPinchZoomHandler(targetElement: HTMLElement, callback: (diff: number) => void, step?: number) {
-  const context: TouchCacheContext = { touchCache: new Map(), callback };
-  if (step != null) {
-    context.callback = (diff) => {
-      const calcedValue = Math.floor(diff / step);
-      if (context.lastCallbackValue !== calcedValue) callback((context.lastCallbackValue = calcedValue));
-    };
-  }
-  touchCacheForElements.set(targetElement, context);
-  targetElement.addEventListener("touchstart", handleTouchStart, true);
-  targetElement.addEventListener("touchmove", handleTouchMove, true);
-  targetElement.addEventListener("touchend", handleTouchEnd, true);
+/**
+ * Installs a pinch-zoom gesture handler on the given element. The callback is
+ * invoked with an integer `steps` value representing the change in pinch
+ * distance since the gesture started (positive = fingers spread apart,
+ * negative = fingers pinched together). `gestureStart` is true exactly once at
+ * the beginning of each gesture (with `steps === 0`) so the caller can
+ * capture a baseline value.
+ */
+export function installPinchZoomHandler(targetElement: HTMLElement, onPinch: (steps: number, gestureStart: boolean) => void, pixelsPerStep = 30) {
+  pinchContexts.set(targetElement, { onPinch, pixelsPerStep });
+  targetElement.addEventListener("touchstart", onPinchTouchStart, true);
+  targetElement.addEventListener("touchmove", onPinchTouchMove, { capture: true, passive: false });
+  targetElement.addEventListener("touchend", onPinchTouchEnd, true);
+  targetElement.addEventListener("touchcancel", onPinchTouchEnd, true);
 }
 
 export class MultiMap<K, V> {

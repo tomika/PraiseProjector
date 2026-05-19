@@ -417,6 +417,11 @@ export class ChordProEditor extends ChordDrawer {
    * expanded block when projecting onto its ellipsis preview, and vice versa).
    */
   private instructedSectionGroups?: number[];
+  /**
+   * Label text for each instructed item (same index as
+   * `instructedSectionGroups`). Used as fallback for empty grid tags.
+   */
+  private instructedSectionLabels?: string[];
 
   private systemPasteContent = "";
   private clipboardTextArea: HTMLTextAreaElement | null = null;
@@ -550,6 +555,12 @@ export class ChordProEditor extends ChordDrawer {
   displayProps: ChordProDisplayProperties;
   canvas: HTMLCanvasElement;
   scale: number;
+  /**
+   * Opacity multiplier applied to the highlighted-line background fill.
+   * 0 = invisible, 1 = fully opaque. Persisted by the host app via
+   * displaySettings.highlightOpacity.
+   */
+  highlightOpacity = 1.0;
 
   private showTitle = true;
   private showMeta = true;
@@ -908,6 +919,7 @@ export class ChordProEditor extends ChordDrawer {
 
       this.instructedLines = undefined;
       this.instructedSectionGroups = undefined;
+      this.instructedSectionLabels = undefined;
 
       let m = /# notes:(.*)/.exec(chp);
       if (m && m[1]) {
@@ -1440,6 +1452,7 @@ export class ChordProEditor extends ChordDrawer {
       this.clearActionState();
       this.instructedLines = undefined;
       this.instructedSectionGroups = undefined;
+      this.instructedSectionLabels = undefined;
       this.chordPro = new ChordProDocument(this.system, state.data);
       this.cursorPos = state.cursorPos;
 
@@ -3603,6 +3616,7 @@ export class ChordProEditor extends ChordDrawer {
     if (this.chordPro) this.saveState();
     this.instructedLines = undefined;
     this.instructedSectionGroups = undefined;
+    this.instructedSectionLabels = undefined;
     this.chordPro = new ChordProDocument(this.system, text);
     this.prevText = this.chordProCode;
     this.draw();
@@ -3788,8 +3802,75 @@ export class ChordProEditor extends ChordDrawer {
     return line.sourceLineNumber >= this.highlighted.from && line.sourceLineNumber < this.highlighted.to;
   }
 
+  /** State of the in-flight smooth-scroll animation, if any. */
+  private highlightScrollAnim: {
+    target: HTMLElement;
+    fromTop: number;
+    toTop: number;
+    startTime: number;
+    duration: number;
+    rafId: number;
+  } | null = null;
+
+  /**
+   * Last section identity for which highlight auto-scroll was evaluated.
+   * `undefined` means "no prior section" (first call after reset).
+   */
+  private lastHighlightScrollSectionToken: string | null | undefined;
+
+  /**
+   * Resolve a stable section token for the currently highlighted range so
+   * scroll behavior can react to section changes (verse/chorus/bridge), not
+   * every line movement inside the same section.
+   */
+  private getHighlightSectionToken(firstHighlightedLine: ChordProLine): string | null {
+    const highlightedSection = this.highlighted?.section;
+    if (highlightedSection != null) {
+      const group = this.instructedSectionGroups?.[highlightedSection] ?? highlightedSection;
+      return `instruction-group:${group}`;
+    }
+
+    const instructedIndex = firstHighlightedLine.instructedSectionIndex;
+    if (instructedIndex != null) {
+      const group = this.instructedSectionGroups?.[instructedIndex] ?? instructedIndex;
+      return `displayed-group:${group}`;
+    }
+
+    const lineIndex = this.displayedLines.indexOf(firstHighlightedLine);
+    if (lineIndex < 0) return null;
+
+    const lineToken = (line: ChordProLine) => {
+      const info = line.getSectionInfo();
+      const canonical = info.withoutModifiers()?.trim();
+      if (canonical) return `section:${canonical.toLocaleLowerCase()}`;
+      const tagInfo = line.getTagInfo();
+      const key = tagInfo.key?.toString()?.trim();
+      if (key) return `tag-key:${key.toLocaleLowerCase()}`;
+      const tag = tagInfo.tag?.toString()?.trim();
+      if (tag) return `tag:${tag.toLocaleLowerCase()}`;
+      return null;
+    };
+
+    // Prefer current line, then walk backward to nearest tagged section line,
+    // then forward as a final fallback.
+    let token = lineToken(firstHighlightedLine);
+    if (token) return token;
+    for (let i = lineIndex - 1; i >= 0; --i) {
+      token = lineToken(this.displayedLines[i]);
+      if (token) return token;
+    }
+    for (let i = lineIndex + 1; i < this.displayedLines.length; ++i) {
+      token = lineToken(this.displayedLines[i]);
+      if (token) return token;
+    }
+    return null;
+  }
+
   private scrollHighlightedIntoView() {
-    if (!this.highlighted || !this.displayedLines.length) return;
+    if (!this.highlighted || !this.displayedLines.length) {
+      this.lastHighlightScrollSectionToken = undefined;
+      return;
+    }
 
     // Find the first and last highlighted lines
     let firstHighlightedLine: ChordProLine | null = null;
@@ -3802,33 +3883,376 @@ export class ChordProEditor extends ChordDrawer {
       }
     }
 
-    if (!firstHighlightedLine || !lastHighlightedLine) return;
+    if (!firstHighlightedLine || !lastHighlightedLine) {
+      this.lastHighlightScrollSectionToken = undefined;
+      return;
+    }
 
-    // Get the highlight range
+    const currentSectionToken = this.getHighlightSectionToken(firstHighlightedLine);
+    const lastSectionToken = this.lastHighlightScrollSectionToken;
+    if (lastSectionToken !== undefined && lastSectionToken === currentSectionToken) {
+      return;
+    }
+    this.lastHighlightScrollSectionToken = currentSectionToken;
+
+    // Highlight range, in canvas-local Y coordinates.
     const highlightTop = firstHighlightedLine.yRange?.top || 0;
     const highlightBottom = lastHighlightedLine.yRange?.bottom || 0;
 
-    if (!highlightTop || !highlightBottom) return;
+    if (!Number.isFinite(highlightTop) || !Number.isFinite(highlightBottom) || highlightBottom <= highlightTop) return;
 
-    // Get parent div scroll position and viewport
+    // The canvas is rendered inside `parent_div` (the `.editor` element) which
+    // is itself `overflow: hidden`. The element that actually scrolls is the
+    // closest ancestor whose computed style allows vertical overflow (for
+    // PraiseProjector this is `.editorContainer.editMode` or the new
+    // `.editorContainer.scrollMode`). Walk up the tree to find it so the
+    // scroll happens on the right element in every display mode.
     const parentDiv = this.parent_div;
-    const scrollTop = parentDiv.scrollTop;
-    const scrollBottom = scrollTop + parentDiv.clientHeight;
+    const scrollTarget = this.findScrollableAncestor(parentDiv);
+    if (!scrollTarget) return;
 
-    // Check if highlight is visible
-    if (highlightTop >= scrollTop && highlightBottom <= scrollBottom) {
-      return; // Already visible
+    // Translate the canvas-local highlight Y range into the scroll target's
+    // own coordinate system: add the offset between the canvas top and the
+    // scroll target's content top, plus the scroll target's current scrollTop.
+    const canvasRect = (this.canvas as HTMLElement).getBoundingClientRect();
+    const targetRect = scrollTarget.getBoundingClientRect();
+    // Pixel offset on the page from scroll target's content origin to the
+    // top of the canvas (already includes any current scroll offset).
+    const canvasOffsetWithinTarget = canvasRect.top - targetRect.top + scrollTarget.scrollTop;
+    // The canvas is drawn with `this.scale` so coordinates baked into
+    // `yRange` are in *logical* canvas pixels. The canvas's pixel buffer
+    // size is `canvas.height = logicalHeight * this.scale`. On top of that,
+    // CSS may further scale the canvas for display (e.g. in `scrollMode`
+    // where `canvas { max-width: 100%; height: auto }` shrinks it to fit
+    // the container). We must convert logical → actual displayed pixels.
+    const scale = this.scale || 1;
+    const canvasPixelHeight = (this.canvas as HTMLCanvasElement).height || 1;
+    // Fraction (displayedCanvasHeight / pixelBufferHeight). 1 if not CSS-scaled.
+    const cssScale = canvasRect.height / canvasPixelHeight;
+    // Logical-units → displayed pixels.
+    const logicalToDisplay = scale * cssScale;
+    const highlightTopInTarget = canvasOffsetWithinTarget + highlightTop * logicalToDisplay;
+    const highlightBottomInTarget = canvasOffsetWithinTarget + highlightBottom * logicalToDisplay;
+
+    const viewportHeight = scrollTarget.clientHeight;
+
+    // Prefer scrolling with section context when instruction indices are
+    // available: try to fit previous+current+next section, then
+    // current+next, then current.
+    const chooseSectionContextRange = (): { top: number; bottom: number } | null => {
+      type SectionRange = {
+        index: number;
+        group: number;
+        top: number;
+        bottom: number;
+        hasSourceLine: boolean;
+        hasNonCommentLine: boolean;
+      };
+      type SectionBlock = {
+        token: string;
+        top: number;
+        bottom: number;
+        startLine: number;
+        endLine: number;
+      };
+
+      if (!this.displayedLines.length) return null;
+
+      const fits = (r: { top: number; bottom: number }) => r.bottom - r.top <= viewportHeight + 1;
+
+      const chooseFromTagBlocks = (): { top: number; bottom: number } | null => {
+        const lineToken = (line: ChordProLine): string | null => {
+          const info = line.getSectionInfo();
+          const canonical = info.withoutModifiers()?.trim();
+          if (canonical) return `section:${canonical.toLocaleLowerCase()}`;
+          const tagInfo = line.getTagInfo();
+          const key = tagInfo.key?.toString()?.trim();
+          if (key) return `tag-key:${key.toLocaleLowerCase()}`;
+          const tag = tagInfo.tag?.toString()?.trim();
+          if (tag) return `tag:${tag.toLocaleLowerCase()}`;
+          return null;
+        };
+
+        const blocks: SectionBlock[] = [];
+        let currentToken: string | null = null;
+        for (let i = 0; i < this.displayedLines.length; ++i) {
+          const line = this.displayedLines[i];
+          const yRange = line.yRange;
+          if (!yRange) continue;
+          const rawToken = lineToken(line);
+          if (rawToken) currentToken = rawToken;
+          const effectiveToken = currentToken ?? rawToken ?? `untagged:${i}`;
+          const prevBlock = blocks.length ? blocks[blocks.length - 1] : null;
+          if (prevBlock && prevBlock.token === effectiveToken) {
+            prevBlock.bottom = Math.max(prevBlock.bottom, yRange.bottom);
+            prevBlock.endLine = i;
+          } else {
+            blocks.push({
+              token: effectiveToken,
+              top: yRange.top,
+              bottom: yRange.bottom,
+              startLine: i,
+              endLine: i,
+            });
+          }
+        }
+
+        if (!blocks.length) return null;
+
+        const firstLineIndex = this.displayedLines.indexOf(firstHighlightedLine);
+        if (firstLineIndex < 0) return null;
+        let currentBlockIndex = blocks.findIndex((b) => b.startLine <= firstLineIndex && firstLineIndex <= b.endLine);
+        if (currentBlockIndex < 0) {
+          // Fallback to nearest block by top position.
+          currentBlockIndex = blocks.findIndex((b) => b.top <= highlightTop && highlightTop <= b.bottom);
+        }
+        if (currentBlockIndex < 0) return null;
+
+        const current = blocks[currentBlockIndex];
+        let prev: SectionBlock | undefined;
+        for (let i = currentBlockIndex - 1; i >= 0; --i)
+          if (blocks[i].token !== current.token) {
+            prev = blocks[i];
+            break;
+          }
+
+        let next: SectionBlock | undefined;
+        for (let i = currentBlockIndex + 1; i < blocks.length; ++i)
+          if (blocks[i].token !== current.token) {
+            next = blocks[i];
+            break;
+          }
+
+        if (prev && next) {
+          const tri = {
+            top: Math.min(prev.top, current.top, next.top),
+            bottom: Math.max(prev.bottom, current.bottom, next.bottom),
+          };
+          if (fits(tri)) return tri;
+        }
+
+        if (next) {
+          const duo = {
+            top: Math.min(current.top, next.top),
+            bottom: Math.max(current.bottom, next.bottom),
+          };
+          if (fits(duo)) return duo;
+        }
+
+        return { top: current.top, bottom: current.bottom };
+      };
+
+      const byIndex = new Map<number, SectionRange>();
+      for (const line of this.displayedLines) {
+        const idx = line.instructedSectionIndex;
+        const yRange = line.yRange;
+        if (idx == null || !yRange) continue;
+        let section = byIndex.get(idx);
+        if (!section) {
+          section = {
+            index: idx,
+            group: this.instructedSectionGroups?.[idx] ?? idx,
+            top: yRange.top,
+            bottom: yRange.bottom,
+            hasSourceLine: false,
+            hasNonCommentLine: false,
+          };
+          byIndex.set(idx, section);
+        } else {
+          section.top = Math.min(section.top, yRange.top);
+          section.bottom = Math.max(section.bottom, yRange.bottom);
+        }
+        if (line.sourceLineNumber >= 0) section.hasSourceLine = true;
+        if (!line.isComment) section.hasNonCommentLine = true;
+      }
+
+      if (!byIndex.size) return chooseFromTagBlocks();
+
+      const isRealSection = (s: SectionRange) => {
+        const item = this.instructions?.items[s.index];
+        if (item) return item.multiplier != null;
+        // Fallback heuristic when rendered from implicit/default instructions.
+        return s.hasSourceLine || s.hasNonCommentLine;
+      };
+
+      const sections = Array.from(byIndex.values())
+        .filter(isRealSection)
+        .sort((a, b) => a.index - b.index);
+      if (!sections.length) return chooseFromTagBlocks();
+
+      let current = this.highlighted?.section != null ? sections.find((s) => s.index === this.highlighted?.section) : undefined;
+
+      // Fallback: derive from whichever highlighted displayed line carries an
+      // instruction index.
+      if (!current) {
+        for (const line of this.displayedLines) {
+          if (!this.isHighlightedLine(line)) continue;
+          const idx = line.instructedSectionIndex;
+          if (idx == null) continue;
+          const candidate = sections.find((s) => s.index === idx);
+          if (candidate) {
+            current = candidate;
+            break;
+          }
+        }
+      }
+
+      if (!current) return chooseFromTagBlocks();
+
+      let prev: SectionRange | undefined;
+      for (let i = sections.length - 1; i >= 0; --i) {
+        const s = sections[i];
+        if (s.index >= current.index) continue;
+        if (s.group !== current.group) {
+          prev = s;
+          break;
+        }
+      }
+
+      let next: SectionRange | undefined;
+      for (const s of sections) {
+        if (s.index <= current.index) continue;
+        if (s.group !== current.group) {
+          next = s;
+          break;
+        }
+      }
+
+      if (prev && next) {
+        const tri = {
+          top: Math.min(prev.top, current.top, next.top),
+          bottom: Math.max(prev.bottom, current.bottom, next.bottom),
+        };
+        if (fits(tri)) return tri;
+      }
+
+      if (next) {
+        const duo = {
+          top: Math.min(current.top, next.top),
+          bottom: Math.max(current.bottom, next.bottom),
+        };
+        if (fits(duo)) return duo;
+      }
+
+      return { top: current.top, bottom: current.bottom };
+    };
+
+    const contextRange = chooseSectionContextRange();
+    const focusTopInTarget = contextRange ? canvasOffsetWithinTarget + contextRange.top * logicalToDisplay : highlightTopInTarget;
+    const focusBottomInTarget = contextRange ? canvasOffsetWithinTarget + contextRange.bottom * logicalToDisplay : highlightBottomInTarget;
+
+    // True vertical centering: aim to put the highlight's center at the
+    // viewport's center. After clamping to [0, maxScroll] this naturally
+    // produces the desired behavior:
+    //   • Highlight near the top of the document  -> desired scrollTop is
+    //     negative, clamped to 0, no scrolling happens. The highlight is
+    //     allowed to travel from the document's top down to (and past) the
+    //     viewport center before any scrolling begins.
+    //   • Once the highlight's center passes the viewport center, scrollTop
+    //     starts following so the highlight stays at the middle.
+    //   • Near the document's bottom the clamp keeps the last lines visible.
+    const highlightCenter = (focusTopInTarget + focusBottomInTarget) / 2;
+    const desiredScrollTop = highlightCenter - viewportHeight / 2;
+    const maxScroll = Math.max(0, scrollTarget.scrollHeight - viewportHeight);
+    const targetScrollTop = Math.max(0, Math.min(desiredScrollTop, maxScroll));
+
+    // Track the highlight as close to the viewport center as the document
+    // allows. We always recompute the centered scrollTop and animate to it
+    // unless the move would be sub-pixel jitter. The Math.max/min clamp
+    // naturally produces the desired edge behavior:
+    //   • Near the document top  → desiredScrollTop is negative, clamp to 0.
+    //   • Near the document bottom → clamp to maxScroll.
+    // Inside the document we follow every selection change so the highlight
+    // stays centered (or as centered as possible at the edges).
+    const currentTop =
+      this.highlightScrollAnim?.target === scrollTarget && this.highlightScrollAnim
+        ? this.highlightScrollAnim.toTop // already animating toward this value
+        : scrollTarget.scrollTop;
+
+    // 2 px tolerance absorbs sub-pixel layout rounding without affecting the
+    // perceived behavior.
+    const delta = Math.abs(targetScrollTop - currentTop);
+    if (delta < 2) return;
+
+    this.animateScrollTo(scrollTarget, targetScrollTop, viewportHeight);
+  }
+
+  /**
+   * Smoothly scroll `target` to `toTop`. Animation duration is designed so
+   * that NEAR moves feel slow & gentle (low velocity, easy on the eye) while
+   * FAR jumps stay snappy (the user can't tolerate a multi-second crawl when
+   * jumping across the whole song):
+   *   • distance 0           → 600 ms
+   *   • distance = 1 viewport → 1000 ms  (gentle, still readable)
+   *   • distance ≥ 3 viewports → 400 ms  (fast jump)
+   * If an animation is already in flight, it is cancelled and replaced so
+   * rapid selection changes are honored immediately.
+   */
+  private animateScrollTo(target: HTMLElement, toTop: number, viewportHeight: number) {
+    if (this.highlightScrollAnim) {
+      cancelAnimationFrame(this.highlightScrollAnim.rafId);
+      this.highlightScrollAnim = null;
     }
 
-    // Calculate new scroll position to center the highlight
-    const highlightHeight = highlightBottom - highlightTop;
-    const viewportHeight = parentDiv.clientHeight;
-    let newScrollTop = highlightTop - (viewportHeight - highlightHeight) / 2;
+    const fromTop = target.scrollTop;
+    const distance = Math.abs(toTop - fromTop);
+    if (distance < 1) {
+      target.scrollTop = toTop;
+      return;
+    }
 
-    // Ensure we don't scroll past boundaries
-    newScrollTop = Math.max(0, Math.min(newScrollTop, parentDiv.scrollHeight - viewportHeight));
+    const vp = Math.max(1, viewportHeight);
+    let duration: number;
+    if (distance <= vp) {
+      // Near range: 600 ms → 1000 ms. Velocity rises slowly so motion looks
+      // gentle even when there are several lines to traverse.
+      duration = 600 + (distance / vp) * 400;
+    } else {
+      // Far range: ramp from 1000 ms down to 400 ms as distance grows from 1
+      // viewport up to 3 viewports, then stay at 400 ms. Big jumps feel
+      // quick (high velocity) without being instant.
+      const factor = Math.min(1, (distance - vp) / (2 * vp));
+      duration = 1000 - factor * 600;
+    }
 
-    parentDiv.scrollTo({ top: newScrollTop, behavior: "smooth" });
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const anim = this.highlightScrollAnim;
+      if (!anim) return;
+      const t = Math.min(1, (now - anim.startTime) / anim.duration);
+      // easeInOutCubic — smooth start and end, no abrupt motion.
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      anim.target.scrollTop = anim.fromTop + (anim.toTop - anim.fromTop) * eased;
+      if (t < 1) anim.rafId = requestAnimationFrame(tick);
+      else this.highlightScrollAnim = null;
+    };
+
+    this.highlightScrollAnim = {
+      target,
+      fromTop,
+      toTop,
+      startTime,
+      duration,
+      rafId: requestAnimationFrame(tick),
+    };
+  }
+
+  /**
+   * Walk up the DOM from `start` and return the first ancestor whose computed
+   * style allows vertical scrolling AND that actually has scrollable content.
+   * Returns null if none is found (e.g. when the song is displayed in a fixed
+   * aspect-ratio container that has no overflow).
+   */
+  private findScrollableAncestor(start: HTMLElement): HTMLElement | null {
+    let el: HTMLElement | null = start;
+    while (el && el !== document.body) {
+      const style = window.getComputedStyle(el);
+      const overflowY = style.overflowY;
+      const scrollable = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+      if (scrollable && el.scrollHeight > el.clientHeight + 1) return el;
+      el = el.parentElement;
+    }
+    return null;
   }
 
   suppressDraw(suppress = true) {
@@ -4144,6 +4568,18 @@ export class ChordProEditor extends ChordDrawer {
         // transpose modifier from the visible label in readonly mode.
         let tagIdentity: string | DifferentialText = tag;
 
+        // Grid sections often use `{start_of_grid}` without an explicit label.
+        // Render a readable fallback label so the section still appears in the
+        // tag column while keeping authored non-empty labels untouched.
+        if (!suppressTagLabel && infoName === "start_of_grid" && typeof tag === "string" && !tag.trim()) {
+          let instructedLabel = "";
+          if (line_obj.instructedSectionIndex != null) {
+            instructedLabel = (this.instructedSectionLabels?.[line_obj.instructedSectionIndex] ?? "").trim();
+          }
+          tag = instructedLabel || this.localize("Grid");
+          tagIdentity = tag;
+        }
+
         // In readonly rendering, hide the transpose modifier from the displayed
         // section label (e.g. "Chorus +2" → "Chorus") since the modifier is
         // already reflected in the transposed chords on screen. Multiplier
@@ -4222,11 +4658,17 @@ export class ChordProEditor extends ChordDrawer {
     // and its ellipsis preview) are not painted over.
     if (highlightboxes.length) {
       const backup = ctx.fillStyle;
+      const backupAlpha = ctx.globalAlpha;
+      // Apply user-configured opacity (compounded with any current
+      // globalAlpha so we don't accidentally make highlights opaque while
+      // the rest of the canvas is faded).
+      ctx.globalAlpha = backupAlpha * Math.max(0, Math.min(1, this.highlightOpacity));
       ctx.fillStyle = this.displayProps.highlightColor;
       for (const box of highlightboxes) {
         ctx.fillRect(leftMargin, box.top, this.canvas.width - 2 * leftMargin, box.bottom - box.top);
       }
       ctx.fillStyle = backup;
+      ctx.globalAlpha = backupAlpha;
     }
 
     const line_mult = 1000000;
@@ -6468,6 +6910,7 @@ export class ChordProEditor extends ChordDrawer {
       } else this.instructions = undefined;
       this.instructedLines = undefined;
       this.instructedSectionGroups = undefined;
+      this.instructedSectionLabels = undefined;
       if (draw) this.draw();
     }
   }
@@ -6582,6 +7025,7 @@ export class ChordProEditor extends ChordDrawer {
       const firstLines = new Map<string, ChordProLine | null>();
       const groupFirstIndex = new Map<string, number>();
       const groups: number[] = new Array(instructions.items.length);
+      const labels: string[] = new Array(instructions.items.length);
       const lines: ChordProLine[] = [];
       const genComment = (text: string, type: ChordProCommentType = "") => {
         const line_obj = new ChordProLine(doc);
@@ -6593,6 +7037,7 @@ export class ChordProEditor extends ChordDrawer {
       for (let i = 0; i < instructions.items.length; ++i) {
         const item = instructions.items[i];
         groups[i] = i;
+        labels[i] = (item.value ?? "").trim();
         if (item.multiplier == null) {
           const cl = genComment(item.value, "italic");
           cl.instructedSectionIndex = i;
@@ -6643,6 +7088,7 @@ export class ChordProEditor extends ChordDrawer {
       }
       this.instructedLines = lines;
       this.instructedSectionGroups = groups;
+      this.instructedSectionLabels = labels;
     }
     return this.instructedLines;
   }

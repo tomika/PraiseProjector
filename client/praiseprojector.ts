@@ -22,7 +22,6 @@ import {
   base64ToArrayBuffer,
   createDivElement,
   doModal,
-  doubleClickHelper,
   endModal,
   inModal,
   installPinchZoomHandler,
@@ -88,6 +87,21 @@ type DiffSongRequest = FullSongRequest & {
   uploader: string;
   state: PendingSongState;
 };
+type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
+type ZoomPreset = {
+  hideTitle?: boolean;
+  hideMeta?: boolean;
+  tagMode?: ZoomTagMode;
+  autoSplit?: boolean;
+  scrollable?: boolean;
+};
+const defaultZoomPreset: Required<ZoomPreset> = {
+  hideTitle: true,
+  hideMeta: true,
+  tagMode: "ABBREV",
+  autoSplit: true,
+  scrollable: false,
+};
 type DisplaySettings = {
   capo?: number;
   transpose?: number;
@@ -102,9 +116,15 @@ type DisplaySettings = {
   darkMode?: boolean;
   autoTone?: boolean;
   highlight?: boolean;
+  /**
+   * Opacity (0..1) applied to the highlighted-line background in the editor.
+   * Adjustable via long-press on the highlight toggle button. Default 1.0.
+   */
+  highlightOpacity?: number;
   leaderMode?: boolean;
   fontSize?: string;
   useInstructions?: boolean;
+  zoomPreset?: ZoomPreset;
 };
 
 function isFullSongRequest(req: SongRequest): req is FullSongRequest {
@@ -326,6 +346,20 @@ export class App extends AppBase {
   private playlist: PlaylistEntry[] = [];
   private lastImageId = "startup";
   private highlightChangedRecently = 0;
+  /**
+   * User-configurable opacity (0..1) for the highlighted-line background.
+   * Persisted in displaySettings; default 1.0 (legacy behavior).
+   */
+  private highlightOpacity = 1.0;
+  /** Timer id for the long-press detection on the highlight toggle button. */
+  private highlightLongPressTimer: number | null = null;
+  /**
+   * Set when long-press opens the opacity popup so the upcoming click on the
+   * `<label>` does NOT toggle the underlying checkbox.
+   */
+  private highlightLongPressFired = false;
+  /** Active popup root, if open. */
+  private highlightOpacityPopup: HTMLElement | null = null;
   private chordBoxType: ChordBoxType | "NO_CHORDS" = "";
   private nextSongReq: SongRequest | null = null;
   private handleKeyboardNavigationEvents = hasTouchScreen();
@@ -421,6 +455,17 @@ export class App extends AppBase {
   private playlists = new Map<string, LeaderPlaylist>();
   private fontSizeDialog: HTMLDivElement | null = null;
   private baseFontSizeSlider: HTMLInputElement | null = null;
+  private zoomSettingsDialog: HTMLDivElement | null = null;
+  private chkZoomHideTitle: HTMLInputElement | null = null;
+  private chkZoomHideMeta: HTMLInputElement | null = null;
+  private zoomTagButtons: HTMLButtonElement[] = [];
+  private chkZoomAutoSplit: HTMLInputElement | null = null;
+  private chkZoomScroll: HTMLInputElement | null = null;
+  private zoomSettingsCloseBtn: HTMLButtonElement | null = null;
+  private zoomSettingsOkBtn: HTMLButtonElement | null = null;
+  private zoomLongPressTimer: number | null = null;
+  private zoomLongPressFired = false;
+  private zoomPreset: ZoomPreset = { ...defaultZoomPreset };
   private scanDlg: HTMLElement | null = null;
   private scanDlgIp: HTMLElement | null = null;
   private scanDlgBroadcast: HTMLElement | null = null;
@@ -724,7 +769,17 @@ export class App extends AppBase {
     }
 
     this.logDiv = document.getElementById("log") as HTMLDivElement;
-    this.installPinchZoomHandler(document.body, Math.max(1, Math.min(window.outerWidth, window.outerHeight) / 10));
+    {
+      // Pinch-zoom directly adjusts the base font size. Installed only on the
+      // main page header toolbar and on the options overlay so casual touches
+      // inside the song view do not accidentally rescale the UI. No dialog is
+      // shown — the gesture mutates the font size live.
+      const pinchStep = Math.max(20, Math.min(window.outerWidth, window.outerHeight) / 10);
+      const mainToolbar = document.getElementById("mainToolbar");
+      if (mainToolbar) this.installPinchZoomHandler(mainToolbar, pinchStep);
+      const optionsPanel = document.getElementById("options");
+      if (optionsPanel) this.installPinchZoomHandler(optionsPanel, pinchStep);
+    }
 
     this.edFilter = document.getElementById("filter") as HTMLInputElement;
     if (this.edFilter) {
@@ -902,10 +957,81 @@ export class App extends AppBase {
     }
     this.applySizeGuard();
 
+    this.zoomSettingsDialog = document.getElementById("zoomSettingsDialog") as HTMLDivElement | null;
+    this.chkZoomHideTitle = document.getElementById("chkZoomHideTitle") as HTMLInputElement | null;
+    this.chkZoomHideMeta = document.getElementById("chkZoomHideMeta") as HTMLInputElement | null;
+    this.zoomTagButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("#zoomSettingsDialog .zoom-tag-btn"));
+    this.chkZoomAutoSplit = document.getElementById("chkZoomAutoSplit") as HTMLInputElement | null;
+    this.chkZoomScroll = document.getElementById("chkZoomScroll") as HTMLInputElement | null;
+    this.zoomSettingsCloseBtn = document.getElementById("zoomSettingsClose") as HTMLButtonElement | null;
+    this.zoomSettingsOkBtn = document.getElementById("zoomSettingsOk") as HTMLButtonElement | null;
+    const zoomChangeHandler = () => this.zoomPresetChanged();
+    if (this.chkZoomHideTitle) this.chkZoomHideTitle.onchange = zoomChangeHandler;
+    if (this.chkZoomHideMeta) this.chkZoomHideMeta.onchange = zoomChangeHandler;
+    for (const btn of this.zoomTagButtons) {
+      btn.onclick = () => {
+        const mode = (btn.dataset.tagmode as ZoomTagMode) || defaultZoomPreset.tagMode;
+        this.zoomPreset = { ...this.zoomPreset, tagMode: mode };
+        this.syncZoomPresetToControls();
+        this.displayChanged();
+        this.storeDisplaySettings();
+      };
+    }
+    if (this.chkZoomAutoSplit) this.chkZoomAutoSplit.onchange = zoomChangeHandler;
+    if (this.chkZoomScroll) this.chkZoomScroll.onchange = zoomChangeHandler;
+    if (this.zoomSettingsCloseBtn && this.zoomSettingsDialog) {
+      this.zoomSettingsCloseBtn.onclick = () => endModal(this.zoomSettingsDialog!, "");
+    }
+    if (this.zoomSettingsOkBtn && this.zoomSettingsDialog) {
+      this.zoomSettingsOkBtn.onclick = () => endModal(this.zoomSettingsDialog!, "");
+    }
+    if (this.zoomSettingsDialog) {
+      // Pinching inside the open zoom settings dialog should also adjust the font size live.
+      this.installPinchZoomHandler(this.zoomSettingsDialog, Math.max(20, Math.min(window.outerWidth, window.outerHeight) / 10));
+    }
+
     this.chkMaxText = document.getElementById("chkMaxText") as HTMLInputElement;
+    // Long-press the zoom button label to open the zoom-settings dialog;
+    // a short tap/click still toggles the underlying #chkMaxText checkbox
+    // normally (which is what runs displayChanged() via the checkbox's own
+    // change event chain — we wire that here too for safety).
+    const chkMaxTextLabel = document.querySelector<HTMLLabelElement>('label[for="chkMaxText"]');
     if (this.chkMaxText) {
-      doubleClickHelper(this.chkMaxText, this.fontSizeDialog ? () => this.setFontSizeDetails() : () => this.displayChanged(), () =>
-        this.displayChanged()
+      this.chkMaxText.onchange = () => this.displayChanged();
+    }
+    if (chkMaxTextLabel && this.zoomSettingsDialog) {
+      const startZoom = () => {
+        this.zoomLongPressFired = false;
+        if (this.zoomLongPressTimer !== null) window.clearTimeout(this.zoomLongPressTimer);
+        this.zoomLongPressTimer = window.setTimeout(() => {
+          this.zoomLongPressTimer = null;
+          this.zoomLongPressFired = true;
+          this.openZoomSettingsDialog();
+        }, 500);
+      };
+      const cancelZoom = () => {
+        if (this.zoomLongPressTimer !== null) {
+          window.clearTimeout(this.zoomLongPressTimer);
+          this.zoomLongPressTimer = null;
+        }
+      };
+      chkMaxTextLabel.addEventListener("mousedown", startZoom);
+      chkMaxTextLabel.addEventListener("touchstart", startZoom, { passive: true });
+      chkMaxTextLabel.addEventListener("mouseup", cancelZoom);
+      chkMaxTextLabel.addEventListener("mouseleave", cancelZoom);
+      chkMaxTextLabel.addEventListener("touchend", cancelZoom);
+      chkMaxTextLabel.addEventListener("touchcancel", cancelZoom);
+      // Suppress the checkbox toggle when a long-press elapsed.
+      chkMaxTextLabel.addEventListener(
+        "click",
+        (e) => {
+          if (this.zoomLongPressFired) {
+            this.zoomLongPressFired = false;
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        },
+        true
       );
     }
 
@@ -915,6 +1041,36 @@ export class App extends AppBase {
       this.highlightIconHolderDiv.onmouseup = (e) => this.onHighlightIconClicked(e, false);
       this.highlightIconHolderDiv.ontouchstart = (e) => this.onHighlightIconClicked(e, true);
       this.highlightIconHolderDiv.ontouchend = (e) => this.onHighlightIconClicked(e, false);
+    }
+
+    // Long-press on the highlight toggle button opens a small opacity slider
+    // popup. We bind to the surrounding <label> (chkHighlightLabel) because
+    // it is the element that receives the click that toggles the checkbox —
+    // intercepting the click here lets us suppress the toggle when long-press
+    // fires. The label also covers the icon and is the natural press target.
+    const highlightLabel = document.getElementById("chkHighlightLabel");
+    if (highlightLabel) {
+      const start = (e: Event) => this.startHighlightLongPress(e, highlightLabel);
+      const cancel = () => this.cancelHighlightLongPress();
+      highlightLabel.addEventListener("mousedown", start);
+      highlightLabel.addEventListener("touchstart", start, { passive: true });
+      highlightLabel.addEventListener("mouseup", cancel);
+      highlightLabel.addEventListener("mouseleave", cancel);
+      highlightLabel.addEventListener("touchend", cancel);
+      highlightLabel.addEventListener("touchcancel", cancel);
+      // Click in capture phase so we can suppress the underlying checkbox
+      // toggle when the press was actually a long-press.
+      highlightLabel.addEventListener(
+        "click",
+        (e) => {
+          if (this.highlightLongPressFired) {
+            this.highlightLongPressFired = false;
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        },
+        true
+      );
     }
 
     this.iconHighlighter = document.getElementById("highlighter");
@@ -1416,20 +1572,22 @@ export class App extends AppBase {
   }
 
   private installPinchZoomHandler(pinchHandler: HTMLElement, step: number) {
-    let lastDiff = 0;
+    let baselineSize = 15;
     installPinchZoomHandler(
       pinchHandler,
-      (diff) => {
+      (steps, gestureStart) => {
         const minValue = parseInt(this.baseFontSizeSlider?.getAttribute("min") || "12", 10);
         const maxValue = parseInt(this.baseFontSizeSlider?.getAttribute("max") || "24", 10);
-        if (this.fontSizeDialog && !isVisible(this.fontSizeDialog)) this.setFontSizeDetails();
-        const stringValue = this.baseFontSizeSlider?.value ?? document.documentElement.style.fontSize.replace(/pt$/g, "");
-        const value = Math.round(Math.min(maxValue, Math.max(minValue, parseFloat(stringValue) + diff - lastDiff)));
+        if (gestureStart) {
+          const cur = this.baseFontSizeSlider?.value ?? document.documentElement.style.fontSize.replace(/pt$/g, "");
+          baselineSize = parseFloat(cur) || 15;
+          return;
+        }
+        const value = Math.round(Math.min(maxValue, Math.max(minValue, baselineSize + steps)));
         if (this.baseFontSizeSlider) this.baseFontSizeSlider.value = value.toString();
         this.applyFontSize(value);
-        lastDiff = diff;
       },
-      step ?? Math.min(1, Math.min(pinchHandler.clientWidth, pinchHandler.clientHeight) / 10)
+      step
     );
   }
 
@@ -2496,6 +2654,38 @@ export class App extends AppBase {
     }
   }
 
+  /**
+   * Reflect the current `zoomPreset` into the dialog controls (called before
+   * showing) and read back from the controls when the user toggles them.
+   */
+  private syncZoomPresetToControls() {
+    if (this.chkZoomHideTitle) this.chkZoomHideTitle.checked = this.zoomPreset.hideTitle ?? defaultZoomPreset.hideTitle;
+    if (this.chkZoomHideMeta) this.chkZoomHideMeta.checked = this.zoomPreset.hideMeta ?? defaultZoomPreset.hideMeta;
+    const activeTagMode = this.zoomPreset.tagMode ?? defaultZoomPreset.tagMode;
+    for (const btn of this.zoomTagButtons) {
+      btn.classList.toggle("active", btn.dataset.tagmode === activeTagMode);
+    }
+    if (this.chkZoomAutoSplit) this.chkZoomAutoSplit.checked = this.zoomPreset.autoSplit ?? defaultZoomPreset.autoSplit;
+    if (this.chkZoomScroll) this.chkZoomScroll.checked = this.zoomPreset.scrollable ?? defaultZoomPreset.scrollable;
+  }
+
+  private openZoomSettingsDialog() {
+    if (!this.zoomSettingsDialog) return;
+    this.syncZoomPresetToControls();
+    doModal(this.zoomSettingsDialog, "");
+  }
+
+  private zoomPresetChanged() {
+    this.zoomPreset = {
+      hideTitle: !!this.chkZoomHideTitle?.checked,
+      hideMeta: !!this.chkZoomHideMeta?.checked,
+      tagMode: this.zoomPreset.tagMode ?? defaultZoomPreset.tagMode,
+      autoSplit: !!this.chkZoomAutoSplit?.checked,
+      scrollable: !!this.chkZoomScroll?.checked,
+    };
+    this.displayChanged();
+  }
+
   private displayChanged(pageToUpdate?: EditorPage, keepDrawingSuppressed?: boolean) {
     if (!pageToUpdate || pageToUpdate === this.pages.current) this.storeDisplaySettings();
 
@@ -2511,25 +2701,54 @@ export class App extends AppBase {
     if (this.chkNoSecChordDup?.checked) chordFormatFlags += CHORDFORMAT_NOSECTIONDUP;
     if (this.chkAutoTone?.checked) chordFormatFlags += CHORDFORMAT_INKEY;
 
+    // Resolve zoom-on display behavior from the user-configurable preset.
+    const maxText = !!this.chkMaxText?.checked;
+    const preset = this.zoomPreset;
+    const showTitle = maxText ? !(preset.hideTitle ?? defaultZoomPreset.hideTitle) : true;
+    const showMeta = maxText ? !(preset.hideMeta ?? defaultZoomPreset.hideMeta) : true;
+    const tagMode: ZoomTagMode = maxText ? (preset.tagMode ?? defaultZoomPreset.tagMode) : "VISIBLE";
+    const showTag = tagMode !== "HIDDEN";
+    const abbrevTag = tagMode === "ABBREV";
+    const autoSplitLines = maxText ? !!(preset.autoSplit ?? defaultZoomPreset.autoSplit) && !this.chkHighlight?.checked : false;
+    const scrollMode = maxText && !!(preset.scrollable ?? defaultZoomPreset.scrollable);
+
     for (const page of pageToUpdate ? [pageToUpdate] : [this.pages.prev, this.pages.next, this.pages.current]) {
       const editor = page?.editor;
       if (editor) {
         this.verifyChordSelectorSystem(editor.system);
+        editor.highlightOpacity = this.highlightOpacity;
         editor.setDisplayMode(
-          !this.chkMaxText?.checked,
-          !this.chkMaxText?.checked,
-          true,
-          !!this.chkMaxText?.checked,
-          !!this.chkMaxText?.checked && !this.chkHighlight?.checked,
+          showTitle,
+          showMeta,
+          showTag,
+          abbrevTag,
+          autoSplitLines,
           this.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : chordFormatFlags,
           this.chordBoxType === "NO_CHORDS" ? "" : this.chordBoxType,
           keepDrawingSuppressed
         );
         editor.enableInstructionRendering(this.chkUseInstructions?.checked ? "FIRST_LINE" : "", !keepDrawingSuppressed);
-        this.updateAspectRatio(editor);
+        this.applyScrollMode(editor, scrollMode);
         if (this.mainView?.classList.contains("split") && this.landscape && !keepDrawingSuppressed)
           this.updateEditor(undefined, keepDrawingSuppressed);
       }
+    }
+  }
+
+  /**
+   * Toggle the "fit-width vertical scroll" view on a single editor. In scroll
+   * mode the parent's aspect-ratio lock is removed and the `.editorContainer`
+   * gets a `scrollMode` class (CSS enables `overflow:auto` and lets the editor
+   * exceed the container height). In normal mode we restore the aspect-ratio
+   * lock so the canvas continues to fit the viewport.
+   */
+  private applyScrollMode(editor: ChordProEditor, scrollMode: boolean) {
+    const container = editor.parentDiv.parentElement;
+    if (container) container.classList.toggle("scrollMode", scrollMode);
+    if (scrollMode) {
+      editor.parentDiv.style.aspectRatio = "";
+    } else {
+      this.updateAspectRatio(editor);
     }
   }
 
@@ -2587,6 +2806,193 @@ export class App extends AppBase {
     else if (this.highLightClickDownTime && this.highLightClickDownTime + 2000 <= now && now < this.highLightClickDownTime + 10000)
       this.queryHighlightPermission();
     else this.highLightClickDownTime = null;
+  }
+
+  /**
+   * Start a long-press timer on the highlight toggle. After ~500 ms the
+   * opacity slider popup opens and the upcoming `click` on the surrounding
+   * label is suppressed (see the capture-phase click listener) so the
+   * checkbox state does not change.
+   */
+  private startHighlightLongPress(event: Event, anchor: HTMLElement) {
+    // If a popup is already open, ignore (the second press should close it
+    // via the outside-click handler).
+    if (this.highlightOpacityPopup) return;
+    this.cancelHighlightLongPress();
+    this.highlightLongPressFired = false;
+    this.highlightLongPressTimer = window.setTimeout(() => {
+      this.highlightLongPressTimer = null;
+      this.highlightLongPressFired = true;
+      this.openHighlightOpacityPopup(anchor);
+    }, 500);
+    // Use the event reference to avoid unused-arg lint complaint while
+    // keeping the signature future-proof for e.g. position-from-event.
+    void event;
+  }
+
+  private cancelHighlightLongPress() {
+    if (this.highlightLongPressTimer !== null) {
+      clearTimeout(this.highlightLongPressTimer);
+      this.highlightLongPressTimer = null;
+    }
+  }
+
+  /**
+   * Push `this.highlightOpacity` into every editor and trigger a redraw so
+   * the change is visible immediately on all pages.
+   */
+  private applyHighlightOpacityToEditors(redraw = true) {
+    for (const page of [this.pages.current, this.pages.prev, this.pages.next]) {
+      const editor = page?.editor;
+      if (!editor) continue;
+      editor.highlightOpacity = this.highlightOpacity;
+      if (redraw) editor.update();
+    }
+  }
+
+  /**
+   * Build & show a small floating popup containing a vertical opacity slider
+   * and a live preview swatch. Anchored next to the highlight toggle button.
+   */
+  private openHighlightOpacityPopup(anchor: HTMLElement) {
+    // Close any leftover popup just in case.
+    this.closeHighlightOpacityPopup();
+
+    const dark = this.isCurrentlyDark;
+    const popup = document.createElement("div");
+    popup.className = "highlightOpacityPopup";
+    if (dark) popup.classList.add("dark");
+    popup.style.position = "fixed";
+    popup.style.zIndex = "10000";
+    popup.style.display = "flex";
+    popup.style.flexDirection = "column";
+    popup.style.alignItems = "center";
+    popup.style.gap = "8px";
+    popup.style.padding = "10px";
+    popup.style.borderRadius = "8px";
+    popup.style.background = dark ? "#222" : "#fff";
+    popup.style.color = dark ? "#eee" : "#222";
+    popup.style.border = "1px solid " + (dark ? "#555" : "#bbb");
+    popup.style.boxShadow = "0 4px 14px rgba(0,0,0,0.35)";
+    popup.style.userSelect = "none";
+
+    // Preview swatch — shows the highlight color composited at the chosen
+    // alpha over the editor's background (so the user sees the actual on-
+    // screen look). We pull the colors from the current editor's displayProps.
+    const editor = this.pages.current?.editor;
+    const props = editor?.displayProps;
+    const highlightColor = props?.highlightColor || "#e5e781";
+    const backgroundColor = props?.backgroundColor || (dark ? "#000" : "#fff");
+
+    const preview = document.createElement("div");
+    preview.style.width = "44px";
+    preview.style.height = "26px";
+    preview.style.borderRadius = "4px";
+    preview.style.border = "1px solid " + (dark ? "#777" : "#999");
+    preview.style.position = "relative";
+    preview.style.background = backgroundColor;
+    // The actual color fill is layered on top via a child div so its alpha
+    // is animated cheaply.
+    const previewFill = document.createElement("div");
+    previewFill.style.position = "absolute";
+    previewFill.style.inset = "0";
+    previewFill.style.borderRadius = "inherit";
+    previewFill.style.background = highlightColor;
+    previewFill.style.opacity = String(this.highlightOpacity);
+    preview.appendChild(previewFill);
+
+    // Vertical range slider. We use `writing-mode: vertical-lr` + direction
+    // `rtl` so 1.0 (max opacity) is at the top and 0.0 (transparent) at the
+    // bottom. This works in Chromium/WebKit/Firefox.
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "100";
+    slider.step = "1";
+    slider.value = String(Math.round(this.highlightOpacity * 100));
+    slider.style.writingMode = "vertical-lr" as string;
+    // Some older browsers need the legacy property; ignore typing errors.
+    (slider.style as unknown as Record<string, string>)["WebkitAppearance"] = "slider-vertical";
+    slider.style.direction = "rtl";
+    slider.style.height = "140px";
+    slider.style.width = "28px";
+    slider.style.padding = "0";
+    slider.style.margin = "0";
+
+    const valueLabel = document.createElement("div");
+    valueLabel.style.fontSize = "11px";
+    valueLabel.style.fontFamily = "sans-serif";
+    valueLabel.textContent = Math.round(this.highlightOpacity * 100) + "%";
+
+    const applyValue = (v: number, persist: boolean) => {
+      const clamped = Math.max(0, Math.min(1, v));
+      this.highlightOpacity = clamped;
+      previewFill.style.opacity = String(clamped);
+      valueLabel.textContent = Math.round(clamped * 100) + "%";
+      this.applyHighlightOpacityToEditors(true);
+      if (persist) this.storeDisplaySettings();
+    };
+
+    slider.addEventListener("input", () => applyValue(parseInt(slider.value, 10) / 100, false));
+    slider.addEventListener("change", () => applyValue(parseInt(slider.value, 10) / 100, true));
+
+    popup.appendChild(preview);
+    popup.appendChild(slider);
+    popup.appendChild(valueLabel);
+
+    document.body.appendChild(popup);
+
+    // Position above the anchor by default; flip below if there isn't room.
+    const anchorRect = anchor.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const margin = 6;
+    let top = anchorRect.top - popupRect.height - margin;
+    if (top < margin) top = Math.min(window.innerHeight - popupRect.height - margin, anchorRect.bottom + margin);
+    let left = anchorRect.left + anchorRect.width / 2 - popupRect.width / 2;
+    left = Math.max(margin, Math.min(window.innerWidth - popupRect.width - margin, left));
+    popup.style.top = top + "px";
+    popup.style.left = left + "px";
+
+    // Dismiss on any click/touch outside the popup. Save the final value
+    // when closing (the latest already-applied value).
+    const onOutside = (ev: Event) => {
+      const target = ev.target as Node | null;
+      if (target && popup.contains(target)) return;
+      this.closeHighlightOpacityPopup();
+    };
+    // Use capture so we see the event before it potentially triggers other
+    // handlers (e.g. another button under the popup).
+    const closeOnEscape = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") this.closeHighlightOpacityPopup();
+    };
+    // Delay attaching the outside-click listener by one frame so the touchend
+    // / mouseup that triggered the long-press doesn't immediately close it.
+    setTimeout(() => {
+      document.addEventListener("mousedown", onOutside, true);
+      document.addEventListener("touchstart", onOutside, true);
+      document.addEventListener("keydown", closeOnEscape, true);
+    }, 0);
+
+    this.highlightOpacityPopup = popup;
+    // Stash listener refs so close can remove them.
+    (popup as unknown as { _cleanup: () => void })._cleanup = () => {
+      document.removeEventListener("mousedown", onOutside, true);
+      document.removeEventListener("touchstart", onOutside, true);
+      document.removeEventListener("keydown", closeOnEscape, true);
+    };
+
+    // Focus the slider so keyboard arrows work immediately.
+    slider.focus();
+  }
+
+  private closeHighlightOpacityPopup() {
+    const popup = this.highlightOpacityPopup;
+    if (!popup) return;
+    this.highlightOpacityPopup = null;
+    const cleanup = (popup as unknown as { _cleanup?: () => void })._cleanup;
+    if (cleanup) cleanup();
+    popup.remove();
+    this.storeDisplaySettings();
   }
 
   private updateHighlight(draw = true) {
@@ -3757,9 +4163,11 @@ export class App extends AppBase {
       darkMode: this.darkModeEnabled,
       autoTone: this.chkAutoTone?.checked,
       highlight: this.chkHighlight?.checked,
+      highlightOpacity: this.highlightOpacity,
       leaderMode: this.chkAdmin?.checked,
       fontSize: document.documentElement.style.fontSize,
       useInstructions: this.chkUseInstructions?.checked,
+      zoomPreset: { ...this.zoomPreset },
     };
     return includeCapoAndTranspose ? { ...s, capo: this.selCapo?.selectedIndex, transpose: this.currentDisplay.transpose } : s;
   }
@@ -3804,8 +4212,25 @@ export class App extends AppBase {
       this.chkMaxText.checked = settings.maxText;
       changed = true;
     }
+    if (settings.zoomPreset) {
+      const merged: ZoomPreset = { ...defaultZoomPreset, ...this.zoomPreset, ...settings.zoomPreset };
+      if (JSON.stringify(merged) !== JSON.stringify(this.zoomPreset)) {
+        this.zoomPreset = merged;
+        this.syncZoomPresetToControls();
+        changed = true;
+      }
+    }
     if (settings.highlight !== undefined && this.chkHighlight && this.chkHighlight.checked !== settings.highlight) {
       this.chkHighlight.checked = settings.highlight;
+      changed = true;
+    }
+    if (
+      settings.highlightOpacity !== undefined &&
+      isFinite(settings.highlightOpacity) &&
+      Math.abs(settings.highlightOpacity - this.highlightOpacity) > 0.001
+    ) {
+      this.highlightOpacity = Math.max(0, Math.min(1, settings.highlightOpacity));
+      this.applyHighlightOpacityToEditors();
       changed = true;
     }
     if (settings.useInstructions !== undefined && this.chkUseInstructions && this.chkUseInstructions.checked !== settings.useInstructions) {
