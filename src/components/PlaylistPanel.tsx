@@ -659,6 +659,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     );
   }
 
+  private isDialogCancellation(error?: string): boolean {
+    const message = (error || "").trim().toLowerCase();
+    if (!message) return false;
+    return message === "cancelled" || message === "canceled" || message === "cancel" || message.includes("cancelled") || message.includes("canceled");
+  }
+
   movePlaylistItem(dragIndex: number, hoverIndex: number) {
     const { currentPlaylist, selectedItems } = this.state;
     this.recordPlaylistSnapshotForUndo();
@@ -1504,6 +1510,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const result = await window.electronAPI.savePlaylistFile(playlistStr);
       if (result.success) {
         console.info("Playlist", "Playlist saved to:", result.filePath);
+} else if (this.isDialogCancellation(result.error)) {
+        return;
       } else {
         console.error("Playlist", "Failed to save playlist", result.error);
         if (this.props.onError) {
@@ -1529,6 +1537,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const result = await window.electronAPI.loadPlaylistFile();
       if (result.success && result.content) {
         this.loadPlaylistData(result.content);
+} else if (this.isDialogCancellation(result.error)) {
+        return;
       } else if (result.error) {
         console.error("Playlist", "Failed to load playlist", result.error);
         if (this.props.onError) {
