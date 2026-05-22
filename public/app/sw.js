@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = "praiseprojector-" + CACHE_VERSION;
 
 const assets = [
@@ -29,6 +29,7 @@ const assets = [
   "/app/images/enter.svg",
   "/app/images/erase.svg",
   "/app/images/exit.svg",
+  "/app/images/fitpage.svg",
   "/app/images/found_head.svg",
   "/app/images/found_head_words.svg",
   "/app/images/found_lyrics.svg",
@@ -78,6 +79,7 @@ const assets = [
   "/app/images/right.svg",
   "/app/images/save.svg",
   "/app/images/scan.svg",
+  "/app/images/scrollpage.svg",
   "/app/images/share.svg",
   "/app/images/startup.svg",
   "/app/images/stop.svg",

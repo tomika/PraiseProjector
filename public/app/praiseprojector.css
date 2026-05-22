@@ -1469,6 +1469,41 @@ input:checked + label > img {
     min-width: 2em;
 }
 
+/* Scroll mode row: two icon buttons (fit-page / scroll-page) sharing the same
+   pill style as the tag-mode buttons. Active button is highlighted like the
+   tag buttons. */
+#zoomSettingsDialog .zoom-scroll-row {
+    gap: 0.5em;
+    align-self: stretch;
+}
+#zoomSettingsDialog .zoom-scroll-btn {
+    flex: 1 1 auto;
+    min-height: 2em;
+    padding: 0.25em 0.4em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    color: inherit;
+    border: 0.1em solid currentColor;
+    border-radius: 0.25em;
+    cursor: pointer;
+}
+#zoomSettingsDialog .zoom-scroll-btn.active {
+    background-color: #d33;
+    border-color: #d33;
+}
+#zoomSettingsDialog .zoom-scroll-btn.active .btnImg {
+    filter: invert(1);
+}
+.dark #zoomSettingsDialog .zoom-scroll-btn.active {
+    background-color: #ff7a7a;
+    border-color: #ff7a7a;
+}
+.dark #zoomSettingsDialog .zoom-scroll-btn.active .btnImg {
+    filter: none;
+}
+
 #zoomSettingsDialog .zoom-settings-row select {
     font-size: 1.1em !important;
     flex: 1;

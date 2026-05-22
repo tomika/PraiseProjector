@@ -328,11 +328,13 @@
                 <span class="zoom-icon zoom-icon-wrap">&#x21B5;</span>
             </label>
         </div-->
-        <div class="zoom-settings-row">
-            <input type="checkbox" id="chkZoomScroll"/>
-            <label for="chkZoomScroll" title="scroll">
-                <img class="btnImg" src="images/longlist.svg" alt="Scroll" />
-            </label>
+        <div class="zoom-settings-row zoom-scroll-row">
+            <button type="button" class="zoom-scroll-btn" id="btnZoomFitPage" data-scrollmode="FIT" title="fitPage" aria-label="Fit page">
+                <img class="btnImg" src="images/fitpage.svg" alt="Fit page" />
+            </button>
+            <button type="button" class="zoom-scroll-btn" id="btnZoomScrollPage" data-scrollmode="SCROLL" title="scrollPage" aria-label="Scroll">
+                <img class="btnImg" src="images/scrollpage.svg" alt="Scroll" />
+            </button>
         </div>
         <div class="zoom-settings-actions">
             <button type="button" id="zoomSettingsOk" class="zoom-ok-btn">OK</button>

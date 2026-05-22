@@ -460,7 +460,7 @@ export class App extends AppBase {
   private chkZoomHideMeta: HTMLInputElement | null = null;
   private zoomTagButtons: HTMLButtonElement[] = [];
   private chkZoomAutoSplit: HTMLInputElement | null = null;
-  private chkZoomScroll: HTMLInputElement | null = null;
+  private zoomScrollButtons: HTMLButtonElement[] = [];
   private zoomSettingsCloseBtn: HTMLButtonElement | null = null;
   private zoomSettingsOkBtn: HTMLButtonElement | null = null;
   private zoomLongPressTimer: number | null = null;
@@ -962,7 +962,7 @@ export class App extends AppBase {
     this.chkZoomHideMeta = document.getElementById("chkZoomHideMeta") as HTMLInputElement | null;
     this.zoomTagButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("#zoomSettingsDialog .zoom-tag-btn"));
     this.chkZoomAutoSplit = document.getElementById("chkZoomAutoSplit") as HTMLInputElement | null;
-    this.chkZoomScroll = document.getElementById("chkZoomScroll") as HTMLInputElement | null;
+    this.zoomScrollButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("#zoomSettingsDialog .zoom-scroll-btn"));
     this.zoomSettingsCloseBtn = document.getElementById("zoomSettingsClose") as HTMLButtonElement | null;
     this.zoomSettingsOkBtn = document.getElementById("zoomSettingsOk") as HTMLButtonElement | null;
     const zoomChangeHandler = () => this.zoomPresetChanged();
@@ -978,7 +978,15 @@ export class App extends AppBase {
       };
     }
     if (this.chkZoomAutoSplit) this.chkZoomAutoSplit.onchange = zoomChangeHandler;
-    if (this.chkZoomScroll) this.chkZoomScroll.onchange = zoomChangeHandler;
+    for (const btn of this.zoomScrollButtons) {
+      btn.onclick = () => {
+        const scrollable = btn.dataset.scrollmode === "SCROLL";
+        this.zoomPreset = { ...this.zoomPreset, scrollable };
+        this.syncZoomPresetToControls();
+        this.displayChanged();
+        this.storeDisplaySettings();
+      };
+    }
     if (this.zoomSettingsCloseBtn && this.zoomSettingsDialog) {
       this.zoomSettingsCloseBtn.onclick = () => endModal(this.zoomSettingsDialog!, "");
     }
@@ -2672,7 +2680,11 @@ export class App extends AppBase {
       btn.classList.toggle("active", btn.dataset.tagmode === activeTagMode);
     }
     if (this.chkZoomAutoSplit) this.chkZoomAutoSplit.checked = this.zoomPreset.autoSplit ?? defaultZoomPreset.autoSplit;
-    if (this.chkZoomScroll) this.chkZoomScroll.checked = this.zoomPreset.scrollable ?? defaultZoomPreset.scrollable;
+    const scrollableActive = this.zoomPreset.scrollable ?? defaultZoomPreset.scrollable;
+    for (const btn of this.zoomScrollButtons) {
+      const isScroll = btn.dataset.scrollmode === "SCROLL";
+      btn.classList.toggle("active", isScroll === scrollableActive);
+    }
   }
 
   private openZoomSettingsDialog() {
@@ -2687,7 +2699,7 @@ export class App extends AppBase {
       hideMeta: !!this.chkZoomHideMeta?.checked,
       tagMode: this.zoomPreset.tagMode ?? defaultZoomPreset.tagMode,
       autoSplit: !!this.chkZoomAutoSplit?.checked,
-      scrollable: !!this.chkZoomScroll?.checked,
+      scrollable: this.zoomPreset.scrollable ?? defaultZoomPreset.scrollable,
     };
     this.displayChanged();
   }
@@ -2733,7 +2745,7 @@ export class App extends AppBase {
           this.chordBoxType === "NO_CHORDS" ? "" : this.chordBoxType,
           keepDrawingSuppressed
         );
-        editor.enableInstructionRendering(this.chkUseInstructions?.checked ? "FIRST_LINE" : "", !keepDrawingSuppressed);
+        editor.enableInstructionRendering(this.chkUseInstructions?.checked ? (scrollMode ? "FULL" : "FIRST_LINE") : "", !keepDrawingSuppressed);
         this.applyScrollMode(editor, scrollMode);
         if (this.mainView?.classList.contains("split") && this.landscape && !keepDrawingSuppressed)
           this.updateEditor(undefined, keepDrawingSuppressed);

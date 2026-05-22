@@ -388,7 +388,7 @@ export { Instructions } from "./chordpro_instructions";
 export type { InstructionItem } from "./chordpro_instructions";
 import { clampTranspose, InstructionItem, Instructions } from "./chordpro_instructions";
 
-export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE";
+export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE" | "FULL";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
 
 export interface ChordProEditorEventHandlers {
@@ -7120,9 +7120,18 @@ export class ChordProEditor extends ChordDrawer {
           // preview (or label comment) like any other repeat.
           const repeatKey = item.value + "@" + (item.transpose ?? 0);
           const groupFirst = groupFirstIndex.get(repeatKey);
-          if (groupFirst != null) groups[i] = groupFirst;
-          else groupFirstIndex.set(repeatKey, i);
-          if (!firstLines.has(repeatKey)) {
+          // In FULL mode each repeat is rendered as its own full section, so
+          // we keep each occurrence in its own highlight group; otherwise
+          // repeats share the first occurrence's group so the highlight
+          // includes both the original block and its ellipsis preview / label.
+          if (groupFirst != null && this.instructionsRenderMode !== "FULL") groups[i] = groupFirst;
+          else if (groupFirst == null) groupFirstIndex.set(repeatKey, i);
+          if (!firstLines.has(repeatKey) || this.instructionsRenderMode === "FULL") {
+            // Emit the full section block. In FULL mode this happens on every
+            // occurrence (no abbreviation/ellipsis), since the host view is
+            // scrolling and there is room to render repeats in full. In other
+            // modes only the first occurrence emits the full block; repeats
+            // collapse to an ellipsis preview or a label comment below.
             let firstLine: ChordProLine | null = null;
             for (const line_obj of this.chordPro.lines) {
               if (Instructions.matchesSection(line_obj, item)) {
@@ -7137,7 +7146,7 @@ export class ChordProEditor extends ChordDrawer {
                 lines.push(line);
               }
             }
-            firstLines.set(repeatKey, firstLine);
+            if (!firstLines.has(repeatKey)) firstLines.set(repeatKey, firstLine);
           } else {
             if (this.instructionsRenderMode === "FIRST_LINE") {
               const first = firstLines.get(repeatKey);
