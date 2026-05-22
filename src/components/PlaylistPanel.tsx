@@ -42,7 +42,14 @@ type MobilePlaylistTouchSession = {
   onDragOverDifferentItem: () => void;
 };
 
+type PersistedInstructionsEditorState = {
+  songId: string;
+  index: number;
+  instructions: string;
+};
+
 let activeMobilePlaylistTouchSession: MobilePlaylistTouchSession | null = null;
+let persistedInstructionsEditorState: PersistedInstructionsEditorState | null = null;
 
 function registerMobilePlaylistTouchSession(sourceIndex: number, onDragOverDifferentItem: () => void): void {
   activeMobilePlaylistTouchSession = { sourceIndex, onDragOverDifferentItem };
@@ -225,9 +232,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
     // Listen for settings changes to trigger color update
     window.addEventListener("pp-settings-changed", this.handleSettingsChange);
+
+    this.tryRestoreInstructionsEditorAfterRemount();
   }
 
-  componentDidUpdate(prevProps: PlaylistPanelProps) {
+  componentDidUpdate(prevProps: PlaylistPanelProps, prevState: PlaylistPanelState) {
     // Trigger color update when songs change (e.g., database updated)
     if (prevProps.songs !== this.props.songs) {
       this.updatePlaylistItemStates();
@@ -249,6 +258,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
           selectedItems: new Set<number>(),
           focusedIndex: -1,
           selectionAnchor: -1,
+          showInstructionsEditor: false,
+          editingInstructions: null,
         },
         () => {
           this.updatePlaylistItemStates();
@@ -260,9 +271,27 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     if (!this.props.remotePlaylist && prevProps.remotePlaylist) {
       this.loadPlaylist();
     }
+
+    // Retry instructions editor restore when playlist or song list becomes ready after remount.
+    if (
+      persistedInstructionsEditorState &&
+      !this.state.showInstructionsEditor &&
+      (prevState.currentPlaylist !== this.state.currentPlaylist || prevProps.songs !== this.props.songs)
+    ) {
+      this.tryRestoreInstructionsEditorAfterRemount();
+    }
   }
 
   componentWillUnmount() {
+    const { showInstructionsEditor, editingInstructions } = this.state;
+    if (showInstructionsEditor && editingInstructions) {
+      persistedInstructionsEditorState = {
+        songId: editingInstructions.item.songId,
+        index: editingInstructions.index,
+        instructions: editingInstructions.item.instructions,
+      };
+    }
+
     // Clean up keyboard frame timer
     if (this.keyboardNavRafId !== null) {
       window.cancelAnimationFrame(this.keyboardNavRafId);
@@ -415,6 +444,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
           this.applySelectedIndex(pendingIndex, true);
         }
+
+        this.tryRestoreInstructionsEditorAfterRemount();
       } catch (err) {
         console.error("Playlist", "error in setState callback", err);
       } finally {
@@ -1450,6 +1481,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       }
     }
 
+    persistedInstructionsEditorState = null;
     this.setState({
       showInstructionsEditor: false,
       editingInstructions: null,
@@ -1457,9 +1489,45 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   handleInstructionsClose() {
+    persistedInstructionsEditorState = null;
     this.setState({
       showInstructionsEditor: false,
       editingInstructions: null,
+    });
+  }
+
+  private tryRestoreInstructionsEditorAfterRemount(): void {
+    if (!persistedInstructionsEditorState) return;
+    if (this.props.remotePlaylist) return;
+    if (this.state.showInstructionsEditor) return;
+
+    const { currentPlaylist } = this.state;
+    if (!currentPlaylist.items.length) return;
+
+    const persisted = persistedInstructionsEditorState;
+
+    let index = -1;
+    if (
+      persisted.index >= 0 &&
+      persisted.index < currentPlaylist.items.length &&
+      currentPlaylist.items[persisted.index].songId === persisted.songId
+    ) {
+      index = persisted.index;
+    } else {
+      index = currentPlaylist.items.findIndex((item) => item.songId === persisted.songId);
+    }
+    if (index < 0 || index >= currentPlaylist.items.length) return;
+
+    const item = currentPlaylist.items[index].clone();
+    item.instructions = persisted.instructions;
+
+    // Wait until the referenced song is available before consuming persisted state.
+    if (!this.props.songs.some((s) => s.Id === item.songId)) return;
+
+    persistedInstructionsEditorState = null;
+    this.setState({
+      editingInstructions: { item, index },
+      showInstructionsEditor: true,
     });
   }
 

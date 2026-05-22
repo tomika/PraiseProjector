@@ -848,6 +848,16 @@
   "SongCheckNewSong": "Új dal (nincs korábbi verzió)",
   "SongCheckOwnUpload": "(saját feltöltés)",
 
+  "InstructionsEditorCollapseLeftPanel": "Bal panel elrejtése",
+  "InstructionsEditorShowLeftPanel": "Bal panel megjelenítése",
+  "InstructionsEditorCollapseMiddlePanel": "Középső panel elrejtése",
+  "InstructionsEditorShowMiddlePanel": "Középső panel megjelenítése",
+  "InstructionsEditorCollapseRightPanel": "Jobb panel elrejtése",
+  "InstructionsEditorShowRightPanel": "Jobb panel megjelenítése",
+  "InstructionsEditorLeftPanelShort": "Bal",
+  "InstructionsEditorMiddlePanelShort": "Közép",
+  "InstructionsEditorRightPanelShort": "Jobb",
+
   "EulaTitle": "Végfelhasználói licencszerződés (EULA)",
   "EulaAccept": "Elfogadom",
   "EulaDecline": "Elutasítom",

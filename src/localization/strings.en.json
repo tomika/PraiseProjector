@@ -847,6 +847,16 @@
   "SongCheckNewSong": "New Song (no previous version)",
   "SongCheckOwnUpload": "(your upload)",
 
+  "InstructionsEditorCollapseLeftPanel": "Hide left panel",
+  "InstructionsEditorShowLeftPanel": "Show left panel",
+  "InstructionsEditorCollapseMiddlePanel": "Hide middle panel",
+  "InstructionsEditorShowMiddlePanel": "Show middle panel",
+  "InstructionsEditorCollapseRightPanel": "Hide right panel",
+  "InstructionsEditorShowRightPanel": "Show right panel",
+  "InstructionsEditorLeftPanelShort": "Left",
+  "InstructionsEditorMiddlePanelShort": "Middle",
+  "InstructionsEditorRightPanelShort": "Right",
+
   "EulaTitle": "End-User License Agreement",
   "EulaAccept": "I Accept",
   "EulaDecline": "I Decline",

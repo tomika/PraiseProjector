@@ -8,6 +8,10 @@ import { ensureChordProAssets } from "../utils/loadChordProAssets";
 import "./InstructionsEditorForm.css";
 import { NoteSystemCode } from "../../chordpro/note_system";
 
+const NARROW_SCREEN_COLLAPSE_RIGHT_PX = 900;
+const EYE_OPEN = "👁";
+const EYE_CLOSED = "🙈";
+
 interface InstructionsEditorFormProps {
   song: Song;
   initialInstructions: string;
@@ -24,6 +28,10 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     tRef.current = t;
   }, [t]);
   const [storeInProfile, setStoreInProfile] = useState(isInProfile ? true : true);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [middleCollapsed, setMiddleCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(typeof window !== "undefined" ? window.innerWidth < NARROW_SCREEN_COLLAPSE_RIGHT_PX : false);
+  const wasNarrowViewportRef = useRef(typeof window !== "undefined" ? window.innerWidth < NARROW_SCREEN_COLLAPSE_RIGHT_PX : false);
 
   // Refs for the three panes
   const songDivRef = useRef<HTMLDivElement>(null);
@@ -115,6 +123,23 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleResize = () => {
+      const isNarrow = window.innerWidth < NARROW_SCREEN_COLLAPSE_RIGHT_PX;
+      if (isNarrow && !wasNarrowViewportRef.current) {
+        setRightCollapsed(true);
+      }
+      wasNarrowViewportRef.current = isNarrow;
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
   const handleSave = () => {
     const instructions = editorRef.current?.getInstructions("SETTING") ?? "";
     onSave(instructions, storeInProfile);
@@ -148,15 +173,54 @@ const InstructionsEditorForm: React.FC<InstructionsEditorFormProps> = ({ song, i
     }
   };
 
+  const leftPanelToggleA11yLabel = leftCollapsed ? t("InstructionsEditorShowLeftPanel") : t("InstructionsEditorCollapseLeftPanel");
+  const middlePanelToggleA11yLabel = middleCollapsed ? t("InstructionsEditorShowMiddlePanel") : t("InstructionsEditorCollapseMiddlePanel");
+  const rightPanelToggleA11yLabel = rightCollapsed ? t("InstructionsEditorShowRightPanel") : t("InstructionsEditorCollapseRightPanel");
+
+  const leftPanelToggleLabel = `${leftCollapsed ? EYE_OPEN : EYE_CLOSED} ${t("InstructionsEditorLeftPanelShort")}`;
+  const middlePanelToggleLabel = `${middleCollapsed ? EYE_OPEN : EYE_CLOSED} ${t("InstructionsEditorMiddlePanelShort")}`;
+  const rightPanelToggleLabel = `${rightCollapsed ? EYE_OPEN : EYE_CLOSED} ${t("InstructionsEditorRightPanelShort")}`;
+
   return (
     <div className="instructions-editor-backdrop" onClick={onClose}>
       <div className="instructions-editor-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="instructions-editor-header">
           <h5 className="instructions-editor-title">{t("InstructionsEditorTitle")}</h5>
-          <button type="button" className="btn-close" onClick={onClose} aria-label={t("Close")}></button>
+          <div className="instructions-editor-header-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary instructions-collapse-btn"
+              onClick={() => setLeftCollapsed((c) => !c)}
+              title={leftPanelToggleA11yLabel}
+              aria-label={leftPanelToggleA11yLabel}
+            >
+              {leftPanelToggleLabel}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary instructions-collapse-btn"
+              onClick={() => setMiddleCollapsed((c) => !c)}
+              title={middlePanelToggleA11yLabel}
+              aria-label={middlePanelToggleA11yLabel}
+            >
+              {middlePanelToggleLabel}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary instructions-collapse-btn"
+              onClick={() => setRightCollapsed((c) => !c)}
+              title={rightPanelToggleA11yLabel}
+              aria-label={rightPanelToggleA11yLabel}
+            >
+              {rightPanelToggleLabel}
+            </button>
+            <button type="button" className="btn-close" onClick={onClose} aria-label={t("Close")}></button>
+          </div>
         </div>
         <div className="instructions-editor-body">
-          <div className="instructions-editor-panes">
+          <div
+            className={`instructions-editor-panes${leftCollapsed ? " left-panel-collapsed" : ""}${middleCollapsed ? " middle-panel-collapsed" : ""}${rightCollapsed ? " right-panel-collapsed" : ""}`}
+          >
             <div className="song-editor" ref={songDivRef} id="ies-song"></div>
             <div className="instructions-editor-separator" ref={leftSepRef} id="ies-left">
               &nbsp;
