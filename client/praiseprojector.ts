@@ -380,6 +380,7 @@ export class App extends AppBase {
 
   private hasNeighbours = false;
   private swipeState: { dragX: number; dragY: number; direction: number; totalScroll: number; lastScroll?: number; startTime: number } | null = null;
+  private pinchState: { startDistance: number; lastRatio: number } | null = null;
   private pages!: { prev?: EditorPage; current: EditorPage; next?: EditorPage };
   private chkAdmin: HTMLInputElement | null = null;
   private selShift: HTMLSelectElement | null = null;
@@ -1472,6 +1473,11 @@ export class App extends AppBase {
       this.swipeHandler.onmousemove = (e) => this.swipeHandlerEvent("move", e);
       this.swipeHandler.onmouseup = (e) => this.swipeHandlerEvent("up", e);
       this.swipeHandler.onmouseleave = (e) => this.swipeHandlerEvent("up", e);
+      // Install the pinch-zoom touch listener BEFORE routeTouchEventsToMouse
+      // so that during a two-finger gesture we can stopImmediatePropagation()
+      // on the touch events and prevent them from being translated into
+      // mouse-driven page-turn / scroll gestures.
+      this.installPinchScrollModeHandler(this.swipeHandler);
       routeTouchEventsToMouse(this.swipeHandler);
     }
 
@@ -1863,6 +1869,67 @@ export class App extends AppBase {
           break;
       }
     }
+  }
+
+  /**
+   * Two-finger pinch handler bound to the swipe area. Pinch-out (fingers
+   * spreading apart) turns the zoom (#chkMaxText) ON, pinch-in turns it OFF.
+   * The handler is registered with `capture: true` BEFORE the touch-to-mouse
+   * router so that, while a pinch is in progress, the touch events are
+   * stopped from bubbling into the page-turn / scroll pipeline.
+   */
+  private installPinchScrollModeHandler(element: HTMLElement) {
+    const distance = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    };
+    const handler = (e: TouchEvent) => {
+      if (e.type === "touchstart") {
+        if (e.touches.length >= 2 && !this.pinchState) {
+          const d = distance(e.touches);
+          if (d > 0) {
+            this.pinchState = { startDistance: d, lastRatio: 1 };
+            // Abort any single-finger swipe that may have started before
+            // the second finger landed.
+            this.swipeState = null;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }
+      } else if (e.type === "touchmove" && this.pinchState) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (e.touches.length >= 2) {
+          const d = distance(e.touches);
+          if (this.pinchState.startDistance > 0) this.pinchState.lastRatio = d / this.pinchState.startDistance;
+        }
+      } else if ((e.type === "touchend" || e.type === "touchcancel") && this.pinchState) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (e.touches.length === 0) {
+          const ratio = this.pinchState.lastRatio;
+          this.pinchState = null;
+          this.swipeState = null;
+          // Threshold avoids flicker on accidental micro-pinches.
+          if (ratio >= 1.2) this.setZoomFromPinch(true);
+          else if (ratio <= 1 / 1.2) this.setZoomFromPinch(false);
+        }
+      }
+    };
+    const opts: AddEventListenerOptions = { capture: true, passive: false };
+    element.addEventListener("touchstart", handler, opts);
+    element.addEventListener("touchmove", handler, opts);
+    element.addEventListener("touchend", handler, opts);
+    element.addEventListener("touchcancel", handler, opts);
+  }
+
+  private setZoomFromPinch(zoomOn: boolean) {
+    if (!this.chkMaxText) return;
+    if (this.chkMaxText.checked === zoomOn) return;
+    this.chkMaxText.checked = zoomOn;
+    this.displayChanged();
+    this.storeDisplaySettings();
   }
 
   private swipeHandlerEvent(type: "down" | "up" | "move", e: MouseEvent) {
