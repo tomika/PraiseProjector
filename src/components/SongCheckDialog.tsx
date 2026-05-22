@@ -151,6 +151,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   };
 
   const selectedIndex = selectedEntry ? pendingSongs.findIndex((e) => e.songId === selectedEntry.songId && e.version === selectedEntry.version) : -1;
+  const selectedEntryHasPreviousVersion = !!selectedEntry?.current;
 
   const handleNavigatePrev = selectedIndex > 0 ? () => setSelectedEntry(pendingSongs[selectedIndex - 1]) : undefined;
   const handleNavigateNext =
@@ -228,11 +229,12 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
 
       {selectedEntry && (
         <CompareDialog
-          originalSong={selectedEntry.current ? new Song(selectedEntry.current, selectedEntry.songdata.system) : null}
+          originalSong={selectedEntryHasPreviousVersion ? new Song(selectedEntry.current!, selectedEntry.songdata.system) : null}
           songsToCompare={[new Song(selectedEntry.songdata.text, selectedEntry.songdata.system)]}
           mode="SongCheck"
           onClose={handleCompareClose}
-          leftLabel={selectedEntry.current ? t("SongCheckCurrentVersion") : t("SongCheckNewSong")}
+          leftLabel={selectedEntryHasPreviousVersion ? t("SongCheckCurrentVersion") : t("SongCheckNewSong")}
+          initialLeftCollapsed={!selectedEntryHasPreviousVersion}
           rightLabel={t("SongCheckProposedVersion")}
           onSongCheckDecision={handleSongCheckDecision}
           songCheckIsOwnUpload={isOwnUpload(selectedEntry)}

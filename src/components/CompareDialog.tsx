@@ -41,6 +41,7 @@ interface CompareDialogProps {
   rightLabel?: string;
   leftButtonLabel?: string;
   rightButtonLabel?: string;
+  initialLeftCollapsed?: boolean;
   /** SongCheck mode: callback when user approves/rejects/revokes */
   onSongCheckDecision?: (decision: SongCheckDecision) => void;
   /** SongCheck mode: if true, reject button shows "Revoke" instead */
@@ -81,6 +82,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   rightLabel,
   leftButtonLabel,
   rightButtonLabel,
+  initialLeftCollapsed = false,
   onSongCheckDecision,
   songCheckIsOwnUpload,
   songCheckState,
@@ -92,7 +94,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   const [currentIndex, setCurrentIndex] = useState(initialPairIndex);
   const [showDiff, setShowDiff] = useState(false);
   const [showCode, setShowCode] = useState(false);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(Boolean(initialLeftCollapsed));
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const autoCollapsedForDiffRef = useRef(false);
   const preDiffCollapseStateRef = useRef<{ leftCollapsed: boolean; rightCollapsed: boolean } | null>(null);
