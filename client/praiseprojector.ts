@@ -381,6 +381,7 @@ export class App extends AppBase {
   private hasNeighbours = false;
   private swipeState: { dragX: number; dragY: number; direction: number; totalScroll: number; lastScroll?: number; startTime: number } | null = null;
   private pinchState: { startDistance: number; lastRatio: number } | null = null;
+  private toolbarPullState: { startX: number; startY: number; dragging: boolean } | null = null;
   private pages!: { prev?: EditorPage; current: EditorPage; next?: EditorPage };
   private chkAdmin: HTMLInputElement | null = null;
   private selShift: HTMLSelectElement | null = null;
@@ -393,6 +394,7 @@ export class App extends AppBase {
   private codeTextArea: HTMLTextAreaElement | null = null;
   chkUseCapo: HTMLInputElement | null = null;
   private filterRow: HTMLElement | null = null;
+  private mainToolbar: HTMLElement | null = null;
   private songListTable: HTMLTableElement | null = null;
   private chkHighlight: HTMLInputElement | null = null;
   private btnNetDisplay: HTMLInputElement | null = null;
@@ -776,8 +778,15 @@ export class App extends AppBase {
       // inside the song view do not accidentally rescale the UI. No dialog is
       // shown — the gesture mutates the font size live.
       const pinchStep = Math.max(20, Math.min(window.outerWidth, window.outerHeight) / 10);
-      const mainToolbar = document.getElementById("mainToolbar");
-      if (mainToolbar) this.installPinchZoomHandler(mainToolbar, pinchStep);
+      this.mainToolbar = document.getElementById("mainToolbar");
+      if (this.mainToolbar) {
+        this.installPinchZoomHandler(this.mainToolbar, pinchStep);
+        this.mainToolbar.addEventListener("mousedown", (e) => this.mainToolbarReloadHandler("down", e));
+        this.mainToolbar.addEventListener("mousemove", (e) => this.mainToolbarReloadHandler("move", e));
+        this.mainToolbar.addEventListener("mouseup", (e) => this.mainToolbarReloadHandler("up", e));
+        this.mainToolbar.addEventListener("mouseleave", (e) => this.mainToolbarReloadHandler("up", e));
+        routeTouchEventsToMouse(this.mainToolbar, { preventDefault: false, stopPropagation: false });
+      }
       const optionsPanel = document.getElementById("options");
       if (optionsPanel) this.installPinchZoomHandler(optionsPanel, pinchStep);
     }
@@ -1871,6 +1880,56 @@ export class App extends AppBase {
     }
   }
 
+  private mainToolbarReloadHandler(type: "down" | "up" | "move", e: MouseEvent) {
+    const loadingCircle = this.loadingCircle;
+    const page = this.pages.current.div;
+    if (!loadingCircle || !page) return;
+
+    switch (type) {
+      case "down":
+        if (page.scrollTop <= 2) this.toolbarPullState = { startX: e.clientX, startY: e.clientY, dragging: false };
+        break;
+      case "move":
+        if (this.toolbarPullState) {
+          const offsetX = e.clientX - this.toolbarPullState.startX;
+          const offsetY = e.clientY - this.toolbarPullState.startY;
+          if (!this.toolbarPullState.dragging) {
+            if (offsetY <= 0 || offsetY <= Math.abs(offsetX) || offsetY < 8) break;
+            this.toolbarPullState.dragging = true;
+          }
+          this.moveLoadingCircle(offsetY, page);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        break;
+      case "up":
+        if (this.toolbarPullState) {
+          const dragging = this.toolbarPullState.dragging;
+          this.toolbarPullState = null;
+          if (dragging) {
+            const level = this.checkLoadingCircle(page);
+            if (level) {
+              if (level > 2) {
+                this.hideLoadingCircle();
+                void this.clearAppData();
+              } else if (level > 1) {
+                this.waitLoadingCircle();
+                this.updateDatabase("RELOAD")
+                  .then(() => location.reload())
+                  .catch(() => location.reload());
+              } else {
+                this.waitLoadingCircle();
+                location.reload();
+              }
+            }
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
+        break;
+    }
+  }
+
   /**
    * Two-finger pinch handler bound to the swipe area. Pinch-out (fingers
    * spreading apart) turns the zoom (#chkMaxText) ON, pinch-in turns it OFF.
@@ -1965,21 +2024,6 @@ export class App extends AppBase {
           if (this.swipeState) {
             const offsetX = x - this.swipeState.dragX;
             const direction = offsetX / Math.abs(offsetX);
-            const level = this.checkLoadingCircle(page);
-            if (level) {
-              if (level > 2) {
-                this.hideLoadingCircle();
-                void this.clearAppData();
-              } else if (level > 1) {
-                this.waitLoadingCircle();
-                this.updateDatabase("RELOAD")
-                  .then(() => location.reload())
-                  .catch(() => location.reload());
-              } else {
-                this.waitLoadingCircle();
-                location.reload();
-              }
-            }
             if (this.swipeState.direction && this.swipeState.direction * direction >= 0) {
               const left = page.offsetLeft,
                 width = page.offsetWidth,
@@ -2019,7 +2063,6 @@ export class App extends AppBase {
           if (this.swipeState) {
             const offsetX = x - this.swipeState.dragX;
             const offsetY = y - this.swipeState.dragY;
-            if (offsetX <= page.clientWidth / 10 && offsetY > Math.abs(offsetX)) this.moveLoadingCircle(offsetY, page);
             const direction = offsetX / Math.abs(offsetX);
             const left = page.offsetLeft,
               width = page.offsetWidth,
