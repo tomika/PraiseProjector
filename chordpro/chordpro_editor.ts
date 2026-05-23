@@ -572,6 +572,8 @@ export class ChordProEditor extends ChordDrawer {
   private differentialDisplay = false;
   private instructionsRenderMode: InstructionsRenderMode = "";
   private instructionEditorActive = false;
+  private instructionsInteractionUnlockAt = 0;
+  private instructionsInteractionUnlockTimer: number | null = null;
 
   private directiveStyles: ChordProDirectiveStyles;
   private customStyles: ChordProStylesSettings | null = null;
@@ -7039,6 +7041,20 @@ export class ChordProEditor extends ChordDrawer {
     if (onChange) onChange(instructions);
   }
 
+  private lockInstructionsInteractions(root: HTMLElement, delayMs = 350) {
+    if (this.instructionsInteractionUnlockTimer != null) {
+      window.clearTimeout(this.instructionsInteractionUnlockTimer);
+      this.instructionsInteractionUnlockTimer = null;
+    }
+    const unlockAt = Date.now() + delayMs;
+    this.instructionsInteractionUnlockAt = unlockAt;
+    root.style.pointerEvents = "none";
+    this.instructionsInteractionUnlockTimer = window.setTimeout(() => {
+      if (this.instructionsInteractionUnlockAt === unlockAt) root.style.pointerEvents = "";
+      this.instructionsInteractionUnlockTimer = null;
+    }, delayMs);
+  }
+
   editInstructions(instructions: string, instructionsEditor: HTMLElement, onUpdate?: () => void, songDiv?: HTMLElement, previewDiv?: HTMLElement) {
     this.instructionEditorActive = true;
     let su: (() => void) | undefined;
@@ -7159,7 +7175,9 @@ export class ChordProEditor extends ChordDrawer {
       document.addEventListener("mouseup", mouseup);
     });
 
-    return this.editInstructions(instructions, colList, displayUpdateCallback, colSong, colPreview);
+    const cleanup = this.editInstructions(instructions, colList, displayUpdateCallback, colSong, colPreview);
+    this.lockInstructionsInteractions(panes);
+    return cleanup;
   }
 
   private getInstructedLines() {
