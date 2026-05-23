@@ -29,6 +29,7 @@ import {
   ppdMessageInternalCodec,
   ppdMessageCodec,
   displayCodec,
+  sectionRepeatCountCodec,
   songHistoryResponseCodec,
   songHistoryEntryCodec,
   leaderProfileCodec,
@@ -121,6 +122,7 @@ export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type Display = t.TypeOf<typeof displayCodec>;
+export type SectionRepeatCount = t.TypeOf<typeof sectionRepeatCountCodec>;
 export type DisplayStylesQueryResponse = t.TypeOf<typeof displayStylesQueryResponseCodec>;
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -502,7 +502,7 @@ export class ChordProLine {
     for (const name of this.styles.keys(true))
       if (name.startsWith("start_of_")) {
         const tag = this.styles.get(name, true);
-        key = name + (name !== "start_of_grid" && tag ? ":" + tag : "");
+        key = name + (tag ? ":" + tag : "");
         break;
       }
     return (this.sectionInfoCache = this.doc.getSectionInfoFor(key));

@@ -64,7 +64,24 @@ export function getEmptyDisplay(): Display {
 
 /** Shallow-clone a Display, copying the playlist array reference. */
 export function cloneDisplay(display: Display): Display {
-  return { ...display, playlist: display.playlist ? [...display.playlist] : undefined };
+  return {
+    ...display,
+    playlist: display.playlist ? [...display.playlist] : undefined,
+    sectionRepeatCounts: display.sectionRepeatCounts ? display.sectionRepeatCounts.map((x) => ({ ...x })) : undefined,
+  };
+}
+
+function sameSectionRepeatCounts(display1: Display, display2: Display) {
+  const a = display1.sectionRepeatCounts ?? [];
+  const b = display2.sectionRepeatCounts ?? [];
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; ++i) {
+    if (a[i].section !== b[i].section) return false;
+    if (a[i].from !== b[i].from) return false;
+    if (a[i].to !== b[i].to) return false;
+    if (a[i].multiplier !== b[i].multiplier) return false;
+  }
+  return true;
 }
 
 /** Structural equality for Display objects (ignores playlist entry contents). */
@@ -78,6 +95,8 @@ export function compareDisplays(display1: Display, display2: Display): boolean {
     (display1.transpose ?? 0) === (display2.transpose ?? 0) &&
     (display1.capo ?? -1) === (display2.capo ?? -1) &&
     (display1.instructions ?? "") === (display2.instructions ?? "") &&
+    sameSectionRepeatCounts(display1, display2) &&
+    (display1.sectionRepeatNonce ?? 0) === (display2.sectionRepeatNonce ?? 0) &&
     (display1.playlist_id ?? "") === (display2.playlist_id ?? "") &&
     (display1.message ?? "") === (display2.message ?? "") &&
     (display1.section ?? -1) === (display2.section ?? -1)

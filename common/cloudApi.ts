@@ -548,6 +548,8 @@ export class CloudApiService {
       "&playlist_id=" +
       encodeURIComponent(display.playlist_id || "");
     if (display.section != null) command += "&section=" + encodeURIComponent(display.section);
+    if (display.sectionRepeatCounts?.length) command += "&sectionRepeatCounts=" + encodeURIComponent(JSON.stringify(display.sectionRepeatCounts));
+    if (display.sectionRepeatNonce != null) command += "&sectionRepeatNonce=" + encodeURIComponent(display.sectionRepeatNonce.toString());
     if (display.instructions != null) command += "&instructions=" + encodeURIComponent(display.instructions);
     if (display.message != null) command += "&message=" + encodeURIComponent(display.message);
     if (display.chordProStylesRev != null) command += "&chordpro_styles_rev=" + encodeURIComponent(display.chordProStylesRev);
@@ -635,6 +637,8 @@ export class CloudApiService {
     from: number;
     to: number;
     section?: number;
+    sectionRepeatCounts?: Display["sectionRepeatCounts"];
+    sectionRepeatNonce?: number;
     transpose?: number;
     leaderId?: string;
     playlist?: PlaylistEntry[];
@@ -656,6 +660,12 @@ export class CloudApiService {
     }
     if (data.section !== undefined) {
       values.section = data.section.toString();
+    }
+    if (data.sectionRepeatCounts?.length) {
+      values.sectionRepeatCounts = JSON.stringify(data.sectionRepeatCounts);
+    }
+    if (data.sectionRepeatNonce != null) {
+      values.sectionRepeatNonce = data.sectionRepeatNonce.toString();
     }
     if (data.leaderId) {
       values.leader = data.leaderId;

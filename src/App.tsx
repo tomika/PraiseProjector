@@ -695,6 +695,8 @@ const AppContent: React.FC = () => {
               from: display.from,
               to: display.to,
               section: display.section,
+              sectionRepeatNonce: display.sectionRepeatNonce,
+              sectionRepeatCounts: display.sectionRepeatCounts,
               transpose: display.transpose,
               leaderId: isGuest ? guestLeaderId : settings.selectedLeader,
               playlist: display.playlist,
@@ -977,6 +979,8 @@ const AppContent: React.FC = () => {
         transpose: data.transpose ?? currentDisplay.transpose,
         capo: data.capo ?? currentDisplay.capo,
         instructions: data.instructions ?? currentDisplay.instructions,
+        sectionRepeatNonce: data.sectionRepeatNonce ?? currentDisplay.sectionRepeatNonce,
+        sectionRepeatCounts: data.sectionRepeatCounts ?? currentDisplay.sectionRepeatCounts,
         playlist: playlist?.items ?? currentDisplay.playlist,
       });
       return;
@@ -1000,6 +1004,8 @@ const AppContent: React.FC = () => {
               from: data.from ?? 0,
               to: data.to ?? 0,
               section: -1,
+              sectionRepeatNonce: data.sectionRepeatNonce,
+              sectionRepeatCounts: data.sectionRepeatCounts,
               transpose: data.transpose ?? selection.item.transpose ?? 0,
               capo: data.capo ?? selection.item.capo,
               instructions: data.instructions ?? selection.item.instructions,
@@ -1024,6 +1030,8 @@ const AppContent: React.FC = () => {
           transpose: data.transpose ?? currentDisplay.transpose,
           capo: data.capo ?? currentDisplay.capo,
           instructions: data.instructions ?? currentDisplay.instructions,
+          sectionRepeatNonce: data.sectionRepeatNonce ?? currentDisplay.sectionRepeatNonce,
+          sectionRepeatCounts: data.sectionRepeatCounts ?? currentDisplay.sectionRepeatCounts,
           playlist: playlist?.items ?? currentDisplay.playlist,
         });
       }
@@ -1315,7 +1323,7 @@ const AppContent: React.FC = () => {
         { confirmText: t("SyncNow") }
       );
     });
-  }, [isAuthenticated, remoteChangeCount, settings?.lastSyncDate, settings?.syncDeclineTimeoutMinutes, showConfirm, t]);
+  }, [isGuest, remoteChangeCount, settings?.syncDeclineTimeoutMinutes, showConfirm, t]);
 
   // Called after leaving edit mode with changed text - prompt to save (matching C# Editor_LeaveEditMode)
   const handleAfterLeaveEditMode = useCallback(
@@ -1728,6 +1736,8 @@ const AppContent: React.FC = () => {
         capo: display.capo ?? emtyDisplay.capo,
         playlist_id: display.playlist_id ?? emtyDisplay.playlist_id,
         section: display.section ?? emtyDisplay.section,
+        sectionRepeatNonce: display.sectionRepeatNonce ?? emtyDisplay.sectionRepeatNonce,
+        sectionRepeatCounts: display.sectionRepeatCounts,
         instructions: display.instructions ?? emtyDisplay.instructions,
         message: display.message ?? emtyDisplay.message,
         chordProStylesRev: display.chordProStylesRev,

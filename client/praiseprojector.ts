@@ -2572,7 +2572,8 @@ export class App extends AppBase {
   }
 
   private async onLineSel(p: number) {
-    if (!this.webRoot || (this.currentDisplay.from <= p && p < this.currentDisplay.to)) return;
+    const inCurrentRange = this.currentDisplay.from <= p && p < this.currentDisplay.to;
+    if (!this.webRoot || (inCurrentRange && !this.isCurrentHighlightRepeated())) return;
     try {
       await cloudApi.sendHighlight({
         line: p,
@@ -2582,6 +2583,18 @@ export class App extends AppBase {
     } catch (error) {
       if (error) this.log("Error sending highlight line selection: " + p + " error: " + error);
     }
+  }
+
+  private isCurrentHighlightRepeated() {
+    const section = this.currentDisplay.section;
+    if (section == null) return false;
+    const from = this.currentDisplay.from;
+    const to = this.currentDisplay.to;
+    for (const item of this.currentDisplay.sectionRepeatCounts || []) {
+      if (item.section !== section || item.multiplier <= 1) continue;
+      if (item.from === from && item.to === to) return true;
+    }
+    return false;
   }
 
   private async onLyricsHit(hit: HighlightingParams) {
@@ -3125,7 +3138,15 @@ export class App extends AppBase {
 
   private updateHighlight(draw = true) {
     if (!this.editor) return;
-    if (this.chkHighlight?.checked) this.editor.highlight(this.currentDisplay.from, this.currentDisplay.to, this.currentDisplay.section, draw);
+    this.editor.setSectionRepeatCounts(this.currentDisplay.sectionRepeatCounts, false);
+    if (this.chkHighlight?.checked)
+      this.editor.highlight(
+        this.currentDisplay.from,
+        this.currentDisplay.to,
+        this.currentDisplay.section,
+        this.currentDisplay.sectionRepeatNonce,
+        draw
+      );
     else this.editor.highlight(0, 0, undefined, draw);
   }
 
@@ -3680,11 +3701,15 @@ export class App extends AppBase {
         changeDetected ||
         this.currentDisplay.from != display.from ||
         this.currentDisplay.to != display.to ||
-        this.currentDisplay.section !== display.section;
+        this.currentDisplay.section !== display.section ||
+        (this.currentDisplay.sectionRepeatNonce || 0) !== (display.sectionRepeatNonce || 0) ||
+        JSON.stringify(this.currentDisplay.sectionRepeatCounts || []) !== JSON.stringify(display.sectionRepeatCounts || []);
 
       this.currentDisplay.from = display.from;
       this.currentDisplay.to = display.to;
       this.currentDisplay.section = display.section;
+      this.currentDisplay.sectionRepeatNonce = display.sectionRepeatNonce;
+      this.currentDisplay.sectionRepeatCounts = display.sectionRepeatCounts;
       this.currentDisplay.message = display.message;
       this.currentDisplay.chordProStylesRev = display.chordProStylesRev;
 
@@ -4046,6 +4071,8 @@ export class App extends AppBase {
       system: "G", // bw comp
       playlist: [],
       section: this.currentDisplay.section,
+      sectionRepeatNonce: this.currentDisplay.sectionRepeatNonce,
+      sectionRepeatCounts: this.currentDisplay.sectionRepeatCounts,
       message: this.currentDisplay.message,
       chordProStylesRev: this.currentDisplay.chordProStylesRev || this.chordProStylesRev,
     };

@@ -19,6 +19,8 @@ export type DisplayUpdateRequest = {
   from: number;
   to: number;
   section?: number;
+  sectionRepeatCounts?: Display["sectionRepeatCounts"];
+  sectionRepeatNonce?: number;
   transpose?: number;
   capo?: number;
   instructions?: string;

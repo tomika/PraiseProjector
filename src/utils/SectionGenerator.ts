@@ -19,6 +19,8 @@ export interface SectionItem {
    * communicating the projected fragment to remote clients.
    */
   instructedIndex?: number;
+  instructedMultiplier?: number;
+  instructedSignature?: string;
 }
 
 /**
@@ -297,9 +299,26 @@ export class SectionGenerator {
           section.from = Math.max(s.from, Math.min(section.from, s.to));
           section.to = Math.max(section.from + 1, Math.min(section.to, s.to));
           section.instructedIndex = s.instructedIndex;
+          section.instructedMultiplier = s.instructedMultiplier;
+          section.instructedSignature = s.sourceSignature;
         }
 
-        items.push(...generated);
+        // Expand repeated parts only when the section truly splits into
+        // multiple projected rows. If it still fits into one generated part,
+        // keep it as a single row so repeat-joining can work.
+        const hasMultipleProjectedParts = generated.length > 1;
+        const repeatCount =
+          useInstructions && hasMultipleProjectedParts && (s.instructedMultiplier ?? 1) > 1
+            ? Math.max(2, Math.floor(s.instructedMultiplier ?? 1))
+            : 1;
+        for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex++) {
+          for (const section of generated) {
+            items.push({
+              ...section,
+              instructedMultiplier: repeatCount > 1 ? 1 : section.instructedMultiplier,
+            });
+          }
+        }
       } else {
         items.push({
           text: s.text,
@@ -309,6 +328,8 @@ export class SectionGenerator {
           type: s.type,
           label: s.text,
           instructedIndex: s.instructedIndex,
+          instructedMultiplier: s.instructedMultiplier,
+          instructedSignature: s.sourceSignature,
         });
       }
     }

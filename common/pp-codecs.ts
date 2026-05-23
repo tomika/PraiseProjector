@@ -168,6 +168,13 @@ export const leaderDBProfileCodec = t.intersection([leaderProfileCodec, t.type({
 
 export const leadersResponseCodec = t.array(leaderDBProfileCodec);
 
+export const sectionRepeatCountCodec = t.type({
+  section: t.number,
+  from: t.number,
+  to: t.number,
+  multiplier: t.number,
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Display
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -183,12 +190,14 @@ export const displayCodec = uniType(
   },
   {
     section: t.number,
+    sectionRepeatNonce: t.number,
     capo: t.number,
     playlist: t.array(playlistEntryCodec),
     playlist_id: t.string,
     version: t.number,
     instructions: t.string,
     message: t.string,
+    sectionRepeatCounts: t.array(sectionRepeatCountCodec),
     chordProStylesRev: t.string,
     chordProStyles: t.UnknownRecord,
   }

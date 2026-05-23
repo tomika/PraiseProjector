@@ -52,6 +52,8 @@ export class Song {
      * how many times a multiplier expands it.
      */
     public instructedIndex?: number;
+    public instructedMultiplier?: number;
+    public sourceSignature?: string;
     constructor(
       public text: string,
       public from: number,
@@ -426,6 +428,9 @@ export class Song {
     }
 
     this._sections = slist.filter((s) => s.text.trim() !== "");
+    for (const section of this._sections) {
+      section.sourceSignature = lines.slice(section.from, section.to).join("\n");
+    }
     this._sectionSignatures = null;
 
     // Key sections by their canonical (multiplier-stripped) form so that an
@@ -466,7 +471,7 @@ export class Song {
     return { ...this.ToUpdate(), version: this.version };
   }
 
-  public InstructedSections(instructions: string): InstanceType<typeof Song.Section>[] {
+  public InstructedSections(instructions: string, filterGrid = true): InstanceType<typeof Song.Section>[] {
     const sections: InstanceType<typeof Song.Section>[] = [];
     if (!this._sectionsMap) return sections;
 
@@ -483,17 +488,20 @@ export class Song {
       // Free-form comment lines (no resolved section info) do not appear in
       // the section list — they are display-only annotations.
       if (item.multiplier == null || !item.info) continue;
+      // Grid directives can appear in defaults/instructions but are not
+      // projectable lyric sections and must stay out of section lists.
+      if (filterGrid && item.info.name === "start_of_grid") continue;
       const key = item.info.withoutModifiers().toLocaleLowerCase();
       const ss = this._sectionsMap.get(key);
       if (!ss) continue;
-      for (let n = item.multiplier; n > 0; --n) {
-        for (const s of ss) {
-          // Clone the cached Section so we can stamp the instruction index
-          // without mutating the shared canonical instance.
-          const clone = new Song.Section(s.text, s.from, s.to, s.block, s.type, s.tag);
-          clone.instructedIndex = i;
-          sections.push(clone);
-        }
+      for (const s of ss) {
+        // Clone the cached Section so we can stamp instruction metadata
+        // without mutating the shared canonical instance.
+        const clone = new Song.Section(s.text, s.from, s.to, s.block, s.type, s.tag);
+        clone.instructedIndex = i;
+        clone.instructedMultiplier = item.multiplier;
+        clone.sourceSignature = s.sourceSignature;
+        sections.push(clone);
       }
     }
     return sections;

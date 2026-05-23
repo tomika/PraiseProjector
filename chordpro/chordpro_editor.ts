@@ -390,6 +390,7 @@ import { clampTranspose, InstructionItem, Instructions } from "./chordpro_instru
 
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE" | "FULL";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
+export type SectionRepeatCount = { section: number; from: number; to: number; multiplier: number };
 
 export interface ChordProEditorEventHandlers {
   UpdateChordProData?: (text: string) => void;
@@ -580,7 +581,8 @@ export class ChordProEditor extends ChordDrawer {
   private multiChordChangeEnabled = true;
   private currentlyMarked?: Set<ChordProLine | ChordProChord>;
   private chordBoxType: ChordBoxType = "";
-  private highlighted: { from: number; to: number; section?: number } | null = null;
+  private highlighted: { from: number; to: number; section?: number; repeatIndex?: number; repeatTotal?: number; repeatNonce?: number } | null = null;
+  private sectionRepeatCounts?: SectionRepeatCount[];
   private lastMouseDown: { x: number; y: number } | null = null;
   private prevClickTime = 0;
 
@@ -3763,22 +3765,91 @@ export class ChordProEditor extends ChordDrawer {
     return tagValue + " " + cnt;
   }
 
+  setSectionRepeatCounts(sectionRepeatCounts: SectionRepeatCount[] | undefined, draw = true) {
+    this.sectionRepeatCounts = sectionRepeatCounts;
+    if (draw) this.draw();
+  }
+
+  private resolveRepeatCount(from: number, to: number, section: number | undefined) {
+    if (!this.sectionRepeatCounts?.length || section == null) return undefined;
+    let byRange: SectionRepeatCount | undefined;
+    let bySection: SectionRepeatCount | undefined;
+    for (const item of this.sectionRepeatCounts) {
+      if (item.section !== section) continue;
+      if (!bySection) bySection = item;
+      if (item.from === from && item.to === to) {
+        byRange = item;
+        break;
+      }
+    }
+    const match = byRange ?? bySection;
+    if (!match || !Number.isFinite(match.multiplier) || match.multiplier <= 1) return undefined;
+    return Math.max(2, Math.floor(match.multiplier));
+  }
+
   highlight(from: number, to: number, draw?: boolean): void;
   highlight(from: number, to: number, section: number | undefined, draw?: boolean): void;
-  highlight(from: number, to: number, sectionOrDraw: number | boolean | undefined = true, draw = true) {
+  highlight(from: number, to: number, section: number | undefined, repeatNonce: number | undefined, draw?: boolean): void;
+  highlight(
+    from: number,
+    to: number,
+    sectionOrDraw: number | boolean | undefined = true,
+    repeatNonceOrDraw: number | boolean | undefined = true,
+    draw = true
+  ) {
     let section: number | undefined;
+    let repeatNonce: number | undefined;
     if (typeof sectionOrDraw === "boolean") {
       draw = sectionOrDraw;
     } else {
       section = sectionOrDraw;
+      if (typeof repeatNonceOrDraw === "boolean") {
+        draw = repeatNonceOrDraw;
+      } else {
+        repeatNonce = repeatNonceOrDraw;
+      }
     }
     if (!this.readOnly) {
       from = to = 0;
       section = undefined;
+      repeatNonce = undefined;
     }
+    const repeatTotal = this.resolveRepeatCount(from, to, section);
+    const sameSelection = (this.highlighted?.from || 0) === from && (this.highlighted?.to || 0) === to && this.highlighted?.section === section;
+    if (sameSelection && repeatTotal && repeatTotal > 1) {
+      let repeatIndex: number;
+      if (repeatNonce != null) {
+        repeatIndex = (((repeatNonce % repeatTotal) + repeatTotal) % repeatTotal || 0) + 1;
+      } else if ((this.highlighted?.repeatTotal || 0) > 1) {
+        const prevRepeat = this.highlighted?.repeatIndex && this.highlighted.repeatIndex > 0 ? this.highlighted.repeatIndex : 1;
+        repeatIndex = (prevRepeat % repeatTotal) + 1;
+      } else {
+        repeatIndex = 1;
+      }
+      this.highlighted = {
+        from,
+        to,
+        section,
+        repeatIndex,
+        repeatTotal,
+        repeatNonce,
+      };
+      if (draw) this.draw();
+      this.scrollHighlightedIntoView();
+      return;
+    }
+
+    const repeatIndex =
+      repeatTotal && repeatTotal > 1 ? (repeatNonce != null ? (((repeatNonce % repeatTotal) + repeatTotal) % repeatTotal || 0) + 1 : 1) : undefined;
     const prevSection = this.highlighted?.section;
-    if ((this.highlighted?.from || 0) !== from || (this.highlighted?.to || 0) !== to || prevSection !== section) {
-      this.highlighted = { from, to, section };
+    if (
+      (this.highlighted?.from || 0) !== from ||
+      (this.highlighted?.to || 0) !== to ||
+      prevSection !== section ||
+      (this.highlighted?.repeatTotal || 0) !== (repeatTotal || 0) ||
+      (this.highlighted?.repeatNonce ?? -1) !== (repeatNonce ?? -1)
+    ) {
+      this.highlighted = { from, to, section, repeatIndex, repeatTotal, repeatNonce };
       if (draw) this.draw();
       this.scrollHighlightedIntoView();
     }
@@ -4465,6 +4536,7 @@ export class ChordProEditor extends ChordDrawer {
     this.cursorBox = null;
 
     const horizontalSeparation = 2 * this.displayProps.lyricsLineHeight;
+    const logicalCanvasWidth = this.canvas.width / this.scale;
 
     leftMargin = leftMargin ?? this.displayProps.horizontalMargin;
     let x = leftMargin,
@@ -4561,8 +4633,7 @@ export class ChordProEditor extends ChordDrawer {
 
     ctx.font = this.displayProps.tagFont;
 
-    let prevTag: string | DifferentialText = "",
-      highlightContiguous = false; // tslint:disable-next-line: no-bitwise
+    let prevTag: string | DifferentialText = ""; // tslint:disable-next-line: no-bitwise
     const highlightboxes: ChordProLineRange[] = [];
     const noSectionDup = this.readOnly && (this.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
 
@@ -4694,11 +4765,7 @@ export class ChordProEditor extends ChordDrawer {
       y += line_height;
 
       if (this.isHighlightedLine(line_obj)) {
-        if (highlightContiguous && highlightboxes.length) highlightboxes[highlightboxes.length - 1].bottom = y;
-        else highlightboxes.push({ ...line_obj.yRange });
-        highlightContiguous = true;
-      } else {
-        highlightContiguous = false;
+        highlightboxes.push({ ...line_obj.yRange });
       }
 
       lineTops.push(y);
@@ -4730,13 +4797,30 @@ export class ChordProEditor extends ChordDrawer {
     if (highlightboxes.length) {
       const backup = ctx.fillStyle;
       const backupAlpha = ctx.globalAlpha;
+      const highlightOpacity = Math.max(0, Math.min(1, this.highlightOpacity));
       // Apply user-configured opacity (compounded with any current
       // globalAlpha so we don't accidentally make highlights opaque while
       // the rest of the canvas is faded).
-      ctx.globalAlpha = backupAlpha * Math.max(0, Math.min(1, this.highlightOpacity));
       ctx.fillStyle = this.displayProps.highlightColor;
+      const repeatTotal = this.highlighted?.repeatTotal ?? 1;
+      const repeatIndex = this.highlighted?.repeatIndex ?? 1;
+      const segmentMode = repeatTotal > 1 && repeatIndex > 0;
+      const highlightLeft = Math.max(0, Math.min(leftMargin + (this.showTag ? tagWidth + horizontalSeparation : 0), logicalCanvasWidth));
+      const fullWidth = Math.max(1, logicalCanvasWidth - highlightLeft);
       for (const box of highlightboxes) {
-        ctx.fillRect(leftMargin, box.top, this.canvas.width - 2 * leftMargin, box.bottom - box.top);
+        if (!segmentMode) {
+          ctx.globalAlpha = backupAlpha * highlightOpacity;
+          ctx.fillRect(highlightLeft, box.top, fullWidth, box.bottom - box.top);
+          continue;
+        }
+
+        ctx.globalAlpha = backupAlpha * highlightOpacity * 0.5;
+        ctx.fillRect(highlightLeft, box.top, fullWidth, box.bottom - box.top);
+
+        const segmentWidth = fullWidth / repeatTotal;
+        const segmentLeft = highlightLeft + (repeatIndex - 1) * segmentWidth;
+        ctx.globalAlpha = backupAlpha * highlightOpacity;
+        ctx.fillRect(segmentLeft, box.top, segmentWidth, box.bottom - box.top);
       }
       ctx.fillStyle = backup;
       ctx.globalAlpha = backupAlpha;

@@ -140,8 +140,13 @@ export function getCurrentDisplay() {
   return currentDisplay;
 }
 
-export function updateCurrentDisplay(display: Partial<Display>) {
+export function updateCurrentDisplay(display: Partial<Display>, options?: { forceEmit?: boolean }) {
   currentDisplay = { ...currentDisplay, ...display };
+  if (options?.forceEmit) {
+    for (const listener of displayListeners.keys()) {
+      displayListeners.set(listener, undefined);
+    }
+  }
   emitDisplayChange();
 }
 

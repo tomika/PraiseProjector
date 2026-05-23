@@ -690,6 +690,14 @@ export class WebServer {
 
       try {
         const stylesRev = this.getChordProStylesRev();
+        let queriedRepeatCounts: Display["sectionRepeatCounts"];
+        if ((req.query.sectionRepeatCounts ?? "") !== "") {
+          try {
+            queriedRepeatCounts = JSON.parse(req.query.sectionRepeatCounts as string) as Display["sectionRepeatCounts"];
+          } catch {
+            queriedRepeatCounts = undefined;
+          }
+        }
         const clientDisplay: Display = {
           songId: (req.query.id as string) || currentDisplay.songId,
           song: currentDisplay.song,
@@ -700,6 +708,12 @@ export class WebServer {
           capo: (req.query.capo ?? "") !== "" ? parseInt(req.query.capo as string, 10) : currentDisplay.capo,
           instructions: (req.query.instructions ?? "") !== "" ? (req.query.instructions as string) : currentDisplay.instructions,
           section: (req.query.section ?? "") !== "" ? parseInt((req.query.section as string) || "-1", 10) : currentDisplay.section,
+          sectionRepeatCounts: queriedRepeatCounts ?? currentDisplay.sectionRepeatCounts,
+          sectionRepeatNonce: (() => {
+            if ((req.query.sectionRepeatNonce ?? "") === "") return currentDisplay.sectionRepeatNonce;
+            const parsed = parseInt((req.query.sectionRepeatNonce as string) || "0", 10);
+            return isNaN(parsed) ? undefined : parsed;
+          })(),
           message: (req.query.message ?? "") !== "" ? (req.query.message as string) : currentDisplay.message,
           chordProStylesRev: (req.query.chordpro_styles_rev as string) || "",
         };
@@ -863,6 +877,23 @@ export class WebServer {
       const id = (params.id as string) || "";
       const from = parseInt((params.from as string) || "0", 10);
       const to = parseInt((params.to as string) || "0", 10);
+      const sectionStr = params.section as string;
+      const parsedSection = sectionStr !== undefined && sectionStr !== "" ? parseInt(sectionStr, 10) : undefined;
+      const section = parsedSection !== undefined && !isNaN(parsedSection) ? parsedSection : undefined;
+      const sectionRepeatNonceRaw = params.sectionRepeatNonce;
+      const parsedSectionRepeatNonce =
+        sectionRepeatNonceRaw !== undefined && sectionRepeatNonceRaw !== "" ? parseInt(sectionRepeatNonceRaw as string, 10) : undefined;
+      const sectionRepeatNonce = parsedSectionRepeatNonce !== undefined && !isNaN(parsedSectionRepeatNonce) ? parsedSectionRepeatNonce : undefined;
+      let sectionRepeatCounts: Display["sectionRepeatCounts"];
+      if (Array.isArray(params.sectionRepeatCounts)) {
+        sectionRepeatCounts = params.sectionRepeatCounts as Display["sectionRepeatCounts"];
+      } else if (typeof params.sectionRepeatCounts === "string" && params.sectionRepeatCounts) {
+        try {
+          sectionRepeatCounts = JSON.parse(params.sectionRepeatCounts) as Display["sectionRepeatCounts"];
+        } catch {
+          sectionRepeatCounts = undefined;
+        }
+      }
       // Use undefined as default to indicate "no change" for transpose/capo
       const transposeStr = params.transpose as string;
       const capoStr = params.capo as string;
@@ -877,6 +908,9 @@ export class WebServer {
         id,
         from,
         to,
+        section,
+        sectionRepeatNonce,
+        sectionRepeatCounts,
         transpose,
         capo,
         instructions,
@@ -887,7 +921,20 @@ export class WebServer {
       // Notify main window about song change (matching C# SongChanged delegate)
       const mainWindow = getMainWindow();
       if (mainWindow) {
-        mainWindow.webContents.send("remote-display-update", { command, id, from, to, transpose, capo, instructions, title, playlist });
+        mainWindow.webContents.send("remote-display-update", {
+          command,
+          id,
+          from,
+          to,
+          section,
+          sectionRepeatNonce,
+          sectionRepeatCounts,
+          transpose,
+          capo,
+          instructions,
+          title,
+          playlist,
+        });
       }
 
       let remainingTime = 3000;

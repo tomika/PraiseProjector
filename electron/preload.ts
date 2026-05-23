@@ -131,6 +131,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       id: string;
       from: number;
       to: number;
+      section?: number;
+      sectionRepeatCounts?: Display["sectionRepeatCounts"];
+      sectionRepeatNonce?: number;
       transpose: number;
       capo: number;
       instructions: string;
@@ -145,6 +148,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
         id: string;
         from: number;
         to: number;
+        section?: number;
+        sectionRepeatCounts?: Display["sectionRepeatCounts"];
+        sectionRepeatNonce?: number;
         transpose: number;
         capo: number;
         instructions: string;

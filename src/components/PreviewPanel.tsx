@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from "react";
 import { generateQRCodeSVG } from "../hooks/useSessionUrl";
 import "./PreviewPanel.css";
 import { PlaylistEntry } from "../../db-common/PlaylistEntry";
@@ -7,7 +7,7 @@ import { SectionGenerator, SectionItem, DisplaySettings } from "../utils/Section
 import { SectionRenderer, RenderSettings } from "../utils/SectionRenderer";
 import { useSettings } from "../hooks/useSettings";
 import { Icon, IconType } from "../services/IconService";
-import { getProjectedSong, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims } from "../state/CurrentSongStore";
+import { getProjectedSong, getCurrentDisplay, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims } from "../state/CurrentSongStore";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
@@ -546,9 +546,110 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         .join("\n");
     }, [availableFonts, getFontOptionClassName]);
 
+    const buildSectionRepeatCounts = useCallback((sectionList: SectionItem[]): Display["sectionRepeatCounts"] => {
+      const grouped = new Map<string, { section: number; from: number; to: number; multiplier: number; uniqueRanges: Set<string> }>();
+      for (const section of sectionList) {
+        const multiplier = section.instructedMultiplier ?? 1;
+        if (section.instructedIndex == null || multiplier <= 1) continue;
+        // `block` keeps distinct same-signature occurrences separate.
+        const key = `${section.instructedIndex}|${section.block}|${multiplier}|${section.instructedSignature || ""}`;
+        const existing = grouped.get(key);
+        if (!existing) {
+          grouped.set(key, {
+            section: section.instructedIndex,
+            from: section.from,
+            to: section.to,
+            multiplier,
+            uniqueRanges: new Set<string>([`${section.from}:${section.to}`]),
+          });
+          continue;
+        }
+        existing.from = Math.min(existing.from, section.from);
+        existing.to = Math.max(existing.to, section.to);
+        existing.uniqueRanges.add(`${section.from}:${section.to}`);
+      }
+
+      const result = Array.from(grouped.values())
+        // Join repeats only when whole repeated section fits one projected row.
+        .filter((x) => x.uniqueRanges.size === 1)
+        .map(({ section, from, to, multiplier }) => ({ section, from, to, multiplier }))
+        .sort((a, b) => a.section - b.section || a.from - b.from || a.to - b.to);
+      return result.length > 0 ? result : undefined;
+    }, []);
+
+    const sectionRepeatCounts = useMemo(() => buildSectionRepeatCounts(sections), [sections, buildSectionRepeatCounts]);
+    const repeatProgressRef = useRef<{ sectionIndex: number; repeatIndex: number }>({ sectionIndex: -1, repeatIndex: 1 });
+    const [selectedRepeatIndex, setSelectedRepeatIndex] = useState(1);
+
+    useEffect(() => {
+      if (selectedSectionIndex < 0 || selectedSectionIndex >= sections.length) {
+        repeatProgressRef.current = { sectionIndex: -1, repeatIndex: 1 };
+        setSelectedRepeatIndex(1);
+        return;
+      }
+      if (repeatProgressRef.current.sectionIndex !== selectedSectionIndex) {
+        repeatProgressRef.current = { sectionIndex: selectedSectionIndex, repeatIndex: 1 };
+        setSelectedRepeatIndex(1);
+      }
+    }, [selectedSectionIndex, sections]);
+
+    const getSectionRepeatTotal = useCallback(
+      (section: SectionItem): number => {
+        if (section.instructedIndex == null) return 1;
+        const containing = sectionRepeatCounts?.find(
+          (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
+        );
+        const fallback = sectionRepeatCounts?.find((item) => item.section === section.instructedIndex);
+        const multiplier = containing?.multiplier ?? fallback?.multiplier ?? 1;
+        if (!Number.isFinite(multiplier) || multiplier <= 1) return 1;
+        return Math.max(2, Math.floor(multiplier));
+      },
+      [sectionRepeatCounts]
+    );
+
+    const getRepeatGroupBounds = useCallback(
+      (index: number) => {
+        if (index < 0 || index >= sections.length) return { start: index, end: index, repeatTotal: 1 };
+        const section = sections[index];
+        if (section.instructedIndex == null) return { start: index, end: index, repeatTotal: 1 };
+
+        const repeatEntry = sectionRepeatCounts?.find(
+          (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
+        );
+
+        const repeatTotal =
+          repeatEntry && Number.isFinite(repeatEntry.multiplier) && repeatEntry.multiplier > 1 ? Math.max(2, Math.floor(repeatEntry.multiplier)) : 1;
+
+        if (!repeatEntry || repeatTotal <= 1) return { start: index, end: index, repeatTotal: 1 };
+
+        let start = index;
+        while (start > 0) {
+          const prev = sections[start - 1];
+          if (prev.instructedIndex !== section.instructedIndex) break;
+          if (prev.from < repeatEntry.from || prev.to > repeatEntry.to) break;
+          start--;
+        }
+
+        let end = index;
+        while (end + 1 < sections.length) {
+          const next = sections[end + 1];
+          if (next.instructedIndex !== section.instructedIndex) break;
+          if (next.from < repeatEntry.from || next.to > repeatEntry.to) break;
+          end++;
+        }
+
+        return { start, end, repeatTotal };
+      },
+      [sections, sectionRepeatCounts]
+    );
+
     // Update display state when section changes
     const updateDisplayState = useCallback(
-      async (sectionIndex: number, section: SectionItem) => {
+      async (
+        sectionIndex: number,
+        section: SectionItem,
+        options?: { forceEmit?: boolean; bumpRepeatNonce?: boolean; preserveRepeatNonce?: boolean }
+      ) => {
         const song = getProjectedSong();
         if (!song) return;
         // Only emit a canonical section number when this SectionItem was
@@ -562,15 +663,67 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           from: section.from,
           to: section.to,
           section: section.instructedIndex,
+          sectionRepeatNonce: options?.bumpRepeatNonce
+            ? (getCurrentDisplay().sectionRepeatNonce ?? 0) + 1
+            : options?.preserveRepeatNonce
+              ? (getCurrentDisplay().sectionRepeatNonce ?? 0)
+              : 0,
+          sectionRepeatCounts,
           song: song.Text,
           system: song.System,
         };
         if (selectedPlaylistItem?.transpose) updateData.transpose = selectedPlaylistItem.transpose;
         if (selectedPlaylistItem?.capo) updateData.capo = selectedPlaylistItem.capo;
         if (selectedPlaylistItem?.instructions) updateData.instructions = selectedPlaylistItem.instructions;
-        updateCurrentDisplay(updateData);
+        updateCurrentDisplay(updateData, { forceEmit: options?.forceEmit });
       },
-      [selectedPlaylistItem]
+      [selectedPlaylistItem, sectionRepeatCounts]
+    );
+
+    const selectSectionIndex = useCallback(
+      (
+        index: number,
+        options?: {
+          advanceRepeat?: boolean;
+          repeatIndexOverride?: number;
+          bumpRepeatNonce?: boolean;
+          preserveRepeatNonce?: boolean;
+          forceEmit?: boolean;
+        }
+      ) => {
+        if (index < 0 || index >= sections.length) {
+          repeatProgressRef.current = { sectionIndex: -1, repeatIndex: 1 };
+          setSelectedRepeatIndex(1);
+          onSelectedSectionIndexChange?.(-1);
+          updateCurrentDisplay({ from: 0, to: 0, section: -1, sectionRepeatNonce: 0, sectionRepeatCounts });
+          return false;
+        }
+
+        const section = sections[index];
+        const repeatTotal = getSectionRepeatTotal(section);
+        const shouldAdvanceRepeat = !!options?.advanceRepeat && selectedSectionIndex === index && repeatTotal > 1;
+        let repeatIndex = options?.repeatIndexOverride ?? 1;
+
+        if (options?.repeatIndexOverride == null && shouldAdvanceRepeat) {
+          const prevRepeat = repeatProgressRef.current.sectionIndex === index ? repeatProgressRef.current.repeatIndex : 1;
+          repeatIndex = prevRepeat < repeatTotal ? prevRepeat + 1 : 1;
+        }
+
+        repeatProgressRef.current = { sectionIndex: index, repeatIndex };
+        setSelectedRepeatIndex(repeatIndex);
+
+        onSelectedSectionIndexChange?.(index);
+        const shouldBumpRepeatNonce = !!options?.bumpRepeatNonce || shouldAdvanceRepeat;
+        const shouldPreserveRepeatNonce = !shouldBumpRepeatNonce && !!options?.preserveRepeatNonce;
+        const shouldForceEmit = !!options?.forceEmit || shouldAdvanceRepeat;
+        updateDisplayState(index, section, {
+          forceEmit: shouldForceEmit,
+          bumpRepeatNonce: shouldBumpRepeatNonce,
+          preserveRepeatNonce: shouldPreserveRepeatNonce,
+        });
+        return true;
+      },
+      [sections, getSectionRepeatTotal, selectedSectionIndex, onSelectedSectionIndexChange, sectionRepeatCounts, updateDisplayState]
     );
 
     // Helper function to get next checked section index (matching C# GetNextOf logic)
@@ -608,10 +761,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           // share the same source line range.
           if (section != null) {
             for (let i = 0; i < sections.length; i++) {
+              if (sections[i].instructedIndex === section && sections[i].from <= lineNumber && lineNumber < sections[i].to) {
+                return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
+              }
+            }
+            for (let i = 0; i < sections.length; i++) {
               if (sections[i].instructedIndex === section) {
-                onSelectedSectionIndexChange?.(i);
-                updateDisplayState(i, sections[i]);
-                return true;
+                return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
               }
             }
           }
@@ -620,31 +776,22 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           for (let i = 0; i < sections.length; i++) {
             const section = sections[i];
             if (section.from <= lineNumber && lineNumber < section.to) {
-              onSelectedSectionIndexChange?.(i);
-              updateDisplayState(i, section);
-              return true;
+              return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
             }
           }
-          onSelectedSectionIndexChange?.(-1);
-          updateCurrentDisplay({ from: 0, to: 0, section: -1 }); // Clear display
-          return false;
+          return selectSectionIndex(-1);
         },
         getSelectedSectionIndex: (): number => {
           return selectedSectionIndex;
         },
         setSelectedSectionIndex: (index: number): void => {
-          if (index >= -1 && index < sections.length) {
-            onSelectedSectionIndexChange?.(index);
-            if (index >= 0 && sections[index]) {
-              updateDisplayState(index, sections[index]);
-            }
-          }
+          if (index >= -1 && index < sections.length) selectSectionIndex(index);
         },
         setSectionListFocused: (): void => {
           sectionListRef.current?.focus();
         },
       }),
-      [sections, updateDisplayState, selectedSectionIndex, onSelectedSectionIndexChange]
+      [sections, selectedSectionIndex, selectSectionIndex]
     );
 
     // Toggle section checkbox
@@ -1202,10 +1349,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     }, [selectedSectionIndex, settings?.warningFlashInPreview, freezePreview, showText, projectorEnabled, hasConnectedClients, triggerFlash]);
 
     const handleSectionClick = (index: number) => {
-      onSelectedSectionIndexChange?.(index);
-      if (sections[index]) {
-        updateDisplayState(index, sections[index]);
-      }
+      selectSectionIndex(index, { advanceRepeat: selectedSectionIndex === index });
     };
 
     // Keyboard handler for section list (matching C# SectionListBox.OnKeyDown and OnKeyPress)
@@ -1312,12 +1456,30 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           }
 
           case "Enter": {
-            // Go to next index (matching C# OnKeyPress enter)
+            // Advance repeats at the end of the split-group, not per fragment.
+            if (selectedSectionIndex >= 0 && sections[selectedSectionIndex]) {
+              const group = getRepeatGroupBounds(selectedSectionIndex);
+              const repeatIndex = repeatProgressRef.current.sectionIndex === selectedSectionIndex ? repeatProgressRef.current.repeatIndex : 1;
+              if (group.repeatTotal > 1 && selectedSectionIndex === group.end && repeatIndex < group.repeatTotal) {
+                selectSectionIndex(group.start, {
+                  repeatIndexOverride: repeatIndex + 1,
+                  bumpRepeatNonce: true,
+                  forceEmit: true,
+                });
+                e.preventDefault();
+                break;
+              }
+            }
+
             if (nextSectionIndex >= 0) {
-              const newSelectedIndex = nextSectionIndex;
-              onSelectedSectionIndexChange?.(newSelectedIndex);
-              if (sections[newSelectedIndex]) {
-                updateDisplayState(newSelectedIndex, sections[newSelectedIndex]);
+              const selectedGroup = getRepeatGroupBounds(selectedSectionIndex);
+              const nextInSameGroup = selectedSectionIndex >= 0 && nextSectionIndex >= selectedGroup.start && nextSectionIndex <= selectedGroup.end;
+              const repeatIndex = repeatProgressRef.current.sectionIndex === selectedSectionIndex ? repeatProgressRef.current.repeatIndex : 1;
+
+              if (nextInSameGroup && selectedGroup.repeatTotal > 1) {
+                selectSectionIndex(nextSectionIndex, { repeatIndexOverride: repeatIndex, preserveRepeatNonce: true });
+              } else {
+                selectSectionIndex(nextSectionIndex);
               }
             }
             e.preventDefault();
@@ -1331,10 +1493,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               let i = selectedSectionIndex;
               while (i >= 0 && sections[i].block === currentBlock) i--;
               if (i + 1 < sections.length) {
-                onSelectedSectionIndexChange?.(i + 1);
-                if (sections[i + 1]) {
-                  updateDisplayState(i + 1, sections[i + 1]);
-                }
+                selectSectionIndex(i + 1);
               }
             }
             e.preventDefault();
@@ -1343,14 +1502,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
           case "Escape": {
             // Clear selection
-            onSelectedSectionIndexChange?.(-1);
-            updateCurrentDisplay({ from: 0, to: 0, section: -1 });
+            selectSectionIndex(-1);
             e.preventDefault();
             break;
           }
         }
       },
-      [sections, selectedSectionIndex, nextSectionIndex, getNextCheckedIndex, toggleSectionCheck, updateDisplayState, onSelectedSectionIndexChange]
+      [sections, selectedSectionIndex, nextSectionIndex, getNextCheckedIndex, toggleSectionCheck, selectSectionIndex, getRepeatGroupBounds]
     );
 
     const handleCheckboxClick = (e: React.MouseEvent, index: number) => {
@@ -2108,6 +2266,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     sections.map((section, index) => {
                       const isSelected = selectedSectionIndex === index;
                       const isNext = nextSectionIndex === index;
+                      const repeatTotal = getSectionRepeatTotal(section);
+                      const repeatIndex = isSelected ? Math.max(1, Math.min(selectedRepeatIndex, repeatTotal)) : 1;
                       const bgColor = isSelected ? undefined : isNext ? "rgb(0, 255, 255)" : getSectionBgColor(section.displayMode);
                       const typeColor = getSectionTypeColor(section.type);
 
@@ -2158,7 +2318,23 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                               aria-label={`Include section ${index + 1}`}
                             />
                             {}
-                            <span className={sectionTextClassName}>{displayText}</span>
+                            <div className="section-text-wrap">
+                              <span className={sectionTextClassName}>{displayText}</span>
+                              {repeatTotal > 1 && (
+                                <div className="section-repeat-progress" aria-hidden="true">
+                                  {Array.from({ length: repeatTotal }, (_, repeatSegment) => {
+                                    const segmentIndex = repeatSegment + 1;
+                                    const segmentClassName =
+                                      segmentIndex < repeatIndex
+                                        ? "section-repeat-segment done"
+                                        : segmentIndex === repeatIndex
+                                          ? "section-repeat-segment active"
+                                          : "section-repeat-segment";
+                                    return <span key={`repeat-${index}-${segmentIndex}`} className={segmentClassName} />;
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
