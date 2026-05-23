@@ -6830,6 +6830,27 @@ export class ChordProEditor extends ChordDrawer {
     }
     const instructions = this.instructions;
 
+    const normalizeExistingItemsKeeping = (protectedItem?: InstructionItem) => {
+      const itemKey = (x: InstructionItem) => (x.info ? x.info.withoutModifiers() : x.value);
+      if (!protectedItem) {
+        instructions.normalize();
+        return;
+      }
+      for (let i = 0; i < instructions.items.length; ++i) {
+        const current = instructions.items[i];
+        if (current.multiplier == null || current === protectedItem) continue;
+        const key = itemKey(current);
+        const transpose = current.transpose ?? 0;
+        while (i + 1 < instructions.items.length) {
+          const next = instructions.items[i + 1];
+          if (next === protectedItem || next.multiplier == null) break;
+          if (itemKey(next) !== key || (next.transpose ?? 0) !== transpose) break;
+          current.multiplier += next.multiplier ?? 0;
+          instructions.items.splice(i + 1, 1);
+        }
+      }
+    };
+
     const getDivIndex = (div: HTMLElement) => {
       return parseInt(
         div.id.replace(/^.*-([0-9]+)$/g, (_, s) => s),
@@ -6987,10 +7008,11 @@ export class ChordProEditor extends ChordDrawer {
             this.buildInstructions(instructionsEditor, onChange);
           }
         } else if (dndItem.tagName) {
-          instructions.insertBefore(
-            this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 },
-            item
-          );
+          const inserted = this.chordPro
+            ? Instructions.createSectionItem(this.chordPro, dndItem.tagName)
+            : ({ value: dndItem.tagName, multiplier: 1 } as InstructionItem);
+          instructions.insertBefore(inserted, item, false);
+          normalizeExistingItemsKeeping(inserted);
           this.buildInstructions(instructionsEditor, onChange);
         }
       };
@@ -7019,7 +7041,9 @@ export class ChordProEditor extends ChordDrawer {
           this.buildInstructions(instructionsEditor, onChange);
         }
       } else if (dndItem.tagName) {
-        instructions.add(this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 });
+        const inserted = this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 };
+        instructions.add(inserted, false);
+        normalizeExistingItemsKeeping(inserted);
         this.buildInstructions(instructionsEditor, onChange);
       }
     };
