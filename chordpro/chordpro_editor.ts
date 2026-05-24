@@ -29,7 +29,7 @@ import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
 import { Instrument, playChord } from "./midi";
 import { AbcWysiwygEditor } from "./abc_editor";
-import { renderAbc, synth, TuneObjectArray } from "abcjs";
+import { NoteTimingEvent, renderAbc, synth, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { isVowel, knownVowelChars, removeDiacretics, simplifyString, splitTextToWords } from "../common/stringTools";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, makeDark, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
@@ -64,6 +64,23 @@ type WrapChunk = WrapChunkBase & { x: number; width: number; line: ChordProLine 
 type WrapChunkLine = Rectangle & { chunks: WrapChunk[] };
 type MidiPlaybackState = { stop: () => void; playing: boolean; currentTime: number; endTime: number };
 
+function ensureAbcMidiPlaybackStyles() {
+  const styleId = "pp-abc-midi-playback-style";
+  let style = document.getElementById(styleId) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = styleId;
+    document.head.appendChild(style);
+  }
+  style.textContent = `
+    .pp-abc-midi-current {
+      fill: rgb(224, 57, 57) !important;
+      stroke: rgb(224, 57, 57) !important;
+      filter: drop-shadow(0 0 1.5px rgba(80, 220, 255, 0.85));
+    }
+  `;
+}
+
 const static_ChordProEditor_diacritics = [
   { char: "A", base: /[\u00c0-\u00c6]/g },
   { char: "a", base: /[\u00e0-\u00e6]/g },
@@ -92,7 +109,7 @@ function is_word_boundary_char(ch: string) {
   return !/\b/gi.exec(remove_diacritics(ch));
 }
 
-function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unknown) => void): MidiPlaybackState {
+function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unknown) => void, playbackVisualObj?: TuneObject): MidiPlaybackState {
   const state: MidiPlaybackState = {
     stop: () => {
       // Replaced after synth initialization.
@@ -102,7 +119,11 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
     endTime: 0,
   };
 
+  ensureAbcMidiPlaybackStyles();
+
   let progressTimer: ReturnType<typeof setInterval> | null = null;
+  let timingCallbacks: TimingCallbacks | null = null;
+  let activeElements: Element[] = [];
   let startTime = 0;
   const stopTimer = () => {
     if (progressTimer) {
@@ -111,26 +132,55 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
     }
   };
 
+  const clearPlaybackMarker = () => {
+    for (const el of activeElements) el.classList.remove("pp-abc-midi-current");
+    activeElements = [];
+  };
+
+  const applyPlaybackMarker = (event: NoteTimingEvent | null) => {
+    clearPlaybackMarker();
+    if (!event) return;
+
+    for (const group of event.elements ?? []) {
+      for (const el of group ?? []) {
+        if (el instanceof Element && el.classList) {
+          el.classList.add("pp-abc-midi-current");
+          activeElements.push(el);
+        }
+      }
+    }
+  };
+
   const cleanupContainer = (container: HTMLDivElement) => {
     if (container.parentElement) container.parentElement.removeChild(container);
   };
 
   try {
-    const renderContainer = document.createElement("div");
-    renderContainer.style.display = "none";
-    document.body.appendChild(renderContainer);
+    let visualObj = playbackVisualObj;
+    if (!visualObj) {
+      const renderContainer = document.createElement("div");
+      renderContainer.style.display = "none";
+      document.body.appendChild(renderContainer);
 
-    const rendered = renderAbc(renderContainer, abcSource, {
-      add_classes: false,
-      responsive: "resize",
-    }) as TuneObjectArray;
+      const rendered = renderAbc(renderContainer, abcSource, {
+        add_classes: true,
+        responsive: "resize",
+      }) as TuneObjectArray;
 
-    cleanupContainer(renderContainer);
+      cleanupContainer(renderContainer);
+      visualObj = rendered?.[0];
+    }
 
-    const visualObj = rendered?.[0];
     if (!visualObj) {
       throw new Error("Could not render ABC for synth playback.");
     }
+
+    timingCallbacks = new TimingCallbacks(visualObj, {
+      ...(isNaN(bpm) ? {} : { qpm: bpm }),
+      eventCallback: (event) => {
+        applyPlaybackMarker(event);
+      },
+    });
 
     const midiBuffer = new synth.CreateSynth();
     const options = {
@@ -139,6 +189,8 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
 
     state.stop = () => {
       stopTimer();
+      timingCallbacks?.stop();
+      clearPlaybackMarker();
       try {
         midiBuffer.stop();
       } catch {
@@ -154,6 +206,8 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
         options,
         onEnded: () => {
           stopTimer();
+          timingCallbacks?.stop();
+          clearPlaybackMarker();
           state.playing = false;
           state.currentTime = state.endTime;
         },
@@ -165,6 +219,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
         startTime = performance.now();
         state.playing = true;
         midiBuffer.start();
+        timingCallbacks?.start();
 
         progressTimer = setInterval(() => {
           if (!state.playing) return;
@@ -179,9 +234,12 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
       .catch((error) => {
         state.playing = false;
         stopTimer();
+        timingCallbacks?.stop();
+        clearPlaybackMarker();
         onError?.(error);
       });
   } catch (error) {
+    clearPlaybackMarker();
     onError?.(error);
   }
 
@@ -613,6 +671,7 @@ export class ChordProEditor extends ChordDrawer {
   private chordBoxElements = new Map<string, HTMLCanvasElement>();
   private abcContainer: HTMLDivElement | null = null;
   private abcDivElements = new Map<ChordProAbc, HTMLDivElement>();
+  private abcVisualObjects = new Map<ChordProAbc, TuneObject>();
   private abcEditor: AbcWysiwygEditor | null = null;
   private activeAbcBlock: ChordProAbc | null = null;
   private canvasResizeObserver: ResizeObserver | null = null;
@@ -855,6 +914,7 @@ export class ChordProEditor extends ChordDrawer {
     }
     this.activeAbcBlock = null;
     this.abcDivElements.clear();
+    this.abcVisualObjects.clear();
 
     this.parent_div.addEventListener("scroll", this.updateChordStripPosition);
 
@@ -1170,6 +1230,7 @@ export class ChordProEditor extends ChordDrawer {
       this.abcContainer = null;
     }
     this.abcDivElements.clear();
+    this.abcVisualObjects.clear();
 
     // Clean up mobile input proxy textarea
     if (this.textarea) {
@@ -1941,10 +2002,15 @@ export class ChordProEditor extends ChordDrawer {
         if (line_obj instanceof ChordProAbc) {
           if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
             const abcSource = line_obj.getAbc(true, false);
-            this.midiPlayer = playAbcWithSynth(abcSource, parseInt(line_obj.doc.getMeta("tempo"), 10), (error) => {
-              console.error("Midifile playing error: " + error);
-              this.midiPlayer = undefined;
-            });
+            this.midiPlayer = playAbcWithSynth(
+              abcSource,
+              parseInt(line_obj.doc.getMeta("tempo"), 10),
+              (error) => {
+                console.error("Midifile playing error: " + error);
+                this.midiPlayer = undefined;
+              },
+              this.abcVisualObjects.get(line_obj)
+            );
           } else {
             this.midiPlayer.stop();
             this.midiPlayer = undefined;
@@ -4716,8 +4782,7 @@ export class ChordProEditor extends ChordDrawer {
         currentColor: this.isDark ? "white" : "black",
       };
       if (!abcDiv) return line_obj.generateImage(options);
-      line_obj.render(abcDiv, options);
-      return null;
+      return line_obj.render(abcDiv, options);
     };
 
     type PendingAbcElement = { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number };
@@ -5716,7 +5781,7 @@ export class ChordProEditor extends ChordDrawer {
     abcScale: number,
     leftMargin: number,
     contentWidth: number,
-    abcRender: (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => HTMLImageElement | null
+    abcRender: (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => HTMLImageElement | TuneObjectArray | null
   ) {
     if (!this.abcContainer) return;
 
@@ -5738,9 +5803,12 @@ export class ChordProEditor extends ChordDrawer {
         // Re-render at the correct width for readonly views
         if (this.readOnly) {
           existingDiv.innerHTML = "";
-          abcRender(line_obj, contentWidth, existingDiv);
+          const rendered = abcRender(line_obj, contentWidth, existingDiv);
+          if (Array.isArray(rendered) && rendered.length > 0) this.abcVisualObjects.set(line_obj, rendered[0]);
+          else this.abcVisualObjects.delete(line_obj);
         } else {
           existingDiv.innerHTML = abcDiv.innerHTML;
+          this.abcVisualObjects.delete(line_obj);
         }
         // Remove the temporary measurement div if it's different from the reused one
         if (abcDiv !== existingDiv && abcDiv.parentNode) {
@@ -5751,7 +5819,11 @@ export class ChordProEditor extends ChordDrawer {
         // Re-render at the correct width for readonly views
         if (this.readOnly) {
           existingDiv.innerHTML = "";
-          abcRender(line_obj, contentWidth, existingDiv);
+          const rendered = abcRender(line_obj, contentWidth, existingDiv);
+          if (Array.isArray(rendered) && rendered.length > 0) this.abcVisualObjects.set(line_obj, rendered[0]);
+          else this.abcVisualObjects.delete(line_obj);
+        } else {
+          this.abcVisualObjects.delete(line_obj);
         }
         // The div was already appended to abcContainer during measurement; just register it
         if (!existingDiv.parentNode) {
@@ -5792,6 +5864,7 @@ export class ChordProEditor extends ChordDrawer {
         el.remove();
         this.abcDivElements.delete(key);
       }
+      this.abcVisualObjects.delete(key);
     }
   }
 
