@@ -617,7 +617,13 @@ export class ChordProEditor extends ChordDrawer {
   private activeAbcBlock: ChordProAbc | null = null;
   private canvasResizeObserver: ResizeObserver | null = null;
   private lastCanvasOffsetWidth = 0;
+  private lastCanvasOffsetHeight = 0;
   private parentResizeObserver: ResizeObserver | null = null;
+  private pendingLayoutRelayoutHandle: number | null = null;
+  private layoutRelayoutAttempts = 0;
+  private layoutRelayoutStableFrames = 0;
+  private layoutRelayoutProbeWidth = -1;
+  private layoutRelayoutProbeHeight = -1;
 
   private cursorBox: { left: number; top: number; width: number; height: number } | null = null;
   private chordStripWidth = 0;
@@ -731,13 +737,20 @@ export class ChordProEditor extends ChordDrawer {
     // Auto-redraw overlays when canvas transitions from hidden to visible
     this.canvasResizeObserver?.disconnect();
     this.lastCanvasOffsetWidth = 0;
+    this.lastCanvasOffsetHeight = 0;
     this.canvasResizeObserver = new ResizeObserver(() => {
       const w = this.canvas.offsetWidth;
-      const wasHidden = this.lastCanvasOffsetWidth === 0;
+      const h = this.canvas.offsetHeight;
+      const wasHidden = this.lastCanvasOffsetWidth === 0 || this.lastCanvasOffsetHeight === 0;
+      const sizeChanged = w !== this.lastCanvasOffsetWidth || h !== this.lastCanvasOffsetHeight;
       this.lastCanvasOffsetWidth = w;
-      if (w > 0) {
+      this.lastCanvasOffsetHeight = h;
+      if (w > 0 && h > 0) {
         if (wasHidden) this.draw();
-        else this.syncOverlayTransforms();
+        else {
+          this.syncOverlayTransforms();
+          if (sizeChanged) this.scheduleLayoutRelayout();
+        }
       }
     });
     this.canvasResizeObserver.observe(this.canvas);
@@ -748,6 +761,8 @@ export class ChordProEditor extends ChordDrawer {
     // and only the visibility safety net runs.
     this.parentResizeObserver?.disconnect();
     this.parentResizeObserver = new ResizeObserver(() => {
+      this.syncOverlayTransforms();
+      this.scheduleLayoutRelayout();
       if (this.highlighted) this.scrollHighlightedIntoView();
     });
     this.parentResizeObserver.observe(this.parent_div);
@@ -1201,6 +1216,10 @@ export class ChordProEditor extends ChordDrawer {
     if (this.pendingDrawHandle != null) {
       window.clearTimeout(this.pendingDrawHandle);
       this.pendingDrawHandle = null;
+    }
+    if (this.pendingLayoutRelayoutHandle != null) {
+      window.cancelAnimationFrame(this.pendingLayoutRelayoutHandle);
+      this.pendingLayoutRelayoutHandle = null;
     }
     if (this.cursorBlinkHandle != null) {
       window.clearTimeout(this.cursorBlinkHandle);
@@ -4415,6 +4434,51 @@ export class ChordProEditor extends ChordDrawer {
 
   private lastDrawRequest = 0;
 
+  private scheduleLayoutRelayout() {
+    this.layoutRelayoutAttempts = 0;
+    this.layoutRelayoutStableFrames = 0;
+    this.layoutRelayoutProbeWidth = -1;
+    this.layoutRelayoutProbeHeight = -1;
+
+    if (this.pendingLayoutRelayoutHandle != null) {
+      window.cancelAnimationFrame(this.pendingLayoutRelayoutHandle);
+      this.pendingLayoutRelayoutHandle = null;
+    }
+
+    const maxFrames = 30;
+    const stableFramesTarget = 2;
+    const tick = () => {
+      this.pendingLayoutRelayoutHandle = null;
+      if (this.disposed) return;
+
+      const w = this.canvas.offsetWidth;
+      const h = this.canvas.offsetHeight;
+      this.layoutRelayoutAttempts++;
+
+      if (w <= 0 || h <= 0) {
+        if (this.layoutRelayoutAttempts < maxFrames) {
+          this.pendingLayoutRelayoutHandle = window.requestAnimationFrame(tick);
+        }
+        return;
+      }
+
+      const sameAsPrevProbe = w === this.layoutRelayoutProbeWidth && h === this.layoutRelayoutProbeHeight;
+      this.layoutRelayoutProbeWidth = w;
+      this.layoutRelayoutProbeHeight = h;
+      this.layoutRelayoutStableFrames = sameAsPrevProbe ? this.layoutRelayoutStableFrames + 1 : 0;
+
+      if (this.layoutRelayoutStableFrames >= stableFramesTarget || this.layoutRelayoutAttempts >= maxFrames) {
+        // Force a settled redraw so wrapped ABC blocks remeasure after abrupt layout switches.
+        this.draw(true);
+        return;
+      }
+
+      this.pendingLayoutRelayoutHandle = window.requestAnimationFrame(tick);
+    };
+
+    this.pendingLayoutRelayoutHandle = window.requestAnimationFrame(tick);
+  }
+
   draw(delayable?: boolean) {
     if (this.disposed || this.drawingSuppressed) return;
 
@@ -5299,8 +5363,12 @@ export class ChordProEditor extends ChordDrawer {
     }
 
     // --- Phase 2: Update abc HTML elements in dedicated container ---
-    // Use logical canvas width (see abcMaxWidth above) so client (scale > 1) doesn't oversize the SVG.
-    const abcRenderMaxWidth = (this.canvas.width / this.scale - leftMargin) / abcScale + leftMargin + horizontalSeparation;
+    // Clamp ABC width to rendered song content width (tags + lyrics area),
+    // not the full canvas width, so it doesn't overlap side overlays.
+    // `abcRender` uses an internal width that is later scaled by `abcScale`,
+    // so compensate here to match visible target width.
+    const abcVisibleWidth = Math.max(1, totalSize.width - leftMargin);
+    const abcRenderMaxWidth = abcVisibleWidth / abcScale + leftMargin + horizontalSeparation;
     this.updateAbcHTML(pendingAbcEntries, abcScale, leftMargin, abcRenderMaxWidth, abcRender);
 
     // --- Phase 3: Update metadata HTML elements ---
@@ -5990,6 +6058,9 @@ export class ChordProEditor extends ChordDrawer {
     chordSize: { width: number; height: number },
     draw: (chord: string, x: number, y: number) => boolean
   ) {
+    const chordGap = 4;
+    const chordStepX = chordSize.width + chordGap;
+    const chordStepY = chordSize.height + chordGap;
     let targetRatio = this.targetRatio;
     if (!targetRatio) {
       const parentRect = this.parent_div.getBoundingClientRect();
@@ -6002,10 +6073,10 @@ export class ChordProEditor extends ChordDrawer {
       for (const chord of chords) {
         if (draw(chord, x, y)) {
           width = x + chordSize.width + this.displayProps.horizontalMargin;
-          y += chordSize.height;
+          y += chordStepY;
           if (y + chordSize.height > totalSize.height) {
             y = this.displayProps.verticalMargin;
-            x += chordSize.width;
+            x += chordStepX;
           }
         }
       }
@@ -6017,10 +6088,10 @@ export class ChordProEditor extends ChordDrawer {
       for (const chord of chords) {
         if (draw(chord, x, y)) {
           height = y + chordSize.height;
-          x += chordSize.width;
+          x += chordStepX;
           if (x + chordSize.width > totalSize.width) {
             x = this.displayProps.horizontalMargin;
-            y += chordSize.height;
+            y += chordStepY;
           }
         }
       }
@@ -6145,6 +6216,7 @@ export class ChordProEditor extends ChordDrawer {
     }
 
     let totalSize = { width: 0, height: 0 };
+    let layoutSizeForRatio = { width: 0, height: 0 };
     let targetRatio: number | undefined = undefined;
     let latestChordBoxPositions: { chord: string; x: number; y: number }[] = [];
     let latestChordBoxSize = { width: 0, height: 0 };
@@ -6157,6 +6229,7 @@ export class ChordProEditor extends ChordDrawer {
       this.boxes.splice(boxCount, this.boxes.length - boxCount);
       const songSize = this._drawSongOnly(ctx, this.displayProps.horizontalMargin + this.chordStripWidth);
       totalSize = songSize;
+      layoutSizeForRatio = songSize;
 
       if (!this.readOnly) {
         if (this.actionTarget instanceof ChordTemplateHitBox) {
@@ -6173,8 +6246,9 @@ export class ChordProEditor extends ChordDrawer {
         const pendingChordBoxes: { chord: string; x: number; y: number }[] = [];
         const chordSize = this.chordBoxType === "PIANO" ? this.displayProps.pianoChordSize : this.displayProps.guitarChordSize;
 
-        // Use layout algorithm to compute positions; defer actual rendering to HTML canvases
-        totalSize = this._drawChordLayouts(chords, totalSize, chordSize, (chord, x, y) => {
+        // Use layout algorithm to compute positions; defer actual rendering to HTML canvases.
+        // Keep layout extents separate so chord-box overlays don't force canvas growth.
+        layoutSizeForRatio = this._drawChordLayouts(chords, { ...songSize }, chordSize, (chord, x, y) => {
           const canRender =
             this.chordBoxType === "PIANO" ? !!this.system.identifyChord(chord) : !!(this.getActualChordLayout(chord) && this.chordSelector);
           if (canRender) {
@@ -6186,6 +6260,10 @@ export class ChordProEditor extends ChordDrawer {
           return false;
         });
 
+        // Keep canvas/content extents large enough for side chord-layout overlays
+        // so scroll bounds include them.
+        totalSize = layoutSizeForRatio;
+
         if (chordboxes.length > 0) this.boxes.splice(0, 0, ...chordboxes);
         latestChordBoxPositions = pendingChordBoxes;
         latestChordBoxSize = chordSize;
@@ -6195,16 +6273,16 @@ export class ChordProEditor extends ChordDrawer {
         !this.autoSplitLines ||
         this.inMarkingState ||
         targetRatio !== undefined ||
-        Math.abs(totalSize.width / totalSize.height - this.targetRatio) / this.targetRatio < 0.1
+        Math.abs(layoutSizeForRatio.width / layoutSizeForRatio.height - this.targetRatio) / this.targetRatio < 0.1
       )
         break;
 
       targetRatio = this.targetRatio;
       if (this.chordBoxType) {
-        if (totalSize.width / totalSize.height > 1.1 * this.targetRatio && totalSize.height > songSize.height) {
-          targetRatio /= songSize.height / totalSize.height;
-        } else if ((1.1 * totalSize.width) / totalSize.height < this.targetRatio && totalSize.width > songSize.width) {
-          targetRatio *= songSize.width / totalSize.width;
+        if (layoutSizeForRatio.width / layoutSizeForRatio.height > 1.1 * this.targetRatio && layoutSizeForRatio.height > songSize.height) {
+          targetRatio /= songSize.height / layoutSizeForRatio.height;
+        } else if ((1.1 * layoutSizeForRatio.width) / layoutSizeForRatio.height < this.targetRatio && layoutSizeForRatio.width > songSize.width) {
+          targetRatio *= songSize.width / layoutSizeForRatio.width;
         }
       }
     }

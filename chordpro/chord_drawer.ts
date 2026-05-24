@@ -458,7 +458,7 @@ export class ChordDrawer {
         ctx.font = fontSize + "px arial";
         if (--fontSize <= bundStep / 2) break;
       }
-      this.drawChordText(label, ctx, gridRect.x, Math.max(rect.y, gridRect.y - bundStep));
+      this.drawChordText(label, ctx, gridRect.x, Math.max(rect.y, gridRect.y - (3 * bundStep) / 4));
       ctx.restore();
       return true;
     }
