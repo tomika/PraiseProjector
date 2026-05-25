@@ -103,6 +103,7 @@ const defaultZoomPreset: Required<ZoomPreset> = {
   scrollable: false,
 };
 type DisplaySettings = {
+  savedAt?: number;
   capo?: number;
   transpose?: number;
   chordBoxType?: ChordBoxType | "NO_CHORDS";
@@ -491,6 +492,7 @@ export class App extends AppBase {
   private mode: "App" | "Client" | "OnlineSession";
   private leaderModeAvailable: boolean;
   private leaderMode: boolean;
+  private pendingRestoredLeaderMode?: { value: boolean; expiresAt: number };
   private readonly leaderId: string;
 
   private isOnline = true;
@@ -942,7 +944,10 @@ export class App extends AppBase {
     this.chkAdmin = document.getElementById("chkAdmin") as HTMLInputElement;
     if (this.chkAdmin)
       this.chkAdmin.onclick = () => {
-        this.setLeader(!!this.chkAdmin?.checked);
+        const leaderEnabled = !!this.chkAdmin?.checked;
+        this.leaderMode = leaderEnabled;
+        this.pendingRestoredLeaderMode = undefined;
+        this.setLeader(leaderEnabled);
         this.storeDisplaySettings();
       };
     this.setLeader(!!this.chkAdmin?.checked);
@@ -1120,7 +1125,7 @@ export class App extends AppBase {
           this.openZoomSettingsDialog();
         }
         setTimeout(() => this.displayChanged(), 0);
-      }
+      };
     }
 
     this.highlightIconHolderDiv = document.getElementById("highlight");
@@ -1129,11 +1134,11 @@ export class App extends AppBase {
       let clickCount = 0;
       this.highlightIconHolderDiv.onclick = (e) => {
         const now = Date.now();
-        if (now - lastClick > 500) clickCount = 1; 
+        if (now - lastClick > 500) clickCount = 1;
         else if (++clickCount >= 10) {
           lastClick = 0;
           clickCount = 0;
-          this.queryHighlightPermission();        
+          this.queryHighlightPermission();
           return;
         }
         lastClick = now;
@@ -1142,11 +1147,10 @@ export class App extends AppBase {
             const cnt = clickCount;
             clickCount = 0;
             lastClick = 0;
-            if (cnt == 2)
-              this.openHighlightOpacityPopup(this.highlightIconHolderDiv!);
+            if (cnt == 2) this.openHighlightOpacityPopup(this.highlightIconHolderDiv!);
           }
         }, 500);
-      }
+      };
     }
 
     this.iconHighlighter = document.getElementById("highlighter");
@@ -2090,10 +2094,17 @@ export class App extends AppBase {
               } else if (level > 1) {
                 this.waitLoadingCircle();
                 this.updateDatabase("RELOAD")
-                  .then(() => location.reload())
-                  .catch(() => location.reload());
+                  .then(() => {
+                    this.storeDisplaySettings();
+                    location.reload();
+                  })
+                  .catch(() => {
+                    this.storeDisplaySettings();
+                    location.reload();
+                  });
               } else {
                 this.waitLoadingCircle();
+                this.storeDisplaySettings();
                 location.reload();
               }
             }
@@ -4487,6 +4498,7 @@ export class App extends AppBase {
 
   private getDisplaySettings(includeCapoAndTranspose: boolean): DisplaySettings {
     const s = {
+      savedAt: Date.now(),
       chordBoxType: this.chordBoxType,
       chordMode: this.selChordMode?.value,
       noSecChordDup: this.chkNoSecChordDup?.checked,
@@ -4575,16 +4587,20 @@ export class App extends AppBase {
 
     if (changed) this.displayChanged();
 
-    if (
-      !this.onlineMode &&
-      this.mode !== "App" &&
-      settings.leaderMode !== undefined &&
-      this.chkAdmin &&
-      isVisible(this.chkAdmin) &&
-      this.chkAdmin.checked !== settings.leaderMode
-    ) {
-      this.chkAdmin.checked = settings.leaderMode;
-      this.setLeader(this.chkAdmin.checked);
+    const settingsAreRecent = typeof settings.savedAt === "number" && Date.now() - settings.savedAt <= 5000;
+    const adminModeAvailable = !!this.leaderModeAvailable && !!this.chkAdmin && isVisible(this.chkAdmin);
+
+    if (!this.onlineMode && this.mode !== "App" && settingsAreRecent && settings.leaderMode !== undefined && this.chkAdmin) {
+      const desiredLeaderMode = !!settings.leaderMode;
+      if (adminModeAvailable) {
+        this.leaderMode = desiredLeaderMode;
+        this.chkAdmin.checked = desiredLeaderMode;
+        this.setLeader(desiredLeaderMode);
+        this.pendingRestoredLeaderMode = undefined;
+      } else {
+        const savedAt = typeof settings.savedAt === "number" ? settings.savedAt : Date.now();
+        this.pendingRestoredLeaderMode = { value: desiredLeaderMode, expiresAt: savedAt + 5000 };
+      }
     }
 
     if (settings.capo !== undefined && this.selCapo && settings.capo !== this.selCapo.selectedIndex) {
@@ -5242,6 +5258,14 @@ export class App extends AppBase {
   }
 
   private applyLeaderModeRestrictions() {
+    if (!this.onlineMode && this.mode !== "App" && this.pendingRestoredLeaderMode) {
+      const pending = this.pendingRestoredLeaderMode;
+      if (Date.now() > pending.expiresAt) this.pendingRestoredLeaderMode = undefined;
+      else if (this.leaderModeAvailable) {
+        this.leaderMode = pending.value;
+        this.pendingRestoredLeaderMode = undefined;
+      }
+    }
     const grp = this.grpAdmin || this.chkAdmin;
     if (grp) makeVisible(grp, this.onlineMode ? this.leaderModeAvailable && !this.leaderMode : this.leaderModeAvailable || this.leaderMode);
     this.setLeader(!!this.chkAdmin && (this.chkAdmin.checked = this.leaderMode));
