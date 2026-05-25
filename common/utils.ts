@@ -4,8 +4,19 @@ import { Settings } from "./settings";
 
 export const snooze = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function touchToMouseEvent(event: TouchEvent, options: { preventDefault: boolean; stopPropagation: boolean }) {
-  if (event.changedTouches.length !== 1) return;
+type TouchRouteState = {
+  activeTarget: EventTarget | null;
+  hasActivePress: boolean;
+  lastTouch: {
+    screenX: number;
+    screenY: number;
+    clientX: number;
+    clientY: number;
+  } | null;
+};
+
+function touchToMouseEvent(event: TouchEvent, options: { preventDefault: boolean; stopPropagation: boolean }, state?: TouchRouteState) {
+  if (event.changedTouches.length < 1) return;
 
   // Skip touch-to-mouse conversion for form elements that need native touch handling
   // (select dropdowns, inputs, buttons need native touch to work properly on mobile)
@@ -37,6 +48,7 @@ function touchToMouseEvent(event: TouchEvent, options: { preventDefault: boolean
       type = "mousemove";
       break;
     case "touchend":
+    case "touchcancel":
       type = "mouseup";
       break;
     default:
@@ -65,13 +77,52 @@ function touchToMouseEvent(event: TouchEvent, options: { preventDefault: boolean
   if (options.stopPropagation) event.stopPropagation();
   if (options.preventDefault) event.preventDefault();
   first.target.dispatchEvent(simulatedEvent);
+
+  if (state) {
+    state.lastTouch = {
+      screenX: first.screenX,
+      screenY: first.screenY,
+      clientX: first.clientX,
+      clientY: first.clientY,
+    };
+    if (type === "mousedown") {
+      state.activeTarget = first.target;
+      state.hasActivePress = true;
+    } else if (type === "mouseup") {
+      state.activeTarget = null;
+      state.hasActivePress = false;
+    }
+  }
 }
 
 export function routeTouchEventsToMouse(
   element: HTMLElement,
   options: { preventDefault: boolean; stopPropagation: boolean } = { preventDefault: true, stopPropagation: true }
 ) {
-  const eventHandler = (e: TouchEvent) => touchToMouseEvent(e, options);
+  const state: TouchRouteState = {
+    activeTarget: null,
+    hasActivePress: false,
+    lastTouch: null,
+  };
+
+  const releaseStuckPress = () => {
+    if (!state.hasActivePress || !state.activeTarget || !state.lastTouch) return;
+    const { screenX, screenY, clientX, clientY } = state.lastTouch;
+    const simulatedEvent = document.createEvent("MouseEvent");
+    simulatedEvent.initMouseEvent("mouseup", true, true, window, 1, screenX, screenY, clientX, clientY, false, false, false, false, 0 /*left*/, null);
+    state.activeTarget.dispatchEvent(simulatedEvent);
+    state.activeTarget = null;
+    state.hasActivePress = false;
+  };
+
+  const eventHandler = (e: TouchEvent) => {
+    // Long-press can miss touchend/touchcancel on some mobile stacks and leave
+    // synthetic "mousedown" state dangling. Force-release before a new press.
+    if (e.type === "touchstart") releaseStuckPress();
+    if ((e.type === "touchend" || e.type === "touchcancel") && e.changedTouches.length < 1) releaseStuckPress();
+    touchToMouseEvent(e, options, state);
+  };
+
   // Must use { passive: false } so preventDefault() actually prevents
   // the browser's native scroll/pan on mobile (passive listeners ignore it).
   const listenerOpts: AddEventListenerOptions = { capture: true, passive: false };

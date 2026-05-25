@@ -342,7 +342,6 @@ export class App extends AppBase {
   private capoVal = -1;
   private preferredCapo = 0;
   private offlineTimeout: number | null = null;
-  private highLightClickDownTime: number | null = null;
   private playlist: PlaylistEntry[] = [];
   private lastImageId = "startup";
   private highlightChangedRecently = 0;
@@ -351,13 +350,6 @@ export class App extends AppBase {
    * Persisted in displaySettings; default 1.0 (legacy behavior).
    */
   private highlightOpacity = 1.0;
-  /** Timer id for the long-press detection on the highlight toggle button. */
-  private highlightLongPressTimer: number | null = null;
-  /**
-   * Set when long-press opens the opacity popup so the upcoming click on the
-   * `<label>` does NOT toggle the underlying checkbox.
-   */
-  private highlightLongPressFired = false;
   /** Active popup root, if open. */
   private highlightOpacityPopup: HTMLElement | null = null;
   private chordBoxType: ChordBoxType | "NO_CHORDS" = "";
@@ -381,7 +373,9 @@ export class App extends AppBase {
   private hasNeighbours = false;
   private swipeState: { dragX: number; dragY: number; direction: number; totalScroll: number; lastScroll?: number; startTime: number } | null = null;
   private pinchState: { startDistance: number; lastRatio: number } | null = null;
+  private swipePointerId: number | null = null;
   private toolbarPullState: { startX: number; startY: number; dragging: boolean } | null = null;
+  private wholeSongListDragStartX?: number;
   private pages!: { prev?: EditorPage; current: EditorPage; next?: EditorPage };
   private chkAdmin: HTMLInputElement | null = null;
   private selShift: HTMLSelectElement | null = null;
@@ -466,8 +460,6 @@ export class App extends AppBase {
   private zoomScrollButtons: HTMLButtonElement[] = [];
   private zoomSettingsCloseBtn: HTMLButtonElement | null = null;
   private zoomSettingsOkBtn: HTMLButtonElement | null = null;
-  private zoomLongPressTimer: number | null = null;
-  private zoomLongPressFired = false;
   private zoomPreset: ZoomPreset = { ...defaultZoomPreset };
   private scanDlg: HTMLElement | null = null;
   private scanDlgIp: HTMLElement | null = null;
@@ -759,6 +751,114 @@ export class App extends AppBase {
     else location.reload();
   }
 
+  // Emergency reset for transient interaction states that can get stuck when
+  // mobile long-press gestures trigger cancellation-like browser behavior.
+  private resetTransientInteractionState() {
+    this.wholeSongListDragStart = undefined;
+    this.wholeSongListDragStartX = undefined;
+    this.toolbarPullState = null;
+    this.pinchState = null;
+    this.swipeState = null;
+    this.swipePointerId = null;
+
+    const page = this.pages?.current?.div;
+    if (page) {
+      page.style.border = "none";
+      page.style.boxShadow = "none";
+      page.style.transform = "";
+    }
+  }
+
+  private installControlTapOnlyMode(root: HTMLElement) {
+    const style = root.style as CSSStyleDeclaration & Record<string, string>;
+    style.touchAction = "manipulation";
+    style.userSelect = "none";
+    style.WebkitUserSelect = "none";
+    style["WebkitTouchCallout"] = "none";
+
+    const longPressMs = 450;
+    const moveThreshold = 12;
+    let active: {
+      id: number;
+      target: HTMLElement;
+      startX: number;
+      startY: number;
+      startTs: number;
+      moved: boolean;
+      longPress: boolean;
+    } | null = null;
+
+    const findClickable = (target: EventTarget | null): HTMLElement | null => {
+      if (!(target instanceof HTMLElement)) return null;
+      if (target.closest("select")) return null;
+      const clickable = target.closest("label,button,.btnDiv,.filterButton,input[type='checkbox'],img");
+      return clickable instanceof HTMLElement ? clickable : null;
+    };
+
+    const resolveTouch = (event: TouchEvent, id: number): Touch | null => {
+      for (let i = 0; i < event.touches.length; i++) {
+        const t = event.touches[i];
+        if (t.identifier === id) return t;
+      }
+      for (let i = 0; i < event.changedTouches.length; i++) {
+        const t = event.changedTouches[i];
+        if (t.identifier === id) return t;
+      }
+      return null;
+    };
+
+    const onStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return;
+      const clickable = findClickable(event.target);
+      if (!clickable) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      active = {
+        id: touch.identifier,
+        target: clickable,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startTs: Date.now(),
+        moved: false,
+        longPress: false,
+      };
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const onMove = (event: TouchEvent) => {
+      if (!active) return;
+      const touch = resolveTouch(event, active.id);
+      if (!touch) return;
+      const dx = touch.clientX - active.startX;
+      const dy = touch.clientY - active.startY;
+      if (!active.moved && Math.hypot(dx, dy) > moveThreshold) active.moved = true;
+      if (!active.longPress && Date.now() - active.startTs >= longPressMs) active.longPress = true;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const finish = (event: TouchEvent, cancelled: boolean) => {
+      if (!active) return;
+      const done = active;
+      active = null;
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!cancelled && !done.moved && !done.longPress) {
+        done.target.click();
+      } else {
+        this.resetTransientInteractionState();
+      }
+    };
+
+    const listenerOpts: AddEventListenerOptions = { capture: true, passive: false };
+    root.addEventListener("touchstart", onStart, listenerOpts);
+    root.addEventListener("touchmove", onMove, listenerOpts);
+    root.addEventListener("touchend", (e) => finish(e, false), listenerOpts);
+    root.addEventListener("touchcancel", (e) => finish(e, true), listenerOpts);
+  }
+
   private initFields() {
     const about = document.getElementById("about");
     const aboutBox = document.getElementById("aboutBox");
@@ -781,14 +881,14 @@ export class App extends AppBase {
       this.mainToolbar = document.getElementById("mainToolbar");
       if (this.mainToolbar) {
         this.installPinchZoomHandler(this.mainToolbar, pinchStep);
-        this.mainToolbar.addEventListener("mousedown", (e) => this.mainToolbarReloadHandler("down", e));
-        this.mainToolbar.addEventListener("mousemove", (e) => this.mainToolbarReloadHandler("move", e));
-        this.mainToolbar.addEventListener("mouseup", (e) => this.mainToolbarReloadHandler("up", e));
-        this.mainToolbar.addEventListener("mouseleave", (e) => this.mainToolbarReloadHandler("up", e));
-        routeTouchEventsToMouse(this.mainToolbar, { preventDefault: false, stopPropagation: false });
+        this.installControlTapOnlyMode(this.mainToolbar);
+        this.installPullToRefreshInputHandlers(this.mainToolbar, (type, e) => this.mainToolbarReloadHandler(type, e), "toolbar");
       }
       const optionsPanel = document.getElementById("options");
-      if (optionsPanel) this.installPinchZoomHandler(optionsPanel, pinchStep);
+      if (optionsPanel) {
+        this.installPinchZoomHandler(optionsPanel, pinchStep);
+        this.installControlTapOnlyMode(optionsPanel);
+      }
     }
 
     this.edFilter = document.getElementById("filter") as HTMLInputElement;
@@ -903,11 +1003,7 @@ export class App extends AppBase {
 
     this.songListTable = document.getElementById("list") as HTMLTableElement;
     if (this.songListTable) {
-      this.songListTable.addEventListener("mousedown", (e) => this.songListTableReloadHandler("down", e));
-      this.songListTable.addEventListener("mousemove", (e) => this.songListTableReloadHandler("move", e));
-      this.songListTable.addEventListener("mouseup", (e) => this.songListTableReloadHandler("up", e));
-      this.songListTable.addEventListener("mouseleave", (e) => this.songListTableReloadHandler("up", e));
-      routeTouchEventsToMouse(this.songListTable, { preventDefault: false, stopPropagation: false });
+      this.installPullToRefreshInputHandlers(this.songListTable, (type, e) => this.songListTableReloadHandler(type, e), "songlist");
     }
 
     this.chkHighlight = document.getElementById("chkHighlight") as HTMLInputElement;
@@ -1015,86 +1111,42 @@ export class App extends AppBase {
     }
 
     this.chkMaxText = document.getElementById("chkMaxText") as HTMLInputElement;
-    // Long-press the zoom button label to open the zoom-settings dialog;
-    // a short tap/click still toggles the underlying #chkMaxText checkbox
-    // normally (which is what runs displayChanged() via the checkbox's own
-    // change event chain — we wire that here too for safety).
-    const chkMaxTextLabel = document.querySelector<HTMLLabelElement>('label[for="chkMaxText"]');
     if (this.chkMaxText) {
-      this.chkMaxText.onchange = () => this.displayChanged();
-    }
-    if (chkMaxTextLabel && this.zoomSettingsDialog) {
-      const startZoom = () => {
-        this.zoomLongPressFired = false;
-        if (this.zoomLongPressTimer !== null) window.clearTimeout(this.zoomLongPressTimer);
-        this.zoomLongPressTimer = window.setTimeout(() => {
-          this.zoomLongPressTimer = null;
-          this.zoomLongPressFired = true;
+      let lastHit = 0;
+      this.chkMaxText.onchange = () => {
+        const prevHit = lastHit;
+        lastHit = Date.now();
+        if (lastHit - prevHit < 500) {
           this.openZoomSettingsDialog();
-        }, 500);
-      };
-      const cancelZoom = () => {
-        if (this.zoomLongPressTimer !== null) {
-          window.clearTimeout(this.zoomLongPressTimer);
-          this.zoomLongPressTimer = null;
         }
-      };
-      chkMaxTextLabel.addEventListener("mousedown", startZoom);
-      chkMaxTextLabel.addEventListener("touchstart", startZoom, { passive: true });
-      chkMaxTextLabel.addEventListener("mouseup", cancelZoom);
-      chkMaxTextLabel.addEventListener("mouseleave", cancelZoom);
-      chkMaxTextLabel.addEventListener("touchend", cancelZoom);
-      chkMaxTextLabel.addEventListener("touchcancel", cancelZoom);
-      // Suppress the checkbox toggle when a long-press elapsed.
-      chkMaxTextLabel.addEventListener(
-        "click",
-        (e) => {
-          if (this.zoomLongPressFired) {
-            this.zoomLongPressFired = false;
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        },
-        true
-      );
+        setTimeout(() => this.displayChanged(), 0);
+      }
     }
 
     this.highlightIconHolderDiv = document.getElementById("highlight");
     if (this.highlightIconHolderDiv) {
-      this.highlightIconHolderDiv.onmousedown = (e) => this.onHighlightIconClicked(e, true);
-      this.highlightIconHolderDiv.onmouseup = (e) => this.onHighlightIconClicked(e, false);
-      this.highlightIconHolderDiv.ontouchstart = (e) => this.onHighlightIconClicked(e, true);
-      this.highlightIconHolderDiv.ontouchend = (e) => this.onHighlightIconClicked(e, false);
-    }
-
-    // Long-press on the highlight toggle button opens a small opacity slider
-    // popup. We bind to the surrounding <label> (chkHighlightLabel) because
-    // it is the element that receives the click that toggles the checkbox —
-    // intercepting the click here lets us suppress the toggle when long-press
-    // fires. The label also covers the icon and is the natural press target.
-    const highlightLabel = document.getElementById("chkHighlightLabel");
-    if (highlightLabel) {
-      const start = (e: Event) => this.startHighlightLongPress(e, highlightLabel);
-      const cancel = () => this.cancelHighlightLongPress();
-      highlightLabel.addEventListener("mousedown", start);
-      highlightLabel.addEventListener("touchstart", start, { passive: true });
-      highlightLabel.addEventListener("mouseup", cancel);
-      highlightLabel.addEventListener("mouseleave", cancel);
-      highlightLabel.addEventListener("touchend", cancel);
-      highlightLabel.addEventListener("touchcancel", cancel);
-      // Click in capture phase so we can suppress the underlying checkbox
-      // toggle when the press was actually a long-press.
-      highlightLabel.addEventListener(
-        "click",
-        (e) => {
-          if (this.highlightLongPressFired) {
-            this.highlightLongPressFired = false;
-            e.preventDefault();
-            e.stopPropagation();
+      let lastClick = 0;
+      let clickCount = 0;
+      this.highlightIconHolderDiv.onclick = (e) => {
+        const now = Date.now();
+        if (now - lastClick > 500) clickCount = 1; 
+        else if (++clickCount >= 10) {
+          lastClick = 0;
+          clickCount = 0;
+          this.queryHighlightPermission();        
+          return;
+        }
+        lastClick = now;
+        setTimeout(() => {
+          if (Date.now() - lastClick >= 500) {
+            const cnt = clickCount;
+            clickCount = 0;
+            lastClick = 0;
+            if (cnt == 2)
+              this.openHighlightOpacityPopup(this.highlightIconHolderDiv!);
           }
-        },
-        true
-      );
+        }, 500);
+      }
     }
 
     this.iconHighlighter = document.getElementById("highlighter");
@@ -1478,14 +1530,7 @@ export class App extends AppBase {
 
     this.swipeHandler = document.getElementById("swipe-handler");
     if (this.swipeHandler) {
-      this.swipeHandler.onmousedown = (e) => this.swipeHandlerEvent("down", e);
-      this.swipeHandler.onmousemove = (e) => this.swipeHandlerEvent("move", e);
-      this.swipeHandler.onmouseup = (e) => this.swipeHandlerEvent("up", e);
-      this.swipeHandler.onmouseleave = (e) => this.swipeHandlerEvent("up", e);
-      // Install the pinch-zoom touch listener BEFORE routeTouchEventsToMouse
-      // so that during a two-finger gesture we can stopImmediatePropagation()
-      // on the touch events and prevent them from being translated into
-      // mouse-driven page-turn / scroll gestures.
+      this.installSwipeInputHandlers(this.swipeHandler);
       this.installPinchScrollModeHandler(this.swipeHandler);
       routeTouchEventsToMouse(this.swipeHandler);
     }
@@ -1846,13 +1891,128 @@ export class App extends AppBase {
 
   private wholeSongListDragStart?: number;
 
-  private songListTableReloadHandler(type: "down" | "up" | "move", e: MouseEvent) {
+  private installPullToRefreshInputHandlers(
+    element: HTMLElement,
+    handler: (type: "down" | "up" | "move", e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">) => void,
+    source: string
+  ) {
+    const relay = (type: "down" | "up" | "move", e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">) => {
+      handler(type, e);
+    };
+
+    if (!hasTouchScreen()) {
+      let mouseActive = false;
+
+      const clearMouseTracking = () => {
+        window.removeEventListener("mousemove", onMouseMove, true);
+        window.removeEventListener("mouseup", onMouseUp, true);
+        window.removeEventListener("blur", onWindowBlur, true);
+      };
+
+      const onMouseMove = (e: MouseEvent) => {
+        if (!mouseActive) return;
+        relay("move", e);
+      };
+
+      const onMouseUp = (e: MouseEvent) => {
+        if (!mouseActive) return;
+        mouseActive = false;
+        relay("up", e);
+        clearMouseTracking();
+      };
+
+      const onWindowBlur = () => {
+        if (!mouseActive) return;
+        mouseActive = false;
+        // Ensure handlers reset their drag state even if the browser loses focus mid-gesture.
+        handler("up", {
+          clientX: 0,
+          clientY: 0,
+          preventDefault: () => {
+            return;
+          },
+          stopPropagation: () => {
+            return;
+          },
+        });
+        clearMouseTracking();
+      };
+
+      element.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        mouseActive = true;
+        relay("down", e);
+        window.addEventListener("mousemove", onMouseMove, true);
+        window.addEventListener("mouseup", onMouseUp, true);
+        window.addEventListener("blur", onWindowBlur, true);
+      });
+      return;
+    }
+
+    const opts: AddEventListenerOptions = { capture: true, passive: false };
+    let activeTouchId: number | null = null;
+    const toTouchLike = (ev: TouchEvent, touch: Touch) => ({
+      // pageX/pageY track gesture movement even when browser scroll/overscroll
+      // keeps client coordinates nearly fixed on mobile.
+      clientX: touch.pageX,
+      clientY: touch.pageY,
+      preventDefault: () => ev.preventDefault(),
+      stopPropagation: () => ev.stopPropagation(),
+    });
+
+    element.addEventListener(
+      "touchstart",
+      (ev: TouchEvent) => {
+        if (activeTouchId != null || ev.changedTouches.length < 1) return;
+        const touch = ev.changedTouches[0];
+        activeTouchId = touch.identifier;
+        relay("down", toTouchLike(ev, touch));
+      },
+      opts
+    );
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (activeTouchId == null) return;
+      for (let i = 0; i < ev.touches.length; i++) {
+        const touch = ev.touches[i];
+        if (touch.identifier !== activeTouchId) continue;
+        relay("move", toTouchLike(ev, touch));
+        return;
+      }
+    };
+
+    const endTouch = (ev: TouchEvent) => {
+      if (activeTouchId == null) return;
+      for (let i = 0; i < ev.changedTouches.length; i++) {
+        const touch = ev.changedTouches[i];
+        if (touch.identifier !== activeTouchId) continue;
+        relay("up", toTouchLike(ev, touch));
+        activeTouchId = null;
+        return;
+      }
+    };
+
+    window.addEventListener("touchmove", onTouchMove, opts);
+    window.addEventListener("touchend", endTouch, opts);
+    window.addEventListener("touchcancel", endTouch, opts);
+  }
+
+  private songListTableReloadHandler(
+    type: "down" | "up" | "move",
+    e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">
+  ) {
     const loadingCircle = this.loadingCircle;
     if (loadingCircle && this.mode === "App" && this.songListTable) {
       switch (type) {
         case "up":
           if (this.wholeSongListDragStart != null) {
+            const startY = this.wholeSongListDragStart;
+            const startX = this.wholeSongListDragStartX ?? e.clientX;
+            const diffY = e.clientY - startY;
+            const diffX = e.clientX - startX;
+            if (diffY > 20 && diffY > Math.abs(diffX)) this.moveLoadingCircle(diffY, this.songListTable);
             this.wholeSongListDragStart = undefined;
+            this.wholeSongListDragStartX = undefined;
             const level = this.checkLoadingCircle(this.songListTable);
             if (level) {
               if (level > 2) {
@@ -1868,26 +2028,35 @@ export class App extends AppBase {
           }
           break;
         case "down":
-          if (this.songListTable.scrollTop <= 2) this.wholeSongListDragStart = e.clientY;
+          if (this.songListTable.scrollTop <= 2) {
+            this.wholeSongListDragStartX = e.clientX;
+            this.wholeSongListDragStart = e.clientY;
+          }
           break;
         case "move":
           if (this.wholeSongListDragStart != null) {
             const diff = e.clientY - this.wholeSongListDragStart;
             this.moveLoadingCircle(diff, this.songListTable);
+            if (diff > 0) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
           }
           break;
       }
     }
   }
 
-  private mainToolbarReloadHandler(type: "down" | "up" | "move", e: MouseEvent) {
+  private mainToolbarReloadHandler(type: "down" | "up" | "move", e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">) {
     const loadingCircle = this.loadingCircle;
     const page = this.pages.current.div;
     if (!loadingCircle || !page) return;
 
     switch (type) {
       case "down":
-        if (page.scrollTop <= 2) this.toolbarPullState = { startX: e.clientX, startY: e.clientY, dragging: false };
+        if (page.scrollTop <= 2) {
+          this.toolbarPullState = { startX: e.clientX, startY: e.clientY, dragging: false };
+        } else this.toolbarPullState = null;
         break;
       case "move":
         if (this.toolbarPullState) {
@@ -1904,7 +2073,13 @@ export class App extends AppBase {
         break;
       case "up":
         if (this.toolbarPullState) {
-          const dragging = this.toolbarPullState.dragging;
+          const offsetX = e.clientX - this.toolbarPullState.startX;
+          const offsetY = e.clientY - this.toolbarPullState.startY;
+          let dragging = this.toolbarPullState.dragging;
+          if (!dragging && offsetY > 20 && offsetY > Math.abs(offsetX)) {
+            dragging = true;
+            this.moveLoadingCircle(offsetY, page);
+          }
           this.toolbarPullState = null;
           if (dragging) {
             const level = this.checkLoadingCircle(page);
@@ -1933,9 +2108,9 @@ export class App extends AppBase {
   /**
    * Two-finger pinch handler bound to the swipe area. Pinch-out (fingers
    * spreading apart) turns the zoom (#chkMaxText) ON, pinch-in turns it OFF.
-   * The handler is registered with `capture: true` BEFORE the touch-to-mouse
-   * router so that, while a pinch is in progress, the touch events are
-   * stopped from bubbling into the page-turn / scroll pipeline.
+   * The handler is registered with `capture: true` so that, while a pinch is
+   * in progress, touch events are stopped from bubbling into the page-turn /
+   * scroll pipeline.
    */
   private installPinchScrollModeHandler(element: HTMLElement) {
     const distance = (touches: TouchList) => {
@@ -1943,8 +2118,20 @@ export class App extends AppBase {
       const dy = touches[0].clientY - touches[1].clientY;
       return Math.hypot(dx, dy);
     };
+    const finishPinch = (applyZoom: boolean) => {
+      if (!this.pinchState) return;
+      const ratio = this.pinchState.lastRatio;
+      this.pinchState = null;
+      this.swipeState = null;
+      if (applyZoom) {
+        // Threshold avoids flicker on accidental micro-pinches.
+        if (ratio >= 1.2) this.setZoomFromPinch(true);
+        else if (ratio <= 1 / 1.2) this.setZoomFromPinch(false);
+      }
+    };
     const handler = (e: TouchEvent) => {
       if (e.type === "touchstart") {
+        if (this.pinchState && e.touches.length < 2) finishPinch(false);
         if (e.touches.length >= 2 && !this.pinchState) {
           const d = distance(e.touches);
           if (d > 0) {
@@ -1957,23 +2144,18 @@ export class App extends AppBase {
           }
         }
       } else if (e.type === "touchmove" && this.pinchState) {
+        if (e.touches.length < 2) {
+          finishPinch(true);
+          return;
+        }
         e.stopImmediatePropagation();
         e.preventDefault();
-        if (e.touches.length >= 2) {
-          const d = distance(e.touches);
-          if (this.pinchState.startDistance > 0) this.pinchState.lastRatio = d / this.pinchState.startDistance;
-        }
+        const d = distance(e.touches);
+        if (this.pinchState.startDistance > 0) this.pinchState.lastRatio = d / this.pinchState.startDistance;
       } else if ((e.type === "touchend" || e.type === "touchcancel") && this.pinchState) {
         e.stopImmediatePropagation();
         e.preventDefault();
-        if (e.touches.length === 0) {
-          const ratio = this.pinchState.lastRatio;
-          this.pinchState = null;
-          this.swipeState = null;
-          // Threshold avoids flicker on accidental micro-pinches.
-          if (ratio >= 1.2) this.setZoomFromPinch(true);
-          else if (ratio <= 1 / 1.2) this.setZoomFromPinch(false);
-        }
+        if (e.touches.length < 2) finishPinch(true);
       }
     };
     const opts: AddEventListenerOptions = { capture: true, passive: false };
@@ -1981,6 +2163,41 @@ export class App extends AppBase {
     element.addEventListener("touchmove", handler, opts);
     element.addEventListener("touchend", handler, opts);
     element.addEventListener("touchcancel", handler, opts);
+  }
+
+  private installSwipeInputHandlers(element: HTMLElement) {
+    if (typeof PointerEvent !== "undefined") {
+      element.style.touchAction = "none";
+      element.onpointerdown = (e) => {
+        if (!e.isPrimary) return;
+        this.swipePointerId = e.pointerId;
+        this.swipeHandlerEvent("down", e);
+      };
+      element.onpointermove = (e) => {
+        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+        this.swipeHandlerEvent("move", e);
+      };
+      const endPointer = (e: PointerEvent) => {
+        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+        this.swipeHandlerEvent("up", e);
+        this.swipePointerId = null;
+      };
+      element.onpointerup = endPointer;
+      element.onpointercancel = endPointer;
+      element.onpointerleave = endPointer;
+
+      // Prevent duplicate handling from mouse-specific handlers when pointer events are active.
+      element.onmousedown = null;
+      element.onmousemove = null;
+      element.onmouseup = null;
+      element.onmouseleave = null;
+      return;
+    }
+
+    element.onmousedown = (e) => this.swipeHandlerEvent("down", e);
+    element.onmousemove = (e) => this.swipeHandlerEvent("move", e);
+    element.onmouseup = (e) => this.swipeHandlerEvent("up", e);
+    element.onmouseleave = (e) => this.swipeHandlerEvent("up", e);
   }
 
   private setZoomFromPinch(zoomOn: boolean) {
@@ -2938,43 +3155,6 @@ export class App extends AppBase {
       if (this.unhighlight) makeVisible(this.unhighlight, false);
       if (this.divStartEdit) makeVisible(this.divStartEdit, false);
       this.updateHighlight();
-    }
-  }
-
-  private onHighlightIconClicked(event: Event, down: boolean) {
-    const now = Date.now();
-    if (down) this.highLightClickDownTime = now;
-    else if (this.highLightClickDownTime && this.highLightClickDownTime + 2000 <= now && now < this.highLightClickDownTime + 10000)
-      this.queryHighlightPermission();
-    else this.highLightClickDownTime = null;
-  }
-
-  /**
-   * Start a long-press timer on the highlight toggle. After ~500 ms the
-   * opacity slider popup opens and the upcoming `click` on the surrounding
-   * label is suppressed (see the capture-phase click listener) so the
-   * checkbox state does not change.
-   */
-  private startHighlightLongPress(event: Event, anchor: HTMLElement) {
-    // If a popup is already open, ignore (the second press should close it
-    // via the outside-click handler).
-    if (this.highlightOpacityPopup) return;
-    this.cancelHighlightLongPress();
-    this.highlightLongPressFired = false;
-    this.highlightLongPressTimer = window.setTimeout(() => {
-      this.highlightLongPressTimer = null;
-      this.highlightLongPressFired = true;
-      this.openHighlightOpacityPopup(anchor);
-    }, 500);
-    // Use the event reference to avoid unused-arg lint complaint while
-    // keeping the signature future-proof for e.g. position-from-event.
-    void event;
-  }
-
-  private cancelHighlightLongPress() {
-    if (this.highlightLongPressTimer !== null) {
-      clearTimeout(this.highlightLongPressTimer);
-      this.highlightLongPressTimer = null;
     }
   }
 
