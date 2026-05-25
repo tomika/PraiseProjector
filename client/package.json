@@ -5,8 +5,8 @@
   "description": "PraiseProjector browser client",
   "scripts": {
     "build": "npm run build:release",
-    "build:debug": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --sourcemap --define:import.meta.env={} --outfile=../public/app/pp-api.js",
-    "build:release": "esbuild ./pp-api.ts --bundle --format=iife --global-name=P --platform=browser --target=es2018 --minify --define:import.meta.env={} --outfile=../public/app/pp-api.js",
+    "build:debug": "node ./build.js --debug",
+    "build:release": "node ./build.js --release",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\""
   },

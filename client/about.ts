@@ -2,7 +2,15 @@ import { HostDevice } from "./host-device";
 import { praiseProjectorOrigin } from "./praiseprojector";
 import { getClientWebAppLicenseSections } from "./about-licenses";
 
+declare const __APP_VERSION__: string;
+declare const __APP_COMMIT__: string;
+declare const __APP_SHOW_COMMIT__: boolean;
+
 export function getAboutBoxHtml(info?: { login?: string }) {
+  const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
+  const commit = typeof __APP_COMMIT__ !== "undefined" ? __APP_COMMIT__ : "";
+  const showCommit = typeof __APP_SHOW_COMMIT__ !== "undefined" ? __APP_SHOW_COMMIT__ : false;
+  const versionDisplay = showCommit && commit ? `${version} (${commit})` : version;
   const licenseSections = [...getClientWebAppLicenseSections(), ...(HostDevice.hostDevice?.getThirdPartyLicenseSections() || [])];
 
   const sectionHtml = licenseSections
@@ -31,6 +39,12 @@ export function getAboutBoxHtml(info?: { login?: string }) {
     }
     <tr>
         <td>&nbsp;</td>
+    </tr>
+    <tr>
+      <td>Client app version: ${versionDisplay}</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
     </tr>
     <tr>
         <td><strong>Open source license references:</strong></td>
