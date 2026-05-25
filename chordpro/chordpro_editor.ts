@@ -179,6 +179,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
       ...(isNaN(bpm) ? {} : { qpm: bpm }),
       eventCallback: (event) => {
         applyPlaybackMarker(event);
+        return undefined;
       },
     });
 
@@ -4771,7 +4772,7 @@ export class ChordProEditor extends ChordDrawer {
 
     const abcScale = 2 / 3;
     const calcStaffWith = (maxWidth: number) => maxWidth - leftMargin - horizontalSeparation;
-    const abcRender = (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement) => {
+    const abcRender = (line_obj: ChordProAbc, maxWidth: number, abcDiv?: HTMLDivElement): HTMLImageElement | TuneObjectArray | null => {
       const options = {
         germanAlphabet: this.chordPro?.system.systemCode === "G",
         jazzchords: true,
@@ -4782,7 +4783,8 @@ export class ChordProEditor extends ChordDrawer {
         currentColor: this.isDark ? "white" : "black",
       };
       if (!abcDiv) return line_obj.generateImage(options);
-      return line_obj.render(abcDiv, options);
+      const rendered = line_obj.render(abcDiv, options);
+      return Array.isArray(rendered) && rendered.length > 0 ? [rendered[0] as TuneObject] : null;
     };
 
     type PendingAbcElement = { line_obj: ChordProAbc; abcDiv: HTMLDivElement; y: number };
