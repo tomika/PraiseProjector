@@ -29,6 +29,8 @@ export interface ElectronHostDevice {
     checkIntervalMinutes: number,
     acquire: boolean
   ) => boolean | Promise<boolean>;
+  cancelNotification?: (notificationId: number) => boolean | Promise<boolean>;
+  cancelAllNotifications?: () => boolean | Promise<boolean>;
   getCacheSize?: () => number | Promise<number>;
   clearCache?: (includeDiskFiles: boolean) => boolean | Promise<boolean>;
   startNavigationTimeout?: (navigationTimeoutMs: number, message: string) => void | Promise<void>;

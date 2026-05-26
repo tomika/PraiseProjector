@@ -43,6 +43,8 @@ export interface HostDeviceInterface {
   version?(): string;
   info?(flags: HostDeviceInfoType): string;
   enableNotification?(sessionId: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean): boolean;
+  cancelNotification?(notificationId: number): boolean;
+  cancelAllNotifications?(): boolean;
   getCacheSize?(): number;
   clearCache?(includeDiskFiles: boolean): boolean;
   startNavigationTimeout?(navigationTimeoutMs: number, message: string): void;
@@ -200,6 +202,12 @@ export class HostDevice {
   }
   enableNotification(sessionId: string, name: string, desc: string, checkIntervalMinutes: number, acquire = false) {
     return this.device.enableNotification?.(sessionId, name, desc, checkIntervalMinutes, acquire) ?? false;
+  }
+  cancelNotification(notificationId: number) {
+    return this.device.cancelNotification?.(notificationId) ?? false;
+  }
+  cancelAllNotifications() {
+    return this.device.cancelAllNotifications?.() ?? false;
   }
   async getCacheSize() {
     let size = this.device.getCacheSize?.() ?? -1;
