@@ -3,7 +3,6 @@ import {
   ChordProChord,
   ChordProChordBase,
   ChordProLine,
-  ChordProLineRange,
   ChordProMovableItemInfo,
   LyricsCharInfo,
   ChordSystem,
@@ -4767,7 +4766,6 @@ export class ChordProEditor extends ChordDrawer {
     ctx.font = this.displayProps.tagFont;
 
     let prevTag: string | DifferentialText = ""; // tslint:disable-next-line: no-bitwise
-    const highlightboxes: ChordProLineRange[] = [];
     const noSectionDup = this.readOnly && (this.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
 
     const abcScale = 2 / 3;
@@ -4897,10 +4895,6 @@ export class ChordProEditor extends ChordDrawer {
       line_obj.yRange = { top: y, bottom: y + line_height };
       y += line_height;
 
-      if (this.isHighlightedLine(line_obj)) {
-        highlightboxes.push({ ...line_obj.yRange });
-      }
-
       lineTops.push(y);
     }
 
@@ -4923,43 +4917,36 @@ export class ChordProEditor extends ChordDrawer {
 
     this.tagWidth = tagWidth + leftMargin;
 
-    // draw highlighted background for currently highlighted range(s).
-    // Multiple non-contiguous boxes are rendered separately so that gaps
-    // (e.g. an unrelated section between a repeated section's expanded block
-    // and its ellipsis preview) are not painted over.
-    if (highlightboxes.length) {
-      const backup = ctx.fillStyle;
-      const backupAlpha = ctx.globalAlpha;
-      const highlightOpacity = Math.max(0, Math.min(1, this.highlightOpacity));
-      // Apply user-configured opacity (compounded with any current
-      // globalAlpha so we don't accidentally make highlights opaque while
-      // the rest of the canvas is faded).
-      ctx.fillStyle = this.displayProps.highlightColor;
-      const repeatTotal = this.highlighted?.repeatTotal ?? 1;
-      const repeatIndex = this.highlighted?.repeatIndex ?? 1;
-      const segmentMode = repeatTotal > 1 && repeatIndex > 0;
-      const highlightLeft = Math.max(0, Math.min(leftMargin + (this.showTag ? tagWidth + horizontalSeparation : 0), logicalCanvasWidth));
-      const fullWidth = Math.max(1, logicalCanvasWidth - highlightLeft);
-      for (const box of highlightboxes) {
-        if (!segmentMode) {
-          ctx.globalAlpha = backupAlpha * highlightOpacity;
-          ctx.fillRect(highlightLeft, box.top, fullWidth, box.bottom - box.top);
-          continue;
-        }
-
-        ctx.globalAlpha = backupAlpha * highlightOpacity * 0.5;
-        ctx.fillRect(highlightLeft, box.top, fullWidth, box.bottom - box.top);
-
-        const segmentWidth = fullWidth / repeatTotal;
-        const segmentLeft = highlightLeft + (repeatIndex - 1) * segmentWidth;
-        ctx.globalAlpha = backupAlpha * highlightOpacity;
-        ctx.fillRect(segmentLeft, box.top, segmentWidth, box.bottom - box.top);
-      }
-      ctx.fillStyle = backup;
-      ctx.globalAlpha = backupAlpha;
-    }
-
     const line_mult = 1000000;
+    const highlightOpacity = Math.max(0, Math.min(1, this.highlightOpacity));
+    const repeatTotal = this.highlighted?.repeatTotal ?? 1;
+    const repeatIndex = this.highlighted?.repeatIndex ?? 1;
+    const segmentMode = repeatTotal > 1 && repeatIndex > 0;
+    const baseHighlightLeft = leftMargin + (this.showTag ? tagWidth + horizontalSeparation : 0);
+    const highlightPadding = Math.max(2, Math.round(this.displayProps.lyricsLineHeight * 0.2));
+    const highlightLeft = Math.max(0, Math.min(baseHighlightLeft - highlightPadding, logicalCanvasWidth));
+    const highlightedLineRanges: { top: number; bottom: number }[] = [];
+    let songMaxRight = highlightLeft + 1;
+    const fillRoundedRect = (xPos: number, yPos: number, width: number, height: number, radius: number) => {
+      if (width <= 0 || height <= 0) return;
+      const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+      ctx.beginPath();
+      if (r <= 0.5) {
+        ctx.rect(xPos, yPos, width, height);
+      } else {
+        ctx.moveTo(xPos + r, yPos);
+        ctx.lineTo(xPos + width - r, yPos);
+        ctx.quadraticCurveTo(xPos + width, yPos, xPos + width, yPos + r);
+        ctx.lineTo(xPos + width, yPos + height - r);
+        ctx.quadraticCurveTo(xPos + width, yPos + height, xPos + width - r, yPos + height);
+        ctx.lineTo(xPos + r, yPos + height);
+        ctx.quadraticCurveTo(xPos, yPos + height, xPos, yPos + height - r);
+        ctx.lineTo(xPos, yPos + r);
+        ctx.quadraticCurveTo(xPos, yPos, xPos + r, yPos);
+      }
+      ctx.closePath();
+      ctx.fill();
+    };
     const sel_range =
       this.selectionStart instanceof ChordProSelection && this.selectionEnd instanceof ChordProSelection
         ? [line_mult * this.selectionStart.line + this.selectionStart.col, line_mult * this.selectionEnd.line + this.selectionEnd.col]
@@ -5037,6 +5024,7 @@ export class ChordProEditor extends ChordDrawer {
       ctx.fillStyle = this.displayProps.lyricsTextColor;
 
       x += this.applyLineStyle(ctx, line_obj);
+      let highlightRight = x;
 
       const drawChords = !line_obj.sectionChordDuplicate && (!this.readOnly || (this.chordFormat & CHORDFORMAT_NOCHORDS) === 0);
 
@@ -5190,6 +5178,7 @@ export class ChordProEditor extends ChordDrawer {
                 width = this.drawChordText(chord, ctx, x, lyricsPos).width;
               j += chord.length - 1;
               updateSize(x + width, lyricsPos + this.displayProps.lyricsLineHeight / 2);
+              highlightRight = Math.max(highlightRight, x + width);
               x += width;
               i += chord.length;
             } else drawChar(chunk.text.substr(j, 1), chunk.added);
@@ -5215,6 +5204,7 @@ export class ChordProEditor extends ChordDrawer {
           unionRect = undefined;
         }
       }
+      highlightRight = Math.max(highlightRight, x);
 
       this.boxes.push(
         new ChordProLineHitBox(
@@ -5338,6 +5328,7 @@ export class ChordProEditor extends ChordDrawer {
             )
           );
 
+          highlightRight = Math.max(highlightRight, left + w + 2 * this.displayProps.chordBorder);
           updateSize(left + w, chordPos + this.displayProps.chordLineHeight + 2 * this.displayProps.chordBorder);
         }
       }
@@ -5386,9 +5377,57 @@ export class ChordProEditor extends ChordDrawer {
         }
 
         drawChordPosMarker(left, b, left, r);
+        highlightRight = Math.max(highlightRight, r);
+      }
+
+      songMaxRight = Math.max(songMaxRight, highlightRight);
+
+      if (this.isHighlightedLine(line_obj)) {
+        highlightedLineRanges.push({ ...line_obj.yRange });
       }
 
       ctx.restore();
+    }
+
+    if (highlightedLineRanges.length > 0 && highlightOpacity > 0) {
+      const blockHighlightRight = Math.max(highlightLeft + 1, Math.min(logicalCanvasWidth, songMaxRight + highlightPadding));
+      const blockHighlightWidth = blockHighlightRight - highlightLeft;
+      if (blockHighlightWidth > 0) {
+        const mergedHighlightRanges: { top: number; bottom: number }[] = [];
+        for (const range of highlightedLineRanges.sort((a, b) => a.top - b.top)) {
+          const last = mergedHighlightRanges[mergedHighlightRanges.length - 1];
+          if (!last || range.top > last.bottom + 0.5) {
+            mergedHighlightRanges.push({ ...range });
+          } else {
+            last.bottom = Math.max(last.bottom, range.bottom);
+          }
+        }
+
+        ctx.save();
+        // Draw behind text/chords while using the widest highlighted line end.
+        ctx.globalCompositeOperation = "destination-over";
+        ctx.fillStyle = this.displayProps.highlightColor;
+
+        for (const box of mergedHighlightRanges) {
+          const lineHighlightHeight = Math.max(0, box.bottom - box.top);
+          if (lineHighlightHeight <= 0) continue;
+          const highlightRadius = Math.max(2, Math.min(10, lineHighlightHeight * 0.35, blockHighlightWidth * 0.2));
+
+          if (!segmentMode) {
+            ctx.globalAlpha = highlightOpacity;
+            fillRoundedRect(highlightLeft, box.top, blockHighlightWidth, lineHighlightHeight, highlightRadius);
+          } else {
+            ctx.globalAlpha = highlightOpacity * 0.5;
+            fillRoundedRect(highlightLeft, box.top, blockHighlightWidth, lineHighlightHeight, highlightRadius);
+
+            const segmentWidth = blockHighlightWidth / repeatTotal;
+            const segmentLeft = highlightLeft + (repeatIndex - 1) * segmentWidth;
+            ctx.globalAlpha = highlightOpacity;
+            fillRoundedRect(segmentLeft, box.top, segmentWidth, lineHighlightHeight, highlightRadius);
+          }
+        }
+        ctx.restore();
+      }
     }
 
     const wavyLines: { from: number; to: number; y: number }[] = [];
