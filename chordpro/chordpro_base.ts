@@ -1389,30 +1389,91 @@ export class ChordProDocument {
       if (pos < line.length) line_obj.lyricsData.append(line.substring(pos));
       line_obj.text = line;
     } else {
-      let chord: string | null = null;
-      line_obj.modifyRanges = [];
-      let prevChord: ChordProChord | null = null;
-      line.forEachChunk((chunk) => {
-        line_obj.modifyRanges!.push({ start: line_obj.lyrics.length, added: chunk.added });
-        for (const ch of chunk.text) {
-          if (ch === "[") chord = "";
-          else if (chord != null && ch === "]") {
-            if (
-              !prevChord ||
-              chunk.added === undefined ||
-              prevChord.added === undefined ||
-              prevChord.text !== chord ||
-              prevChord.added === chunk.added
-            )
-              line_obj.chords.push((prevChord = new ChordProChord(line_obj, chord, line_obj.lyrics.length, chunk.added)));
-            else if (chunk.added) {
-              prevChord.modif = prevChord.pos;
-              prevChord.pos = line_obj.lyrics.length;
-            } else prevChord.modif = line_obj.lyrics.length;
+      const parseChordLine = (input: string) => {
+        const chords: { text: string; pos: number }[] = [];
+        let lyrics = "";
+        let chord: string | null = null;
+
+        for (const ch of input) {
+          if (chord == null) {
+            if (ch === "[") chord = "";
+            else lyrics += ch;
+          } else if (ch === "]") {
+            chords.push({ text: chord, pos: lyrics.length });
             chord = null;
-          } else if (chord != null) chord += ch;
-          else line_obj.lyricsData.append(ch, chunk.added);
+          } else chord += ch;
         }
+
+        return { lyrics, chords };
+      };
+
+      const previous = parseChordLine(line.toString(false));
+      const currentLine = parseChordLine(line.toString(true));
+
+      line_obj.setLyrics(DifferentialText.create(previous.lyrics, currentLine.lyrics));
+      line_obj.modifyRanges = [];
+      let modifyStart = 0;
+      line_obj.lyricsData.forEachChunk((chunk) => {
+        line_obj.modifyRanges!.push({ start: modifyStart, added: chunk.added });
+        modifyStart += chunk.text.length;
+      });
+
+      const oldUsed = previous.chords.map(() => false);
+      const newUsed = currentLine.chords.map(() => false);
+
+      // First keep exact matches (same chord text at same lyric index) unchanged.
+      for (let j = 0; j < currentLine.chords.length; ++j) {
+        const nextChord = currentLine.chords[j];
+        let match = -1;
+        for (let i = 0; i < previous.chords.length; ++i) {
+          if (oldUsed[i]) continue;
+          const prevChord = previous.chords[i];
+          if (prevChord.text === nextChord.text && prevChord.pos === nextChord.pos) {
+            match = i;
+            break;
+          }
+        }
+        if (match >= 0) {
+          oldUsed[match] = true;
+          newUsed[j] = true;
+          line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos));
+        }
+      }
+
+      // Pair remaining same-text chords as moves from old position to new position.
+      for (let j = 0; j < currentLine.chords.length; ++j) {
+        if (newUsed[j]) continue;
+        const nextChord = currentLine.chords[j];
+        let match = -1;
+        for (let i = 0; i < previous.chords.length; ++i) {
+          if (oldUsed[i]) continue;
+          if (previous.chords[i].text === nextChord.text) {
+            match = i;
+            break;
+          }
+        }
+
+        if (match >= 0) {
+          oldUsed[match] = true;
+          const prevPos = previous.chords[match].pos;
+          line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos, prevPos === nextChord.pos ? undefined : prevPos));
+        } else {
+          line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos, true));
+        }
+      }
+
+      // Any leftover old chords are removals.
+      for (let i = 0; i < previous.chords.length; ++i)
+        if (!oldUsed[i]) {
+          const prevChord = previous.chords[i];
+          line_obj.chords.push(new ChordProChord(line_obj, prevChord.text, prevChord.pos, false));
+        }
+
+      line_obj.chords.sort((a, b) => {
+        if (a.pos !== b.pos) return a.pos - b.pos;
+        const aRank = a.added === false ? -1 : a.added === true ? 1 : 0;
+        const bRank = b.added === false ? -1 : b.added === true ? 1 : 0;
+        return aRank - bRank;
       });
     }
 
