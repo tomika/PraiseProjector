@@ -4049,11 +4049,18 @@ export class ChordProEditor extends ChordDrawer {
     // Find the first and last highlighted lines
     let firstHighlightedLine: ChordProLine | null = null;
     let lastHighlightedLine: ChordProLine | null = null;
+    let firstHighlightedIndex = -1;
+    let lastHighlightedIndex = -1;
 
-    for (const line of this.displayedLines) {
+    for (let i = 0; i < this.displayedLines.length; ++i) {
+      const line = this.displayedLines[i];
       if (this.isHighlightedLine(line)) {
-        if (!firstHighlightedLine) firstHighlightedLine = line;
+        if (!firstHighlightedLine) {
+          firstHighlightedLine = line;
+          firstHighlightedIndex = i;
+        }
         lastHighlightedLine = line;
+        lastHighlightedIndex = i;
       }
     }
 
@@ -4068,8 +4075,30 @@ export class ChordProEditor extends ChordDrawer {
     this.lastHighlightScrollSectionToken = currentSectionToken;
 
     // Highlight range, in canvas-local Y coordinates.
-    const highlightTop = firstHighlightedLine.yRange?.top || 0;
-    const highlightBottom = lastHighlightedLine.yRange?.bottom || 0;
+    const highlightAnchorTop = firstHighlightedLine.yRange?.top || 0;
+    let highlightTop = highlightAnchorTop;
+    let highlightBottom = lastHighlightedLine.yRange?.bottom || 0;
+
+    // Always extend visible highlight-follow range with adjacent grid blocks
+    // so surrounding grids remain on screen while tracking lyrics.
+    const includeAdjacentGridBlock = (startIndex: number, step: -1 | 1) => {
+      const line = this.displayedLines[startIndex];
+      if (!line?.isGrid) return;
+
+      for (let i = startIndex; i >= 0 && i < this.displayedLines.length; i += step) {
+        const candidate = this.displayedLines[i];
+        if (!candidate.isGrid) break;
+        const yRange = candidate.yRange;
+        if (!yRange) continue;
+        highlightTop = Math.min(highlightTop, yRange.top);
+        highlightBottom = Math.max(highlightBottom, yRange.bottom);
+      }
+    };
+
+    if (firstHighlightedIndex > 0) includeAdjacentGridBlock(firstHighlightedIndex - 1, -1);
+    if (lastHighlightedIndex >= 0 && lastHighlightedIndex + 1 < this.displayedLines.length) {
+      includeAdjacentGridBlock(lastHighlightedIndex + 1, 1);
+    }
 
     if (!Number.isFinite(highlightTop) || !Number.isFinite(highlightBottom) || highlightBottom <= highlightTop) return;
 
@@ -4111,7 +4140,7 @@ export class ChordProEditor extends ChordDrawer {
     if (!sameSectionAsLast) {
       this.runSectionAwareCentering(
         firstHighlightedLine,
-        highlightTop,
+        highlightAnchorTop,
         highlightTopInTarget,
         highlightBottomInTarget,
         canvasOffsetWithinTarget,
