@@ -4216,7 +4216,9 @@ export class ChordProEditor extends ChordDrawer {
 
       if (!this.displayedLines.length) return null;
 
-      const fits = (r: { top: number; bottom: number }) => r.bottom - r.top <= viewportHeight + 1;
+      // Section ranges are in logical canvas units while viewportHeight is in
+      // displayed CSS pixels. Convert before checking whether a range can fit.
+      const fits = (r: { top: number; bottom: number }) => (r.bottom - r.top) * logicalToDisplay <= viewportHeight + 1;
 
       const chooseFromTagBlocks = (): { top: number; bottom: number } | null => {
         const lineToken = (line: ChordProLine): string | null => {
@@ -4293,6 +4295,14 @@ export class ChordProEditor extends ChordDrawer {
           const duo = {
             top: Math.min(current.top, next.top),
             bottom: Math.max(current.bottom, next.bottom),
+          };
+          if (fits(duo)) return duo;
+        }
+
+        if (prev) {
+          const duo = {
+            top: Math.min(prev.top, current.top),
+            bottom: Math.max(prev.bottom, current.bottom),
           };
           if (fits(duo)) return duo;
         }
@@ -4388,6 +4398,14 @@ export class ChordProEditor extends ChordDrawer {
         const duo = {
           top: Math.min(current.top, next.top),
           bottom: Math.max(current.bottom, next.bottom),
+        };
+        if (fits(duo)) return duo;
+      }
+
+      if (prev) {
+        const duo = {
+          top: Math.min(prev.top, current.top),
+          bottom: Math.max(prev.bottom, current.bottom),
         };
         if (fits(duo)) return duo;
       }
