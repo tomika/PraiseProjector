@@ -254,6 +254,38 @@ const AppContent: React.FC = () => {
     void applyFullscreenSetting(settings.fullscreen);
   }, [settings?.fullscreen, applyFullscreenSetting]);
 
+  const cancelAllHostNotifications = useCallback(() => {
+    const cancel = window.hostDevice?.cancelAllNotifications;
+    if (!cancel) return;
+    void Promise.resolve(cancel()).catch((error) => {
+      console.warn("[Notifications] cancelAllNotifications failed:", error);
+    });
+  }, []);
+
+  // Clear stale device notifications as soon as app is ready.
+  useEffect(() => {
+    cancelAllHostNotifications();
+  }, [cancelAllHostNotifications]);
+
+  // Clear notifications when app is brought to foreground.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        cancelAllHostNotifications();
+      }
+    };
+    const handleWindowFocus = () => {
+      cancelAllHostNotifications();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [cancelAllHostNotifications]);
+
   // In webapp mode, request projector window close when main window/tab is closed.
   // Keep this at App level so it survives PreviewPanel unmount/remount cycles.
   useEffect(() => {

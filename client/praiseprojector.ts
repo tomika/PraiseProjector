@@ -5217,6 +5217,14 @@ export class App extends AppBase {
   }
 
   private keepScreenOnUntil = 0;
+  private cancelAllDeviceNotifications() {
+    try {
+      this.hostDevice?.cancelAllNotifications();
+    } catch (error) {
+      this.log("Notification cancel error: " + error);
+    }
+  }
+
   private checkDeviceKeepScreenOn() {
     if (Date.now() > this.keepScreenOnUntil) this.hostDevice?.keepScreenOn(false);
   }
@@ -5274,7 +5282,13 @@ export class App extends AppBase {
   private _onLoad() {
     this.initFields();
 
-    document.onvisibilitychange = () => this.preventDisplayFromSleep(document.visibilityState === "visible");
+    this.cancelAllDeviceNotifications();
+
+    document.onvisibilitychange = () => {
+      const visible = document.visibilityState === "visible";
+      this.preventDisplayFromSleep(visible);
+      if (visible) this.cancelAllDeviceNotifications();
+    };
     this.preventDisplayFromSleep();
 
     this.applyLeaderModeRestrictions();
@@ -5286,11 +5300,13 @@ export class App extends AppBase {
     const onResize = () => this.onResize();
     const updateFullScreenIcons = () => this.updateFullScreenIcons();
     const orientationChange = () => this.orientationChanged();
+    const onWindowFocus = () => this.cancelAllDeviceNotifications();
 
     if (window.addEventListener) {
       window.addEventListener("fullscreenchange", updateFullScreenIcons);
       window.addEventListener("resize", onResize);
       window.addEventListener("orientationchange", orientationChange);
+      window.addEventListener("focus", onWindowFocus);
     } else window.onresize = this.onResize;
     this.onResize();
     this.updateFullScreenIcons(false);
