@@ -4079,15 +4079,16 @@ export class ChordProEditor extends ChordDrawer {
     let highlightTop = highlightAnchorTop;
     let highlightBottom = lastHighlightedLine.yRange?.bottom || 0;
 
-    // Always extend visible highlight-follow range with adjacent grid blocks
-    // so surrounding grids remain on screen while tracking lyrics.
-    const includeAdjacentGridBlock = (startIndex: number, step: -1 | 1) => {
+    // Always extend visible highlight-follow range with adjacent special
+    // blocks (grid/comment/abc) so surrounding context stays on screen.
+    const isRangeExtensionLine = (line: ChordProLine) => line.isGrid || line.isComment || line instanceof ChordProAbc;
+    const includeAdjacentSpecialBlock = (startIndex: number, step: -1 | 1) => {
       const line = this.displayedLines[startIndex];
-      if (!line?.isGrid) return;
+      if (!line || !isRangeExtensionLine(line)) return;
 
       for (let i = startIndex; i >= 0 && i < this.displayedLines.length; i += step) {
         const candidate = this.displayedLines[i];
-        if (!candidate.isGrid) break;
+        if (!isRangeExtensionLine(candidate)) break;
         const yRange = candidate.yRange;
         if (!yRange) continue;
         highlightTop = Math.min(highlightTop, yRange.top);
@@ -4095,9 +4096,9 @@ export class ChordProEditor extends ChordDrawer {
       }
     };
 
-    if (firstHighlightedIndex > 0) includeAdjacentGridBlock(firstHighlightedIndex - 1, -1);
+    if (firstHighlightedIndex > 0) includeAdjacentSpecialBlock(firstHighlightedIndex - 1, -1);
     if (lastHighlightedIndex >= 0 && lastHighlightedIndex + 1 < this.displayedLines.length) {
-      includeAdjacentGridBlock(lastHighlightedIndex + 1, 1);
+      includeAdjacentSpecialBlock(lastHighlightedIndex + 1, 1);
     }
 
     if (!Number.isFinite(highlightTop) || !Number.isFinite(highlightBottom) || highlightBottom <= highlightTop) return;
@@ -4974,22 +4975,46 @@ export class ChordProEditor extends ChordDrawer {
     const highlightLeft = Math.max(0, Math.min(baseHighlightLeft - highlightPadding, logicalCanvasWidth));
     const highlightedLineRanges: { top: number; bottom: number }[] = [];
     let songMaxRight = highlightLeft + 1;
-    const fillRoundedRect = (xPos: number, yPos: number, width: number, height: number, radius: number) => {
+    const fillRoundedRect = (
+      xPos: number,
+      yPos: number,
+      width: number,
+      height: number,
+      radius: number,
+      corners?: { topLeft?: boolean; topRight?: boolean; bottomRight?: boolean; bottomLeft?: boolean }
+    ) => {
       if (width <= 0 || height <= 0) return;
       const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+      const topLeft = corners?.topLeft ?? true;
+      const topRight = corners?.topRight ?? true;
+      const bottomRight = corners?.bottomRight ?? true;
+      const bottomLeft = corners?.bottomLeft ?? true;
+      const rtl = topLeft ? r : 0;
+      const rtr = topRight ? r : 0;
+      const rbr = bottomRight ? r : 0;
+      const rbl = bottomLeft ? r : 0;
+
       ctx.beginPath();
-      if (r <= 0.5) {
+      if (r <= 0.5 || (!topLeft && !topRight && !bottomRight && !bottomLeft)) {
         ctx.rect(xPos, yPos, width, height);
       } else {
-        ctx.moveTo(xPos + r, yPos);
-        ctx.lineTo(xPos + width - r, yPos);
-        ctx.quadraticCurveTo(xPos + width, yPos, xPos + width, yPos + r);
-        ctx.lineTo(xPos + width, yPos + height - r);
-        ctx.quadraticCurveTo(xPos + width, yPos + height, xPos + width - r, yPos + height);
-        ctx.lineTo(xPos + r, yPos + height);
-        ctx.quadraticCurveTo(xPos, yPos + height, xPos, yPos + height - r);
-        ctx.lineTo(xPos, yPos + r);
-        ctx.quadraticCurveTo(xPos, yPos, xPos + r, yPos);
+        ctx.moveTo(xPos + rtl, yPos);
+
+        ctx.lineTo(xPos + width - rtr, yPos);
+        if (rtr > 0) ctx.quadraticCurveTo(xPos + width, yPos, xPos + width, yPos + rtr);
+        else ctx.lineTo(xPos + width, yPos);
+
+        ctx.lineTo(xPos + width, yPos + height - rbr);
+        if (rbr > 0) ctx.quadraticCurveTo(xPos + width, yPos + height, xPos + width - rbr, yPos + height);
+        else ctx.lineTo(xPos + width, yPos + height);
+
+        ctx.lineTo(xPos + rbl, yPos + height);
+        if (rbl > 0) ctx.quadraticCurveTo(xPos, yPos + height, xPos, yPos + height - rbl);
+        else ctx.lineTo(xPos, yPos + height);
+
+        ctx.lineTo(xPos, yPos + rtl);
+        if (rtl > 0) ctx.quadraticCurveTo(xPos, yPos, xPos + rtl, yPos);
+        else ctx.lineTo(xPos, yPos);
       }
       ctx.closePath();
       ctx.fill();
@@ -5469,8 +5494,15 @@ export class ChordProEditor extends ChordDrawer {
 
             const segmentWidth = blockHighlightWidth / repeatTotal;
             const segmentLeft = highlightLeft + (repeatIndex - 1) * segmentWidth;
+            const isLeftMostSegment = repeatIndex <= 1;
+            const isRightMostSegment = repeatIndex >= repeatTotal;
             ctx.globalAlpha = highlightOpacity;
-            fillRoundedRect(segmentLeft, box.top, segmentWidth, lineHighlightHeight, highlightRadius);
+            fillRoundedRect(segmentLeft, box.top, segmentWidth, lineHighlightHeight, highlightRadius, {
+              topLeft: isLeftMostSegment,
+              bottomLeft: isLeftMostSegment,
+              topRight: isRightMostSegment,
+              bottomRight: isRightMostSegment,
+            });
           }
         }
         ctx.restore();
