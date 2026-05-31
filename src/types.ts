@@ -35,6 +35,7 @@ export interface Settings {
   sectionSelByEditorDblclk: boolean;
   keepAwake: boolean;
   fullscreen: boolean;
+  disableHardwareAccelerationOnStartup: boolean;
   showTooltips: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;

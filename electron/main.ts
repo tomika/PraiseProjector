@@ -119,6 +119,7 @@ let netDisplayEncodeCache: {
 let hostDeviceDiscovering = false;
 
 const HOSTDEVICE_PREFS_FILE = "hostdevice-preferences.json";
+const DISABLE_HARDWARE_ACCELERATION_ON_STARTUP_PREF_KEY = "disableHardwareAccelerationOnStartup";
 
 const parsePortSpec = (portSpec: string): number[] => {
   const rv = new Set<number>();
@@ -170,6 +171,24 @@ const writeHostDevicePrefs = (prefs: Record<string, string>) => {
     console.error("[HostDevice] Failed writing preferences", error);
   }
 };
+
+const parseBooleanPreference = (value: string | undefined): boolean => {
+  if (value == null) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
+const isHardwareAccelerationDisabledAtStartup = (): boolean => {
+  const prefs = readHostDevicePrefs();
+  return parseBooleanPreference(prefs[DISABLE_HARDWARE_ACCELERATION_ON_STARTUP_PREF_KEY]);
+};
+
+let disableHardwareAccelerationOnStartup = isHardwareAccelerationDisabledAtStartup();
+if (disableHardwareAccelerationOnStartup) {
+  // Must be called before app readiness to take effect.
+  app.disableHardwareAcceleration();
+  console.log("[Main] Hardware acceleration disabled on startup by settings");
+}
 
 const sendHostDeviceMessage = (op: string, param: unknown) => {
   getMainWindow()?.webContents.send("hostdevice-message", { op, param });
@@ -1417,6 +1436,18 @@ ipcMain.handle("save-database-file", async (_event, payload: { data: ArrayBuffer
 // Settings sync from renderer - update webserver settings
 ipcMain.on("sync-settings", (_event, settings: Settings) => {
   console.log("Settings synced from renderer:", settings);
+
+  const nextDisableHardwareAccelerationOnStartup = !!settings.disableHardwareAccelerationOnStartup;
+  if (nextDisableHardwareAccelerationOnStartup !== disableHardwareAccelerationOnStartup) {
+    const prefs = readHostDevicePrefs();
+    prefs[DISABLE_HARDWARE_ACCELERATION_ON_STARTUP_PREF_KEY] = nextDisableHardwareAccelerationOnStartup ? "1" : "0";
+    writeHostDevicePrefs(prefs);
+    disableHardwareAccelerationOnStartup = nextDisableHardwareAccelerationOnStartup;
+    console.log(
+      `[Main] Startup hardware acceleration setting updated: ${nextDisableHardwareAccelerationOnStartup ? "disabled" : "enabled"} (restart required)`
+    );
+  }
+
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
   const webServer = getWebServerInstance();
   if (webServer) {

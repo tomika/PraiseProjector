@@ -79,6 +79,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       sectionSelByEditorDblclk: false,
       keepAwake: false,
       fullscreen: false,
+      disableHardwareAccelerationOnStartup: false,
       showTooltips: true,
       pictureFolder: "",
       selectedBackgroundImageId: null,

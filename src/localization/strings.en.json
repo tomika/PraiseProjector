@@ -347,6 +347,8 @@
   "SettingsChordSystemStandard": "Standard (C D E F G A B)",
   "SettingsKeepAwake": "Keep awake",
   "SettingsFullscreen": "Fullscreen",
+  "SettingsDisableHardwareAccelerationOnStartup": "Disable hardware acceleration on startup (Electron)",
+  "SettingsDisableHardwareAccelerationOnStartupHint": "If the app occasionally hangs in fullscreen, try enabling this and restart the app.",
   "SettingsHideChordsInEditor": "Hide chords in read-only editor",
   "SettingsExternalWebDisplay": "Enable external web display",
   "SettingsShowTooltips": "Show tooltips",

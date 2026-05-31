@@ -192,6 +192,23 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               {t("SettingsShowCloudNetworkErrorToasts")}
             </label>
           </div>
+          {window.electronAPI && (
+            <div className="form-group mt-2">
+              <div className="form-check">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="disableHardwareAccelerationOnStartup"
+                  checked={settings.disableHardwareAccelerationOnStartup}
+                  onChange={(e) => updateSetting("disableHardwareAccelerationOnStartup", e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="disableHardwareAccelerationOnStartup">
+                  {t("SettingsDisableHardwareAccelerationOnStartup")}
+                </label>
+              </div>
+              <small className="form-text text-muted">{t("SettingsDisableHardwareAccelerationOnStartupHint")}</small>
+            </div>
+          )}
         </div>
       </div>
     </div>

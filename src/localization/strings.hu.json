@@ -347,6 +347,8 @@
   "SettingsChordSystemStandard": "Szabványos (C D E F G A B)",
   "SettingsKeepAwake": "Ébren tartás",
   "SettingsFullscreen": "Teljes képernyő",
+  "SettingsDisableHardwareAccelerationOnStartup": "Hardveres gyorsítás kikapcsolása indításkor (Electron)",
+  "SettingsDisableHardwareAccelerationOnStartupHint": "Ha az alkalmazás néha megakad teljes képernyőn, próbáld bekapcsolni ezt, majd indítsd újra az alkalmazást.",
   "SettingsHideChordsInEditor": "Akkordok elrejtése a szerkesztőben",
   "SettingsExternalWebDisplay": "Külső webes megjelenítő engedélyezése",
   "SettingsShowTooltips": "Buboréksúgók megjelenítése",
