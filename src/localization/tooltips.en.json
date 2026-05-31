@@ -70,6 +70,14 @@
   "section_uncheck_all": "Uncheck all sections",
   "section_previous": "Select previous section",
   "section_next": "Select next section",
+  "preview_controls_home": "Move next marker to first selectable section (Home)",
+  "preview_controls_page_up": "Move next marker to previous song block (Page Up)",
+  "preview_controls_up": "Move next marker up (Up Arrow)",
+  "preview_controls_backspace": "Jump to start of current song block (Backspace)",
+  "preview_controls_end": "Move next marker to last selectable section (End)",
+  "preview_controls_page_down": "Move next marker to next song block (Page Down)",
+  "preview_controls_down": "Move next marker down (Down Arrow)",
+  "preview_controls_enter": "Project next section or advance repeat (Enter)",
   
   "settings_ok": "Save changes and close",
   "settings_cancel": "Discard changes and close",
@@ -82,6 +90,7 @@
   "preview_panel_layout_toggle": "Rotate preview panel layout",
   "preview_panel_layout_state_expanded": "controls + preview",
   "preview_panel_layout_state_tabs_collapsed": "preview only",
+  "preview_panel_layout_state_preview_collapsed": "controls only",
   "preview_panel_layout_state_tabs_and_preview_collapsed": "both collapsed",
 
   "preview_no_qrcode": "Click to show a QR code on the projected display.\nViewers can scan it with their phone\nto follow along on their own screen.",

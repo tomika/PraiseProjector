@@ -70,6 +70,14 @@
   "section_uncheck_all": "Minden szakasz kijelölésének törlése",
   "section_previous": "Előző szakasz kiválasztása",
   "section_next": "Következő szakasz kiválasztása",
+  "preview_controls_home": "Következő jelzés ugrása az első választható szakaszra (Home)",
+  "preview_controls_page_up": "Következő jelzés ugrása az előző dalblokkra (Page Up)",
+  "preview_controls_up": "Következő jelzés mozgatása felfelé (Fel nyíl)",
+  "preview_controls_backspace": "Ugrás az aktuális dalblokk elejére (Backspace)",
+  "preview_controls_end": "Következő jelzés ugrása az utolsó választható szakaszra (End)",
+  "preview_controls_page_down": "Következő jelzés ugrása a következő dalblokkra (Page Down)",
+  "preview_controls_down": "Következő jelzés mozgatása lefelé (Le nyíl)",
+  "preview_controls_enter": "Következő szakasz kivetítése vagy ismétlés léptetése (Enter)",
   
   "settings_ok": "Változtatások mentése és bezárás",
   "settings_cancel": "Változtatások elvetése és bezárás",
@@ -82,6 +90,7 @@
   "preview_panel_layout_toggle": "Előnézeti panel elrendezésének váltása",
   "preview_panel_layout_state_expanded": "vezérlők + előnézet",
   "preview_panel_layout_state_tabs_collapsed": "csak előnézet",
+  "preview_panel_layout_state_preview_collapsed": "csak vezérlők",
   "preview_panel_layout_state_tabs_and_preview_collapsed": "mindkettő összehúzva",
 
   "preview_no_qrcode": "Kattintson a QR kód megjelenítéséhez a kivetítőn.\nA nézők telefonjukkal beolvashatják\nés saját képernyőjükön követhetik a dalszöveget.",

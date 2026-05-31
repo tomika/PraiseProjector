@@ -41,6 +41,27 @@
 
 .projecting-formats-container {
   background-color: transparent;
+  position: relative;
+}
+
+.preview-tabs-measure {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  visibility: hidden;
+  pointer-events: none;
+  width: max-content;
+  max-width: none;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
+.preview-tabs-measure .nav-item {
+  flex: 0 0 auto;
+}
+
+.preview-tabs-measure .nav-link {
+  white-space: nowrap;
 }
 
 .projecting-tabs-row {
@@ -52,12 +73,56 @@
 .projecting-tabs-row .nav-tabs {
   margin-bottom: 0;
   align-self: flex-end;
+  flex-wrap: nowrap;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+.projecting-tabs-row .nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.projecting-tabs-row .nav-tabs .nav-item {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .projecting-tabs-row .nav-tabs .nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
   padding-top: 0.2rem;
   padding-bottom: 0.2rem;
   line-height: 1.15;
+}
+
+.preview-tab-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.projecting-tabs-row .nav-tabs:not(.preview-tabs-icons) .preview-tab-icon {
+  display: none;
+}
+
+.projecting-tabs-row .nav-tabs.preview-tabs-icons .nav-link {
+  gap: 0;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+.projecting-tabs-row .nav-tabs.preview-tabs-icons .preview-tab-label {
+  display: none;
+}
+
+.projecting-tabs-row .nav-tabs.preview-tabs-icons .preview-tab-icon {
+  display: inline-block;
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 .preview-layout-cycle-btn {
@@ -105,6 +170,37 @@
 .tab-pane-content {
   height: 100%;
   overflow-y: auto;
+}
+
+.preview-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  width: 100%;
+  height: 100%;
+}
+
+.preview-controls-btn.btn {
+  --button-min-width: 0;
+  --button-min-height: 0;
+  --button-padding-y: 0.1rem;
+  --button-padding-x: 0.1rem;
+  --button-icon-size: 1rem;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  padding: var(--button-padding-y) var(--button-padding-x);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.preview-controls-btn.btn i {
+  margin: 0;
+  line-height: 1;
 }
 
 /* Background color picker button container */

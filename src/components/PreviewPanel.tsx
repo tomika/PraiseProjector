@@ -22,11 +22,27 @@ import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { Display } from "../../common/pp-types";
 
-type PreviewTab = "format" | "image" | "message";
+type PreviewTab = "format" | "image" | "message" | "controls";
 type PreviewPanelCollapseMode = Settings["previewPanelCollapseMode"];
 
-const PREVIEW_PANEL_COLLAPSE_MODES: PreviewPanelCollapseMode[] = ["expanded", "tabsCollapsed", "tabsAndPreviewCollapsed"];
+const PREVIEW_PANEL_COLLAPSE_MODES: PreviewPanelCollapseMode[] = ["expanded", "tabsCollapsed", "tabsAndPreviewCollapsed", "previewCollapsed"];
 const PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK = 4;
+const PREVIEW_PANEL_WITH_TAB_CONTENT_FALLBACK_PX = 168;
+const PREVIEW_TABS_ICON_MODE_HYSTERESIS_PX = 24;
+
+type SectionListActionKey =
+  | "ArrowDown"
+  | "ArrowRight"
+  | "ArrowUp"
+  | "ArrowLeft"
+  | "Home"
+  | "End"
+  | "PageDown"
+  | "PageUp"
+  | " "
+  | "Enter"
+  | "Backspace"
+  | "Escape";
 
 function normalizePreviewPanelCollapseMode(mode: unknown): PreviewPanelCollapseMode {
   return PREVIEW_PANEL_COLLAPSE_MODES.includes(mode as PreviewPanelCollapseMode) ? (mode as PreviewPanelCollapseMode) : "expanded";
@@ -163,8 +179,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const { tt } = useTooltips();
     const [activeTab, setActiveTab] = useState<PreviewTab>(initialTab);
     const previewPanelCollapseMode = normalizePreviewPanelCollapseMode(settings?.previewPanelCollapseMode);
-    const isTabContentCollapsed = previewPanelCollapseMode !== "expanded";
-    const isProjectedPreviewCollapsed = previewPanelCollapseMode === "tabsAndPreviewCollapsed";
+    const isTabContentCollapsed = previewPanelCollapseMode === "tabsCollapsed" || previewPanelCollapseMode === "tabsAndPreviewCollapsed";
+    const isProjectedPreviewCollapsed = previewPanelCollapseMode === "tabsAndPreviewCollapsed" || previewPanelCollapseMode === "previewCollapsed";
     const [sections, setSections] = useState<ExtendedSectionItem[]>([]);
     const [nextSectionIndex, setNextSectionIndex] = useState(-1);
     const { guestLeaderId: _guestLeaderId } = useLeader(); // kept for potential future use
@@ -196,9 +212,20 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       (tab: PreviewTab) => {
         setActiveTab(tab);
         onActiveTabChange?.(tab);
-        updateSettingWithAutoSave("previewPanelCollapseMode", "expanded");
+
+        const modeWithTabPagesVisible: PreviewPanelCollapseMode =
+          previewPanelCollapseMode === "tabsAndPreviewCollapsed"
+            ? "previewCollapsed"
+            : previewPanelCollapseMode === "tabsCollapsed"
+              ? "expanded"
+              : previewPanelCollapseMode;
+
+        if (modeWithTabPagesVisible !== previewPanelCollapseMode) {
+          // Tab click should only add tab-page visibility to the current layout state.
+          updateSettingWithAutoSave("previewPanelCollapseMode", modeWithTabPagesVisible);
+        }
       },
-      [onActiveTabChange, updateSettingWithAutoSave]
+      [onActiveTabChange, previewPanelCollapseMode, updateSettingWithAutoSave]
     );
 
     const cyclePreviewPanelCollapseMode = useCallback(() => {
@@ -209,16 +236,26 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       sectionListRef.current?.focus();
     }, [previewPanelCollapseMode, updateSettingWithAutoSave]);
 
+    const nextPreviewPanelCollapseMode = useMemo<PreviewPanelCollapseMode>(() => {
+      const currentIndex = PREVIEW_PANEL_COLLAPSE_MODES.indexOf(previewPanelCollapseMode);
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      return PREVIEW_PANEL_COLLAPSE_MODES[(safeIndex + 1) % PREVIEW_PANEL_COLLAPSE_MODES.length];
+    }, [previewPanelCollapseMode]);
+
     const previewPanelCollapseStateLabel = useMemo(() => {
-      switch (previewPanelCollapseMode) {
+      switch (nextPreviewPanelCollapseMode) {
+        case "expanded":
+          return tt("preview_panel_layout_state_expanded");
         case "tabsCollapsed":
-          return tt("preview_panel_layout_state_tabs_and_preview_collapsed") ?? "tabs only";
+          return tt("preview_panel_layout_state_tabs_collapsed");
         case "tabsAndPreviewCollapsed":
-          return tt("preview_panel_layout_state_expanded") ?? "tabs + controls + preview";
+          return tt("preview_panel_layout_state_tabs_and_preview_collapsed");
+        case "previewCollapsed":
+          return tt("preview_panel_layout_state_preview_collapsed");
         default:
-          return tt("preview_panel_layout_state_tabs_collapsed") ?? "tabs + preview";
+          return tt("preview_panel_layout_state_expanded");
       }
-    }, [previewPanelCollapseMode, tt]);
+    }, [nextPreviewPanelCollapseMode, tt]);
 
     const previewPanelCollapseTitle = useMemo(() => {
       const toggleLabel = tt("preview_panel_layout_toggle");
@@ -232,15 +269,75 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     }, [previewPanelCollapseStateLabel, tt]);
 
     const previewPanelCollapseIconClass = useMemo(() => {
-      switch (previewPanelCollapseMode) {
-        case "tabsCollapsed":
-          return "fa fa-window-minimize";
-        case "tabsAndPreviewCollapsed":
+      switch (nextPreviewPanelCollapseMode) {
+        case "expanded":
           return "fa fa-columns fa-rotate-90";
-        default:
+        case "tabsCollapsed":
           return "fa fa-window-maximize";
+        case "tabsAndPreviewCollapsed":
+          return "fa fa-window-minimize";
+        case "previewCollapsed":
+          return "fa fa-window-maximize";
+        default:
+          return "fa fa-columns fa-rotate-90";
       }
-    }, [previewPanelCollapseMode]);
+    }, [nextPreviewPanelCollapseMode]);
+
+    const previewTabs = useMemo(
+      () => [
+        { id: "format" as const, label: t("Format"), iconClass: "fa fa-paint-brush" },
+        { id: "image" as const, label: t("Image"), iconClass: "fa fa-picture-o" },
+        { id: "message" as const, label: t("Message"), iconClass: "fa fa-comment-o" },
+        { id: "controls" as const, label: t("Controls"), iconClass: "fa fa-arrows" },
+      ],
+      [t]
+    );
+
+    const previewControlButtons = useMemo(
+      () => [
+        {
+          key: "Home" as SectionListActionKey,
+          iconClass: "fa fa-step-backward",
+          tooltip: tt("preview_controls_home"),
+        },
+        {
+          key: "PageUp" as SectionListActionKey,
+          iconClass: "fa fa-angle-double-up",
+          tooltip: tt("preview_controls_page_up"),
+        },
+        {
+          key: "ArrowUp" as SectionListActionKey,
+          iconClass: "fa fa-arrow-up",
+          tooltip: tt("preview_controls_up"),
+        },
+        {
+          key: "Backspace" as SectionListActionKey,
+          iconClass: "fa fa-undo",
+          tooltip: tt("preview_controls_backspace"),
+        },
+        {
+          key: "End" as SectionListActionKey,
+          iconClass: "fa fa-step-forward",
+          tooltip: tt("preview_controls_end"),
+        },
+        {
+          key: "PageDown" as SectionListActionKey,
+          iconClass: "fa fa-angle-double-down",
+          tooltip: tt("preview_controls_page_down"),
+        },
+        {
+          key: "ArrowDown" as SectionListActionKey,
+          iconClass: "fa fa-arrow-down",
+          tooltip: tt("preview_controls_down"),
+        },
+        {
+          key: "Enter" as SectionListActionKey,
+          iconClass: "fa fa-sign-in",
+          tooltip: tt("preview_controls_enter"),
+        },
+      ],
+      [tt]
+    );
 
     useEffect(() => {
       setActiveTab(initialTab);
@@ -419,10 +516,67 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const panelGroupRef = useRef<HTMLDivElement | null>(null);
     const bottomPanelRef = useRef<ImperativePanelHandle | null>(null);
     const tabsRowRef = useRef<HTMLDivElement | null>(null);
+    const tabsNavRef = useRef<HTMLUListElement | null>(null);
+    const tabsMeasureRef = useRef<HTMLUListElement | null>(null);
+    const formatsContainerRef = useRef<HTMLDivElement | null>(null);
+    const tabContentRef = useRef<HTMLDivElement | null>(null);
     const lastExpandedBottomSizeRef = useRef<number>((previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40);
     const lastAppliedCollapseModeRef = useRef<PreviewPanelCollapseMode | null>(null);
     const [bottomMinSize, setBottomMinSize] = useState(30);
     const [collapsedBottomSize, setCollapsedBottomSize] = useState(PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK);
+    const [previewCollapsedBottomSize, setPreviewCollapsedBottomSize] = useState(12);
+    const [isTabIconMode, setIsTabIconMode] = useState(false);
+
+    useEffect(() => {
+      if (activeTab !== "controls") {
+        return;
+      }
+      const frameId = window.requestAnimationFrame(() => {
+        sectionListRef.current?.focus();
+      });
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
+    }, [activeTab]);
+
+    useEffect(() => {
+      const navEl = tabsNavRef.current;
+      const measureEl = tabsMeasureRef.current;
+      if (!navEl || !measureEl) {
+        return;
+      }
+
+      const updateTabMode = () => {
+        const availableWidth = Math.floor(navEl.clientWidth);
+        const requiredTextWidth = Math.ceil(measureEl.scrollWidth);
+
+        setIsTabIconMode((prev) => {
+          if (prev) {
+            // Use hysteresis to avoid rapid text/icon toggling around threshold.
+            return requiredTextWidth > availableWidth - PREVIEW_TABS_ICON_MODE_HYSTERESIS_PX;
+          }
+          return requiredTextWidth > availableWidth;
+        });
+      };
+
+      updateTabMode();
+
+      const obs = new ResizeObserver(() => {
+        updateTabMode();
+      });
+      obs.observe(navEl);
+      obs.observe(measureEl);
+      if (tabsRowRef.current) {
+        obs.observe(tabsRowRef.current);
+      }
+
+      window.addEventListener("resize", updateTabMode);
+      return () => {
+        window.removeEventListener("resize", updateTabMode);
+        obs.disconnect();
+      };
+    }, [previewTabs]);
+
     useEffect(() => {
       const panelGroupEl = panelGroupRef.current;
       if (!panelGroupEl) return;
@@ -431,13 +585,18 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         const groupHeight = panelGroupEl.getBoundingClientRect().height;
         if (groupHeight <= 0) return;
 
-        const minPx = 300; // tabs + preview = minimum for bottom panel
+        const minPx = previewPanelCollapseMode === "tabsCollapsed" ? 100 : 200;
         setBottomMinSize(Math.min(70, Math.max(20, (minPx / groupHeight) * 100)));
 
         const tabsRowHeight = tabsRowRef.current?.getBoundingClientRect().height ?? 0;
         const collapsedPx = Math.max(1, Math.ceil(tabsRowHeight) + 2);
         const collapsedPercent = Math.min(20, Math.max(1, (collapsedPx / groupHeight) * 100));
         setCollapsedBottomSize(collapsedPercent);
+
+        const tabContentHeight = tabContentRef.current?.getBoundingClientRect().height ?? PREVIEW_PANEL_WITH_TAB_CONTENT_FALLBACK_PX;
+        const formatAreaPx = Math.max(collapsedPx, Math.ceil(tabsRowHeight + tabContentHeight + 2));
+        const formatAreaPercent = Math.min(70, Math.max(collapsedPercent, (formatAreaPx / groupHeight) * 100));
+        setPreviewCollapsedBottomSize(formatAreaPercent);
       };
 
       recomputeSplitSizes();
@@ -449,8 +608,11 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       if (tabsRowRef.current) {
         obs.observe(tabsRowRef.current);
       }
+      if (formatsContainerRef.current) {
+        obs.observe(formatsContainerRef.current);
+      }
       return () => obs.disconnect();
-    }, []);
+    }, [previewPanelCollapseMode]);
 
     useEffect(() => {
       const panel = bottomPanelRef.current;
@@ -460,6 +622,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       if (previousMode === null) {
         if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
           panel.resize(collapsedBottomSize);
+        } else if (previewPanelCollapseMode === "previewCollapsed") {
+          panel.resize(previewCollapsedBottomSize);
         }
         lastAppliedCollapseModeRef.current = previewPanelCollapseMode;
         return;
@@ -468,18 +632,22 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       if (previousMode === previewPanelCollapseMode) {
         if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
           panel.resize(collapsedBottomSize);
+        } else if (previewPanelCollapseMode === "previewCollapsed") {
+          panel.resize(previewCollapsedBottomSize);
         }
         return;
       }
 
       if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
         panel.resize(collapsedBottomSize);
-      } else if (previousMode === "tabsAndPreviewCollapsed") {
+      } else if (previewPanelCollapseMode === "previewCollapsed") {
+        panel.resize(previewCollapsedBottomSize);
+      } else if (previousMode === "tabsAndPreviewCollapsed" || previousMode === "previewCollapsed") {
         panel.resize(Math.max(bottomMinSize, lastExpandedBottomSizeRef.current));
       }
 
       lastAppliedCollapseModeRef.current = previewPanelCollapseMode;
-    }, [previewPanelCollapseMode, bottomMinSize, collapsedBottomSize]);
+    }, [previewPanelCollapseMode, bottomMinSize, collapsedBottomSize, previewCollapsedBottomSize]);
 
     // QR code overlay interaction state
     // We observe the *container* (always mounted) rather than the conditional wrapper so the
@@ -1521,15 +1689,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       selectSectionIndex(index, { advanceRepeat: selectedSectionIndex === index });
     };
 
-    // Keyboard handler for section list (matching C# SectionListBox.OnKeyDown and OnKeyPress)
-    const handleSectionListKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        if (sections.length === 0) return;
+    const handleSectionListAction = useCallback(
+      (key: string): boolean => {
+        if (sections.length === 0) return false;
 
         // Helper to check if index is valid for next selection
         const isValidNextIndex = (i: number) => i >= 0 && i < sections.length && i !== selectedSectionIndex && sections[i].checked;
 
-        switch (e.key) {
+        switch (key) {
           case "ArrowDown":
           case "ArrowRight": {
             // Move nextIndex forward (matching C# OnKeyDown Keys.Down/Right)
@@ -1538,8 +1705,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(newNext);
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "ArrowUp":
@@ -1553,8 +1719,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 break;
               }
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "Home": {
@@ -1565,8 +1730,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(i);
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "End": {
@@ -1577,8 +1741,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               nextNavigatedByKeyRef.current = true;
               setNextSectionIndex(i);
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "PageDown": {
@@ -1593,8 +1756,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 setNextSectionIndex(i);
               }
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "PageUp": {
@@ -1611,8 +1773,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 }
               }
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case " ": {
@@ -1620,8 +1781,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             if (selectedSectionIndex >= 0) {
               toggleSectionCheck(selectedSectionIndex);
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "Enter": {
@@ -1635,8 +1795,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                   bumpRepeatNonce: true,
                   forceEmit: true,
                 });
-                e.preventDefault();
-                break;
+                return true;
               }
             }
 
@@ -1651,8 +1810,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 selectSectionIndex(nextSectionIndex);
               }
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "Backspace": {
@@ -1665,19 +1823,38 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 selectSectionIndex(i + 1);
               }
             }
-            e.preventDefault();
-            break;
+            return true;
           }
 
           case "Escape": {
             // Clear selection
             selectSectionIndex(-1);
-            e.preventDefault();
-            break;
+            return true;
           }
+
+          default:
+            return false;
         }
       },
       [sections, selectedSectionIndex, nextSectionIndex, getNextCheckedIndex, toggleSectionCheck, selectSectionIndex, getRepeatGroupBounds]
+    );
+
+    // Keyboard handler for section list (matching C# SectionListBox.OnKeyDown and OnKeyPress)
+    const handleSectionListKeyDown = useCallback(
+      (e: React.KeyboardEvent) => {
+        if (handleSectionListAction(e.key)) {
+          e.preventDefault();
+        }
+      },
+      [handleSectionListAction]
+    );
+
+    const handleSectionControlButtonPress = useCallback(
+      (key: SectionListActionKey) => {
+        handleSectionListAction(key);
+        sectionListRef.current?.focus();
+      },
+      [handleSectionListAction]
     );
 
     const handleCheckboxClick = (e: React.MouseEvent, index: number) => {
@@ -2100,6 +2277,26 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               ></textarea>
             </div>
           );
+        case "controls":
+          return (
+            <div className="tab-pane-content">
+              <div className="preview-controls-grid" role="group" aria-label={t("Controls")}>
+                {previewControlButtons.map((button) => (
+                  <button
+                    key={button.key}
+                    type="button"
+                    className="btn btn-light preview-controls-btn"
+                    title={button.tooltip}
+                    aria-label={button.tooltip}
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => handleSectionControlButtonPress(button.key)}
+                  >
+                    <i className={button.iconClass} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
         default:
           return null;
       }
@@ -2427,7 +2624,11 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           onLayout={(sizes) => {
             onPreviewSplitSizeChange?.(sizes[0]);
             const nextBottomSize = sizes[1];
-            if (typeof nextBottomSize === "number" && previewPanelCollapseMode !== "tabsAndPreviewCollapsed") {
+            if (
+              typeof nextBottomSize === "number" &&
+              previewPanelCollapseMode !== "tabsAndPreviewCollapsed" &&
+              previewPanelCollapseMode !== "previewCollapsed"
+            ) {
               lastExpandedBottomSizeRef.current = nextBottomSize;
             }
           }}
@@ -2609,48 +2810,42 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           <Panel
             ref={bottomPanelRef}
             defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40}
-            minSize={previewPanelCollapseMode === "tabsAndPreviewCollapsed" ? collapsedBottomSize : bottomMinSize}
+            minSize={
+              previewPanelCollapseMode === "tabsAndPreviewCollapsed"
+                ? collapsedBottomSize
+                : previewPanelCollapseMode === "previewCollapsed"
+                  ? previewCollapsedBottomSize
+                  : bottomMinSize
+            }
           >
             <div className="d-flex flex-column h-100">
-              <div className="projecting-formats-container">
+              <div className="projecting-formats-container" ref={formatsContainerRef}>
+                <ul className="nav nav-tabs preview-tabs-measure" ref={tabsMeasureRef} aria-hidden="true">
+                  {previewTabs.map((tab) => (
+                    <li className="nav-item" key={`measure-${tab.id}`}>
+                      <span className="nav-link">{tab.label}</span>
+                    </li>
+                  ))}
+                </ul>
                 <div className="projecting-tabs-row" ref={tabsRowRef}>
-                  <ul className="nav nav-tabs flex-grow-1">
-                    <li className="nav-item">
-                      <a
-                        className={`nav-link ${activeTab === "format" ? "active" : ""}`}
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleTabChange("format");
-                        }}
-                      >
-                        {t("Format")}
-                      </a>
-                    </li>
-                    <li className="nav-item">
-                      <a
-                        className={`nav-link ${activeTab === "image" ? "active" : ""}`}
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleTabChange("image");
-                        }}
-                      >
-                        {t("Image")}
-                      </a>
-                    </li>
-                    <li className="nav-item">
-                      <a
-                        className={`nav-link ${activeTab === "message" ? "active" : ""}`}
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleTabChange("message");
-                        }}
-                      >
-                        {t("Message")}
-                      </a>
-                    </li>
+                  <ul className={`nav nav-tabs flex-grow-1${isTabIconMode ? " preview-tabs-icons" : ""}`} ref={tabsNavRef}>
+                    {previewTabs.map((tab) => (
+                      <li className="nav-item" key={tab.id}>
+                        <a
+                          className={`nav-link ${activeTab === tab.id ? "active" : ""}`}
+                          href="#"
+                          aria-label={tab.label}
+                          title={tab.label}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleTabChange(tab.id);
+                          }}
+                        >
+                          <i className={`preview-tab-icon ${tab.iconClass}`} aria-hidden="true" />
+                          <span className="preview-tab-label">{tab.label}</span>
+                        </a>
+                      </li>
+                    ))}
                   </ul>
                   <button
                     type="button"
@@ -2662,7 +2857,11 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     <i className={previewPanelCollapseIconClass} aria-hidden="true" />
                   </button>
                 </div>
-                {!isTabContentCollapsed && <div className="tab-content p-2 border border-top-0 preview-tab-content">{renderTabContent()}</div>}
+                {!isTabContentCollapsed && (
+                  <div className="tab-content p-2 border border-top-0 preview-tab-content" ref={tabContentRef}>
+                    {renderTabContent()}
+                  </div>
+                )}
               </div>
               {!isProjectedPreviewCollapsed && (
                 <div

@@ -91,7 +91,7 @@ const AppStateCodec = t.type({
   playlistPanelSize: t.union([t.number, t.undefined]),
   songListPanelSize: t.union([t.number, t.undefined]),
   previewSplitSize: t.union([t.number, t.undefined]),
-  previewTab: t.union([t.literal("format"), t.literal("image"), t.literal("message"), t.undefined]),
+  previewTab: t.union([t.literal("format"), t.literal("image"), t.literal("message"), t.literal("controls"), t.undefined]),
   // Window bounds for electron
   windowBounds: t.union([
     t.type({
@@ -475,7 +475,7 @@ const AppContent: React.FC = () => {
   const [playlistPanelSize, setPlaylistPanelSize] = useState<number>(initialAppState?.playlistPanelSize ?? 60);
   const [songListPanelSize, setSongListPanelSize] = useState<number>(initialAppState?.songListPanelSize ?? 40);
   const [previewSplitSize, setPreviewSplitSize] = useState<number>(initialAppState?.previewSplitSize ?? 60);
-  const [previewTab, setPreviewTab] = useState<"format" | "image" | "message">(initialAppState?.previewTab ?? "format");
+  const [previewTab, setPreviewTab] = useState<"format" | "image" | "message" | "controls">(initialAppState?.previewTab ?? "format");
   const lastScheduledDisplayRef = useRef<Display>(getEmptyDisplay());
 
   // Song filter state for persistence
