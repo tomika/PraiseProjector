@@ -95,6 +95,11 @@ type NetDisplayEncodeSettings = {
   transient: number;
 };
 
+type EncodedNetDisplayImage = {
+  data: string | null;
+  mimeType: "image/jpeg" | "image/png";
+};
+
 const netDisplayEncodeSettings: NetDisplayEncodeSettings = {
   jpegQuality: 70,
   imageScale: 1,
@@ -103,6 +108,14 @@ const netDisplayEncodeSettings: NetDisplayEncodeSettings = {
 };
 
 let lastNetDisplaySourceImageDataUrl: string | null = null;
+let netDisplayPublishInFlight = false;
+let netDisplayPublishQueued = false;
+let netDisplayEncodeCache: {
+  source: string | null;
+  jpegQuality?: number;
+  imageScale: number;
+  encoded: EncodedNetDisplayImage;
+} | null = null;
 let hostDeviceDiscovering = false;
 
 const HOSTDEVICE_PREFS_FILE = "hostdevice-preferences.json";
@@ -189,30 +202,96 @@ function updateNetDisplayEncodeSettings(settings: Settings): boolean {
   return changed;
 }
 
-function encodeNetDisplayImage(imageDataUrl: string | null): { data: string | null; mimeType: "image/jpeg" | "image/png" } {
-  const mimeType = netDisplayEncodeSettings.jpegQuality == null ? "image/png" : "image/jpeg";
-  if (!imageDataUrl) return { data: null, mimeType };
+function encodeNetDisplayImage(imageDataUrl: string | null): EncodedNetDisplayImage {
+  const jpegQuality = netDisplayEncodeSettings.jpegQuality;
+  const imageScale = netDisplayEncodeSettings.imageScale;
+  const mimeType: EncodedNetDisplayImage["mimeType"] = jpegQuality == null ? "image/png" : "image/jpeg";
+  const makeEncoded = (data: string | null): EncodedNetDisplayImage => ({ data, mimeType });
+
+  if (
+    netDisplayEncodeCache &&
+    netDisplayEncodeCache.source === imageDataUrl &&
+    netDisplayEncodeCache.jpegQuality === jpegQuality &&
+    netDisplayEncodeCache.imageScale === imageScale
+  ) {
+    return netDisplayEncodeCache.encoded;
+  }
+
+  if (!imageDataUrl) {
+    const encoded = makeEncoded(null);
+    netDisplayEncodeCache = {
+      source: imageDataUrl,
+      jpegQuality,
+      imageScale,
+      encoded,
+    };
+    return encoded;
+  }
+
   try {
     let image = nativeImage.createFromDataURL(imageDataUrl);
-    if (image.isEmpty()) return { data: null, mimeType };
+    if (image.isEmpty()) {
+      const encoded = makeEncoded(null);
+      netDisplayEncodeCache = {
+        source: imageDataUrl,
+        jpegQuality,
+        imageScale,
+        encoded,
+      };
+      return encoded;
+    }
 
-    const scale = netDisplayEncodeSettings.imageScale;
-    if (scale < 1) {
+    if (imageScale < 1) {
       const size = image.getSize();
-      const width = Math.max(1, Math.round(size.width * scale));
-      const height = Math.max(1, Math.round(size.height * scale));
+      const width = Math.max(1, Math.round(size.width * imageScale));
+      const height = Math.max(1, Math.round(size.height * imageScale));
       image = image.resize({ width, height, quality: "best" });
     }
 
-    if (netDisplayEncodeSettings.jpegQuality == null) {
-      return { data: image.toPNG().toString("base64"), mimeType };
-    }
+    const encoded = makeEncoded(jpegQuality == null ? image.toPNG().toString("base64") : image.toJPEG(jpegQuality).toString("base64"));
 
-    return { data: image.toJPEG(netDisplayEncodeSettings.jpegQuality).toString("base64"), mimeType };
+    netDisplayEncodeCache = {
+      source: imageDataUrl,
+      jpegQuality,
+      imageScale,
+      encoded,
+    };
+    return encoded;
   } catch (error) {
     console.error("[Main] Failed to encode net display image", error);
-    return { data: null, mimeType };
+    const encoded = makeEncoded(null);
+    netDisplayEncodeCache = {
+      source: imageDataUrl,
+      jpegQuality,
+      imageScale,
+      encoded,
+    };
+    return encoded;
   }
+}
+
+function queueNetDisplayImagePublish(): void {
+  if (netDisplayPublishInFlight) {
+    netDisplayPublishQueued = true;
+    return;
+  }
+
+  netDisplayPublishInFlight = true;
+  setImmediate(() => {
+    const sourceAtStart = lastNetDisplaySourceImageDataUrl;
+    const encoded = encodeNetDisplayImage(sourceAtStart);
+    getWebServerInstance()?.setImage(encoded.data, {
+      mimeType: encoded.mimeType,
+      bgColor: netDisplayEncodeSettings.bgColor,
+      transient: netDisplayEncodeSettings.transient,
+    });
+
+    netDisplayPublishInFlight = false;
+    if (netDisplayPublishQueued || lastNetDisplaySourceImageDataUrl !== sourceAtStart) {
+      netDisplayPublishQueued = false;
+      queueNetDisplayImagePublish();
+    }
+  });
 }
 
 // Install logger interceptor early to capture all console output
@@ -1355,12 +1434,7 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
 
     // Re-encode and republish the latest net display frame when encode settings change.
     if (netDisplayEncodeChanged) {
-      const encoded = encodeNetDisplayImage(lastNetDisplaySourceImageDataUrl);
-      webServer.setImage(encoded.data, {
-        mimeType: encoded.mimeType,
-        bgColor: netDisplayEncodeSettings.bgColor,
-        transient: netDisplayEncodeSettings.transient,
-      });
+      queueNetDisplayImagePublish();
     }
   }
 
@@ -1481,12 +1555,7 @@ ipcMain.on(
     lastNetDisplaySourceImageDataUrl = imageDataUrl;
 
     updateDisplayWindowImage(imageDataUrl);
-    const encoded = encodeNetDisplayImage(imageDataUrl);
-    getWebServerInstance()?.setImage(encoded.data, {
-      mimeType: encoded.mimeType,
-      bgColor: netDisplayEncodeSettings.bgColor,
-      transient: netDisplayEncodeSettings.transient,
-    });
+    queueNetDisplayImagePublish();
   }
 );
 

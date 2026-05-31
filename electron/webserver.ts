@@ -78,6 +78,7 @@ export class WebServer {
   private staticDir: string = "";
   // Net display / image state (matching C# imagePage, imageData, imageId)
   private imagePageContent: string = "";
+  private currentImageSourceDataUrl: string | null = null;
   private currentImageData: Buffer | null = null;
   private currentImageId: string = "";
   private currentImageMimeType: "image/jpeg" | "image/png" = "image/jpeg";
@@ -1212,11 +1213,26 @@ export class WebServer {
    * @param imageDataUrl - data URL (data:image/jpeg;base64,..., data:image/png;base64,...) or raw base64 string
    */
   public setImage(imageDataUrl: string | null, options?: { mimeType?: "image/jpeg" | "image/png"; bgColor?: string; transient?: number }): void {
-    if (options?.mimeType) this.currentImageMimeType = options.mimeType;
-    if (typeof options?.bgColor === "string" && options.bgColor.trim() !== "") this.currentImageBgColor = options.bgColor;
-    if (typeof options?.transient === "number" && Number.isFinite(options.transient)) {
-      this.currentImageTransient = Math.max(0, Math.min(500, Math.round(options.transient)));
+    const nextMimeType = options?.mimeType ?? this.currentImageMimeType;
+    const nextBgColor = typeof options?.bgColor === "string" && options.bgColor.trim() !== "" ? options.bgColor : this.currentImageBgColor;
+    const nextTransient =
+      typeof options?.transient === "number" && Number.isFinite(options.transient)
+        ? Math.max(0, Math.min(500, Math.round(options.transient)))
+        : this.currentImageTransient;
+
+    if (
+      imageDataUrl === this.currentImageSourceDataUrl &&
+      nextMimeType === this.currentImageMimeType &&
+      nextBgColor === this.currentImageBgColor &&
+      nextTransient === this.currentImageTransient
+    ) {
+      return;
     }
+
+    this.currentImageSourceDataUrl = imageDataUrl;
+    this.currentImageMimeType = nextMimeType;
+    this.currentImageBgColor = nextBgColor;
+    this.currentImageTransient = nextTransient;
 
     if (!imageDataUrl) {
       this.currentImageData = null;
