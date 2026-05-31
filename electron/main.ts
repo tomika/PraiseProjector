@@ -1135,8 +1135,20 @@ ipcMain.handle("get-main-window-display-id", () => {
   const win = mainWindow;
   if (!win) return null;
 
-  const display = screen.getDisplayMatching(win.getBounds());
-  return display?.id ? display.id.toString() : null;
+  const bounds = win.getBounds();
+  const centerPoint = {
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(bounds.y + bounds.height / 2),
+  };
+
+  // Prefer center-point matching for better cross-platform consistency.
+  const byPoint = screen.getDisplayNearestPoint(centerPoint);
+  if (byPoint?.id != null) {
+    return byPoint.id.toString();
+  }
+
+  const byBounds = screen.getDisplayMatching(bounds);
+  return byBounds?.id != null ? byBounds.id.toString() : null;
 });
 
 // IPC handlers for display/monitor management

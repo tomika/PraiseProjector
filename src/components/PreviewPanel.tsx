@@ -77,6 +77,39 @@ interface ScreenDetailsResult {
   screens?: ScreenInfo[];
 }
 
+function resolveDisplayIdFromWindowCenter(
+  displays: MonitorDisplay[],
+  bounds: { x: number; y: number; width: number; height: number }
+): string | null {
+  if (!displays.length) return null;
+
+  const centerX = Math.round(bounds.x + bounds.width / 2);
+  const centerY = Math.round(bounds.y + bounds.height / 2);
+
+  const containing = displays.find((d) => {
+    const left = d.bounds.x;
+    const top = d.bounds.y;
+    const right = left + d.bounds.width;
+    const bottom = top + d.bounds.height;
+    return centerX >= left && centerX < right && centerY >= top && centerY < bottom;
+  });
+  if (containing) return containing.id;
+
+  // Fallback to nearest display center if no direct containment (edge/window-manager quirks).
+  let bestId: string | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const display of displays) {
+    const dx = centerX - (display.bounds.x + display.bounds.width / 2);
+    const dy = centerY - (display.bounds.y + display.bounds.height / 2);
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = display.id;
+    }
+  }
+  return bestId;
+}
+
 interface WindowWithScreenDetails extends Window {
   getScreenDetails?: () => Promise<ScreenDetailsResult>;
 }
@@ -187,6 +220,41 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const [_displayAspectRatio, setDisplayAspectRatio] = useState(16 / 9); // Default aspect ratio
     const [projectorWidth, setProjectorWidth] = useState(1920);
     const [projectorHeight, setProjectorHeight] = useState(1080);
+
+    const getTargetDisplays = useCallback(async (displays: MonitorDisplay[]): Promise<MonitorDisplay[]> => {
+      const api = window.electronAPI;
+
+      let excludedId: string | null = null;
+      if (api?.getMainWindowDisplayId) {
+        try {
+          excludedId = await api.getMainWindowDisplayId();
+        } catch {
+          // Ignore and fall back to bounds-based detection.
+        }
+      }
+
+      if (api?.getWindowBounds) {
+        try {
+          const bounds = await api.getWindowBounds();
+          if (bounds) {
+            const idFromBounds = resolveDisplayIdFromWindowCenter(displays, bounds);
+            if (idFromBounds) {
+              excludedId = idFromBounds;
+            }
+          }
+        } catch {
+          // Ignore and keep ID-based exclusion.
+        }
+      }
+
+      if (!excludedId) {
+        return displays;
+      }
+
+      const filtered = displays.filter((d) => d.id !== excludedId);
+      // Do not hide all displays if exclusion over-matches for any reason.
+      return filtered.length > 0 ? filtered : displays;
+    }, []);
 
     // Poll connected clients every 2 s (Electron only — in web mode we can't know)
     useEffect(() => {
@@ -905,8 +973,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           const isOpen = await api.isDisplayWindowOpen!();
           if (!isOpen) return;
           const displays = await api.getAllDisplays!();
-          const mainDisplayId = api.getMainWindowDisplayId ? await api.getMainWindowDisplayId() : null;
-          const targetDisplays = mainDisplayId ? displays.filter((d) => d.id !== mainDisplayId) : displays;
+          const targetDisplays = await getTargetDisplays(displays);
           const savedId = settings?.displayMonitorId;
           const idx = savedId ? targetDisplays.findIndex((d) => d.id === savedId) : 0;
           const matchIndex = idx >= 0 ? idx : 0;
@@ -1546,8 +1613,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           const displays = await window.electronAPI.getAllDisplays();
 
           // Skip the screen hosting the main window (matching C# UpdateDisplaySetting refPoint check)
-          const mainDisplayId = window.electronAPI.getMainWindowDisplayId ? await window.electronAPI.getMainWindowDisplayId() : null;
-          const targetDisplays = mainDisplayId ? displays.filter((d) => d.id !== mainDisplayId) : displays;
+          const targetDisplays = await getTargetDisplays(displays);
 
           setAvailableMonitors(targetDisplays);
 
