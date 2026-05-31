@@ -147,6 +147,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       selectedLeader: undefined,
       defaultChordSystem: "G", // German chord system by default
       displayMonitorId: "",
+      previewPanelCollapseMode: "expanded",
       syncDeclineTimeoutMinutes: 15,
       serverPeekIntervalMinutes: 60,
       showCloudNetworkErrorToasts: true,

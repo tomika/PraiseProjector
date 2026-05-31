@@ -89,6 +89,7 @@ export interface Settings {
   };
   defaultChordSystem: "G" | "S";
   displayMonitorId: string;
+  previewPanelCollapseMode: "expanded" | "tabsCollapsed" | "tabsAndPreviewCollapsed";
   lastSyncDate?: string;
   syncDeclineTimeoutMinutes: number;
   serverPeekIntervalMinutes: number;

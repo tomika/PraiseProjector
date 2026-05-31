@@ -43,6 +43,60 @@
   background-color: transparent;
 }
 
+.projecting-tabs-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.projecting-tabs-row .nav-tabs {
+  margin-bottom: 0;
+  align-self: flex-end;
+}
+
+.projecting-tabs-row .nav-tabs .nav-link {
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  line-height: 1.15;
+}
+
+.preview-layout-cycle-btn {
+  --button-min-width: 1.5rem;
+  --button-min-height: 1.5rem;
+  --button-padding-y: 0.1rem;
+  --button-padding-x: 0.1rem;
+  --button-icon-size: 0.8rem;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: 0;
+  width: var(--button-min-width);
+  min-width: var(--button-min-width);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-y) var(--button-padding-x);
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  align-self: flex-end;
+  flex: 0 0 auto;
+}
+
+.preview-layout-cycle-btn > i {
+  display: block;
+  margin: 0;
+  line-height: 1;
+}
+
+[data-theme="dark"] .preview-layout-cycle-btn.btn-light {
+  border-color: var(--pp-button-border-color);
+  color: var(--pp-text-color);
+  background-color: transparent;
+}
+
+[data-theme="dark"] .preview-layout-cycle-btn.btn-light:hover {
+  background-color: var(--pp-bg-secondary);
+  border-color: var(--pp-button-border-color);
+}
+
 .preview-tab-content {
   height: 120px; /* Fixed height for the container */
   background-color: white;

@@ -79,6 +79,11 @@
   "playlist": "Kattintson a kijelöléshez és megjelenítéshez.\nHúzza az átrendezéshez.\nJobb klikk a transzponáláshoz, capóhoz és egyebekhez.",
   "sectionlist": "Kattintson a szakasz kivetítéséhez.\nA színek jelzik az akt./köv. szakaszt\nilletve hogy a jelenlegi beállításokkal\na szakasz hogyan fér el a képernyőn.\n* Enter - következő szakaszra ugrás\n* Nyilak - következő szakasz mozgatása\n* Oldalváltó gombok - dal blokk váltás\n* Visszatörlés - ugrás a dal blokk elejére\n* Esc - kijelölés törlése",
 
+  "preview_panel_layout_toggle": "Előnézeti panel elrendezésének váltása",
+  "preview_panel_layout_state_expanded": "vezérlők + előnézet",
+  "preview_panel_layout_state_tabs_collapsed": "csak előnézet",
+  "preview_panel_layout_state_tabs_and_preview_collapsed": "mindkettő összehúzva",
+
   "preview_no_qrcode": "Kattintson a QR kód megjelenítéséhez a kivetítőn.\nA nézők telefonjukkal beolvashatják\nés saját képernyőjükön követhetik a dalszöveget.",
   "preview_qrcode": "Húzással mozgatható · Görgővel átméretezhető · Kattintással elrejthető",
  

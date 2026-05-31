@@ -16,13 +16,21 @@ import ImageSelector from "./preview/ImageSelector";
 import { Settings } from "../types";
 import { useLeader } from "../contexts/LeaderContext";
 import { useSessionUrl } from "../hooks/useSessionUrl";
-import { Panel, PanelGroup } from "react-resizable-panels";
+import { Panel, PanelGroup, type ImperativePanelHandle } from "react-resizable-panels";
 import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { Display } from "../../common/pp-types";
 
 type PreviewTab = "format" | "image" | "message";
+type PreviewPanelCollapseMode = Settings["previewPanelCollapseMode"];
+
+const PREVIEW_PANEL_COLLAPSE_MODES: PreviewPanelCollapseMode[] = ["expanded", "tabsCollapsed", "tabsAndPreviewCollapsed"];
+const PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK = 4;
+
+function normalizePreviewPanelCollapseMode(mode: unknown): PreviewPanelCollapseMode {
+  return PREVIEW_PANEL_COLLAPSE_MODES.includes(mode as PreviewPanelCollapseMode) ? (mode as PreviewPanelCollapseMode) : "expanded";
+}
 
 interface PreviewPanelProps {
   selectedPlaylistItem: PlaylistEntry | null;
@@ -154,6 +162,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const { t } = useLocalization();
     const { tt } = useTooltips();
     const [activeTab, setActiveTab] = useState<PreviewTab>(initialTab);
+    const previewPanelCollapseMode = normalizePreviewPanelCollapseMode(settings?.previewPanelCollapseMode);
+    const isTabContentCollapsed = previewPanelCollapseMode !== "expanded";
+    const isProjectedPreviewCollapsed = previewPanelCollapseMode === "tabsAndPreviewCollapsed";
     const [sections, setSections] = useState<ExtendedSectionItem[]>([]);
     const [nextSectionIndex, setNextSectionIndex] = useState(-1);
     const { guestLeaderId: _guestLeaderId } = useLeader(); // kept for potential future use
@@ -185,9 +196,51 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       (tab: PreviewTab) => {
         setActiveTab(tab);
         onActiveTabChange?.(tab);
+        updateSettingWithAutoSave("previewPanelCollapseMode", "expanded");
       },
-      [onActiveTabChange]
+      [onActiveTabChange, updateSettingWithAutoSave]
     );
+
+    const cyclePreviewPanelCollapseMode = useCallback(() => {
+      const currentIndex = PREVIEW_PANEL_COLLAPSE_MODES.indexOf(previewPanelCollapseMode);
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextMode = PREVIEW_PANEL_COLLAPSE_MODES[(safeIndex + 1) % PREVIEW_PANEL_COLLAPSE_MODES.length];
+      updateSettingWithAutoSave("previewPanelCollapseMode", nextMode);
+      sectionListRef.current?.focus();
+    }, [previewPanelCollapseMode, updateSettingWithAutoSave]);
+
+    const previewPanelCollapseStateLabel = useMemo(() => {
+      switch (previewPanelCollapseMode) {
+        case "tabsCollapsed":
+          return tt("preview_panel_layout_state_tabs_and_preview_collapsed") ?? "tabs only";
+        case "tabsAndPreviewCollapsed":
+          return tt("preview_panel_layout_state_expanded") ?? "tabs + controls + preview";
+        default:
+          return tt("preview_panel_layout_state_tabs_collapsed") ?? "tabs + preview";
+      }
+    }, [previewPanelCollapseMode, tt]);
+
+    const previewPanelCollapseTitle = useMemo(() => {
+      const toggleLabel = tt("preview_panel_layout_toggle");
+      if (!toggleLabel) return undefined;
+      return `${toggleLabel}: ${previewPanelCollapseStateLabel}`;
+    }, [previewPanelCollapseStateLabel, tt]);
+
+    const previewPanelCollapseAriaLabel = useMemo(() => {
+      const toggleLabel = tt("preview_panel_layout_toggle") ?? "Rotate preview panel layout";
+      return `${toggleLabel}: ${previewPanelCollapseStateLabel}`;
+    }, [previewPanelCollapseStateLabel, tt]);
+
+    const previewPanelCollapseIconClass = useMemo(() => {
+      switch (previewPanelCollapseMode) {
+        case "tabsCollapsed":
+          return "fa fa-window-minimize";
+        case "tabsAndPreviewCollapsed":
+          return "fa fa-columns fa-rotate-90";
+        default:
+          return "fa fa-window-maximize";
+      }
+    }, [previewPanelCollapseMode]);
 
     useEffect(() => {
       setActiveTab(initialTab);
@@ -364,20 +417,69 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Splitter: compute bottom panel minSize as a percentage from actual container height
     const panelGroupRef = useRef<HTMLDivElement | null>(null);
+    const bottomPanelRef = useRef<ImperativePanelHandle | null>(null);
+    const tabsRowRef = useRef<HTMLDivElement | null>(null);
+    const lastExpandedBottomSizeRef = useRef<number>((previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40);
+    const lastAppliedCollapseModeRef = useRef<PreviewPanelCollapseMode | null>(null);
     const [bottomMinSize, setBottomMinSize] = useState(30);
+    const [collapsedBottomSize, setCollapsedBottomSize] = useState(PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK);
     useEffect(() => {
-      const el = panelGroupRef.current;
-      if (!el) return;
-      const obs = new ResizeObserver(([entry]) => {
-        const h = entry.contentRect.height;
-        if (h > 0) {
-          const minPx = 300; // tabs + preview = minimum for bottom panel
-          setBottomMinSize(Math.min(70, Math.max(20, (minPx / h) * 100)));
-        }
+      const panelGroupEl = panelGroupRef.current;
+      if (!panelGroupEl) return;
+
+      const recomputeSplitSizes = () => {
+        const groupHeight = panelGroupEl.getBoundingClientRect().height;
+        if (groupHeight <= 0) return;
+
+        const minPx = 300; // tabs + preview = minimum for bottom panel
+        setBottomMinSize(Math.min(70, Math.max(20, (minPx / groupHeight) * 100)));
+
+        const tabsRowHeight = tabsRowRef.current?.getBoundingClientRect().height ?? 0;
+        const collapsedPx = Math.max(1, Math.ceil(tabsRowHeight) + 2);
+        const collapsedPercent = Math.min(20, Math.max(1, (collapsedPx / groupHeight) * 100));
+        setCollapsedBottomSize(collapsedPercent);
+      };
+
+      recomputeSplitSizes();
+
+      const obs = new ResizeObserver(() => {
+        recomputeSplitSizes();
       });
-      obs.observe(el);
+      obs.observe(panelGroupEl);
+      if (tabsRowRef.current) {
+        obs.observe(tabsRowRef.current);
+      }
       return () => obs.disconnect();
     }, []);
+
+    useEffect(() => {
+      const panel = bottomPanelRef.current;
+      if (!panel) return;
+
+      const previousMode = lastAppliedCollapseModeRef.current;
+      if (previousMode === null) {
+        if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
+          panel.resize(collapsedBottomSize);
+        }
+        lastAppliedCollapseModeRef.current = previewPanelCollapseMode;
+        return;
+      }
+
+      if (previousMode === previewPanelCollapseMode) {
+        if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
+          panel.resize(collapsedBottomSize);
+        }
+        return;
+      }
+
+      if (previewPanelCollapseMode === "tabsAndPreviewCollapsed") {
+        panel.resize(collapsedBottomSize);
+      } else if (previousMode === "tabsAndPreviewCollapsed") {
+        panel.resize(Math.max(bottomMinSize, lastExpandedBottomSizeRef.current));
+      }
+
+      lastAppliedCollapseModeRef.current = previewPanelCollapseMode;
+    }, [previewPanelCollapseMode, bottomMinSize, collapsedBottomSize]);
 
     // QR code overlay interaction state
     // We observe the *container* (always mounted) rather than the conditional wrapper so the
@@ -2063,6 +2165,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       }
     }, [settings?.qrCodeInPreview, qrContextMenu]);
 
+    useEffect(() => {
+      if (isProjectedPreviewCollapsed && qrContextMenu) {
+        setQrContextMenu(null);
+      }
+    }, [isProjectedPreviewCollapsed, qrContextMenu]);
+
     // Mouse drag on the QR overlay (left button only)
     const handleQrMouseDown = useCallback(
       (e: React.MouseEvent) => {
@@ -2318,6 +2426,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           direction="vertical"
           onLayout={(sizes) => {
             onPreviewSplitSizeChange?.(sizes[0]);
+            const nextBottomSize = sizes[1];
+            if (typeof nextBottomSize === "number" && previewPanelCollapseMode !== "tabsAndPreviewCollapsed") {
+              lastExpandedBottomSizeRef.current = nextBottomSize;
+            }
           }}
         >
           <Panel defaultSize={previewSplitSize ?? 60} minSize={20}>
@@ -2493,109 +2605,126 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               </div>
             </div>
           </Panel>
-          <ResizeHandle className="mt-1 mb-1" />
-          <Panel defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40} minSize={bottomMinSize}>
+          <ResizeHandle className="mt-1 mb-1" disabled={isProjectedPreviewCollapsed} />
+          <Panel
+            ref={bottomPanelRef}
+            defaultSize={(previewSplitSize ?? 60) > 0 ? 100 - (previewSplitSize ?? 60) : 40}
+            minSize={previewPanelCollapseMode === "tabsAndPreviewCollapsed" ? collapsedBottomSize : bottomMinSize}
+          >
             <div className="d-flex flex-column h-100">
               <div className="projecting-formats-container">
-                <ul className="nav nav-tabs">
-                  <li className="nav-item">
-                    <a
-                      className={`nav-link ${activeTab === "format" ? "active" : ""}`}
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleTabChange("format");
-                      }}
-                    >
-                      {t("Format")}
-                    </a>
-                  </li>
-                  <li className="nav-item">
-                    <a
-                      className={`nav-link ${activeTab === "image" ? "active" : ""}`}
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleTabChange("image");
-                      }}
-                    >
-                      {t("Image")}
-                    </a>
-                  </li>
-                  <li className="nav-item">
-                    <a
-                      className={`nav-link ${activeTab === "message" ? "active" : ""}`}
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleTabChange("message");
-                      }}
-                    >
-                      {t("Message")}
-                    </a>
-                  </li>
-                </ul>
-                <div className="tab-content p-2 border border-top-0 preview-tab-content">{renderTabContent()}</div>
-              </div>
-              <div
-                className={`flex-grow-1 preview-display-container${flashOverlay ? ` preview-display-container-flash preview-display-container-flash-${flashOverlay}` : ""}`}
-                ref={containerRefCallback}
-              >
-                {previewDataUrl ? (
-                  <div
-                    ref={previewWrapperRef}
-                    className={`preview-image-wrapper${flashOverlay ? " preview-image-wrapper-hidden" : ""}`}
-                    onClick={handlePreviewWrapperClick}
-                    onContextMenu={handlePreviewContextMenu}
-                    title={!settings?.qrCodeInPreview && qrRawUrl ? tt("preview_no_qrcode") : undefined}
-                  >
-                    <img src={previewDataUrl} alt="Section Preview" className="preview-display-image" />
-                    {settings?.qrCodeInPreview && qrCodeUrl && (
-                      <div
-                        ref={qrOverlayRef}
-                        className={`qr-code-overlay${isQrDragging ? " dragging" : ""}`}
+                <div className="projecting-tabs-row" ref={tabsRowRef}>
+                  <ul className="nav nav-tabs flex-grow-1">
+                    <li className="nav-item">
+                      <a
+                        className={`nav-link ${activeTab === "format" ? "active" : ""}`}
+                        href="#"
                         onClick={(e) => {
-                          // Keep overlay interactions from triggering wrapper toggle.
-                          e.stopPropagation();
-                          if (suppressQrClickRef.current) {
-                            return;
-                          }
-                          const bounds = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                          openQrContextMenuAt(bounds.left + bounds.width / 2, bounds.bottom + 8);
+                          e.preventDefault();
+                          handleTabChange("format");
                         }}
-                        onMouseDown={handleQrMouseDown}
-                        onWheel={handleQrWheel}
-                        onTouchStart={handleQrTouchStart}
-                        onTouchMove={handleQrTouchMove}
-                        onTouchEnd={handleQrTouchEnd}
-                        onContextMenu={handlePreviewContextMenu}
-                        title={settings?.showTooltips ? tt("preview_qrcode") : undefined}
                       >
-                        <div dangerouslySetInnerHTML={{ __html: generateQRCodeSVG(qrCodeUrl, Math.max(16, Math.round(qrSizePx))) }} />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="preview-display-placeholder">{t("SelectSectionToPreview")}</div>
-                )}
-                {qrContextMenu && (
-                  <div ref={qrContextMenuRef} className="qr-context-menu">
-                    <label htmlFor="qr-size-slider" className="qr-context-menu-label">
-                      {t("QRCodeSizeSettingLabel")}: {Math.round(settings?.qrCodeSizePercent ?? 15)}%
-                    </label>
-                    <input
-                      id="qr-size-slider"
-                      type="range"
-                      className="qr-context-menu-slider"
-                      min={1}
-                      max={100}
-                      step={1}
-                      value={settings?.qrCodeSizePercent ?? 15}
-                      onChange={(e) => updateSettingWithAutoSave("qrCodeSizePercent", Number(e.target.value))}
-                    />
-                  </div>
-                )}
+                        {t("Format")}
+                      </a>
+                    </li>
+                    <li className="nav-item">
+                      <a
+                        className={`nav-link ${activeTab === "image" ? "active" : ""}`}
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleTabChange("image");
+                        }}
+                      >
+                        {t("Image")}
+                      </a>
+                    </li>
+                    <li className="nav-item">
+                      <a
+                        className={`nav-link ${activeTab === "message" ? "active" : ""}`}
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleTabChange("message");
+                        }}
+                      >
+                        {t("Message")}
+                      </a>
+                    </li>
+                  </ul>
+                  <button
+                    type="button"
+                    className={`btn btn-light preview-layout-cycle-btn ${previewPanelCollapseMode !== "expanded" ? "btn-active" : ""}`}
+                    title={previewPanelCollapseTitle}
+                    aria-label={previewPanelCollapseAriaLabel}
+                    onClick={cyclePreviewPanelCollapseMode}
+                  >
+                    <i className={previewPanelCollapseIconClass} aria-hidden="true" />
+                  </button>
+                </div>
+                {!isTabContentCollapsed && <div className="tab-content p-2 border border-top-0 preview-tab-content">{renderTabContent()}</div>}
               </div>
+              {!isProjectedPreviewCollapsed && (
+                <div
+                  className={`flex-grow-1 preview-display-container${flashOverlay ? ` preview-display-container-flash preview-display-container-flash-${flashOverlay}` : ""}`}
+                  ref={containerRefCallback}
+                >
+                  {previewDataUrl ? (
+                    <div
+                      ref={previewWrapperRef}
+                      className={`preview-image-wrapper${flashOverlay ? " preview-image-wrapper-hidden" : ""}`}
+                      onClick={handlePreviewWrapperClick}
+                      onContextMenu={handlePreviewContextMenu}
+                      title={!settings?.qrCodeInPreview && qrRawUrl ? tt("preview_no_qrcode") : undefined}
+                    >
+                      <img src={previewDataUrl} alt="Section Preview" className="preview-display-image" />
+                      {settings?.qrCodeInPreview && qrCodeUrl && (
+                        <div
+                          ref={qrOverlayRef}
+                          className={`qr-code-overlay${isQrDragging ? " dragging" : ""}`}
+                          onClick={(e) => {
+                            // Keep overlay interactions from triggering wrapper toggle.
+                            e.stopPropagation();
+                            if (suppressQrClickRef.current) {
+                              return;
+                            }
+                            const bounds = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                            openQrContextMenuAt(bounds.left + bounds.width / 2, bounds.bottom + 8);
+                          }}
+                          onMouseDown={handleQrMouseDown}
+                          onWheel={handleQrWheel}
+                          onTouchStart={handleQrTouchStart}
+                          onTouchMove={handleQrTouchMove}
+                          onTouchEnd={handleQrTouchEnd}
+                          onContextMenu={handlePreviewContextMenu}
+                          title={settings?.showTooltips ? tt("preview_qrcode") : undefined}
+                        >
+                          <div dangerouslySetInnerHTML={{ __html: generateQRCodeSVG(qrCodeUrl, Math.max(16, Math.round(qrSizePx))) }} />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="preview-display-placeholder">{t("SelectSectionToPreview")}</div>
+                  )}
+                  {qrContextMenu && (
+                    <div ref={qrContextMenuRef} className="qr-context-menu">
+                      <label htmlFor="qr-size-slider" className="qr-context-menu-label">
+                        {t("QRCodeSizeSettingLabel")}: {Math.round(settings?.qrCodeSizePercent ?? 15)}%
+                      </label>
+                      <input
+                        id="qr-size-slider"
+                        type="range"
+                        className="qr-context-menu-slider"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={settings?.qrCodeSizePercent ?? 15}
+                        onChange={(e) => updateSettingWithAutoSave("qrCodeSizePercent", Number(e.target.value))}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Panel>
         </PanelGroup>

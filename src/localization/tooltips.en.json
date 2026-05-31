@@ -79,6 +79,11 @@
   "playlist": "Click to select and project a song.\nDrag to reorder.\nRight-click for transpose, capo and more options.",
   "sectionlist": "Click to project the section.\nColors indicate current/next section\nand whether the section fits on the screen with current settings.\n* Enter - jump to next section\n* Arrows - move next section up/down\n* Page keys - switch song block\n* Backspace - jump to beginning of song block\n* Esc - clear selection",
 
+  "preview_panel_layout_toggle": "Rotate preview panel layout",
+  "preview_panel_layout_state_expanded": "controls + preview",
+  "preview_panel_layout_state_tabs_collapsed": "preview only",
+  "preview_panel_layout_state_tabs_and_preview_collapsed": "both collapsed",
+
   "preview_no_qrcode": "Click to show a QR code on the projected display.\nViewers can scan it with their phone\nto follow along on their own screen.",
   "preview_qrcode": "Drag to move · Scroll to resize · Click to hide",
   "imagelist_expand": "Expand image list",

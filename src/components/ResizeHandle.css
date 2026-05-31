@@ -40,3 +40,12 @@
 .resize-handle-outer[data-resize-handle-active] .resize-handle-inner {
   background-color: var(--bs-primary);
 }
+
+.resize-handle-outer.resize-handle-disabled {
+  opacity: 0.55;
+}
+
+.resize-handle-outer.resize-handle-disabled,
+.resize-handle-outer.resize-handle-disabled .resize-handle-inner {
+  cursor: default;
+}

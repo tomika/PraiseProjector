@@ -113,6 +113,7 @@ export interface Settings {
 
   // Projector/Display settings
   displayMonitorId: string; // ID of selected monitor for projection
+  previewPanelCollapseMode: "expanded" | "tabsCollapsed" | "tabsAndPreviewCollapsed";
 
   // Last sync date for "old sync" warning when entering edit mode
   lastSyncDate?: string; // ISO date string, null if never synced
