@@ -1,6 +1,6 @@
 import React, { useState, useRef, useContext, useEffect, ReactNode, useCallback } from "react";
 import { SessionResponse } from "../../common/pp-types";
-import { cloudApi } from "../../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
 import { cloudApiBaseUrl } from "../config";
 import { Database } from "../../db-common/Database";
 
@@ -8,6 +8,9 @@ type AuthStatus = "guest" | "authenticated" | "offline";
 
 interface AuthContextType {
   authStatus: AuthStatus;
+  networkUnavailable: boolean;
+  recheckNetworkAvailability: () => Promise<boolean>;
+  restoreStoredSession: () => Promise<boolean>;
   isAuthenticated: boolean;
   isGuest: boolean;
   username: string | null;
@@ -60,6 +63,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   const [username, setUsername] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus>("guest");
+  const [networkUnavailable, setNetworkUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [onLoginSuccess, setOnLoginSuccessCallback] = useState<((leaderId?: string) => void) | undefined>();
   const guestCookieCleanupRetriedRef = useRef(false);
@@ -75,6 +79,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const applySession = useCallback((session: SessionResponse, persist = true) => {
     setUser(session);
     setToken(session.token);
+    setNetworkUnavailable(false);
     cloudApi.setToken(shouldUseBearerHeader ? session.token : null);
     cloudApi.setFixedHeader("X-PP-Expected-User", session.login);
     setAuthStatus("authenticated");
@@ -116,6 +121,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       return null;
     } catch (error) {
+      if (isCloudApiErrorKind(error, "network")) {
+        console.debug("[Auth] verifySession: network unavailable");
+        throw error;
+      }
       console.debug("[Auth] verifySession: failed", error instanceof Error ? error.message : error);
       return null;
     }
@@ -164,6 +173,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUsername(null);
         setUser(null);
         setToken(null);
+        setNetworkUnavailable(false);
         cloudApi.setToken(null);
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
 
@@ -173,7 +183,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // the shared cookies would silently authenticate every fetch request as
         // the browser's user while the UI shows "Guest".  verifySession with an
         // empty expected login detects the mismatch and clears the stale cookies.
-        await verifySession("", null);
+        try {
+          await verifySession("", null);
+        } catch (error) {
+          if (!isCloudApiErrorKind(error, "network")) {
+            throw error;
+          }
+          console.debug("[Auth] loadInitialCredentials: guest session verification skipped while offline");
+        }
 
         setAuthStatus("guest");
         if (Database.getCurrentUsername() !== "") {
@@ -183,30 +200,65 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       let session: SessionResponse | null = null;
+      let networkUnavailable = false;
 
       // Try restoring the session using the stored access token (Bearer).
       if (storedSessionToken) {
         console.debug("[Auth] loadInitialCredentials: trying Bearer token");
-        session = await verifySession(storedUsername, `Bearer ${storedSessionToken}`);
+        try {
+          session = await verifySession(storedUsername, `Bearer ${storedSessionToken}`);
+        } catch (error) {
+          if (isCloudApiErrorKind(error, "network")) {
+            networkUnavailable = true;
+          } else {
+            throw error;
+          }
+        }
       }
 
       // If Bearer token failed or was missing, try cookie-only session renewal.
       // In browser mode the browser sends the HttpOnly pp_refresh cookie; in
       // Electron mode the proxy cookie jar does the same.
-      if (!session) {
+      if (!session && !networkUnavailable) {
         console.debug("[Auth] loadInitialCredentials: trying cookie-only renewal");
-        session = await verifySession(storedUsername, null);
+        try {
+          session = await verifySession(storedUsername, null);
+        } catch (error) {
+          if (isCloudApiErrorKind(error, "network")) {
+            networkUnavailable = true;
+          } else {
+            throw error;
+          }
+        }
       }
 
       // Backward-compatible fallback for older deployments that stored token in localStorage.
-      if (!session && storedLegacyToken) {
+      if (!session && !networkUnavailable && storedLegacyToken) {
         console.debug("[Auth] loadInitialCredentials: trying legacy token");
-        session = await verifySession(storedUsername, storedLegacyToken);
+        try {
+          session = await verifySession(storedUsername, storedLegacyToken);
+        } catch (error) {
+          if (isCloudApiErrorKind(error, "network")) {
+            networkUnavailable = true;
+          } else {
+            throw error;
+          }
+        }
       }
 
       if (session) {
         console.debug("[Auth] loadInitialCredentials: session restored for", storedUsername);
         applySession(session);
+        return;
+      }
+
+      if (networkUnavailable) {
+        console.debug("[Auth] loadInitialCredentials: network unavailable, preserving stored session data");
+        setUser(null);
+        setToken(null);
+        setNetworkUnavailable(true);
+        cloudApi.setToken(null);
+        setAuthStatus("offline");
         return;
       }
 
@@ -216,6 +268,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await window.electronAPI?.clearPersistedCookies?.();
       setUser(null);
       setToken(null);
+      setNetworkUnavailable(false);
       cloudApi.setToken(null);
       setAuthStatus("offline");
     } catch (error) {
@@ -231,7 +284,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const authToken = password ? `Basic ${btoa(`${username}:${password}`)}` : null;
       if (!authToken) {
-        setIsLoading(false);
         return false;
       }
       const clientId = await getDeviceClientId();
@@ -247,9 +299,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } catch {
         // Ignore pre-login logout errors and continue with explicit credentials.
       }
-      // Clear proxy cookie jar before explicit login so stale session cookies
-      // from a previous user don't shadow the Basic auth credentials.
-      await window.electronAPI?.clearPersistedCookies?.();
       const session = await verifySession(username, authToken);
       if (session && session.token) {
         // Don't persist session token yet — wait for "Remember Me" decision.
@@ -265,17 +314,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           onLoginSuccess(session.leaderId);
         }
 
-        setIsLoading(false);
         return true;
       }
+      setNetworkUnavailable(false);
       setAuthStatus(username ? "offline" : "guest");
-      setIsLoading(false);
       return false;
     } catch (error) {
+      if (isCloudApiErrorKind(error, "network")) {
+        setNetworkUnavailable(true);
+        setAuthStatus(username ? "offline" : "guest");
+        throw error;
+      }
       console.error("Auth", "Login failed", error);
+      setNetworkUnavailable(false);
       setAuthStatus(username ? "offline" : "guest");
-      setIsLoading(false);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -293,6 +348,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setToken(null);
       setUsername(null);
       setAuthStatus("guest");
+      setNetworkUnavailable(false);
       cloudApi.setToken(null);
       cloudApi.setFixedHeader("X-PP-Expected-User", "");
       localStorage.removeItem("auth_username");
@@ -311,6 +367,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     (newToken: string) => {
       if (newToken) {
         setToken(newToken);
+        setNetworkUnavailable(false);
         if (!username) {
           const storedUsername = localStorage.getItem("auth_username")?.trim() || "";
           if (storedUsername) {
@@ -326,9 +383,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [username]
   );
 
+  const recheckNetworkAvailability = useCallback(async (): Promise<boolean> => {
+    try {
+      const clientId = await getDeviceClientId();
+      cloudApi.setClientId(clientId);
+      cloudApi.invalidatePeekCache();
+      await cloudApi.fetchPeek();
+      setNetworkUnavailable(false);
+      return true;
+    } catch (error) {
+      if (isCloudApiErrorKind(error, "network")) {
+        setNetworkUnavailable(true);
+        return false;
+      }
+      // Auth/HTTP errors still mean the server is reachable.
+      setNetworkUnavailable(false);
+      return true;
+    }
+  }, []);
+
+  const restoreStoredSession = useCallback(async (): Promise<boolean> => {
+    await loadInitialCredentials();
+    return cloudApi.isAuthed();
+  }, [loadInitialCredentials]);
+
   const markSessionExpired = useCallback(() => {
     setUser(null);
     setToken(null);
+    setNetworkUnavailable(false);
     cloudApi.setToken(null);
     localStorage.removeItem("auth_token");
     localStorage.removeItem("pp_session_token");
@@ -404,6 +486,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const value = {
     authStatus,
+    networkUnavailable,
+    recheckNetworkAvailability,
+    restoreStoredSession,
     isAuthenticated: authStatus === "authenticated",
     isGuest: !username,
     username,
@@ -433,6 +518,9 @@ export const useAuth = (): AuthContextType => {
       console.warn("Auth", "useAuth called outside of AuthProvider - this may be a HMR issue, retrying...");
       return {
         authStatus: "guest",
+        networkUnavailable: false,
+        recheckNetworkAvailability: async () => true,
+        restoreStoredSession: async () => false,
         isAuthenticated: false,
         isGuest: true,
         username: null,

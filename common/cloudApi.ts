@@ -54,6 +54,45 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export type CloudApiErrorKind = "auth" | "network" | "http" | "aborted";
+
+export class CloudApiError extends Error {
+  readonly kind: CloudApiErrorKind;
+  readonly status?: number;
+  readonly endpoint?: string;
+
+  constructor(kind: CloudApiErrorKind, message: string, options?: { status?: number; endpoint?: string }) {
+    super(message);
+    this.name = "CloudApiError";
+    this.kind = kind;
+    this.status = options?.status;
+    this.endpoint = options?.endpoint;
+  }
+}
+
+export function isCloudApiErrorKind(error: unknown, kind: CloudApiErrorKind): boolean {
+  return error instanceof CloudApiError && error.kind === kind;
+}
+
+function isLikelyNetworkErrorMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("network error") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("timed out") ||
+    normalized.includes("timeout") ||
+    normalized.includes("econnrefused") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("enotfound") ||
+    normalized.includes("ehostunreach") ||
+    normalized.includes("host unreachable") ||
+    normalized.includes("dns") ||
+    normalized.includes("offline") ||
+    normalized.includes("unable to connect")
+  );
+}
+
 /**
  * Electron IPC proxy interface for server calls
  */
@@ -277,6 +316,35 @@ export class CloudApiService {
     return decode(codec, normalized);
   }
 
+  private emitCloudNetworkError(endpoint: string, message: string): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent("pp-cloud-network-error", {
+        detail: { endpoint, message },
+      })
+    );
+  }
+
+  private normalizeCloudApiError(error: unknown, endpoint: string): CloudApiError {
+    if (error instanceof CloudApiError) {
+      return error;
+    }
+
+    if (error instanceof Error) {
+      if (error.message.includes("aborted")) {
+        return new CloudApiError("aborted", "aborted", { endpoint });
+      }
+      if (isLikelyNetworkErrorMessage(error.message)) {
+        return new CloudApiError("network", error.message, { endpoint });
+      }
+      return new CloudApiError("http", error.message, { endpoint });
+    }
+
+    return new CloudApiError("http", "Unknown error", { endpoint });
+  }
+
   private async apiCall<T>(
     endpoint: string,
     postData?: unknown,
@@ -293,7 +361,7 @@ export class CloudApiService {
 
     try {
       if (combinedSignal.aborted) {
-        throw new Error("aborted");
+        throw new CloudApiError("aborted", "aborted", { endpoint });
       }
 
       // Proactively refresh the access token before it expires (the refresh
@@ -320,7 +388,7 @@ export class CloudApiService {
               : await this.proxyApi.proxyGet(this.baseUrl, path, headers);
 
           if (combinedSignal.aborted) {
-            throw new Error("aborted");
+            throw new CloudApiError("aborted", "aborted", { endpoint });
           }
 
           // Check for error response from proxy
@@ -345,9 +413,17 @@ export class CloudApiService {
                 }
                 console.debug("[CloudApi] apiCall: refresh after Electron 401 failed", { endpoint });
               }
-              throw new Error("401");
+              throw new CloudApiError("auth", "401", { status: 401, endpoint });
             }
-            throw new Error(errorResult.error.message || "Unknown error");
+
+            if (!errorResult.error.status || isLikelyNetworkErrorMessage(errorResult.error.message || "")) {
+              throw new CloudApiError("network", errorResult.error.message || "Network error", { endpoint });
+            }
+
+            throw new CloudApiError("http", errorResult.error.message || "Unknown error", {
+              status: errorResult.error.status,
+              endpoint,
+            });
           }
 
           // Proxy methods may return { data, ppHeaders }, unwrap payload for generic apiCall consumers.
@@ -361,21 +437,26 @@ export class CloudApiService {
         } else {
           const url = `${this.baseUrl}${path}`;
 
-          const response =
-            postData !== undefined
-              ? await fetch(url, {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify(postData),
-                  // Allow HttpOnly session cookie auth in web mode.
-                  credentials: "include",
-                  signal: combinedSignal,
-                })
-              : await fetch(url, {
-                  headers,
-                  credentials: "include",
-                  signal: combinedSignal,
-                });
+          let response: Response;
+          try {
+            response =
+              postData !== undefined
+                ? await fetch(url, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(postData),
+                    // Allow HttpOnly session cookie auth in web mode.
+                    credentials: "include",
+                    signal: combinedSignal,
+                  })
+                : await fetch(url, {
+                    headers,
+                    credentials: "include",
+                    signal: combinedSignal,
+                  });
+          } catch (fetchError) {
+            throw this.normalizeCloudApiError(fetchError, endpoint);
+          }
 
           if (!response.ok) {
             if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
@@ -397,9 +478,9 @@ export class CloudApiService {
                 }
                 console.debug("[CloudApi] apiCall: refresh after fetch 401 failed", { endpoint });
               }
-              throw new Error("401");
+              throw new CloudApiError("auth", "401", { status: 401, endpoint });
             }
-            throw new Error(`HTTP ${response.status}`);
+            throw new CloudApiError("http", `HTTP ${response.status}`, { status: response.status, endpoint });
           }
 
           if (options?.allowEmpty) {
@@ -413,6 +494,12 @@ export class CloudApiService {
           return response.json() as T;
         }
       }
+    } catch (error) {
+      const normalizedError = this.normalizeCloudApiError(error, endpoint);
+      if (normalizedError.kind === "network") {
+        this.emitCloudNetworkError(endpoint, normalizedError.message);
+      }
+      throw normalizedError;
     } finally {
       // Clean up tracking
       this.inFlightRequests.delete(controller);

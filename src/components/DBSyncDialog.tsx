@@ -5,13 +5,14 @@ import { Database } from "../../db-common/Database";
 import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
-import { cloudApi } from "../../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
 import CompareDialog, { convertHistoryEntryToSongWithHistory } from "./CompareDialog";
 import LeaderDataMergeDialog from "./LeaderDataMergeDialog";
 import "./DBSyncDialog.css";
 import { ChordSystemCode } from "../../chordpro/chordpro_base";
 import { SyncRequest, SyncResponse } from "../../common/pp-types";
 import { useTooltips } from "../localization/TooltipContext";
+import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
 
 enum SyncItemType {
   Song = "song",
@@ -182,6 +183,15 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     return true;
   }, [database, pendingVersion]);
 
+  const showSyncFailureAndClose = useCallback(
+    (title: string, message: string) => {
+      showMessage(title, message, () => {
+        onClose();
+      });
+    },
+    [showMessage, onClose]
+  );
+
   // Handle side effects when all conflicts are resolved
   useEffect(() => {
     if (!conflictsJustResolved) return;
@@ -284,14 +294,19 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       }
     } catch (error) {
       console.error("Sync", "Failed to fetch public songs", error);
-      showMessage(t("SyncError"), t("FailedToFetchPublicSongs"));
+      if (isCloudApiErrorKind(error, "network")) {
+        suppressCloudNetworkToast();
+        showSyncFailureAndClose(t("SyncError"), t("CloudNetworkErrorMessage"));
+      } else {
+        showSyncFailureAndClose(t("SyncError"), t("FailedToFetchPublicSongs"));
+      }
       setState(SyncState.Idle);
     }
   };
 
   const syncDB = async (): Promise<boolean> => {
     if (loopCountRef.current >= 5) {
-      showMessage(t("SyncLimitReached"), t("SyncCountLimitReached"));
+      showSyncFailureAndClose(t("SyncLimitReached"), t("SyncCountLimitReached"));
       return false;
     }
 
@@ -419,6 +434,26 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     } catch (error: unknown) {
       console.error("Sync", "Sync error", error);
       const err = error as Error;
+
+      if (isCloudApiErrorKind(error, "aborted")) {
+        setState(SyncState.Idle);
+        return false;
+      }
+
+      if (isCloudApiErrorKind(error, "auth")) {
+        markSessionExpired();
+        showMessage(t("AuthenticationFailed"), t("PleaseLoginAgain"));
+        onClose();
+        return false;
+      }
+
+      if (isCloudApiErrorKind(error, "network")) {
+        suppressCloudNetworkToast();
+        showSyncFailureAndClose(t("SyncError"), t("CloudNetworkErrorMessage"));
+        setState(SyncState.Idle);
+        return false;
+      }
+
       if (err.message.includes("aborted")) {
         setState(SyncState.Idle);
         return false;
@@ -431,7 +466,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       }
 
       // Don't recursively retry - let the user retry manually
-      showMessage(t("SyncError"), `${t("Error")}: ${err.message}`);
+      showSyncFailureAndClose(t("SyncError"), `${t("Error")}: ${err.message}`);
       setState(SyncState.Idle);
       return false;
     }

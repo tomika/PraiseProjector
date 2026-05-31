@@ -91,6 +91,7 @@ export interface Settings {
   lastSyncDate?: string;
   syncDeclineTimeoutMinutes: number;
   serverPeekIntervalMinutes: number;
+  showCloudNetworkErrorToasts: boolean;
   logLevel: number;
   logAutoExpandParams: boolean;
   theme: "light" | "dark" | "auto";

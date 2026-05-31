@@ -122,6 +122,9 @@ export interface Settings {
   // Interval of automatic /peek calls (minutes)
   serverPeekIntervalMinutes: number;
 
+  // Show toast notifications when cloud network calls fail
+  showCloudNetworkErrorToasts: boolean;
+
   // Log level for console output (0=Debug, 1=Info, 2=Warn, 3=Error, 4=None)
   logLevel: number;
 

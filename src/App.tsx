@@ -70,6 +70,7 @@ import { formatLocalDateLabel } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
+import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -108,6 +109,7 @@ const AppStateCodec = t.type({
 type AppState = t.TypeOf<typeof AppStateCodec>;
 
 const APP_STATE_KEY = "pp-state";
+const CLOUD_NETWORK_TOAST_COOLDOWN_MS = 60_000;
 
 // Load state synchronously to have values ready before first render
 const getInitialAppState = (): AppState | null => {
@@ -180,10 +182,19 @@ const AppContent: React.FC = () => {
   const orientation = useOrientation();
   const { settings, syncToBackend, updateSetting, updateSettingWithAutoSave } = useSettings();
   const { selectedLeader, guestLeaderId } = useLeader();
-  const { loadInitialCredentials, isAuthenticated, isGuest, isLoading: isAuthLoading } = useAuth();
+  const {
+    loadInitialCredentials,
+    networkUnavailable,
+    recheckNetworkAvailability,
+    restoreStoredSession,
+    isAuthenticated,
+    isGuest,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const { t } = useLocalization();
   const { showToast } = useToast();
   const hasSyncedSettingsRef = useRef(false);
+  const lastCloudNetworkToastAtRef = useRef(0);
 
   // Auto-fallback from Typesense to traditional search on connectivity failure
   const fallbackFiredRef = useRef(false);
@@ -200,6 +211,30 @@ const AppContent: React.FC = () => {
     window.addEventListener("pp-typesense-fallback", handleFallback);
     return () => window.removeEventListener("pp-typesense-fallback", handleFallback);
   }, [updateSettingWithAutoSave, showToast, t]);
+
+  useEffect(() => {
+    if (settings?.showCloudNetworkErrorToasts === false) {
+      return;
+    }
+
+    const handleCloudNetworkError = () => {
+      // Defer by one tick so message-box handlers can mark suppression first.
+      setTimeout(() => {
+        const now = Date.now();
+        if (shouldSuppressCloudNetworkToast(now)) {
+          return;
+        }
+        if (now - lastCloudNetworkToastAtRef.current < CLOUD_NETWORK_TOAST_COOLDOWN_MS) {
+          return;
+        }
+        lastCloudNetworkToastAtRef.current = now;
+        showToast(t("CloudNetworkErrorToast"), "warning");
+      }, 0);
+    };
+
+    window.addEventListener("pp-cloud-network-error", handleCloudNetworkError);
+    return () => window.removeEventListener("pp-cloud-network-error", handleCloudNetworkError);
+  }, [settings?.showCloudNetworkErrorToasts, showToast, t]);
 
   // F11 fullscreen toggle (browser/webapp mode)
   useEffect(() => {
@@ -1689,6 +1724,23 @@ const AppContent: React.FC = () => {
     }
 
     if (!isAuthenticated) {
+      if (networkUnavailable) {
+        const reachable = await recheckNetworkAvailability();
+        if (!reachable) {
+          suppressCloudNetworkToast();
+          showMessage(t("SyncError"), t("CloudNetworkErrorMessage"));
+          return;
+        }
+      }
+
+      const restored = await restoreStoredSession();
+      if (restored) {
+        if (await checkAndSaveScheduledPlaylist()) {
+          setShowDBSync(true);
+        }
+        return;
+      }
+
       window.dispatchEvent(new CustomEvent("pp-open-auth-dialog"));
       return;
     }
@@ -1696,16 +1748,43 @@ const AppContent: React.FC = () => {
     if (await checkAndSaveScheduledPlaylist()) {
       setShowDBSync(true);
     }
-  }, [isEditing, canSaveSong, showConfirm, t, isAuthenticated, isGuest, checkAndSaveScheduledPlaylist]);
+  }, [
+    isEditing,
+    canSaveSong,
+    showConfirm,
+    showMessage,
+    t,
+    networkUnavailable,
+    recheckNetworkAvailability,
+    restoreStoredSession,
+    isAuthenticated,
+    isGuest,
+    checkAndSaveScheduledPlaylist,
+  ]);
 
-  const handleSongCheckClick = useCallback(() => {
+  const handleSongCheckClick = useCallback(async () => {
     if (isGuest) return; // Song check not available for guests
     if (!isAuthenticated) {
+      if (networkUnavailable) {
+        const reachable = await recheckNetworkAvailability();
+        if (!reachable) {
+          suppressCloudNetworkToast();
+          showMessage(t("SyncError"), t("CloudNetworkErrorMessage"));
+          return;
+        }
+      }
+
+      const restored = await restoreStoredSession();
+      if (restored) {
+        setShowSongCheck(true);
+        return;
+      }
+
       window.dispatchEvent(new CustomEvent("pp-open-auth-dialog", { detail: { action: "songCheck" } }));
       return;
     }
     setShowSongCheck(true);
-  }, [isAuthenticated, isGuest]);
+  }, [networkUnavailable, recheckNetworkAvailability, restoreStoredSession, isAuthenticated, isGuest, showMessage, t]);
 
   // Watched display state for tracking changes (matching C# watchedDisplay field)
   const watchedDisplayRef = useRef<(Display & { message?: string }) | null>(null);

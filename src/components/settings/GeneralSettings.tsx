@@ -180,6 +180,18 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
             />
             <small className="form-text text-muted">{t("SettingsSyncDeclineTimeoutMinutesDescription")}</small>
           </div>
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="showCloudNetworkErrorToasts"
+              checked={settings.showCloudNetworkErrorToasts}
+              onChange={(e) => updateSetting("showCloudNetworkErrorToasts", e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="showCloudNetworkErrorToasts">
+              {t("SettingsShowCloudNetworkErrorToasts")}
+            </label>
+          </div>
         </div>
       </div>
     </div>

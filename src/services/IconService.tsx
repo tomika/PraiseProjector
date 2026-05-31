@@ -66,7 +66,7 @@ export enum IconType {
   HEART_IGNORED = "heart_ignored",
   BIG_HEART_EMPTY = "big_heart_empty",
   BIG_HEART_FILLED = "big_heart_filled",
-  CLOUD_AUTH_FAILED = "cloud_auth_failed",
+  CLOUD_ACCESS_FAILED = "cloud_access_failed",
 
   // Inline search option icons
   SEARCH_FUZZY = "search_fuzzy",
@@ -365,7 +365,7 @@ const iconMap: Record<IconType, IconConfig> = {
     imagePath: "assets/heart_filled.png",
     alt: "Preferred",
   },
-  [IconType.CLOUD_AUTH_FAILED]: {
+  [IconType.CLOUD_ACCESS_FAILED]: {
     faContent: (
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
         <path d="M 3.759 1.574 C 3.541 1.255 2.83 0.835 2.662 1.182 C 2.585 1.344 2.327 1.959 2.428 2.107 L 11.435 14.621 C 11.653 14.94 12.585 15.444 12.753 15.097 C 12.83 14.936 12.861 14.139 12.76 13.991 L 3.759 1.574 Z"></path>

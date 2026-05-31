@@ -5,10 +5,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
-import { cloudApi } from "../../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
 import { useSettings } from "../hooks/useSettings";
 import { Database } from "../../db-common/Database";
 import AuthDialog from "./AuthDialog";
+import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
@@ -37,6 +38,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const { selectedLeader, setSelectedLeaderId, allLeaders } = useLeader();
   const {
     authStatus,
+    networkUnavailable,
     isGuest,
     isAuthenticated,
     isLoading: isAuthLoading,
@@ -110,10 +112,13 @@ const UserPanel: React.FC<UserPanelProps> = ({
         setCloudDbVersion(peek.dbVersion ?? null);
         setCloudAuthFailed(false);
         lastPeekedLocalDbVersionRef.current = localDbVersion;
-      } catch {
-        // Only flag cloud auth failed if we're actually supposed to be authenticated.
-        // When offline with a saved username, isGuest=false but isAuthenticated=false too.
-        if (isAuthenticated && !isAuthLoading) setCloudAuthFailed(true);
+      } catch (error) {
+        // Only flag cloud auth failed for explicit auth failures.
+        if (isCloudApiErrorKind(error, "auth") && isAuthenticated && !isAuthLoading) {
+          setCloudAuthFailed(true);
+        } else {
+          setCloudAuthFailed(false);
+        }
         setPendingSongCount(0);
         setCloudDbVersion(null);
       }
@@ -256,34 +261,43 @@ const UserPanel: React.FC<UserPanelProps> = ({
   };
 
   const handleAuthConfirm = async (username: string, password: string, token: string) => {
-    // If token is provided, use it; otherwise use password for authentication
-    const success = await login(username, token || password);
-    if (success) {
-      setCloudAuthFailed(false);
-      setShowAuthDialog(false);
-      fetchPeek();
+    try {
+      // If token is provided, use it; otherwise use password for authentication
+      const success = await login(username, token || password);
+      if (success) {
+        setCloudAuthFailed(false);
+        setShowAuthDialog(false);
+        fetchPeek();
 
-      // In Electron mode, ask user whether to persist login (Remember Me).
-      const isElectron = typeof window !== "undefined" && !!window.electronAPI;
-      if (isElectron) {
-        showConfirmAsync(t("RememberMeTitle"), t("RememberMeMessage"), {
-          confirmText: t("Yes"),
-        }).then((rememberMe) => {
-          if (rememberMe) {
-            commitSession();
-            window.electronAPI?.persistCookies?.();
-          } else {
-            window.electronAPI?.clearPersistedCookies?.();
-          }
-        });
-      }
+        // In Electron mode, ask user whether to persist login (Remember Me).
+        const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+        if (isElectron) {
+          showConfirmAsync(t("RememberMeTitle"), t("RememberMeMessage"), {
+            confirmText: t("Yes"),
+          }).then((rememberMe) => {
+            if (rememberMe) {
+              commitSession();
+              window.electronAPI?.persistCookies?.();
+            } else {
+              window.electronAPI?.clearPersistedCookies?.();
+            }
+          });
+        }
 
-      if (pendingActionAfterLoginRef.current) {
-        const action = pendingActionAfterLoginRef.current;
-        pendingActionAfterLoginRef.current = null;
-        deferredPostLoginActionRef.current = action;
+        if (pendingActionAfterLoginRef.current) {
+          const action = pendingActionAfterLoginRef.current;
+          pendingActionAfterLoginRef.current = null;
+          deferredPostLoginActionRef.current = action;
+        }
+      } else {
+        showMessage(t("LoginFailed"), t("LoginFailedCheckCredentials"));
       }
-    } else {
+    } catch (error) {
+      if (isCloudApiErrorKind(error, "network")) {
+        suppressCloudNetworkToast();
+        showMessage(t("LoginFailed"), t("CloudNetworkErrorMessage"));
+        return;
+      }
       showMessage(t("LoginFailed"), t("LoginFailedCheckCredentials"));
     }
   };
@@ -303,7 +317,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const showSyncControls = !!(onSyncClick || onExportDatabase || onImportDatabase || onReplaceDatabase);
   const localChangeCount = updatedSongCount + updatedProfileCount;
   const remoteChangeCount = isAuthenticated && cloudDbVersion !== null ? cloudDbVersion - localDbVersion : 0;
-  const showCloudAuthFailed = cloudAuthFailed || (!isGuest && authStatus === "offline");
+  const showCloudAccessFailed = networkUnavailable || cloudAuthFailed || (!isGuest && authStatus === "offline");
 
   useEffect(() => {
     onRemoteChangeCountChange?.(remoteChangeCount);
@@ -348,9 +362,9 @@ const UserPanel: React.FC<UserPanelProps> = ({
             >
               <span className="sync-menu-indicator">▾</span>
             </button>
-            {showCloudAuthFailed ? (
+            {showCloudAccessFailed ? (
               <span className="pending-badge-abs cloud-auth-failed" title={t("PleaseLoginAgain")}>
-                <Icon type={IconType.CLOUD_AUTH_FAILED} />
+                <Icon type={IconType.CLOUD_ACCESS_FAILED} />
               </span>
             ) : pendingSongCount > 0 ? (
               <span className="badge bg-danger rounded-pill pending-badge-abs">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
