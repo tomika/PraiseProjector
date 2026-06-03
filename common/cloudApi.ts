@@ -93,6 +93,22 @@ function isLikelyNetworkErrorMessage(message: string): boolean {
   );
 }
 
+function isNavigatorOffline(): boolean {
+  return typeof navigator !== "undefined" && typeof navigator.onLine === "boolean" && navigator.onLine === false;
+}
+
+function shouldSkipRetryBackoffForOffline503(status: number, hint?: string): boolean {
+  if (status !== 503) return false;
+  if (isNavigatorOffline()) return true;
+  return !!hint && isLikelyNetworkErrorMessage(hint);
+}
+
+function getOfflineErrorMessage(hint?: string): string {
+  const text = hint?.trim();
+  if (text) return text;
+  return isNavigatorOffline() ? "Device appears to be offline" : "Offline";
+}
+
 /**
  * Electron IPC proxy interface for server calls
  */
@@ -394,9 +410,14 @@ export class CloudApiService {
           // Check for error response from proxy
           if (result && "error" in result) {
             const errorResult = result as { error: { message: string; status?: number } };
-            if (errorResult.error.status && isRetryableStatus(errorResult.error.status) && attempt < MAX_RETRIES) {
+            const status = errorResult.error.status;
+            const message = errorResult.error.message || "";
+            if (status && isRetryableStatus(status) && attempt < MAX_RETRIES) {
+              if (shouldSkipRetryBackoffForOffline503(status, message)) {
+                throw new CloudApiError("network", getOfflineErrorMessage(message), { status, endpoint });
+              }
               const delay = getRetryDelay(null, attempt);
-              console.warn(`Server returned ${errorResult.error.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+              console.warn(`Server returned ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
               await sleep(delay);
               continue;
             }
@@ -459,7 +480,18 @@ export class CloudApiService {
           }
 
           if (!response.ok) {
+            let retryHint: string | undefined;
+            if (response.status === 503) {
+              try {
+                retryHint = (await response.clone().text()).trim();
+              } catch {
+                retryHint = undefined;
+              }
+            }
             if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+              if (shouldSkipRetryBackoffForOffline503(response.status, retryHint)) {
+                throw new CloudApiError("network", getOfflineErrorMessage(retryHint), { status: response.status, endpoint });
+              }
               const delay = getRetryDelay(response.headers.get("Retry-After"), attempt);
               console.warn(`Server returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
               await sleep(delay);
