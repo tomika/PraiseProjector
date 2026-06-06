@@ -6072,7 +6072,7 @@ export class ChordProEditor extends ChordDrawer {
       );
 
       maxWidth = Math.max(maxWidth, width);
-      top += this.displayProps.chordLineHeight;
+      top += this.displayProps.chordLineHeight + chordTemplateGap;
     }
 
     // Remove stale elements
