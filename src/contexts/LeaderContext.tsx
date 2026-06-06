@@ -3,6 +3,7 @@ import { Leader } from "../../db-common/Leader";
 import { Database } from "../../db-common/Database";
 import { useSettings } from "../hooks/useSettings";
 import { v4 as uuidv4 } from "uuid";
+import { getWebServerInterface } from "../services/webServerBridge";
 
 interface LeaderContextType {
   selectedLeader: Leader | null;
@@ -23,6 +24,11 @@ export const useLeader = (): LeaderContextType => {
 
 // Sync leader name to backend (for UDP offer message - C# uses cmbLeader.Text)
 const syncLeaderNameToBackend = (leaderName: string) => {
+  const webServer = getWebServerInterface();
+  if (webServer) {
+    void webServer.sync({ kind: "leader", leaderName });
+    return;
+  }
   if (window.electronAPI?.syncLeaderName) {
     window.electronAPI.syncLeaderName(leaderName);
   }

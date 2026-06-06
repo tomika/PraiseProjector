@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 import { Display, PlaylistEntry } from "../common/pp-types";
 import { Settings } from "../src/types";
 import { ApiResponse } from "../common/ipc-types";
+import type {
+  WebServerApiRequest,
+  WebServerEvent,
+  WebServerInterface,
+  WebServerQuery,
+  WebServerQueryResult,
+  WebServerResponse,
+  WebServerSyncUpdate,
+} from "../common/webserver-interface";
 import { WindowBounds } from "../src/types/electron";
 
 type HostDeviceMessage = {
@@ -10,6 +19,9 @@ type HostDeviceMessage = {
 };
 
 const hostDeviceMessageListeners = new Set<(message: HostDeviceMessage) => void>();
+const webServerEventListeners = new Set<(event: WebServerEvent) => void>();
+
+const randomRequestId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 const emitHostDeviceMessage = (message: HostDeviceMessage) => {
   // Legacy client pages consume a global handleDeviceMessage callback.
@@ -32,10 +44,145 @@ const emitHostDeviceMessage = (message: HostDeviceMessage) => {
   }
 };
 
+const emitWebServerEvent = (event: WebServerEvent) => {
+  for (const listener of webServerEventListeners) {
+    try {
+      listener(event);
+    } catch (error) {
+      console.error("[preload] webServer listener error", error);
+    }
+  }
+};
+
 ipcRenderer.on("hostdevice-message", (_event, payload: HostDeviceMessage) => {
   if (!payload || typeof payload.op !== "string") return;
   emitHostDeviceMessage(payload);
 });
+
+ipcRenderer.on(
+  "remote-display-update",
+  (
+    _event,
+    data: {
+      command: "song_update" | "display_update";
+      id: string;
+      from: number;
+      to: number;
+      section?: number;
+      sectionRepeatCounts?: Display["sectionRepeatCounts"];
+      sectionRepeatNonce?: number;
+      transpose?: number;
+      capo?: number;
+      instructions?: string;
+      title?: string;
+      playlist?: PlaylistEntry[];
+    }
+  ) => {
+    emitWebServerEvent({ kind: "remoteDisplayUpdate", update: data });
+  }
+);
+
+ipcRenderer.on(
+  "webserver-api-request",
+  (
+    _event,
+    payload: {
+      requestId?: string;
+      method: string;
+      path: string;
+      query: Record<string, unknown>;
+      body: unknown;
+      headers: Record<string, unknown>;
+    }
+  ) => {
+    const request: WebServerApiRequest = {
+      requestId: typeof payload?.requestId === "string" && payload.requestId.length > 0 ? payload.requestId : randomRequestId(),
+      method: payload?.method || "GET",
+      path: payload?.path || "/",
+      query: payload?.query || {},
+      body: payload?.body,
+      headers: payload?.headers || {},
+    };
+    emitWebServerEvent({ kind: "apiRequest", request });
+  }
+);
+
+ipcRenderer.on("highlight-access-request", (_event, data: { clientId: string }) => {
+  emitWebServerEvent({ kind: "highlightAccessRequest", clientId: data?.clientId || "" });
+});
+
+ipcRenderer.on("highlight-changed", (_event, data: { line: number }) => {
+  emitWebServerEvent({ kind: "highlightChanged", line: data?.line ?? -1 });
+});
+
+ipcRenderer.on("remote-highlight-controller-changed", (_event, data: { clientId: string }) => {
+  emitWebServerEvent({ kind: "highlightControllerChanged", clientId: data?.clientId || "" });
+});
+
+const webServerBridge: WebServerInterface = {
+  sync: async (update: WebServerSyncUpdate) => {
+    switch (update.kind) {
+      case "display":
+        await ipcRenderer.invoke("set-current-display", update.display);
+        return;
+      case "frame":
+        ipcRenderer.send("set-display-window-image", update.imageDataUrl, update.options);
+        return;
+      case "leader":
+        ipcRenderer.send("sync-leader-name", update.leaderName);
+        return;
+      case "config":
+        ipcRenderer.send("webserver-sync-config", update.config);
+        return;
+    }
+  },
+  query: async (request: WebServerQuery): Promise<WebServerQueryResult> => {
+    switch (request.kind) {
+      case "clients": {
+        if (request.projectingOnly) {
+          const count = await ipcRenderer.invoke("get-connected-clients", true);
+          return {
+            kind: "clients",
+            clients: [],
+            count: typeof count === "number" ? count : 0,
+          };
+        }
+        const clients = await ipcRenderer.invoke("get-connected-clients", false);
+        const safeClients = Array.isArray(clients) ? clients : [];
+        return {
+          kind: "clients",
+          clients: safeClients,
+          count: safeClients.length,
+        };
+      }
+      case "highlightController": {
+        const clientId = await ipcRenderer.invoke("get-remote-highlight-controller");
+        return {
+          kind: "highlightController",
+          clientId: typeof clientId === "string" ? clientId : "",
+        };
+      }
+    }
+  },
+  respond: async (response: WebServerResponse) => {
+    switch (response.kind) {
+      case "api":
+        ipcRenderer.send("webserver-api-response", response.response);
+        return;
+      case "highlightAccess":
+        ipcRenderer.send("respond-highlight-access", { clientId: response.clientId, grant: response.grant });
+        return;
+    }
+  },
+  onEvent: (callback: (event: WebServerEvent) => void) => {
+    webServerEventListeners.add(callback);
+    return () => {
+      webServerEventListeners.delete(callback);
+    };
+  },
+};
+
+contextBridge.exposeInMainWorld("webServer", webServerBridge);
 
 contextBridge.exposeInMainWorld("electronAPI", {
   // Window bounds management
@@ -64,11 +211,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // General WebServer API request handler
   onWebserverApiRequest: (
-    callback: (apiRequest: { method: string; path: string; query: Record<string, unknown>; body: unknown; headers: Record<string, unknown> }) => void
+    callback: (apiRequest: {
+      requestId?: string;
+      method: string;
+      path: string;
+      query: Record<string, unknown>;
+      body: unknown;
+      headers: Record<string, unknown>;
+    }) => void
   ) => {
     const subscription = (
       _event: IpcRendererEvent,
-      apiRequest: { method: string; path: string; query: Record<string, unknown>; body: unknown; headers: Record<string, unknown> }
+      apiRequest: {
+        requestId?: string;
+        method: string;
+        path: string;
+        query: Record<string, unknown>;
+        body: unknown;
+        headers: Record<string, unknown>;
+      }
     ) => callback(apiRequest);
     ipcRenderer.on("webserver-api-request", subscription);
     return () => {

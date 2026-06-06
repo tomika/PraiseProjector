@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Settings } from "../types";
 import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
+import { getWebServerInterface, toWebServerConfig } from "../services/webServerBridge";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -253,6 +254,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const syncToBackend = () => {
     if (settings && window.electronAPI?.syncSettings) {
       window.electronAPI.syncSettings(settings);
+    } else if (settings) {
+      const webServer = getWebServerInterface();
+      if (webServer) {
+        void webServer.sync({ kind: "config", config: toWebServerConfig(settings) });
+      }
     }
   };
 
@@ -269,6 +275,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
       if (window.electronAPI?.syncSettings) {
         window.electronAPI.syncSettings(newSettings);
+      } else {
+        const webServer = getWebServerInterface();
+        if (webServer) {
+          void webServer.sync({ kind: "config", config: toWebServerConfig(newSettings) });
+        }
       }
       // Auto-save settings immediately (matching C# behavior for format panel)
       storeApi

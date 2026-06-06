@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { buildLocalUrl, generateQRCodeSVG } from "../../hooks/useSessionUrl";
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { getWebServerInterface } from "../../services/webServerBridge";
 import "./WebServerSettings.css";
 
 interface ClientInfoEntry {
@@ -54,107 +55,108 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
 
   // Load connected clients from backend
   const refreshClients = useCallback(async () => {
-    if (window.electronAPI?.getConnectedClients) {
-      try {
-        const clientsMap = new Map<string, ClientInfoEntry>();
-        // Add leader-mode clients first
-        for (const leaderEntry of settings.leaderModeClients) {
-          const parts = leaderEntry.split("@");
-          const deviceName = parts.length > 1 ? parts[0] : "";
-          const id = parts[parts.length - 1];
-          clientsMap.set(id, { id: leaderEntry, deviceName, isLeaderModeClient: true, isConnected: false });
+    const webServer = getWebServerInterface();
+    if (!webServer) return;
+    try {
+      const clientsMap = new Map<string, ClientInfoEntry>();
+      // Add leader-mode clients first
+      for (const leaderEntry of settings.leaderModeClients) {
+        const parts = leaderEntry.split("@");
+        const deviceName = parts.length > 1 ? parts[0] : "";
+        const id = parts[parts.length - 1];
+        clientsMap.set(id, { id: leaderEntry, deviceName, isLeaderModeClient: true, isConnected: false });
+      }
+
+      const result = await webServer.query({ kind: "clients", projectingOnly: false });
+      const connectedClients = result.kind === "clients" ? result.clients : [];
+
+      for (const client of connectedClients) {
+        const id = getClientIdentifier(client.id);
+        const existing = clientsMap.get(id);
+        if (existing) {
+          existing.isConnected = true;
+          // Update device name in case it changed or was missing from admin entry
+          existing.deviceName = client.deviceName;
+        } else {
+          clientsMap.set(id, {
+            id: client.id,
+            deviceName: client.deviceName,
+            isLeaderModeClient: false,
+            isConnected: true,
+          });
+        }
+      }
+      const clients = Array.from(clientsMap.values());
+      const leaderClientIdentifiers = new Set(settings.leaderModeClients.map(getClientIdentifier));
+      const backendLeaderIdentifiers = new Set(clients.filter((client) => client.isLeaderModeClient).map((client) => getClientIdentifier(client.id)));
+      const isSettingsSyncedToBackend = sameIdentifierSet(leaderClientIdentifiers, backendLeaderIdentifiers);
+
+      setConnectedClients((prev) => {
+        const merged = new Map<string, ClientInfoEntry>();
+        const previousRows = new Map(prev.map((client) => [getClientIdentifier(client.id), client]));
+
+        for (const client of clients) {
+          const identifier = getClientIdentifier(client.id);
+          merged.set(identifier, {
+            ...client,
+            isLeaderModeClient: settings.allClientsCanUseLeaderMode || leaderClientIdentifiers.has(identifier),
+            // Backend list includes saved leader-mode entries too; non-leader rows are guaranteed live connections.
+            isConnected: !client.isLeaderModeClient,
+          });
         }
 
-        for (const client of await window.electronAPI.getConnectedClients()) {
-          const id = getClientIdentifier(client.id);
-          const existing = clientsMap.get(id);
-          if (existing) {
-            existing.isConnected = true;
-            // Update device name in case it changed or was missing from admin entry
-            existing.deviceName = client.deviceName;
-          } else {
-            clientsMap.set(id, {
-              id: client.id,
-              deviceName: client.deviceName,
-              isLeaderModeClient: false,
-              isConnected: true,
-            });
-          }
-        }
-        const clients = Array.from(clientsMap.values());
-        const leaderClientIdentifiers = new Set(settings.leaderModeClients.map(getClientIdentifier));
-        const backendLeaderIdentifiers = new Set(
-          clients.filter((client) => client.isLeaderModeClient).map((client) => getClientIdentifier(client.id))
-        );
-        const isSettingsSyncedToBackend = sameIdentifierSet(leaderClientIdentifiers, backendLeaderIdentifiers);
-
-        setConnectedClients((prev) => {
-          const merged = new Map<string, ClientInfoEntry>();
-          const previousRows = new Map(prev.map((client) => [getClientIdentifier(client.id), client]));
-
-          for (const client of clients) {
-            const identifier = getClientIdentifier(client.id);
+        // Keep leader-mode rows from local settings visible even when offline.
+        for (const leaderClientId of settings.leaderModeClients) {
+          const identifier = getClientIdentifier(leaderClientId);
+          if (!merged.has(identifier)) {
+            const previous = previousRows.get(identifier);
             merged.set(identifier, {
-              ...client,
-              isLeaderModeClient: settings.allClientsCanUseLeaderMode || leaderClientIdentifiers.has(identifier),
-              // Backend list includes saved leader-mode entries too; non-leader rows are guaranteed live connections.
-              isConnected: !client.isLeaderModeClient,
+              id: previous?.id ?? leaderClientId,
+              deviceName: previous?.deviceName || getClientDeviceName(leaderClientId),
+              isLeaderModeClient: true,
+              isConnected: false,
             });
           }
+        }
 
-          // Keep leader-mode rows from local settings visible even when offline.
-          for (const leaderClientId of settings.leaderModeClients) {
-            const identifier = getClientIdentifier(leaderClientId);
+        // Keep locally revoked rows visible until backend reflects saved settings.
+        if (pendingRevokedLeaderClients.size > 0) {
+          for (const identifier of pendingRevokedLeaderClients) {
             if (!merged.has(identifier)) {
               const previous = previousRows.get(identifier);
-              merged.set(identifier, {
-                id: previous?.id ?? leaderClientId,
-                deviceName: previous?.deviceName || getClientDeviceName(leaderClientId),
-                isLeaderModeClient: true,
-                isConnected: false,
-              });
-            }
-          }
-
-          // Keep locally revoked rows visible until backend reflects saved settings.
-          if (pendingRevokedLeaderClients.size > 0) {
-            for (const identifier of pendingRevokedLeaderClients) {
-              if (!merged.has(identifier)) {
-                const previous = previousRows.get(identifier);
-                if (previous) {
-                  merged.set(identifier, {
-                    ...previous,
-                    isLeaderModeClient: false,
-                    isConnected: false,
-                  });
-                }
+              if (previous) {
+                merged.set(identifier, {
+                  ...previous,
+                  isLeaderModeClient: false,
+                  isConnected: false,
+                });
               }
             }
-
-            if (isSettingsSyncedToBackend) {
-              setPendingRevokedLeaderClients((current) => {
-                const next = new Set(current);
-                for (const identifier of current) {
-                  const row = merged.get(identifier);
-                  if (row && !row.isConnected && !row.isLeaderModeClient) {
-                    merged.delete(identifier);
-                    next.delete(identifier);
-                  }
-                }
-                return next;
-              });
-            }
           }
 
-          return Array.from(merged.values()).sort((a, b) => {
-            const nameA = (a.deviceName || getClientIdentifier(a.id)).toLocaleLowerCase();
-            const nameB = (b.deviceName || getClientIdentifier(b.id)).toLocaleLowerCase();
-            return nameA.localeCompare(nameB);
-          });
+          if (isSettingsSyncedToBackend) {
+            setPendingRevokedLeaderClients((current) => {
+              const next = new Set(current);
+              for (const identifier of current) {
+                const row = merged.get(identifier);
+                if (row && !row.isConnected && !row.isLeaderModeClient) {
+                  merged.delete(identifier);
+                  next.delete(identifier);
+                }
+              }
+              return next;
+            });
+          }
+        }
+
+        return Array.from(merged.values()).sort((a, b) => {
+          const nameA = (a.deviceName || getClientIdentifier(a.id)).toLocaleLowerCase();
+          const nameB = (b.deviceName || getClientIdentifier(b.id)).toLocaleLowerCase();
+          return nameA.localeCompare(nameB);
         });
-      } catch (error) {
-        console.error("Failed to get connected clients:", error);
-      }
+      });
+    } catch (error) {
+      console.error("Failed to get connected clients:", error);
     }
   }, [pendingRevokedLeaderClients, settings.leaderModeClients, settings.allClientsCanUseLeaderMode]);
 

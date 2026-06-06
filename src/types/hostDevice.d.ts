@@ -1,3 +1,5 @@
+import type { WebServerNativeWireInterface } from "../../common/webserver-interface";
+
 export type HostDeviceMessage = {
   op: string;
   param: unknown;
@@ -50,5 +52,6 @@ export interface ElectronHostDevice {
 declare global {
   interface Window {
     hostDevice?: ElectronHostDevice;
+    webServerNativeWire?: WebServerNativeWireInterface;
   }
 }

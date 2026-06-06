@@ -1,5 +1,5 @@
-import { Display as PPDisplay } from "../../common/pp-types";
-import { PlaylistEntry } from "../../db-common/PlaylistEntry";
+import { Display as PPDisplay, PlaylistEntry as PPPlaylistEntry } from "../../common/pp-types";
+import type { WebServerInterface } from "../../common/webserver-interface";
 import { Settings } from "../types";
 
 export type Display = PPDisplay;
@@ -25,7 +25,7 @@ export type DisplayUpdateRequest = {
   capo?: number;
   instructions?: string;
   title?: string;
-  playlist?: PlaylistEntry[];
+  playlist?: PPPlaylistEntry[];
 };
 
 export type WindowBounds = {
@@ -71,9 +71,16 @@ export interface IElectronAPI {
 
   // General WebServer API request handler
   onWebserverApiRequest?: (
-    callback: (apiRequest: { method: string; path: string; query: Record<string, unknown>; body: unknown; headers: Record<string, unknown> }) => void
+    callback: (apiRequest: {
+      requestId?: string;
+      method: string;
+      path: string;
+      query: Record<string, unknown>;
+      body: unknown;
+      headers: Record<string, unknown>;
+    }) => void
   ) => () => void;
-  sendWebserverApiResponse?: (response: { status?: number; data: unknown; headers?: Record<string, string> }) => void;
+  sendWebserverApiResponse?: (response: { requestId?: string; status?: number; data: unknown; headers?: Record<string, string> }) => void;
 
   // Settings sync - frontend pushes settings to backend
   syncSettings?: (settings: Settings) => void;
@@ -230,5 +237,6 @@ export interface LocalSessionInfo {
 declare global {
   interface Window {
     electronAPI?: IElectronAPI;
+    webServer?: WebServerInterface;
   }
 }

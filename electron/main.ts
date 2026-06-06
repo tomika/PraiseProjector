@@ -25,6 +25,7 @@ import { UdpServer, getUdpServerInstance } from "./udp";
 import { P2PTransport, getP2PTransportInstance } from "./p2p-transport";
 import { initializeWebServer, getWebServerInstance } from "./webserver";
 import { Settings } from "../src/types";
+import type { WebServerConfig } from "../common/webserver-interface";
 import { installLoggerInterceptor, setupLoggerIPC, closeLogViewerWindow } from "./logger";
 import { changeDisplay } from "./display";
 import { WindowBounds } from "../src/types/electron";
@@ -310,6 +311,23 @@ function queueNetDisplayImagePublish(): void {
       netDisplayPublishQueued = false;
       queueNetDisplayImagePublish();
     }
+  });
+}
+
+function applyWebServerConfig(config: WebServerConfig): void {
+  const webServer = getWebServerInstance();
+  if (!webServer) return;
+
+  webServer.updateSettings({
+    webServerPort: config.webServerPort,
+    webServerPath: config.webServerPath,
+    webServerDomainName: config.webServerDomainName,
+    webServerAcceptLanClientsOnly: config.webServerAcceptLanClientsOnly,
+    longPollTimeout: config.longPollTimeout,
+    allClientsCanUseLeaderMode: config.allClientsCanUseLeaderMode,
+    leaderModeClients: config.leaderModeClients,
+    stylesToClients: config.stylesToClients,
+    chordProStyles: (config.chordProStyles as Settings["chordProStyles"]) ?? null,
   });
 }
 
@@ -1449,9 +1467,8 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
   }
 
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
-  const webServer = getWebServerInstance();
-  if (webServer) {
-    webServer.updateSettings({
+  if (getWebServerInstance()) {
+    applyWebServerConfig({
       webServerPort: settings.webServerPort,
       webServerPath: settings.webServerPath,
       webServerDomainName: settings.webServerDomainName,
@@ -1500,6 +1517,10 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
         console.error("Auto-update check after channel change failed:", err);
       });
   }
+});
+
+ipcMain.on("webserver-sync-config", (_event, config: WebServerConfig) => {
+  applyWebServerConfig(config);
 });
 
 // Update the Electron display window image directly from the main process.

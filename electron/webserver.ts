@@ -997,7 +997,9 @@ export class WebServer {
         }
 
         // Forward the entire request to frontend
+        const requestId = crypto.randomUUID();
         const apiRequest = {
+          requestId,
           method: req.method,
           path: req.path,
           query: req.query,
@@ -1006,18 +1008,25 @@ export class WebServer {
         };
 
         const response: ApiResponse = await new Promise((resolve) => {
-          const handler = (_event: Electron.IpcMainEvent, apiResponse: ApiResponse) => {
+          const cleanup = (handler: (_event: Electron.IpcMainEvent, apiResponse: ApiResponse) => void, timeoutHandle: NodeJS.Timeout) => {
             ipcMain.off("webserver-api-response", handler);
+            clearTimeout(timeoutHandle);
+          };
+
+          const handler = (_event: Electron.IpcMainEvent, apiResponse: ApiResponse) => {
+            if (apiResponse?.requestId !== requestId) return;
+            cleanup(handler, timeoutHandle);
             resolve(apiResponse);
           };
-          ipcMain.once("webserver-api-response", handler);
+
+          const timeoutHandle = setTimeout(() => {
+            cleanup(handler, timeoutHandle);
+            resolve({ requestId, status: 504, data: { error: "Request timeout" } });
+          }, 10000);
+
+          ipcMain.on("webserver-api-response", handler);
 
           mainWindow.webContents.send("webserver-api-request", apiRequest);
-
-          setTimeout(() => {
-            ipcMain.off("webserver-api-response", handler);
-            resolve({ status: 504, data: { error: "Request timeout" } });
-          }, 10000);
         });
 
         // Send response back to client

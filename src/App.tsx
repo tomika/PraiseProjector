@@ -70,6 +70,8 @@ import { formatLocalDateLabel } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
+import type { WebServerApiRequest } from "../common/webserver-interface";
+import { getWebServerInterface } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 
 type LeadersResponse = LeaderDBProfile[];
@@ -749,8 +751,12 @@ const AppContent: React.FC = () => {
           return;
         }
 
-        if (window.electronAPI?.setCurrentDisplay) {
+        const webServer = getWebServerInterface();
+        if (webServer) {
           console.debug("API", "Syncing display to backend");
+          void webServer.sync({ kind: "display", display });
+        } else if (window.electronAPI?.setCurrentDisplay) {
+          // Fallback for runtimes that have not wired the new webServer API yet.
           window.electronAPI.setCurrentDisplay(display);
         }
 
@@ -1106,27 +1112,24 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!window.electronAPI?.onRemoteDisplayUpdate) return;
-    const unsubscribe = window.electronAPI.onRemoteDisplayUpdate((data) => {
-      enqueue(() => remoteDisplayUpdateHandler(data));
+    const webServer = getWebServerInterface();
+    if (!webServer) return;
+    const unsubscribe = webServer.onEvent((event) => {
+      if (event.kind !== "remoteDisplayUpdate") return;
+      enqueue(() => remoteDisplayUpdateHandler(event.update));
     });
-    return () => unsubscribe?.();
+    return () => unsubscribe();
   }, []);
 
   // Set up general webserver API handler
   useEffect(() => {
-    if (!window.electronAPI?.onWebserverApiRequest) {
-      console.warn("App", "Electron API onWebserverApiRequest not available: cannot handle webserver API requests");
+    const webServer = getWebServerInterface();
+    if (!webServer) {
+      console.warn("App", "WebServer interface not available: cannot handle webserver API requests");
       return;
     }
 
-    const handleWebserverApiRequest = async (apiRequest: {
-      method: string;
-      path: string;
-      query: Record<string, unknown>;
-      body: unknown;
-      headers: Record<string, unknown>;
-    }) => {
+    const handleWebserverApiRequest = async (apiRequest: WebServerApiRequest) => {
       console.debug("App", "Received webserver API request", apiRequest);
       try {
         const db = Database.getInstance();
@@ -1189,80 +1192,87 @@ const AppContent: React.FC = () => {
         // Add more routes here as needed...
 
         // Send response back to webserver
-        window.electronAPI?.sendWebserverApiResponse?.(response);
+        await webServer.respond({
+          kind: "api",
+          response: {
+            requestId: apiRequest.requestId,
+            ...response,
+          },
+        });
       } catch (error) {
         console.error("API", "Error handling webserver API request", error);
-        window.electronAPI?.sendWebserverApiResponse?.({
-          status: 500,
-          data: { error: "Internal server error" },
+        await webServer.respond({
+          kind: "api",
+          response: {
+            requestId: apiRequest.requestId,
+            status: 500,
+            data: { error: "Internal server error" },
+          },
         });
       }
     };
 
     // Listen for general API requests
-    const unsubscribe = window.electronAPI.onWebserverApiRequest(handleWebserverApiRequest);
+    const unsubscribe = webServer.onEvent((event) => {
+      if (event.kind !== "apiRequest") return;
+      void handleWebserverApiRequest(event.request);
+    });
     console.debug("App", "Webserver API request handler set up");
     // Cleanup listener on unmount
     return () => {
-      unsubscribe?.();
+      unsubscribe();
     };
   }, []);
 
   // Initialize remote highlight controller state from backend (only once on mount)
   useEffect(() => {
-    if (!window.electronAPI?.getRemoteHighlightController) return;
+    const webServer = getWebServerInterface();
+    if (!webServer) return;
 
-    window.electronAPI.getRemoteHighlightController().then((controller) => {
-      setRemoteHighlightController(controller || "");
+    webServer.query({ kind: "highlightController" }).then((result) => {
+      if (result.kind === "highlightController") {
+        setRemoteHighlightController(result.clientId || "");
+      }
     });
   }, []);
 
   // Set up highlight access control handlers - matching C# HighlightAccessReqAsync/HighlightChangedRemotelyAsync
   useEffect(() => {
-    if (!window.electronAPI) return;
+    const webServer = getWebServerInterface();
+    if (!webServer) return;
 
-    const unsubscribers: (() => void)[] = [];
-
-    // Handle highlight access request - matching C# HighlightAccessVerify
-    if (window.electronAPI.onHighlightAccessRequest) {
-      const unsubscribe = window.electronAPI.onHighlightAccessRequest((data) => {
+    const unsubscribe = webServer.onEvent((event) => {
+      if (event.kind === "highlightAccessRequest") {
         // Show confirmation dialog - matching C# MessageBoxEx.Show with AskRemoteHighlightModifyPermission
         showConfirm(
           t("RemoteHighlight"),
           t("AskRemoteHighlightModifyPermission"),
           () => {
             // User granted access
-            window.electronAPI?.respondHighlightAccess?.(data.clientId, true);
+            void webServer.respond({ kind: "highlightAccess", clientId: event.clientId, grant: true });
           },
           () => {
             // User denied access
-            window.electronAPI?.respondHighlightAccess?.(data.clientId, false);
+            void webServer.respond({ kind: "highlightAccess", clientId: event.clientId, grant: false });
           },
           { confirmText: t("AllowRemoteControl") }
         );
-      });
-      unsubscribers.push(unsubscribe);
-    }
+        return;
+      }
 
-    // Handle highlight line changes - matching C# RemoteChangeHighlightByLine
-    if (window.electronAPI.onHighlightChanged) {
-      const unsubscribe = window.electronAPI.onHighlightChanged((data) => {
+      if (event.kind === "highlightChanged") {
         // Call selectSectionByLine on PreviewPanel - matching C# ChangeHighlightByLine
-        previewPanelRef.current?.selectSectionByLine(data.line);
-      });
-      unsubscribers.push(unsubscribe);
-    }
+        previewPanelRef.current?.selectSectionByLine(event.line);
+        return;
+      }
 
-    // Handle remote highlight controller changes - matching C# sectionListBox.Remote update
-    if (window.electronAPI.onRemoteHighlightControllerChanged) {
-      const unsubscribe = window.electronAPI.onRemoteHighlightControllerChanged((data) => {
-        setRemoteHighlightController(data.clientId || "");
-      });
-      unsubscribers.push(unsubscribe);
-    }
+      if (event.kind === "highlightControllerChanged") {
+        setRemoteHighlightController(event.clientId || "");
+      }
+    });
 
     return () => {
-      unsubscribers.forEach((unsub) => unsub());
+      unsubscribe();
     };
   }, [showConfirm, t]);
 

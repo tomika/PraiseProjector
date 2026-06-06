@@ -21,6 +21,7 @@ import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { Display } from "../../common/pp-types";
+import { getWebServerInterface } from "../services/webServerBridge";
 
 type PreviewTab = "format" | "image" | "message" | "controls";
 type PreviewPanelCollapseMode = Settings["previewPanelCollapseMode"];
@@ -408,11 +409,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Poll connected clients every 2 s (Electron only — in web mode we can't know)
     useEffect(() => {
-      if (!window.electronAPI?.getProjectingClientsCount) return;
+      const webServer = getWebServerInterface();
+      if (!webServer) return;
       const poll = async () => {
         try {
-          const clientCount = await window.electronAPI!.getProjectingClientsCount!();
-          setHasConnectedClients(clientCount > 0);
+          const result = await webServer.query({ kind: "clients", projectingOnly: true });
+          setHasConnectedClients(result.kind === "clients" && result.count > 0);
         } catch {
           // ignore transient errors
         }
@@ -2096,12 +2098,19 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         projectorChannelRef.current.postMessage({ type: "UPDATE_DISPLAY", imageData: previewDataUrl });
       }
       // Send frame once; main process updates both display window and net display clients.
-      window.electronAPI?.setDisplayWindowImage?.(previewDataUrl, {
-        jpegQuality: netDisplayUseJpegCompression ? netDisplayJpegQuality : undefined,
-        imageScale: netDisplayImageScale,
-        bgColor: settings?.backgroundColor || "#000000",
-        transient: netDisplayTransient,
-      });
+      const webServer = getWebServerInterface();
+      if (webServer) {
+        void webServer.sync({
+          kind: "frame",
+          imageDataUrl: previewDataUrl,
+          options: {
+            jpegQuality: netDisplayUseJpegCompression ? netDisplayJpegQuality : undefined,
+            imageScale: netDisplayImageScale,
+            bgColor: settings?.backgroundColor || "#000000",
+            transient: netDisplayTransient,
+          },
+        });
+      }
     }, [
       previewDataUrl,
       projectorWindowRef,
