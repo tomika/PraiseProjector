@@ -6035,6 +6035,7 @@ export class ChordProEditor extends ChordDrawer {
     const staleKeys = new Set(this.chordStripItems.keys());
     let top = topOffset;
     let maxWidth = 0;
+    const chordTemplateGap = Math.max(0, 0.5 * getRootFontSizePx());
 
     for (const chord of chords) {
       staleKeys.delete(chord);
