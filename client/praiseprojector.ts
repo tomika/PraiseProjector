@@ -321,7 +321,7 @@ class EditorPage {
     } else if (this.editor) {
       let update = false;
       if (options?.editable === this.editor.readOnly) {
-        this.editor.readOnly = !options?.editable;
+        this.editor.setReadOnly(!options?.editable);
         update = true;
       }
       this.editor.marking(false);
@@ -347,6 +347,9 @@ export class App extends AppBase {
   private lastImageId = "startup";
   private highlightChangedRecently = 0;
   private highlightControlGranted = false;
+  private readonly onLineSelection = (p: number) => {
+    void this.onLineSel(p);
+  };
   /**
    * User-configurable opacity (0..1) for the highlighted-line background.
    * Persisted in displaySettings; default 1.0 (legacy behavior).
@@ -2224,6 +2227,9 @@ export class App extends AppBase {
   }
 
   private swipeHandlerEvent(type: "down" | "up" | "move", e: MouseEvent) {
+    const isPointerMouse = typeof PointerEvent !== "undefined" && e instanceof PointerEvent && e.pointerType === "mouse";
+    let shouldPreventDefault = !isPointerMouse;
+
     if (this.editor && !this.editor.readOnly && this.editor.getSelectedText()) {
       e.preventDefault();
       return;
@@ -2257,6 +2263,7 @@ export class App extends AppBase {
             const offsetX = x - this.swipeState.dragX;
             const direction = offsetX / Math.abs(offsetX);
             if (this.swipeState.direction && this.swipeState.direction * direction >= 0) {
+              shouldPreventDefault = true;
               const left = page.offsetLeft,
                 width = page.offsetWidth,
                 right = left + width;
@@ -2269,6 +2276,7 @@ export class App extends AppBase {
               );
             } else {
               if (this.swipeState.lastScroll) {
+                shouldPreventDefault = true;
                 const editor = this.editor;
                 const rollOut = (step: number) => {
                   if (!this.swipeState && editor === this.editor) {
@@ -2303,12 +2311,14 @@ export class App extends AppBase {
             if (pageFlipEnabled && isScroll && this.swipeState.totalScroll < page.clientHeight / 10 && Math.abs(offsetX) > 0.2 * (right - left))
               isScroll = false;
             if (isScroll) {
+              shouldPreventDefault = true;
               page.style.transform = "";
               this.swipeState.lastScroll = this.swipeState.dragY - y;
               page.scrollBy(0, this.swipeState.lastScroll);
               this.swipeState.totalScroll += Math.abs(this.swipeState.lastScroll);
               this.swipeState.dragY = y;
             } else if (pageFlipEnabled && this.swipeState.direction * direction >= 0) {
+              shouldPreventDefault = true;
               page.style.border = "solid black 1px";
               this.swipeState.direction = direction;
               const scale = direction > 0 ? right - this.swipeState.dragX : this.swipeState.dragX - left;
@@ -2317,7 +2327,7 @@ export class App extends AppBase {
           }
           break;
       }
-    e.preventDefault();
+    if (shouldPreventDefault) e.preventDefault();
   }
 
   private changeActualOption(set: HTMLElement | null) {
@@ -2744,7 +2754,7 @@ export class App extends AppBase {
 
   private applyLineSelectionControl(granted: boolean) {
     this.highlightControlGranted = granted;
-    const onLineSel = granted ? this.onLineSel : null;
+    const onLineSel = granted ? this.onLineSelection : null;
     const editors = [this.baseEditor, this.pages.current.editor, this.pages.prev?.editor, this.pages.next?.editor];
     for (const editor of editors) {
       if (editor) editor.onLineSel = onLineSel;
@@ -2765,6 +2775,7 @@ export class App extends AppBase {
       editor.update(keepDrawingSuppressed);
       this.updateAspectRatio(editor);
       editor.onLyricsHit = (s) => this.onLyricsHit(s);
+      editor.onLineSel = this.highlightControlGranted ? this.onLineSelection : null;
     }
   }
 
@@ -4305,11 +4316,28 @@ export class App extends AppBase {
   }
 
   private updateEditIconsByState() {
+    this.syncEditModeClasses();
     const editing = (this.editor && !this.editor.readOnly) || !!this.editor?.inMarkingState;
     if (this.divNetStatus) makeVisible(this.divNetStatus, !editing && (this.mode !== "App" || this.ppdWatchers != null));
     if (this.iconCreateMarks) makeVisible(this.iconCreateMarks, !editing && this.editor != null);
     if (this.iconApplyMarks) makeVisible(this.iconApplyMarks, editing && this.editor != null);
     if (this.divCancelEdit) makeVisible(this.divCancelEdit, editing && this.editor != null);
+  }
+
+  private syncEditModeClasses() {
+    const inEditMode = !!this.editor && !this.editor.readOnly;
+    const div = this.editor?.parentDiv;
+    if (div) {
+      if (inEditMode) div.classList.add("editMode");
+      else div.classList.remove("editMode");
+    }
+    const coll = document.getElementsByClassName("editorContainer");
+    for (let i = 0; i < coll.length; ++i) {
+      const item = coll.item(i) as HTMLElement | null;
+      if (!item) continue;
+      if (inEditMode) item.classList.add("editMode");
+      else item.classList.remove("editMode");
+    }
   }
 
   private onNoteButtonClicked(createButtonClicked: boolean) {
@@ -5340,6 +5368,7 @@ export class App extends AppBase {
     if (this.mode !== "App") this.restoreDisplaySettings(false);
     const startup = () => {
       this.updateFieldsForUser(false);
+      if (this.mode === "Client") void this.queryHighlightPermission(true);
       this.watchDisplay();
     };
     this.restoreSessionInfo().then(startup).catch(startup);
