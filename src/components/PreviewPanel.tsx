@@ -152,6 +152,15 @@ function getNetDisplayDimensions(preset?: string | null): [number, number] {
   return NET_DISPLAY_RESOLUTION_MAP[preset ?? "1920x1080"] ?? [1920, 1080];
 }
 
+function getBackgroundImageSignature(imageId: string | null, image: HTMLImageElement | null): string {
+  if (!image) return "none";
+  const src = image.currentSrc || image.src || "";
+  const srcLen = src.length;
+  const head = src.slice(0, 64);
+  const tail = src.slice(Math.max(0, srcLen - 64));
+  return `${imageId ?? "inline"}|${image.naturalWidth}x${image.naturalHeight}|${srcLen}|${head}|${tail}`;
+}
+
 const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
   (
     {
@@ -480,6 +489,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           return;
         }
 
+        // Avoid rendering/caching a stale bitmap under the new image ID while the new image is loading.
+        setBgImage(null);
         setSelectedImageId(savedImageId);
         const img = new Image();
         img.onload = () => {
@@ -1601,8 +1612,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           updateCurrentDisplay({ message: text });
 
           try {
-            const backgroundSignature =
-              showImage && bgImage ? `${selectedImageId ?? "inline"}|${bgImage.naturalWidth}x${bgImage.naturalHeight}` : "none";
+            const backgroundSignature = showImage ? getBackgroundImageSignature(selectedImageId, bgImage) : "none";
 
             const cacheKey = projectedImageCacheService.buildCacheKey({
               text,
@@ -2248,6 +2258,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 selectedImageId={selectedImageId}
                 onOpenImageSettings={() => onSettingsClick?.("images")}
                 onSelectImage={(imageId, dataUrl) => {
+                  // Clear current image immediately to prevent stale-image cache collisions during async load.
+                  setBgImage(null);
                   setSelectedImageId(imageId);
                   updateSettingWithAutoSave("selectedBackgroundImageId", imageId);
                   if (dataUrl) {
