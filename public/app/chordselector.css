@@ -4,32 +4,47 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    border: 2px solid gray;
-    padding: 10px;
+    border: 1px solid #888;
+    padding: 12px 34px 10px 10px;
     background-color: white;
-    color: black;
+    color: #111;
     min-width: 330px;
     z-index: 150;
+    box-sizing: border-box;
 }
 
 .chordSelector input[type="button"] {
     font-size: 16px;
     max-width: 100px;
     align-self: center;
+    background: #f2f2f2;
+    color: #111;
+    border: 1px solid #888;
 }
 
 .chordSelector label {
     font-size: 16px;
     height: 24px;
     display: table-cell;
+    width: auto;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    justify-content: flex-start;
+    cursor: default;
+    color: inherit;
 }
 
 .chordSelector select {
-    font-size: 16px;
+    font-size: 16px !important;
     box-sizing: border-box;
     height: 24px;
     display: table-cell;
     width: 100%;
+    background: #fff;
+    color: #111;
+    border: 1px solid #888;
+    border-radius: 3px;
 }
 
 .chordSelector option {
@@ -39,10 +54,14 @@
 
 .chordSelector input {
     box-sizing: border-box;
-    font-size: 16px;
+    font-size: 16px !important;
     height: 24px;
     display: table-cell;
     width: 100%;
+    background: #fff;
+    color: #111;
+    border: 1px solid #888;
+    border-radius: 3px;
 }
 
 .chordSelector canvas {
@@ -57,11 +76,73 @@
 
 .chordSelector td {
     border-collapse: collapse;
-    width: 25%;
+    padding: 0.12em 0.2em;
+    vertical-align: middle;
+    color: inherit;
 }
 
 .chordSelector table {
     border-collapse: collapse;
+    width: 100%;
+    font-size: 16px !important;
+    color: inherit;
+}
+
+.chordSelector .chord-selector-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0.9;
+}
+
+.chordSelector .chord-selector-close:hover {
+    opacity: 1;
+}
+
+.chordSelector #musicChordBox,
+.chordSelector #pianoChordBox,
+.chordSelector #guitarChordBox {
+    background: #fff;
+}
+
+body.dark .chordSelector,
+.dark .chordSelector {
+    background: #1f1f1f;
+    color: #e6e6e6;
+    border-color: #555;
+}
+
+body.dark .chordSelector select,
+body.dark .chordSelector input[type="text"],
+body.dark .chordSelector input[type="button"],
+.dark .chordSelector select,
+.dark .chordSelector input[type="text"],
+.dark .chordSelector input[type="button"] {
+    background: #2b2b2b;
+    color: #e6e6e6;
+    border-color: #555;
+}
+
+body.dark .chordSelector #musicChordBox,
+body.dark .chordSelector #pianoChordBox,
+body.dark .chordSelector #guitarChordBox,
+.dark .chordSelector #musicChordBox,
+.dark .chordSelector #pianoChordBox,
+.dark .chordSelector #guitarChordBox {
+    background: #1f1f1f;
 }
 
 .posCell {

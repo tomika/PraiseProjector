@@ -227,10 +227,66 @@
     </div>
     <textarea id="raw" style="min-height:600px; display:none;" cols="80"></textarea>
     <div id="chordsel" class="chordSelector" style="display: none;">
-        <select id="baseNoteSel"></select>
-        <select id="modifier"></select>
-        <select id="subscriptSel"></select>/<select id="bassNoteSel"></select>
-        <select id="layoutSel"></select>
+    <button id="closeSelector" type="button" class="chord-selector-close" aria-label="Close selector">&times;</button>
+        <table style="width: 100%">
+            <tr>
+                <td>Base&nbsp;note</td>
+                <td>
+                    <select id="baseNoteSel"></select>
+                </td>
+                <td>&nbsp;&nbsp;Bass&nbsp;note</td>
+                <td>
+                    <select id="bassNoteSel"></select>
+                </td>
+            </tr>
+            <tr>
+                <td>Chord</td>
+                <td colspan="3">
+                    <div>
+                        <label id="customSpan" for="modifier"></label>
+                        <select id="modifier"></select>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td>Symbol</td>
+                <td colspan="3">
+                    <input id="subscript" type="text" />
+                </td>
+            </tr>
+            <tr>
+                <td>Steps</td>
+                <td colspan="3">
+                    <div>
+                        <label for="steps">1-</label>
+                        <input id="steps" type="text" />
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td>Notes</td>
+                <td colspan="3">
+                    <div>
+                        <label id="baseNoteSpan"></label>
+                        <input id="notes" type="text" />
+                    </div>
+                </td>
+            </tr>
+        </table>
+        <table style="width: 100%;">
+            <tr>
+                <td style="height: 100px; width: 30%;">
+                    <div id="musicChordBox" style="max-width:100px; display: block;"></div>
+                    <input type="button" id="applySelector" value="OK">
+                </td>
+                <td style="height: 100px; width: 42%;">
+                    <canvas id="pianoChordBox"></canvas>
+                </td>
+                <td style="height: 100px; width: 28%;">
+                    <canvas id="guitarChordBox"></canvas>
+                </td>
+            </tr>
+        </table>
     </div>
     <div id="text-input-dialog" class="hidden">
         <input id="text-input-dialog-content" type="text" />
