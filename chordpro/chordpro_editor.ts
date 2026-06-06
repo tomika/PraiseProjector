@@ -1145,9 +1145,9 @@ export class ChordProEditor extends ChordDrawer {
             this.touchActive = false;
             return;
           }
-          // Avoid readOnly MIDI double-tap path on mobile (it can fail in webviews
-          // and is unrelated to opening the ABC editor).
-          if (!this.readOnly) this.onDoubleClick(dbl);
+          // In readOnly mode, only chord-hit double taps should open the chord
+          // dialog; keep other readOnly double-taps as no-op on mobile.
+          if (!this.readOnly && !this.checkChordBoxOrTemplateHit(dbl)) this.onDoubleClick(dbl);
         } else {
           this.lastTouchTapTime = now;
           this.lastTouchTapPos = pos;
@@ -6054,7 +6054,7 @@ export class ChordProEditor extends ChordDrawer {
       div.style.color = this.displayProps.chordTextColor;
       div.style.height = this.displayProps.chordLineHeight + "px";
       div.style.lineHeight = this.displayProps.chordLineHeight + "px";
-      div.style.pointerEvents = this.readOnly || this.actionTarget instanceof ChordTemplateHitBox ? "none" : "auto";
+      div.style.pointerEvents = this.readOnly ? "none" : "auto";
 
       // Measure width using canvas for accuracy
       ctx.font = this.displayProps.chordFont;
