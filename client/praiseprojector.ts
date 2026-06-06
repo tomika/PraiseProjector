@@ -2854,7 +2854,7 @@ export class App extends AppBase {
           { "X-PP-Intent": this._leaderToken ?? "control-update" }
         )
         .then(() => {
-          if (this.inOptions) void this.closeOptions(!this.landscape);
+          if (this.inOptions) void this.closeOptions(true);
         })
         .catch((code) => {
           this.log("Cannot update song: " + req.songId + " error: " + code);
@@ -3631,12 +3631,12 @@ export class App extends AppBase {
                     if (!error) {
                       disableRow(songEntry);
                       this.nextSongReq = songEntry;
-                      this.closeOptions(!this.landscape);
+                      this.closeOptions(true);
                     }
                   });
                 } else {
                   this.nextSongReq = songEntry;
-                  this.closeOptions(!this.landscape);
+                  this.closeOptions(true);
                 }
               }
               e.preventDefault();
@@ -3649,11 +3649,12 @@ export class App extends AppBase {
           (this.mode === "App" ? row : cell).onclick = () => {
             if (this.mode === "App") {
               this.nextSongReq = songEntry;
-              this.closeOptions(!this.landscape);
+              this.closeOptions(true);
             } else
               setTimeout(() => {
                 if (--doubleclicked < 0) {
                   this.updateSelectedSongInList(songEntry);
+                  if (this.inOptions) void this.closeOptions(true);
                   this.requestSong(songEntry);
                 }
               }, 300);
