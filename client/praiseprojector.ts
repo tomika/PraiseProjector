@@ -346,6 +346,7 @@ export class App extends AppBase {
   private playlist: PlaylistEntry[] = [];
   private lastImageId = "startup";
   private highlightChangedRecently = 0;
+  private highlightControlGranted = false;
   /**
    * User-configurable opacity (0..1) for the highlighted-line background.
    * Persisted in displaySettings; default 1.0 (legacy behavior).
@@ -711,14 +712,17 @@ export class App extends AppBase {
   private get ppdDeviceId() {
     const now = new Date();
     const expired = (ts: Date) => isNaN(ts.getTime()) || ts.getTime() + 86400000 < now.getTime();
-    this._ppdDeviceId = this._ppdDeviceId ?? this.hostDevice?.retrievePreference("ppdDeviceId");
-    this._ppdDeviceIdTs = this._ppdDeviceIdTs ?? new Date(this.hostDevice?.retrievePreference("ppdDeviceIdTs") ?? "");
+    const ls = localStorage || window.localStorage;
+    this._ppdDeviceId = this._ppdDeviceId ?? this.hostDevice?.retrievePreference("ppdDeviceId") ?? ls?.getItem("ppdDeviceId") ?? undefined;
+    this._ppdDeviceIdTs = this._ppdDeviceIdTs ?? new Date(this.hostDevice?.retrievePreference("ppdDeviceIdTs") ?? ls?.getItem("ppdDeviceIdTs") ?? "");
     if (!this._ppdDeviceId || !this._ppdDeviceIdTs || expired(this._ppdDeviceIdTs)) {
       this._ppdDeviceId = this.genUniqueId() + this.genUniqueId();
       this._ppdDeviceIdTs = now;
-      this.hostDevice?.storePreference("ppdDeviceId", this._ppdDeviceId);
-      this.hostDevice?.storePreference("ppdDeviceIdTs", this._ppdDeviceIdTs.toISOString());
     }
+    this.hostDevice?.storePreference("ppdDeviceId", this._ppdDeviceId);
+    this.hostDevice?.storePreference("ppdDeviceIdTs", this._ppdDeviceIdTs.toISOString());
+    ls?.setItem("ppdDeviceId", this._ppdDeviceId);
+    ls?.setItem("ppdDeviceIdTs", this._ppdDeviceIdTs.toISOString());
     return this._ppdDeviceId;
   }
 
@@ -2738,6 +2742,15 @@ export class App extends AppBase {
     if (this.chordSelector && this.chordSelector.system !== system) this.chordSelector.setNoteSystem(system);
   }
 
+  private applyLineSelectionControl(granted: boolean) {
+    this.highlightControlGranted = granted;
+    const onLineSel = granted ? this.onLineSel : null;
+    const editors = [this.baseEditor, this.pages.current.editor, this.pages.prev?.editor, this.pages.next?.editor];
+    for (const editor of editors) {
+      if (editor) editor.onLineSel = onLineSel;
+    }
+  }
+
   private updateEditor(page?: EditorPage, keepDrawingSuppressed?: boolean) {
     if (!page) page = this.pages.current;
     const editor = page.editor;
@@ -3144,7 +3157,7 @@ export class App extends AppBase {
       const highlighter = await cloudApi.fetchHighlightPermission(this.leaderId, this.ppdDeviceId, verifyOnly);
       if (highlighter === "NOPE" && this.divStartEdit) makeVisible(this.divStartEdit, false);
       const granted = highlighter === "GRANTED";
-      if (this.editor) this.editor.onLineSel = granted ? (s) => this.onLineSel(s) : null;
+      this.applyLineSelectionControl(granted);
       if (this.iconHighlighter && this.iconHighlighted) {
         makeVisible(this.iconHighlighter, granted);
         makeVisible(this.iconHighlighted, !granted);
@@ -3156,7 +3169,7 @@ export class App extends AppBase {
       this.updateHighlight();
     } catch (error) {
       this.log("Query highlight permission failed: " + error);
-      if (this.editor) this.editor.onLineSel = null;
+      this.applyLineSelectionControl(false);
       if (this.iconHighlighter && this.iconHighlighted) {
         makeVisible(this.iconHighlighter, false);
         makeVisible(this.iconHighlighted);
