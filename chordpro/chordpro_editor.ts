@@ -1857,7 +1857,7 @@ export class ChordProEditor extends ChordDrawer {
       const box = this.HitTestCoords(pos);
       if (box && (box instanceof ChordBoxHitBox || box instanceof ChordProChordHitBox)) {
         this.updateMouseDownPos(event);
-        return false;
+        return box instanceof ChordBoxHitBox;
       }
     } else if (this.checkChordBoxTouch(pos) || (showChordDialog && this.checkChordBoxOrTemplateHit(event))) {
       this.lastMouseDown = null;
