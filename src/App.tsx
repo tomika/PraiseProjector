@@ -71,7 +71,7 @@ import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
 import type { WebServerApiRequest } from "../common/webserver-interface";
-import { getWebServerInterface } from "./services/webServerBridge";
+import { getWebServerInterface, syncAndroidAppAssetsFromServiceWorker } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 
 type LeadersResponse = LeaderDBProfile[];
@@ -292,9 +292,9 @@ const AppContent: React.FC = () => {
   }, [settings?.fullscreen, applyFullscreenSetting]);
 
   const cancelAllHostNotifications = useCallback(() => {
-    const cancel = window.hostDevice?.cancelAllNotifications;
-    if (!cancel) return;
-    void Promise.resolve(cancel()).catch((error) => {
+    const hostDevice = window.hostDevice;
+    if (!hostDevice?.cancelAllNotifications) return;
+    void Promise.resolve(hostDevice.cancelAllNotifications()).catch((error) => {
       console.warn("[Notifications] cancelAllNotifications failed:", error);
     });
   }, []);
@@ -1110,6 +1110,10 @@ const AppContent: React.FC = () => {
       }
     }
   };
+
+  useEffect(() => {
+    void syncAndroidAppAssetsFromServiceWorker();
+  }, []);
 
   useEffect(() => {
     const webServer = getWebServerInterface();

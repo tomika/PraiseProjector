@@ -39,7 +39,8 @@ export type WebServerSyncUpdate =
   | { kind: "config"; config: WebServerConfig }
   | { kind: "display"; display: Display }
   | { kind: "frame"; imageDataUrl: string | null; options?: WebServerFrameOptions }
-  | { kind: "leader"; leaderName: string };
+  | { kind: "leader"; leaderName: string }
+  | { kind: "appAssets"; assets: string[] };
 
 export type WebServerConnectedClient = {
   id: string;

@@ -21,6 +21,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useUpdate } from "../contexts/UpdateContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { TypesenseClient } from "../../common/typesense-client";
+import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
 
 interface SettingsFormProps {
   onClose: () => void;
@@ -29,7 +30,7 @@ interface SettingsFormProps {
   onOpenLogs?: () => void;
 }
 
-function normalizeSettingsTab(tab: string | undefined): string {
+function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: boolean = isWebServerRuntimeAvailable()): string {
   const validTabs = new Set([
     "general",
     "searching",
@@ -39,7 +40,7 @@ function normalizeSettingsTab(tab: string | undefined): string {
     "sections",
     "chordpro-styles",
     "about",
-    ...(window.electronAPI ? ["webserver", "netdisplay"] : []),
+    ...(hasWebServerRuntime ? ["webserver", "netdisplay"] : []),
   ]);
   if (tab && validTabs.has(tab)) {
     return tab;
@@ -55,7 +56,8 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
   const { isGuest } = useAuth();
   const { hasUpdate } = useUpdate();
   const { showMessage, showConfirmAsync } = useMessageBox();
-  const [activeTab, setActiveTab] = useState(() => normalizeSettingsTab(initialTab));
+  const [hasWebServerRuntime, setHasWebServerRuntime] = useState(() => isWebServerRuntimeAvailable());
+  const [activeTab, setActiveTab] = useState(() => normalizeSettingsTab(initialTab, hasWebServerRuntime));
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(initialLeaderId ?? null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -92,8 +94,15 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
   }, [leaders, selectedLeaderId]);
 
   useEffect(() => {
-    setActiveTab(normalizeSettingsTab(initialTab));
-  }, [initialTab]);
+    const refresh = () => setHasWebServerRuntime(isWebServerRuntimeAvailable());
+    refresh();
+    const timeout = window.setTimeout(refresh, 100);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    setActiveTab(normalizeSettingsTab(initialTab, hasWebServerRuntime));
+  }, [initialTab, hasWebServerRuntime]);
 
   useEffect(() => {
     if (initialLeaderId !== undefined) {
@@ -353,14 +362,14 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
                 {t("SettingsPageChordProStyles")}
               </a>
             </li>
-            {!!window.electronAPI && (
+            {hasWebServerRuntime && (
               <li className="nav-item">
                 <a className={`nav-link ${activeTab === "webserver" ? "active" : ""}`} href="#" onClick={() => setActiveTab("webserver")}>
                   {t("SettingsPageWebServer")}
                 </a>
               </li>
             )}
-            {!!window.electronAPI && (
+            {hasWebServerRuntime && (
               <li className="nav-item">
                 <a className={`nav-link ${activeTab === "netdisplay" ? "active" : ""}`} href="#" onClick={() => setActiveTab("netdisplay")}>
                   {t("SettingsPageNetDisplay")}

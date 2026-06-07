@@ -4,9 +4,10 @@ import { useLeader } from "../contexts/LeaderContext";
 import { cloudApiHost } from "../config";
 import { Settings } from "../types";
 import { qrCodeCacheService } from "../services/QRCodeCacheService";
+import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
 
 export type SessionUrlMode =
-  /** Local webserver URL when Electron + iWebEnabled, otherwise cloud leader URL */
+  /** Local webserver URL when webserver runtime + iWebEnabled, otherwise cloud leader URL */
   | "auto"
   /** Local webserver URL only — null when iWebEnabled is false */
   | "local"
@@ -49,7 +50,7 @@ export function generateQRCodeSVG(url: string, size: number = 128, level: "L" | 
  * Returns the session URL for this device.
  *
  * @param mode
- *   - `"auto"` (default) — local webserver URL when running in Electron with
+ *   - `"auto"` (default) — local webserver URL when running in a webserver-capable runtime with
  *     iWebEnabled, otherwise the cloud leader session URL.
  *   - `"local"` — local webserver URL only; returns null when iWebEnabled is false.
  *   - `"cloud"` — cloud leader session URL only.
@@ -64,7 +65,7 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
   // exhaustive-deps suggestion are both acceptable here.
   /* eslint-disable react-hooks/preserve-manual-memoization, react-hooks/exhaustive-deps */
   return useMemo(() => {
-    const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+    const hasWebServerRuntime = isWebServerRuntimeAvailable();
 
     if (mode === "local") {
       return buildLocalUrl(settings);
@@ -75,7 +76,7 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
     }
 
     // "auto": prefer local when available
-    if (isElectron && settings?.iWebEnabled) {
+    if (hasWebServerRuntime && settings?.iWebEnabled) {
       return buildLocalUrl(settings);
     }
     return buildCloudUrl(guestLeaderId);

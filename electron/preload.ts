@@ -134,6 +134,8 @@ const webServerBridge: WebServerInterface = {
       case "config":
         ipcRenderer.send("webserver-sync-config", update.config);
         return;
+      case "appAssets":
+        return;
     }
   },
   query: async (request: WebServerQuery): Promise<WebServerQueryResult> => {

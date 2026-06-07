@@ -104,18 +104,44 @@ export function compareDisplays(display1: Display, display2: Display): boolean {
 }
 
 async function getSHA256Hash(data: string): Promise<string> {
-  // Use Web Crypto API for browser/cross-platform compatibility
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(data);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  // Prefer Web Crypto when available, but fallback for runtimes (e.g. Android WebView over HTTP)
+  // where crypto.subtle is unavailable.
+  try {
+    if (typeof globalThis.crypto !== "undefined" && globalThis.crypto.subtle) {
+      const encoder = new TextEncoder();
+      const dataBuffer = encoder.encode(data);
+      const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", dataBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+  } catch {
+    // Fall back to deterministic non-cryptographic hashing below.
+  }
+
+  // Deterministic fallback hash (FNV-1a variants) used only when subtle crypto is unavailable.
+  const fnv1a32 = (input: string, seed: number): number => {
+    let hash = seed >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash >>> 0;
+  };
+
+  const h1 = fnv1a32(data, 2166136261);
+  const h2 = fnv1a32(data, 2166136261 ^ 0x9e3779b9);
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
 }
 
 export async function generatePlaylistId(playlist: PlaylistEntry[]): Promise<string> {
   if (playlist.length === 0) return "empty";
   const playlistJson = JSON.stringify(playlist);
-  return await getSHA256Hash(playlistJson);
+  try {
+    return await getSHA256Hash(playlistJson);
+  } catch (error) {
+    console.error("Playlist", "Failed to generate SHA-256 hash for playlist; using fallback", error);
+    return playlistJson;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
