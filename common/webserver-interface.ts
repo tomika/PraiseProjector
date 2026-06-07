@@ -24,6 +24,7 @@ export type WebServerFrameOptions = {
 };
 
 export type WebServerConfig = {
+  webServerEnabled?: boolean;
   webServerPort: number;
   webServerPath: string;
   webServerDomainName: string;

@@ -28,8 +28,9 @@ type NativeWireMethod = "syncJson" | "queryJson" | "respondJson";
 const WEB_SERVER_EVENT_NAME = "pp-webserver-event";
 const APP_SW_PATH = "/app/sw.js";
 const APP_ASSET_PREFIX = "/app/";
+const REQUIRED_NATIVE_WIRE_METHODS: NativeWireMethod[] = ["syncJson", "queryJson", "respondJson"];
 
-let nativeWireUnavailable = false;
+let cachedWebServer: WebServerInterface | undefined;
 let swAssetListPromise: Promise<string[] | null> | null = null;
 let lastSyncedAppAssetSignature = "";
 
@@ -39,15 +40,23 @@ const getErrorMessage = (error: unknown) => {
   return String(error ?? "unknown error");
 };
 
-const isNativeWireRecoverableError = (error: unknown) => {
-  const message = getErrorMessage(error);
-  return /non-injected object|missing hostdevice|can't be invoked on a non-injected object/i.test(message);
+const hasWebServerInterfaceShape = (candidate: unknown): candidate is WebServerInterface => {
+  if (!candidate || typeof candidate !== "object") return false;
+  const maybe = candidate as Partial<WebServerInterface>;
+  return (
+    typeof maybe.sync === "function" &&
+    typeof maybe.query === "function" &&
+    typeof maybe.respond === "function" &&
+    typeof maybe.onEvent === "function"
+  );
 };
 
-const disableNativeWire = (method: NativeWireMethod, error: unknown) => {
-  if (nativeWireUnavailable) return;
-  nativeWireUnavailable = true;
-  console.warn("WebServer native wire disabled after bridge error", { method, error: getErrorMessage(error) });
+const hasNativeWireShape = (wire: WebServerNativeWireInterface): boolean => {
+  const missing = REQUIRED_NATIVE_WIRE_METHODS.filter((method) => typeof wire[method] !== "function");
+  if (missing.length === 0) return true;
+
+  console.warn("WebServer native wire validation failed", { missing });
+  return false;
 };
 
 const defaultQueryResult = (request: WebServerQuery): WebServerQueryResult => {
@@ -57,22 +66,22 @@ const defaultQueryResult = (request: WebServerQuery): WebServerQueryResult => {
 
 const createNativeWireAdapter = (wire: WebServerNativeWireInterface, fallback?: WebServerInterface): WebServerInterface => {
   const callWire = async (method: NativeWireMethod, payloadJson: string): Promise<string | null> => {
-    if (nativeWireUnavailable) return null;
-
     const invoke = wire[method];
     if (typeof invoke !== "function") {
-      disableNativeWire(method, `Missing native method ${method}`);
+      console.warn("WebServer native wire method missing", { method });
       return null;
     }
 
     try {
-      return await resolvePromise(invoke.call(wire, payloadJson));
-    } catch (error) {
-      if (isNativeWireRecoverableError(error)) {
-        disableNativeWire(method, error);
+      const result = await resolvePromise(invoke.call(wire, payloadJson));
+      if (typeof result !== "string") {
+        console.warn("WebServer native wire returned non-string payload", { method, type: typeof result });
         return null;
       }
-      throw error;
+      return result;
+    } catch (error) {
+      console.warn("WebServer native wire call failed", { method, error: getErrorMessage(error) });
+      return null;
     }
   };
 
@@ -103,16 +112,10 @@ const createNativeWireAdapter = (wire: WebServerNativeWireInterface, fallback?: 
       }
     },
     onEvent: (callback: (event: WebServerEvent) => void) => {
-      if (nativeWireUnavailable && fallback) {
-        return fallback.onEvent(callback);
-      }
-
       const registerSink = wire.registerEventSink;
       if (typeof registerSink === "function") {
         void resolvePromise(registerSink.call(wire, WEB_SERVER_EVENT_NAME)).catch((error) => {
-          if (isNativeWireRecoverableError(error)) {
-            disableNativeWire("queryJson", error);
-          }
+          console.warn("WebServer event sink registration failed", { error: getErrorMessage(error) });
         });
       }
 
@@ -235,26 +238,31 @@ const createLegacyElectronAdapter = (electronAPI: IElectronAPI): WebServerInterf
   };
 };
 
-let cachedWebServer: WebServerInterface | null | undefined;
-
 export const isWebServerRuntimeAvailable = (): boolean => {
   if (typeof window === "undefined") return false;
   return !!(window.webServer || window.webServerNativeWire || window.electronAPI);
 };
 
 export const getWebServerInterface = (): WebServerInterface | null => {
-  if (cachedWebServer !== undefined) return cachedWebServer;
+  if (typeof window === "undefined") return null;
+  if (cachedWebServer) return cachedWebServer;
 
   const fallback = window.electronAPI ? createLegacyElectronAdapter(window.electronAPI) : undefined;
 
   if (window.webServer) {
-    cachedWebServer = window.webServer;
-    return cachedWebServer;
+    if (hasWebServerInterfaceShape(window.webServer as unknown)) {
+      cachedWebServer = window.webServer;
+      return cachedWebServer;
+    }
+    console.warn("WebServer interface validation failed for window.webServer");
   }
 
-  if (window.webServerNativeWire && !nativeWireUnavailable) {
-    cachedWebServer = createNativeWireAdapter(window.webServerNativeWire, fallback);
-    return cachedWebServer;
+  if (window.webServerNativeWire) {
+    if (hasNativeWireShape(window.webServerNativeWire)) {
+      cachedWebServer = createNativeWireAdapter(window.webServerNativeWire, fallback);
+      return cachedWebServer;
+    }
+    console.warn("WebServer native wire validation failed; falling back if available");
   }
 
   if (fallback) {
@@ -262,8 +270,8 @@ export const getWebServerInterface = (): WebServerInterface | null => {
     return cachedWebServer;
   }
 
-  cachedWebServer = null;
-  return cachedWebServer;
+  // Do not cache null: runtime bridges can appear later in app startup.
+  return null;
 };
 
 const parseAppAssetListFromSw = (source: string): string[] => {
@@ -340,6 +348,7 @@ export const syncAndroidAppAssetsFromServiceWorker = async (): Promise<void> => 
 
 export const toWebServerConfig = (settings: Settings): WebServerConfig => {
   return {
+    webServerEnabled: settings.iWebEnabled,
     webServerPort: settings.webServerPort,
     webServerPath: settings.webServerPath,
     webServerDomainName: settings.webServerDomainName,
