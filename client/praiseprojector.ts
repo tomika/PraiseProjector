@@ -3012,9 +3012,10 @@ export class App extends AppBase {
 
   private capoChanged() {
     if (!this.selCapo) return;
-    if (this.capoVal !== this.selCapo.selectedIndex) {
-      if (this.editor) this.editor.transpose(this.capoVal - this.selCapo.selectedIndex);
-      this.capoVal = this.selCapo.selectedIndex - 1;
+    const newCapo = this.selCapo.selectedIndex - 1;
+    if (this.capoVal !== newCapo) {
+      if (this.editor) this.editor.transpose(Math.max(this.capoVal, 0) - Math.max(newCapo, 0));
+      this.capoVal = newCapo;
       if (this.chkAdmin?.checked) {
         if (this.chkUseCapo) this.chkUseCapo.checked = true;
         this.capoRequest(this.capoVal);
