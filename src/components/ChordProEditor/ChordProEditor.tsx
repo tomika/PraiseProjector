@@ -32,6 +32,10 @@ interface ChordProEditorProps {
   t?: (key: StringKey) => string; // Localization function injected by HOC
   tt?: (key: TooltipKey) => string | undefined; // Tooltip function injected by HOC
   language?: Language; // Active UI language injected by HOC (for ABC editor locale)
+  onSwipePrev?: () => void; // Called when user swipes right (go to previous song)
+  onSwipeNext?: () => void; // Called when user swipes left (go to next song)
+  prevSong?: Song | null; // Previous song, pre-rendered behind for the page-turn reveal
+  nextSong?: Song | null; // Next song, pre-rendered behind for the page-turn reveal
 }
 
 interface ChordProEditorState {
@@ -69,6 +73,11 @@ type ChordProAPIBound = {
   darkMode: (dark: boolean) => void;
   refreshDisplayProps: () => void;
   setStyles: (styles: Settings["chordProStyles"] | null) => void;
+  handleExternalChordBoxTouch: (event: MouseEvent, down: boolean, showChordDialog?: boolean) => boolean;
+  isReadOnly: () => boolean;
+  isInMarkingState: () => boolean;
+  hasChordSelectorOpen: () => boolean;
+  getSelectedText: () => string;
 };
 
 const CHORD_PRO_MARKUP = `
@@ -160,6 +169,23 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private titleInputRef: HTMLInputElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private resizeAnimationFrame: number | null = null;
+  private swipeState: { dragX: number; dragY: number; direction: number; totalScroll: number; lastScroll?: number; startTime: number } | null = null;
+  private swipePointerId: number | null = null;
+  private pinchState: { startDistance: number; lastRatio: number } | null = null;
+  private swipeContainerRef: HTMLDivElement | null = null;
+  private pageFlipActive = false;
+  // Three stacked pages mirroring praiseprojector.ts: prev/next are pre-rendered
+  // behind the current page and revealed as the current page rotates away.
+  private currentPageRef: HTMLDivElement | null = null;
+  private prevPageRef: HTMLDivElement | null = null;
+  private nextPageRef: HTMLDivElement | null = null;
+  private prevHost: HTMLDivElement | null = null;
+  private nextHost: HTMLDivElement | null = null;
+  private loadedPrevKey: string | null = null;
+  private loadedNextKey: string | null = null;
+  private pendingTurnReset = false;
+  private pendingTurnResetTimer: number | null = null;
+  private pinchTouchHandler: ((e: TouchEvent) => void) | null = null;
 
   constructor(props: ChordProEditorProps) {
     super(props);
@@ -217,6 +243,27 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     if (prevProps.language !== this.props.language && this.props.language) {
       this.getBoundChordProAPI()?.setAbcLocale?.(this.props.language);
     }
+
+    // Keep the pre-rendered prev/next pages in sync. Force a re-render of the
+    // neighbours when display-affecting settings change.
+    if (
+      prevProps.settings?.chordProStyles !== this.props.settings?.chordProStyles ||
+      prevProps.settings?.hideChordsInReadonlyEditor !== this.props.settings?.hideChordsInReadonlyEditor ||
+      prevProps.forceThemeMode !== this.props.forceThemeMode
+    ) {
+      this.loadedPrevKey = null;
+      this.loadedNextKey = null;
+    }
+    if (
+      prevProps.prevSong !== this.props.prevSong ||
+      prevProps.nextSong !== this.props.nextSong ||
+      prevProps.prevSong?.Text !== this.props.prevSong?.Text ||
+      prevProps.nextSong?.Text !== this.props.nextSong?.Text ||
+      this.loadedPrevKey === null ||
+      this.loadedNextKey === null
+    ) {
+      this.loadNeighborPages();
+    }
   }
 
   componentWillUnmount() {
@@ -224,6 +271,12 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.cancelScheduledRefresh();
     this.cleanupThemeObserver();
     this.cleanupFontSizeObserver();
+    if (this.pendingTurnResetTimer !== null) {
+      clearTimeout(this.pendingTurnResetTimer);
+      this.pendingTurnResetTimer = null;
+    }
+    if (this.prevHost) this.getBoundChordProAPI(this.prevHost)?.dispose?.();
+    if (this.nextHost) this.getBoundChordProAPI(this.nextHost)?.dispose?.();
     this.getBoundChordProAPI()?.dispose?.();
   }
 
@@ -326,6 +379,32 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     }
   };
 
+  private setCurrentPageRef = (el: HTMLDivElement | null) => {
+    this.currentPageRef = el;
+  };
+
+  private setPrevPageRef = (el: HTMLDivElement | null) => {
+    this.prevPageRef = el;
+  };
+
+  private setNextPageRef = (el: HTMLDivElement | null) => {
+    this.nextPageRef = el;
+  };
+
+  private setPrevHostRef = (el: HTMLDivElement | null) => {
+    if (this.prevHost && this.prevHost !== el) this.getBoundChordProAPI(this.prevHost)?.dispose?.();
+    this.prevHost = el;
+    this.loadedPrevKey = null;
+    if (el) this.loadNeighborPages();
+  };
+
+  private setNextHostRef = (el: HTMLDivElement | null) => {
+    if (this.nextHost && this.nextHost !== el) this.getBoundChordProAPI(this.nextHost)?.dispose?.();
+    this.nextHost = el;
+    this.loadedNextKey = null;
+    if (el) this.loadNeighborPages();
+  };
+
   private getBoundChordProAPI(editorDiv: HTMLDivElement | null = this.chordProHost): ChordProAPIBound | undefined {
     if (!editorDiv) return undefined;
     return chordProAPI.bind(editorDiv) as ChordProAPIBound;
@@ -360,6 +439,385 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+  }
+
+  private setSwipeContainerRef = (el: HTMLDivElement | null) => {
+    if (this.swipeContainerRef && this.pinchTouchHandler) {
+      const opts: AddEventListenerOptions = { capture: true };
+      this.swipeContainerRef.removeEventListener("touchstart", this.pinchTouchHandler, opts);
+      this.swipeContainerRef.removeEventListener("touchmove", this.pinchTouchHandler, opts);
+      this.swipeContainerRef.removeEventListener("touchend", this.pinchTouchHandler, opts);
+      this.swipeContainerRef.removeEventListener("touchcancel", this.pinchTouchHandler, opts);
+      this.swipeContainerRef.onpointerdown = null;
+      this.swipeContainerRef.onpointermove = null;
+      this.swipeContainerRef.onpointerup = null;
+      this.swipeContainerRef.onpointercancel = null;
+      this.swipeContainerRef.onpointerleave = null;
+      this.swipeContainerRef.onmousedown = null;
+      this.swipeContainerRef.onmousemove = null;
+      this.swipeContainerRef.onmouseup = null;
+      this.swipeContainerRef.onmouseleave = null;
+    }
+    this.swipeContainerRef = el;
+    this.swipeState = null;
+    this.pinchState = null;
+    if (el) {
+      this.installPinchScrollModeHandler(el);
+      this.installSwipeInputHandlers(el);
+    }
+  };
+
+  private installPinchScrollModeHandler(element: HTMLElement) {
+    const distance = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    };
+    const finishPinch = () => {
+      if (!this.pinchState) return;
+      this.pinchState = null;
+      this.swipeState = null;
+    };
+    this.pinchTouchHandler = (e: TouchEvent) => {
+      if (e.type === "touchstart") {
+        if (this.pinchState && e.touches.length < 2) finishPinch();
+        if (e.touches.length >= 2 && !this.pinchState) {
+          const d = distance(e.touches);
+          if (d > 0) {
+            this.pinchState = { startDistance: d, lastRatio: 1 };
+            this.swipeState = null;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }
+      } else if (e.type === "touchmove" && this.pinchState) {
+        if (e.touches.length < 2) {
+          finishPinch();
+          return;
+        }
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      } else if ((e.type === "touchend" || e.type === "touchcancel") && this.pinchState) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (e.touches.length < 2) finishPinch();
+      }
+    };
+    const opts: AddEventListenerOptions = { capture: true, passive: false };
+    element.addEventListener("touchstart", this.pinchTouchHandler, opts);
+    element.addEventListener("touchmove", this.pinchTouchHandler, opts);
+    element.addEventListener("touchend", this.pinchTouchHandler, opts);
+    element.addEventListener("touchcancel", this.pinchTouchHandler, opts);
+  }
+
+  private installSwipeInputHandlers(element: HTMLElement) {
+    if (typeof PointerEvent !== "undefined") {
+      element.style.touchAction = "none";
+      element.onpointerdown = (e) => {
+        if (!e.isPrimary) return;
+        this.swipePointerId = e.pointerId;
+        this.swipeHandlerEvent("down", e);
+      };
+      element.onpointermove = (e) => {
+        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+        this.swipeHandlerEvent("move", e);
+      };
+      const endPointer = (e: PointerEvent) => {
+        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+        this.swipeHandlerEvent("up", e);
+        this.swipePointerId = null;
+      };
+      element.onpointerup = endPointer;
+      element.onpointercancel = endPointer;
+      element.onpointerleave = endPointer;
+      element.onmousedown = null;
+      element.onmousemove = null;
+      element.onmouseup = null;
+      element.onmouseleave = null;
+      return;
+    }
+    element.onmousedown = (e) => this.swipeHandlerEvent("down", e);
+    element.onmousemove = (e) => this.swipeHandlerEvent("move", e);
+    element.onmouseup = (e) => this.swipeHandlerEvent("up", e);
+    element.onmouseleave = (e) => this.swipeHandlerEvent("up", e);
+  }
+
+  // While a page flip is in progress the rotating page can "come out" of the
+  // editor plane and visually overlap the tabs/toolbar above it, exactly like
+  // praiseprojector.ts where the page is not clipped by #swipe-handler. We make
+  // the clipping ancestors temporarily non-clipping and lift the stacking layer.
+  private flipOverflowTargets: { el: HTMLElement; overflow: string }[] = [];
+
+  private beginPageFlipEffect() {
+    const el = this.swipeContainerRef;
+    if (!el || this.pageFlipActive) return;
+    this.pageFlipActive = true;
+    this.flipOverflowTargets = [];
+    let node: HTMLElement | null = el;
+    while (node && !node.classList.contains("chordpro-editor-container")) {
+      const style = window.getComputedStyle(node);
+      if (style.overflow !== "visible") {
+        this.flipOverflowTargets.push({ el: node, overflow: node.style.overflow });
+        node.style.overflow = "visible";
+      }
+      node = node.parentElement;
+    }
+    el.style.zIndex = "100";
+    el.style.position = "relative";
+  }
+
+  private endPageFlipEffect() {
+    const el = this.swipeContainerRef;
+    if (!el || !this.pageFlipActive) return;
+    this.pageFlipActive = false;
+    for (const { el: node, overflow } of this.flipOverflowTargets) node.style.overflow = overflow;
+    this.flipOverflowTargets = [];
+    el.style.zIndex = "";
+    el.style.position = "";
+  }
+
+  private setNeighborPageVisible(page: HTMLDivElement | null, visible: boolean) {
+    if (page && page.style.display !== (visible ? "block" : "none")) {
+      page.style.display = visible ? "block" : "none";
+    }
+  }
+
+  // Faithful port of praiseprojector.ts setPagePhase: the current page rotates
+  // (no per-element perspective — perspective lives on the container), and the
+  // prev/next pages sit behind it and become visible as it rotates away.
+  private setPagePhase(offset: number, scale: number) {
+    const page = this.currentPageRef;
+    if (!page || offset === 0 || scale === 0) return;
+    const direction = offset / Math.abs(offset);
+    page.style.transformOrigin = (direction < 0 ? "left" : "right") + " center";
+    const deg = (offset * 90) / scale;
+    page.style.transform = `rotateY(${deg}deg)`;
+    page.style.boxShadow = `${(-1 * direction * offset * offset) / scale}px 10px 5px rgba(100, 100, 100, 0.5)`;
+    const hidden = Math.abs(deg) < 5;
+    if (this.prevPageRef) {
+      this.prevPageRef.style.zIndex = offset >= 0 ? "-1" : "-2";
+      this.setNeighborPageVisible(this.prevPageRef, !(hidden || offset < 0));
+    }
+    if (this.nextPageRef) {
+      this.nextPageRef.style.zIndex = offset >= 0 ? "-2" : "-1";
+      this.setNeighborPageVisible(this.nextPageRef, !(hidden || offset >= 0));
+    }
+  }
+
+  private pageTurn(from: number, scale: number, time: number, forced?: boolean) {
+    const api = this.getBoundChordProAPI();
+    if (api?.hasChordSelectorOpen()) return;
+
+    const page = this.currentPageRef;
+    if (!page || from === 0) return;
+
+    const direction = from / Math.abs(from);
+    // direction > 0 → turning back to previous; direction < 0 → forward to next.
+    // Only actually turn when the neighbouring song exists (matches original's hasDoc()).
+    const canNavigate = direction < 0 ? !!this.props.nextSong : !!this.props.prevSong;
+
+    page.style.border = "solid black 1px";
+    this.beginPageFlipEffect();
+    from = Math.abs(from);
+    const turn = (forced || from > 0.7 * scale) && canNavigate;
+    const total = turn ? scale - from : -from;
+    const start = Date.now();
+
+    const phase = (last: number) => {
+      const now = Date.now();
+      const elapsed = now - start;
+      const fwd = Math.min(elapsed / time, 1);
+      this.setPagePhase(direction * (from + total * fwd), scale);
+      if (elapsed >= time) {
+        if (turn) {
+          // Leave the current page rotated edge-on (invisible) with the revealed
+          // neighbour showing; finishPendingPageTurn() resets it once the new
+          // current song has loaded, so there is no blank frame.
+          this.pendingTurnReset = true;
+          if (this.pendingTurnResetTimer !== null) clearTimeout(this.pendingTurnResetTimer);
+          this.pendingTurnResetTimer = window.setTimeout(() => this.finishPendingPageTurn(), 600);
+          if (direction < 0) {
+            this.props.onSwipeNext?.();
+          } else {
+            this.props.onSwipePrev?.();
+          }
+        } else {
+          page.style.transform = "";
+          page.style.border = "none";
+          page.style.boxShadow = "";
+          this.hideNeighborPages();
+          this.endPageFlipEffect();
+        }
+      } else {
+        setTimeout(() => phase(now), Math.max(now - last, 20));
+      }
+    };
+    phase(start);
+  }
+
+  private hideNeighborPages() {
+    this.setNeighborPageVisible(this.prevPageRef, false);
+    this.setNeighborPageVisible(this.nextPageRef, false);
+    if (this.prevPageRef) this.prevPageRef.style.zIndex = "-1";
+    if (this.nextPageRef) this.nextPageRef.style.zIndex = "-1";
+  }
+
+  private finishPendingPageTurn() {
+    if (!this.pendingTurnReset) return;
+    this.pendingTurnReset = false;
+    if (this.pendingTurnResetTimer !== null) {
+      clearTimeout(this.pendingTurnResetTimer);
+      this.pendingTurnResetTimer = null;
+    }
+    const page = this.currentPageRef;
+    if (page) {
+      page.style.transform = "";
+      page.style.border = "none";
+      page.style.boxShadow = "";
+    }
+    this.hideNeighborPages();
+    this.endPageFlipEffect();
+  }
+
+  // Render the prev/next songs into their own read-only editor instances behind
+  // the current page so they are already visible during the flip.
+  private loadNeighborPages() {
+    if (!this.wysiwygLoaded) return;
+    const flipEnabled = !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext);
+    this.loadNeighborPage("prev", this.prevHost, flipEnabled ? (this.props.prevSong ?? null) : null);
+    this.loadNeighborPage("next", this.nextHost, flipEnabled ? (this.props.nextSong ?? null) : null);
+  }
+
+  private loadNeighborPage(which: "prev" | "next", host: HTMLDivElement | null, song: Song | null) {
+    if (!host) return;
+    const key = song ? `${song.Id} ${song.Text}` : null;
+    const loadedKey = which === "prev" ? this.loadedPrevKey : this.loadedNextKey;
+    if (key === loadedKey) return;
+    if (which === "prev") this.loadedPrevKey = key;
+    else this.loadedNextKey = key;
+
+    const api = this.getBoundChordProAPI(host);
+    if (!api) return;
+    if (!song) {
+      api.load("", false);
+      return;
+    }
+    api.load(song.Text, false);
+    const shouldHideChords = this.props.settings?.hideChordsInReadonlyEditor ?? false;
+    api.setDisplay(true, true, false, false, "Am", "Full", 1.0, shouldHideChords);
+    api.setStyles?.(this.props.settings?.chordProStyles ?? null);
+    const isDark = this.props.forceThemeMode ? this.props.forceThemeMode === "dark" : document.documentElement.getAttribute("data-theme") === "dark";
+    api.darkMode?.(isDark);
+    // Restore the current page as the active editor — load() makes the neighbour
+    // active, and invoking a bound method re-selects the current host.
+    if (this.chordProHost) this.getBoundChordProAPI(this.chordProHost)?.isReadOnly();
+  }
+
+  private swipeHandlerEvent(type: "down" | "up" | "move", e: MouseEvent) {
+    const isPointerMouse = typeof PointerEvent !== "undefined" && e instanceof PointerEvent && e.pointerType === "mouse";
+    let shouldPreventDefault = !isPointerMouse;
+
+    const api = this.getBoundChordProAPI();
+    const x = e.clientX;
+    const y = e.clientY;
+
+    if (
+      this.chordProHost &&
+      type !== "move" &&
+      !api?.isInMarkingState() &&
+      (!this.swipeState || this.swipeState.direction === 0) &&
+      api?.handleExternalChordBoxTouch(e, type === "down", true)
+    ) {
+      this.swipeState = null;
+      e.preventDefault();
+      return;
+    }
+
+    const pageFlipEnabled = !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext) && !api?.isInMarkingState();
+
+    // The current page wrapper is — exactly as in praiseprojector.ts — the
+    // geometry source, the scroll container and the element that rotates.
+    const el = this.currentPageRef;
+    const scrollHost = this.currentPageRef ?? this.chordProHost;
+
+    if (el && scrollHost) {
+      switch (type) {
+        case "down":
+          this.swipeState = { dragX: x, dragY: y, direction: 0, totalScroll: 0, startTime: Date.now() };
+          break;
+        case "up":
+          if (this.swipeState) {
+            const offsetX = x - this.swipeState.dragX;
+            if (offsetX !== 0) {
+              const direction = offsetX / Math.abs(offsetX);
+              if (this.swipeState.direction && this.swipeState.direction * direction >= 0) {
+                shouldPreventDefault = true;
+                // Use viewport coords so the pivot/scale are correct regardless of
+                // where the editor panel sits (drag coords are clientX-based).
+                const rect = el.getBoundingClientRect();
+                const left = rect.left;
+                const width = rect.width;
+                const right = left + width;
+                const scale = x > this.swipeState.dragX ? right - this.swipeState.dragX : this.swipeState.dragX - left;
+                this.pageTurn(offsetX, scale, 200, Date.now() - this.swipeState.startTime < 200 && Math.abs(offsetX) > width * 0.1);
+              } else if (this.swipeState.lastScroll) {
+                shouldPreventDefault = true;
+                const step = this.swipeState.lastScroll;
+                const rollOut = (s: number) => {
+                  if (!this.swipeState) {
+                    const pos = scrollHost.scrollTop;
+                    const t0 = Date.now();
+                    scrollHost.scrollBy(0, s);
+                    if (scrollHost.scrollTop !== pos) {
+                      const t1 = Date.now();
+                      s = Math.sign(s) * Math.floor(0.9 * Math.abs(s));
+                      if (s) setTimeout(() => rollOut(s), Math.max(t1 - t0, 20));
+                    }
+                  }
+                };
+                setTimeout(() => rollOut(step), 20);
+              } else {
+                el.style.border = "none";
+                el.style.boxShadow = "";
+                this.endPageFlipEffect();
+              }
+            }
+            this.swipeState = null;
+          }
+          break;
+        case "move":
+          if (this.swipeState) {
+            const offsetX = x - this.swipeState.dragX;
+            const offsetY = y - this.swipeState.dragY;
+            if (offsetX === 0 && offsetY === 0) break;
+            const direction = offsetX !== 0 ? offsetX / Math.abs(offsetX) : 0;
+            const rect = el.getBoundingClientRect();
+            const left = rect.left;
+            const width = rect.width;
+            const right = left + width;
+            let isScroll = scrollHost.scrollHeight > scrollHost.clientHeight && this.swipeState.direction === 0;
+            if (pageFlipEnabled && isScroll && this.swipeState.totalScroll < scrollHost.clientHeight / 10 && Math.abs(offsetX) > 0.2 * (right - left))
+              isScroll = false;
+            if (isScroll) {
+              shouldPreventDefault = true;
+              el.style.transform = "";
+              this.swipeState.lastScroll = this.swipeState.dragY - y;
+              scrollHost.scrollBy(0, this.swipeState.lastScroll);
+              this.swipeState.totalScroll += Math.abs(this.swipeState.lastScroll);
+              this.swipeState.dragY = y;
+            } else if (pageFlipEnabled && direction !== 0 && this.swipeState.direction * direction >= 0) {
+              shouldPreventDefault = true;
+              el.style.border = "solid black 1px";
+              this.beginPageFlipEffect();
+              this.swipeState.direction = direction;
+              const scale = direction > 0 ? right - this.swipeState.dragX : this.swipeState.dragX - left;
+              this.setPagePhase(offsetX, scale);
+            }
+          }
+          break;
+      }
+    }
+    if (shouldPreventDefault) e.preventDefault();
   }
 
   loadSong() {
@@ -512,6 +970,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
         this.updateDisplay();
       }
+      // The new current song is now in place — if this load completed a page
+      // turn, reset the rotated page on top of the revealed neighbour, then
+      // (re)render the prev/next pages for the new position.
+      this.finishPendingPageTurn();
+      this.loadNeighborPages();
     } catch (error) {
       console.error("Editor", "Error loading song to WYSIWYG editor", error);
     }
@@ -850,8 +1313,18 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
             </button>
           </div>
         )}
-        <div className="editor-iframe-container">
-          <div className="wysiwyg-host" ref={this.setChordProHostRef} role="presentation" />
+        <div className="editor-iframe-container" ref={this.setSwipeContainerRef}>
+          {/* Prev/next pages sit behind the current page and are revealed as it
+              rotates away during a page turn (mirrors praiseprojector.ts). */}
+          <div className="wysiwyg-page wysiwyg-page-prev" ref={this.setPrevPageRef}>
+            <div className="wysiwyg-host" ref={this.setPrevHostRef} role="presentation" />
+          </div>
+          <div className="wysiwyg-page wysiwyg-page-next" ref={this.setNextPageRef}>
+            <div className="wysiwyg-host" ref={this.setNextHostRef} role="presentation" />
+          </div>
+          <div className="wysiwyg-page wysiwyg-page-current" ref={this.setCurrentPageRef}>
+            <div className="wysiwyg-host" ref={this.setChordProHostRef} role="presentation" />
+          </div>
         </div>
       </div>
     );

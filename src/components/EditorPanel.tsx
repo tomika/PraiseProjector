@@ -19,6 +19,10 @@ interface EditorPanelProps {
   onAfterLeaveEditMode?: (currentText: string, originalText: string) => Promise<boolean | void>;
   // Original song text for comparison (to detect changes)
   originalText?: string;
+  onSwipePrev?: () => void;
+  onSwipeNext?: () => void;
+  prevSong?: Song | null;
+  nextSong?: Song | null;
 }
 
 interface EditorPanelState {
@@ -100,6 +104,10 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
       onBeforeEnterEditMode,
       onAfterLeaveEditMode,
       originalText,
+      onSwipePrev,
+      onSwipeNext,
+      prevSong,
+      nextSong,
     } = this.props;
 
     return (
@@ -117,6 +125,10 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
           onBeforeEnterEditMode={onBeforeEnterEditMode}
           onAfterLeaveEditMode={onAfterLeaveEditMode}
           originalText={originalText}
+          onSwipePrev={onSwipePrev}
+          onSwipeNext={onSwipeNext}
+          prevSong={prevSong}
+          nextSong={nextSong}
         />
       </div>
     );

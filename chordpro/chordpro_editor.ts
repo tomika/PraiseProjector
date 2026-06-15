@@ -6610,6 +6610,10 @@ export class ChordProEditor extends ChordDrawer {
     return this.currentlyMarked !== undefined;
   }
 
+  public hasChordSelectorOpen(): boolean {
+    return !!this.chordSelector?.inModal;
+  }
+
   getUnknownChords() {
     const list = new Set<string>();
     if (this.chordPro)

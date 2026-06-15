@@ -205,14 +205,45 @@
   flex: 1 1 auto;
   min-height: 200px; /* Prevent collapse when content is empty */
   position: relative;
-  overflow: auto; /* Enable scrolling when content overflows */
+  /* Perspective lives on the container (the page-turn parent), exactly like
+     #swipe-handler in praiseprojector.ts, so the rotating page uses a plain
+     rotateY() and "comes out" of the plane. overflow is hidden normally and
+     toggled to visible during a flip so the page can overlap the tabs above. */
+  overflow: hidden;
+  -webkit-perspective: 1000vw;
+  perspective: 1000vw;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  perspective-origin: 50% 50%;
+}
+
+/* The three stacked pages (prev / next / current). */
+.wysiwyg-page {
+  position: absolute;
+  inset: 0;
+  overflow: auto; /* each page scrolls its own content */
+  background-color: #fff;
+}
+
+.wysiwyg-page-current {
+  z-index: 0;
+}
+
+.wysiwyg-page-prev,
+.wysiwyg-page-next {
+  display: none; /* shown by JS only during a page turn */
+  z-index: -1;
+}
+
+[data-theme="dark"] .wysiwyg-page {
+  background-color: var(--pp-panel-bg);
 }
 
 .wysiwyg-host {
   width: 100%;
-  min-height: 200px; /* Prevent collapse when content is empty */
+  min-height: 100%; /* fill the page so empty songs still paint */
   position: relative;
-  overflow: auto; /* Let parent handle scrolling */
+  overflow: visible; /* the parent .wysiwyg-page handles scrolling */
   background-color: #fff; /* Ensure visible even when empty */
 }
 

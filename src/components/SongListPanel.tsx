@@ -463,6 +463,7 @@ const GroupFolderNode: React.FC<{
 export interface SongListPanelMethods {
   getSelectedSongId: () => string | null;
   setSelectedSongId: (songId: string | null) => void;
+  getAdjacentSong: (delta: 1 | -1) => Song | null;
 }
 
 interface SongListPanelProps {
@@ -550,6 +551,16 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
         requestAnimationFrame(this.scrollSelectedSongIntoView);
       });
     }
+  }
+
+  public getAdjacentSong(delta: 1 | -1): Song | null {
+    const { selectedSong } = this.state;
+    const visible = this.getFlatVisibleSongs();
+    if (!visible.length || !selectedSong) return null;
+    const idx = visible.findIndex((s) => s.Id === selectedSong.Id);
+    if (idx < 0) return null;
+    const nextIdx = idx + delta;
+    return nextIdx >= 0 && nextIdx < visible.length ? visible[nextIdx] : null;
   }
 
   constructor(props: SongListPanelProps) {
@@ -2053,6 +2064,7 @@ const SongListPanelWithSettings = React.forwardRef<
   React.useImperativeHandle(ref, () => ({
     getSelectedSongId: () => innerRef.current?.getSelectedSongId() ?? null,
     setSelectedSongId: (songId: string | null) => innerRef.current?.setSelectedSongId(songId),
+    getAdjacentSong: (delta: 1 | -1) => innerRef.current?.getAdjacentSong(delta) ?? null,
   }));
 
   if (!settings) {

@@ -264,6 +264,12 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (instance) instance.setStyles(styles);
     },
+    handleExternalChordBoxTouch: (event: MouseEvent, down: boolean, showChordDialog?: boolean) =>
+      getBoundEditor()?.handleExternalChordBoxTouch(event, down, showChordDialog) ?? false,
+    isReadOnly: () => getBoundEditor()?.readOnly ?? true,
+    isInMarkingState: () => getBoundEditor()?.inMarkingState ?? false,
+    hasChordSelectorOpen: () => getBoundEditor()?.hasChordSelectorOpen() ?? false,
+    getSelectedText: () => getBoundEditor()?.getSelectedText() ?? "",
   };
 }
 

@@ -34,6 +34,7 @@ export interface LeftPanelMethods {
   // Song tree methods
   getSelectedSongId: () => string | null;
   setSelectedSongId: (songId: string | null) => void;
+  getAdjacentSong: (delta: 1 | -1) => Song | null;
 }
 
 interface LeftPanelProps {
@@ -170,6 +171,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         // Song tree methods
         getSelectedSongId: () => songListPanelRef.current?.getSelectedSongId() ?? null,
         setSelectedSongId: (songId: string | null) => songListPanelRef.current?.setSelectedSongId(songId),
+        getAdjacentSong: (delta: 1 | -1) => songListPanelRef.current?.getAdjacentSong(delta) ?? null,
       }),
       [songs, onPlaylistSelectionChange]
     );

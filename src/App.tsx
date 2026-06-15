@@ -1668,6 +1668,42 @@ const AppContent: React.FC = () => {
     setShowImportWizard(true);
   }, []);
 
+  const navigateSongByDelta = (delta: 1 | -1) => {
+    if (selectedPlaylistItem) {
+      const playlist = leftPanelRef.current?.getCurrentPlaylist();
+      if (!playlist) return;
+      const idx = playlist.items.findIndex((item) => item.songId === selectedPlaylistItem.songId);
+      const nextIdx = idx + delta;
+      if (nextIdx >= 0 && nextIdx < playlist.items.length) {
+        leftPanelRef.current?.setPlaylistSelection({ songId: playlist.items[nextIdx].songId, emitChange: true });
+      }
+    } else {
+      const song = leftPanelRef.current?.getAdjacentSong(delta);
+      if (song) void handleSongSelected(song);
+    }
+  };
+
+  const handleSwipePrev = () => navigateSongByDelta(-1);
+  const handleSwipeNext = () => navigateSongByDelta(1);
+
+  // Resolve the adjacent song (without navigating) so the editor can pre-render
+  // it behind the current page for the page-turn reveal. Uses playlist order
+  // when a playlist item is selected, otherwise the song-tree order.
+  const getAdjacentSongForFlip = (delta: 1 | -1): Song | null => {
+    if (selectedPlaylistItem) {
+      const playlist = leftPanelRef.current?.getCurrentPlaylist();
+      if (!playlist) return null;
+      const idx = playlist.items.findIndex((item) => item.songId === selectedPlaylistItem.songId);
+      if (idx < 0) return null;
+      const nextIdx = idx + delta;
+      if (nextIdx < 0 || nextIdx >= playlist.items.length) return null;
+      return Database.getInstance().getSongById(playlist.items[nextIdx].songId) ?? null;
+    }
+    return leftPanelRef.current?.getAdjacentSong(delta) ?? null;
+  };
+  const prevSongForFlip = getAdjacentSongForFlip(-1);
+  const nextSongForFlip = getAdjacentSongForFlip(1);
+
   // Check if current playlist has unsaved changes for a remembered schedule date
   // and offer to save before syncing. Returns true to proceed with sync, false to cancel.
   const checkAndSaveScheduledPlaylist = useCallback(async (): Promise<boolean> => {
@@ -2320,6 +2356,10 @@ const AppContent: React.FC = () => {
                         onBeforeEnterEditMode={handleBeforeEnterEditMode}
                         onAfterLeaveEditMode={handleAfterLeaveEditMode}
                         originalText={getOriginalSongText()}
+                        onSwipePrev={handleSwipePrev}
+                        onSwipeNext={handleSwipeNext}
+                        prevSong={prevSongForFlip}
+                        nextSong={nextSongForFlip}
                       />
                     </div>
                   </>
@@ -2418,6 +2458,10 @@ const AppContent: React.FC = () => {
                       onBeforeEnterEditMode={handleBeforeEnterEditMode}
                       onAfterLeaveEditMode={handleAfterLeaveEditMode}
                       originalText={getOriginalSongText()}
+                      onSwipePrev={handleSwipePrev}
+                      onSwipeNext={handleSwipeNext}
+                      prevSong={prevSongForFlip}
+                      nextSong={nextSongForFlip}
                     />
                   </div>
                 </div>
