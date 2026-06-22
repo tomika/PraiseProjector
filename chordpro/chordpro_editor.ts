@@ -27,8 +27,9 @@ import { getKeyCodeString } from "./keycodes";
 import { calcBestPositions, ItemToPosition } from "./placer";
 import { ChordSelector } from "./chord_selector";
 import { Instrument, playChord } from "./midi";
-import { AbcWysiwygEditor } from "./abc_editor";
-import { NoteTimingEvent, renderAbc, synth, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
+import type { AbcWysiwygEditor } from "./abc_editor";
+import type { NoteTimingEvent, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
+import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { isVowel, knownVowelChars, removeDiacretics, simplifyString, splitTextToWords } from "../common/stringTools";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, makeDark, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
@@ -118,6 +119,14 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
     endTime: 0,
   };
 
+  if (!isAbcjsLoaded()) {
+    // abcjs chunk not loaded yet: kick off the load and return inert playback
+    // state. The triggering ABC must already be rendered for the user to start
+    // playback, so this path is effectively unreachable in practice.
+    void loadAbcjs();
+    return state;
+  }
+
   ensureAbcMidiPlaybackStyles();
 
   let progressTimer: ReturnType<typeof setInterval> | null = null;
@@ -161,7 +170,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
       renderContainer.style.display = "none";
       document.body.appendChild(renderContainer);
 
-      const rendered = renderAbc(renderContainer, abcSource, {
+      const rendered = abcjs().renderAbc(renderContainer, abcSource, {
         add_classes: true,
         responsive: "resize",
       }) as TuneObjectArray;
@@ -174,7 +183,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
       throw new Error("Could not render ABC for synth playback.");
     }
 
-    timingCallbacks = new TimingCallbacks(visualObj, {
+    timingCallbacks = new (abcjs().TimingCallbacks)(visualObj, {
       ...(isNaN(bpm) ? {} : { qpm: bpm }),
       eventCallback: (event) => {
         applyPlaybackMarker(event);
@@ -182,7 +191,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
       },
     });
 
-    const midiBuffer = new synth.CreateSynth();
+    const midiBuffer = new (abcjs().synth.CreateSynth)();
     const options = {
       ...(isNaN(bpm) ? {} : { qpm: bpm }),
     };
@@ -674,6 +683,7 @@ export class ChordProEditor extends ChordDrawer {
   private abcVisualObjects = new Map<ChordProAbc, TuneObject>();
   private abcEditor: AbcWysiwygEditor | null = null;
   private activeAbcBlock: ChordProAbc | null = null;
+  private abcjsLoadPending = false;
   private canvasResizeObserver: ResizeObserver | null = null;
   private lastCanvasOffsetWidth = 0;
   private lastCanvasOffsetHeight = 0;
@@ -2034,7 +2044,7 @@ export class ChordProEditor extends ChordDrawer {
   private checkAbcHitAtPos(mp: Point): boolean {
     const box = this.HitTestCoords(mp);
     if (box instanceof AbcHitBox) {
-      this.openAbcEditor(box.abc);
+      void this.openAbcEditor(box.abc);
       return true;
     }
     return false;
@@ -2053,16 +2063,22 @@ export class ChordProEditor extends ChordDrawer {
       }
 
     if (line_obj instanceof ChordProAbc) {
-      this.openAbcEditor(line_obj);
+      void this.openAbcEditor(line_obj);
       return true;
     }
     return false;
   }
 
-  private openAbcEditor(abc: ChordProAbc) {
-    // Lazily create the single reusable modal editor
+  private async openAbcEditor(abc: ChordProAbc) {
+    // Lazily create the single reusable modal editor. The abc-gui package (which
+    // statically imports abcjs, ~495 KB) is dynamically imported here so it stays
+    // out of the initial bundle and only loads when the user edits an ABC block
+    // (Phase C bundle diet).
     if (!this.abcEditor) {
-      this.abcEditor = new AbcWysiwygEditor(
+      const { AbcWysiwygEditor } = await import("./abc_editor");
+      if (this.disposed) return;
+      // Guard against a concurrent open having constructed it during the await.
+      this.abcEditor ??= new AbcWysiwygEditor(
         this.parent_div,
         {
           onAbcTextChanged: (newText) => {
@@ -2349,8 +2365,13 @@ export class ChordProEditor extends ChordDrawer {
     const rect = this.canvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const size = this.normalizeSize(x, y);
-    return { x: size.width, y: size.height };
+    // Use rect.width from getBoundingClientRect (viewport size, accounts for CSS zoom
+    // on parent elements) instead of canvas.offsetWidth (pre-zoom layout size).
+    const rectW = rect.width || this.canvas.offsetWidth;
+    let viewPortScale = rectW / this.canvas.width;
+    if (isNaN(viewPortScale)) viewPortScale = 1;
+    viewPortScale *= this.scale;
+    return { x: x / viewPortScale, y: y / viewPortScale };
   }
 
   initialChordValue(line_obj: ChordProLine, cursorPos: number) {
@@ -4546,6 +4567,24 @@ export class ChordProEditor extends ChordDrawer {
     }
   }
 
+  /**
+   * Phase C bundle diet: abcjs is dynamically imported (see abcjs-lazy.ts). Returns
+   * true when the chunk is ready; otherwise kicks the load off once and re-draws on
+   * arrival, so ABC blocks render as a zero-height placeholder for the brief window
+   * before the module lands. No-op cost once loaded.
+   */
+  private ensureAbcjsLoaded(): boolean {
+    if (isAbcjsLoaded()) return true;
+    if (!this.abcjsLoadPending) {
+      this.abcjsLoadPending = true;
+      void loadAbcjs().finally(() => {
+        this.abcjsLoadPending = false;
+        if (!this.disposed) this.update();
+      });
+    }
+    return false;
+  }
+
   private lastDrawRequest = 0;
 
   private scheduleLayoutRelayout() {
@@ -4621,6 +4660,13 @@ export class ChordProEditor extends ChordDrawer {
 
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
+
+    // Ensure abcjs is loaded before laying out a song that contains ABC notation.
+    // Covers the readonly-transpose path that converts ABC lines to grids (so they
+    // never re-enter the `instanceof ChordProAbc` layout branch below).
+    if (!isAbcjsLoaded() && this.chordPro && this.chordPro.lines.some((l) => l instanceof ChordProAbc)) {
+      this.ensureAbcjsLoaded();
+    }
 
     try {
       this.canvas.style.visibility = "hidden";
@@ -4858,25 +4904,29 @@ export class ChordProEditor extends ChordDrawer {
           // _draw runs with ctx.setTransform(this.scale,...) so coordinates here are logical)
           const logicalCanvasWidth = this.canvas.width / this.scale;
           const abcMaxWidth = (logicalCanvasWidth - leftMargin) / abcScale + leftMargin + horizontalSeparation;
-          abcRender(line_obj, abcMaxWidth, abcDiv);
-          // Measure height using the abcContainer (already in the DOM) to minimize reflows
-          abcDiv.style.position = "absolute";
-          abcDiv.style.visibility = "hidden";
-          if (this.abcContainer) {
-            this.abcContainer.appendChild(abcDiv);
-          } else {
-            this.parent_div.appendChild(abcDiv);
+          if (this.ensureAbcjsLoaded()) {
+            abcRender(line_obj, abcMaxWidth, abcDiv);
+            // Measure height using the abcContainer (already in the DOM) to minimize reflows
+            abcDiv.style.position = "absolute";
+            abcDiv.style.visibility = "hidden";
+            if (this.abcContainer) {
+              this.abcContainer.appendChild(abcDiv);
+            } else {
+              this.parent_div.appendChild(abcDiv);
+            }
+            // Undo any inherited overlay transform so ABC block height is based on
+            // logical canvas units and stays stable when client scaling changes.
+            const overlayScale = this.getOverlayScale();
+            const normalizedOverlayScale = Number.isFinite(overlayScale) && overlayScale > 0 ? overlayScale : 1;
+            const measuredHeight = abcDiv.getBoundingClientRect().height / normalizedOverlayScale;
+            abcDiv.style.visibility = "";
+            line_height = abcScale * measuredHeight - topOffset;
+            pendingAbcEntries.push({ line_obj, abcDiv, y });
+            abcElements.set(line_obj, abcDiv);
+            y += topOffset;
           }
-          // Undo any inherited overlay transform so ABC block height is based on
-          // logical canvas units and stays stable when client scaling changes.
-          const overlayScale = this.getOverlayScale();
-          const normalizedOverlayScale = Number.isFinite(overlayScale) && overlayScale > 0 ? overlayScale : 1;
-          const measuredHeight = abcDiv.getBoundingClientRect().height / normalizedOverlayScale;
-          abcDiv.style.visibility = "";
-          line_height = abcScale * measuredHeight - topOffset;
-          pendingAbcEntries.push({ line_obj, abcDiv, y });
-          abcElements.set(line_obj, abcDiv);
-          y += topOffset;
+          // else: abcjs chunk still loading — keep the default placeholder line
+          // height; ensureAbcjsLoaded() has scheduled a redraw to lay out the ABC.
         }
 
         const suppressTagLabel = line_obj instanceof ChordProAbc;

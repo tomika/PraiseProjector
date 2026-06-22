@@ -123,7 +123,7 @@
   "AskRemoteHighlightModifyPermission": "Engedélyezi a kliensnek a vetítés kezelését?",
   "RemoteHighlight": "Távoli kiemelés",
   "SessionsTitle": "Munkamenetek keresése",
-  "SessionsBrowser": "Böngésző indítása erre a vetítésre",
+  "SessionsSwitchUI": "Felhasználói felület váltása",
   "SessionsConnect": "Csatlakozás",
   "SessionsNameCol": "Név",
   "SessionsTypeCol": "Típus",

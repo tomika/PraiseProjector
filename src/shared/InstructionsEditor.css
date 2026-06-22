@@ -1,0 +1,359 @@
+/*
+ * Styles for the shared <InstructionsEditor>.
+ *
+ * Base (unmodified) selectors carry the original Electron desktop look. The
+ * client-view skin is layered on top through the `.instructions-editor--cv`
+ * modifier, so the desktop appearance is byte-for-byte what it always was while
+ * the client-view recolours the same structure.
+ */
+
+/* ── Structure + desktop base look ──────────────────────────────────────────── */
+
+.instructions-editor-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+.instructions-editor-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pp-modal-bg);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.instructions-editor-header {
+  flex-shrink: 0;
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+  background-color: #f8f9fa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.instructions-editor-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.instructions-editor-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.instructions-collapse-btn {
+  line-height: 1.2;
+  padding: 0.2rem 0.5rem;
+}
+
+.instructions-editor-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.instructions-editor-status {
+  margin: 1rem;
+}
+
+.instructions-editor-error {
+  color: #b00020;
+}
+
+.instructions-editor-panes {
+  overflow: auto;
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.instructions-editor-separator {
+  width: 5px;
+  background: #aaa !important;
+  cursor: col-resize;
+  flex-shrink: 0;
+  /* Let the JS resize-drag run instead of the browser panning/scrolling on touch
+     (the editor routes touch→mouse without preventDefault, so the native gesture
+     would otherwise win and the splitter would feel undraggable). */
+  touch-action: none;
+}
+
+.song-editor {
+  flex: 1;
+  overflow: auto;
+  padding: 0.5em;
+  min-width: 0;
+}
+
+.instructions-editor {
+  padding: 0.5em;
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+}
+
+.instructions-editor-panes.left-panel-collapsed #ies-song {
+  display: none;
+  width: 0 !important;
+  padding: 0;
+}
+
+.instructions-editor-panes.left-panel-collapsed #ies-left {
+  display: none;
+}
+
+.instructions-editor-panes.right-panel-collapsed #ies-preview {
+  display: none;
+  width: 0 !important;
+  padding: 0;
+}
+
+.instructions-editor-panes.right-panel-collapsed #ies-right {
+  display: none;
+}
+
+.instructions-editor-panes.middle-panel-collapsed #ies-list {
+  display: none;
+  width: 0 !important;
+  padding: 0;
+}
+
+.instructions-editor-panes.middle-panel-collapsed #ies-left,
+.instructions-editor-panes.middle-panel-collapsed #ies-right {
+  display: none;
+}
+
+.instructions-editor-panes.left-panel-collapsed:not(.right-panel-collapsed) #ies-list,
+.instructions-editor-panes.left-panel-collapsed:not(.right-panel-collapsed) #ies-preview,
+.instructions-editor-panes.right-panel-collapsed:not(.left-panel-collapsed) #ies-song,
+.instructions-editor-panes.right-panel-collapsed:not(.left-panel-collapsed) #ies-list {
+  width: 50% !important;
+}
+
+.instructions-editor-panes.left-panel-collapsed.right-panel-collapsed #ies-list {
+  width: 100% !important;
+}
+
+.instructions-editor-panes.middle-panel-collapsed:not(.left-panel-collapsed):not(.right-panel-collapsed) #ies-song,
+.instructions-editor-panes.middle-panel-collapsed:not(.left-panel-collapsed):not(.right-panel-collapsed) #ies-preview {
+  width: calc((100% - 5px) / 2) !important;
+}
+
+.instructions-editor-panes.middle-panel-collapsed:not(.left-panel-collapsed):not(.right-panel-collapsed) #ies-left {
+  display: block;
+}
+
+.instructions-editor-panes.middle-panel-collapsed:not(.left-panel-collapsed):not(.right-panel-collapsed) #ies-right {
+  display: none;
+}
+
+.instructions-editor-panes.left-panel-collapsed.middle-panel-collapsed #ies-preview,
+.instructions-editor-panes.right-panel-collapsed.middle-panel-collapsed #ies-song {
+  width: 100% !important;
+}
+
+.instructions-line .button:hover {
+  background: #ccc;
+}
+
+.instructions-editor-footer {
+  flex-shrink: 0;
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+  background-color: #f8f9fa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.instructions-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.instructions-footer-right {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Flat icon button (used by the icon action style) */
+.instructions-iconbtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.instructions-iconbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.instructions-iconbtn .btnImg {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+/* Desktop dark mode */
+[data-theme="dark"] .instructions-editor-dialog {
+  background: var(--pp-modal-bg);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .instructions-editor-header {
+  background-color: var(--pp-bg-tertiary);
+  border-bottom-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .instructions-editor-separator {
+  background: var(--pp-border-color) !important;
+}
+
+[data-theme="dark"] .instructions-line {
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .instructions-editor-footer {
+  border-top-color: var(--pp-border-color);
+  background-color: var(--pp-bg-tertiary);
+}
+
+/* ── client-view (cv) reskin ────────────────────────────────────────────────── */
+
+.instructions-editor-backdrop.instructions-editor--cv {
+  background: transparent;
+  /* Sit above the client-view modal layer (.cv-modal-backdrop is 1050/1051). */
+  z-index: 1060;
+}
+
+.instructions-editor-dialog.instructions-editor--cv {
+  background: #fff;
+  color: #111;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark {
+  background: #000;
+  color: #e9e9e9;
+}
+
+/* Full-screen, panel-less feel: let the header/footer blend into the dialog, and
+   keep the chrome compact (the desktop's 1rem padding + 1.25rem title is too tall
+   on the phone-sized client view). */
+.instructions-editor--cv .instructions-editor-header,
+.instructions-editor--cv .instructions-editor-footer {
+  background: transparent;
+  border-color: transparent;
+  padding: 0.3rem 0.6rem;
+}
+
+.instructions-editor--cv .instructions-editor-title {
+  font-size: 1rem;
+}
+
+.instructions-editor--cv .instructions-collapse-btn {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.9rem;
+}
+
+/* A 5px bar is hard to grab with a finger; widen the hit-target on the client. */
+.instructions-editor--cv .instructions-editor-separator {
+  width: 10px;
+  background: #aaa !important;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-separator {
+  background: #5f5f5f !important;
+}
+
+/* Collapse toggles: flat, theme-following. */
+.instructions-editor--cv .instructions-collapse-btn {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: transparent;
+  color: inherit;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-collapse-btn {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Round glyph close button (matches the legacy client-view close affordance). */
+.instructions-editor-close--glyph {
+  width: 2em;
+  height: 2em;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #222;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.instructions-editor-close--glyph:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-close--glyph {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.6);
+  color: #e9e9e9;
+}
+
+/* Dark icons read light on the dark client-view, like the rest of the UI. */
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-iconbtn .btnImg {
+  filter: invert(1);
+}
+
+/* Dark scrollbars for the scrolling panes (the OS default light scrollbar reads
+   wrong on the dark client view). Matches the rest of the client-view chrome. */
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-panes,
+.instructions-editor-dialog.instructions-editor--cv.dark .song-editor,
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor {
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-panes::-webkit-scrollbar,
+.instructions-editor-dialog.instructions-editor--cv.dark .song-editor::-webkit-scrollbar,
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor::-webkit-scrollbar {
+  width: 0.7em;
+  height: 0.7em;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-panes::-webkit-scrollbar-track,
+.instructions-editor-dialog.instructions-editor--cv.dark .song-editor::-webkit-scrollbar-track,
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor-panes::-webkit-scrollbar-thumb,
+.instructions-editor-dialog.instructions-editor--cv.dark .song-editor::-webkit-scrollbar-thumb,
+.instructions-editor-dialog.instructions-editor--cv.dark .instructions-editor::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+  border-radius: 4px;
+}

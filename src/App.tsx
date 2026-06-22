@@ -50,6 +50,7 @@ import {
   updateCurrentDisplay,
   subscribeCurrentDisplayChange,
 } from "./state/CurrentSongStore";
+import { setSharedSongFilter, subscribeSharedSongFilter } from "./state/SongFilterStore";
 import { useSettings } from "./hooks/useSettings";
 import { useSessionUrl } from "./hooks/useSessionUrl";
 import { useWakeLock } from "./hooks/useWakeLock";
@@ -482,6 +483,14 @@ const AppContent: React.FC = () => {
 
   // Song filter state for persistence
   const [songFilter, setSongFilter] = useState<string>(initialAppState?.songFilter ?? "");
+
+  // Mirror the filter to the in-process shared store so the embedded client view's
+  // filter box stays in lockstep with this LeftPanel (App-mode sync). Both sides
+  // dedupe on equality, so this push/subscribe pair never loops.
+  useEffect(() => {
+    setSharedSongFilter(songFilter);
+  }, [songFilter]);
+  useEffect(() => subscribeSharedSongFilter(setSongFilter), []);
 
   // Mirror the C# window title behavior: default title + webserver URL, or watch mode when observing another session
   const localUrl = useSessionUrl("local");
@@ -1098,6 +1107,9 @@ const AppContent: React.FC = () => {
         //    PreviewPanel's updateDisplayState → updateCurrentDisplay → backend sync
         if (data.section != null) previewPanelRef.current?.selectSectionByLine(data.from ?? 0, data.section);
         else if (data.from) previewPanelRef.current?.selectSectionByLine(data.from);
+        // from=0, to=0 means "clear highlight" — deselect section to clear the projector,
+        // mirroring the Escape key path (selectSectionIndex(-1)).
+        else if (data.from === 0 && data.to === 0) previewPanelRef.current?.setSelectedSectionIndex(-1);
         // 3. Ensure correct transpose/capo/instructions (selectedPlaylistItem props may be stale)
         updateCurrentDisplay({
           transpose: data.transpose ?? currentDisplay.transpose,
@@ -1116,13 +1128,23 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Route the embedded client view's display changes through the same handler
+    // used for remote webserver clients, so selection/preview/projector stay in sync.
+    const cvHandler = (e: Event) => {
+      const detail = (e as CustomEvent<DisplayUpdateRequest>).detail;
+      if (detail) enqueue(() => remoteDisplayUpdateHandler(detail));
+    };
+    window.addEventListener("pp-cv-display-update", cvHandler);
+
     const webServer = getWebServerInterface();
-    if (!webServer) return;
-    const unsubscribe = webServer.onEvent((event) => {
+    const unsubscribe = webServer?.onEvent((event) => {
       if (event.kind !== "remoteDisplayUpdate") return;
       enqueue(() => remoteDisplayUpdateHandler(event.update));
     });
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener("pp-cv-display-update", cvHandler);
+      unsubscribe?.();
+    };
   }, []);
 
   // Set up general webserver API handler
@@ -1185,7 +1207,7 @@ const AppContent: React.FC = () => {
           const data: SongFound[] = results.slice(0, maxResults > 0 ? maxResults : undefined).map((found) => ({
             songId: found.song.Id,
             title: found.song.Title,
-            found: { type: FormatFoundReason(found.reason), cost: found.cost },
+            found: { type: FormatFoundReason(found.reason), cost: found.cost, snippet: found.snippet },
           }));
           response = {
             status: 200,

@@ -1,0 +1,35 @@
+/*
+ * pageFlip.css — single source of truth for the page-turn's visual parameters.
+ *
+ * The 3D depth and the during-flip scrollbar suppression are shared by EVERY host
+ * that drives the {@link PageFlip} controller (the desktop `ChordProEditor` and
+ * the servable client `SongView`). Defining them once here — next to the
+ * controller — is what keeps the two hosts from drifting; each host sheet just
+ * `@import`s this file and tags its own elements with the classes below.
+ */
+
+/* The perspective container (the page-turn parent). Perspective lives here, so
+   the rotating page uses a plain rotateY() and "comes out" of the plane. A
+   smaller perspective = stronger 3D, so the turning page's near edge comes
+   further out of the plane and the rotated edge reads as longer. */
+.pp-flip-perspective {
+  -webkit-perspective: 500vw;
+  perspective: 500vw;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  perspective-origin: 50% 50%;
+}
+
+/* While a page is turning the controller marks it with this class so the rotating
+   page doesn't show a scrollbar edge-on. Purely visual (overflow is untouched, no
+   reflow); covers the page AND any inner scroll host that actually scrolls (the
+   desktop editor scrolls a child, the client view scrolls the page itself). */
+.pp-flip-hide-scrollbar,
+.pp-flip-hide-scrollbar * {
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features */
+  scrollbar-width: none; /* Firefox */
+}
+.pp-flip-hide-scrollbar::-webkit-scrollbar,
+.pp-flip-hide-scrollbar *::-webkit-scrollbar {
+  display: none; /* Chromium/Electron, WebKit */
+}

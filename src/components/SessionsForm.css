@@ -87,8 +87,14 @@
 
 .sessions-modal-footer .session-action-buttons {
   display: flex;
+  width: 100%;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+/* Cancel button (first child) is pushed to the left; the rest stay right-aligned */
+.sessions-modal-footer .session-action-buttons > :first-child {
+  margin-right: auto;
 }
 
 .sessions-modal-footer .btn {

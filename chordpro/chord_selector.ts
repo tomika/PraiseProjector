@@ -2,7 +2,7 @@ import { allChordInfo, all_modifiers, ChordLayoutGenerator, createChordInfo, ste
 import { ChordProChordBase, ChordSystem, getChordSystem } from "./chordpro_base";
 import { ChordDetails, NoteSystemCode } from "./note_system";
 import { makeDark, makeReadonly, makeVisible } from "../common/utils";
-import { renderAbc } from "abcjs";
+import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { NoteHitBox } from "./ui_base";
 import { ChordBoxType } from "./chord_drawer";
 
@@ -540,8 +540,15 @@ export class ChordSelector {
         const suffix = hasLowRegNote ? "," : "";
         keys.push(abcformat(universalNoteCode(chord.bassNote)).toUpperCase() + suffix);
       }
-      renderAbc(this.musicChordBoxDivName, "[" + keys.join("") + "]2");
-      this.applyTheme();
+      const drawMusicBox = () => {
+        abcjs().renderAbc(this.musicChordBoxDivName, "[" + keys.join("") + "]2");
+        this.applyTheme();
+      };
+      if (isAbcjsLoaded()) drawMusicBox();
+      else
+        void loadAbcjs()
+          .then(drawMusicBox)
+          .catch(() => {});
     }
     if (this.guitarChordBox && this.chordBoxDrawer)
       this.guitarHitBoxes = this.chordBoxDrawer("GUITAR", chord, this.guitarChordBox, this.guitarVariant);

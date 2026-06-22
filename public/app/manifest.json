@@ -1,9 +1,9 @@
 {
     "name": "Praise\u200BProjector",
     "short_name": "Praise\u200BProj",
-    "start_url": "/app/main.html",
+    "start_url": "/webapp/client-view.html",
     "id": "/app/main.html",
-    "scope": "/app/",
+    "scope": "/webapp/",
     "display": "fullscreen",
     "background_color": "black",
     "theme_color": "black",

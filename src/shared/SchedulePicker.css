@@ -1,0 +1,366 @@
+/*
+  SchedulePicker — shared styling for the date-picker dialog.
+
+  The base (`.schedule-dialog*`, `.calendar-*`, `.date-*`) rules are the desktop
+  look; the `.schedule-picker--cv` modifier reskins the same markup for the dark
+  client-view (always dark, icon OK/Cancel buttons), mirroring how
+  InstructionsEditor.css layers an `.instructions-editor--cv` skin.
+*/
+
+/* ── base / desktop ──────────────────────────────────────────────────────────── */
+
+.schedule-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 1 !important;
+}
+
+.schedule-dialog {
+  background: white;
+  border-radius: 8px;
+  min-width: 400px;
+  max-width: 600px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.schedule-dialog .dialog-header {
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.schedule-dialog .dialog-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.schedule-dialog .dialog-body {
+  padding: 1rem;
+  min-height: 300px;
+}
+
+.schedule-dialog .dialog-footer {
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Calendar */
+.schedule-calendar {
+  width: 100%;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-month {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.calendar-today-btn {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  color: #666;
+}
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  gap: 4px;
+  /* Fixed height for 6 rows to prevent jumping between months */
+  min-height: 240px;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.calendar-day:hover {
+  background-color: #f8f9fa;
+}
+
+.calendar-day.other-month {
+  color: #adb5bd;
+  cursor: default;
+}
+
+.calendar-day.other-month:hover {
+  background-color: transparent;
+}
+
+.calendar-day.selected {
+  background-color: #0d6efd;
+  color: white;
+  font-weight: bold;
+}
+
+.calendar-day.scheduled {
+  font-weight: bold;
+  background-color: #fff3cd;
+}
+
+.calendar-day.scheduled.selected {
+  background-color: #0d6efd;
+}
+
+/* Date list (load mode) */
+.schedule-list {
+  width: 100%;
+}
+
+.no-schedules {
+  text-align: center;
+  color: #6c757d;
+  padding: 2rem;
+  font-style: italic;
+}
+
+.date-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.date-item {
+  padding: 0.75rem 1rem;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.date-item:hover {
+  background-color: #f8f9fa;
+}
+
+.date-item.selected {
+  background-color: #0d6efd;
+  color: white;
+  font-weight: bold;
+}
+
+/* Desktop dark mode (driven by the app's documentElement data-theme) */
+[data-theme="dark"] .schedule-dialog {
+  background: var(--pp-modal-bg);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .schedule-dialog .dialog-header {
+  border-bottom-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .schedule-dialog .dialog-footer {
+  border-top-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .calendar-weekday {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .calendar-day {
+  border-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .calendar-day:hover {
+  background-color: var(--pp-bg-tertiary);
+}
+
+[data-theme="dark"] .calendar-day.other-month {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .calendar-day.scheduled {
+  background-color: #5c4a00;
+}
+
+[data-theme="dark"] .date-item {
+  border-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .date-item:hover {
+  background-color: var(--pp-bg-tertiary);
+}
+
+[data-theme="dark"] .no-schedules {
+  color: var(--pp-text-muted);
+}
+
+/* ── client-view skin (always dark, icon buttons) ───────────────────────────── */
+
+.schedule-dialog-overlay.schedule-picker--cv {
+  z-index: 1050;
+}
+
+.schedule-dialog.schedule-picker--cv {
+  min-width: 0;
+  width: min(94vw, 420px);
+  max-width: 94vw;
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 10px;
+  background: #1d1d1d;
+  color: #e8e8e8;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.schedule-picker--cv .dialog-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.schedule-picker--cv .dialog-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.schedule-picker--cv .dialog-body {
+  padding: 14px 18px;
+  min-height: 0;
+}
+
+.schedule-picker--cv .dialog-footer {
+  padding: 12px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.schedule-picker--cv .calendar-month {
+  font-size: 16px;
+}
+
+.schedule-picker--cv .calendar-nav-btn,
+.schedule-picker--cv .calendar-today-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e8e8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.schedule-picker--cv .calendar-nav-btn {
+  min-width: 32px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.schedule-picker--cv .calendar-nav-btn:hover,
+.schedule-picker--cv .calendar-today-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.schedule-picker--cv .calendar-weekday {
+  color: #9a9a9a;
+}
+
+.schedule-picker--cv .calendar-day {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.schedule-picker--cv .calendar-day:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.schedule-picker--cv .calendar-day.other-month {
+  color: #6a6a6a;
+}
+
+.schedule-picker--cv .calendar-day.other-month:hover {
+  background-color: transparent;
+}
+
+/* "Signed" days — a leader already has a playlist here. */
+.schedule-picker--cv .calendar-day.scheduled {
+  background-color: rgba(255, 196, 0, 0.18);
+  border-color: rgba(255, 196, 0, 0.55);
+  color: #ffd75e;
+}
+
+.schedule-picker--cv .calendar-day.selected,
+.schedule-picker--cv .calendar-day.scheduled.selected {
+  background-color: #2f7bff;
+  border-color: #2f7bff;
+  color: #fff;
+}
+
+.schedule-picker--cv .date-item {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.schedule-picker--cv .date-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.schedule-picker--cv .date-item.selected {
+  background-color: #2f7bff;
+}
+
+.schedule-picker--cv .no-schedules {
+  color: #9a9a9a;
+}
+
+/* Round icon OK/Cancel buttons (dark SVGs inverted to read light). */
+.schedule-picker--cv .schedule-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.schedule-picker--cv .schedule-iconbtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.schedule-picker--cv .schedule-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.schedule-picker--cv .schedule-iconbtn .btnImg {
+  width: 22px;
+  height: 22px;
+  filter: invert(1);
+}

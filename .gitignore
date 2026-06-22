@@ -69,3 +69,6 @@ tsconfig.node.tsbuildinfo
 public/assets/pp.ico
 public/assets/pp.icns
 public/assets/pp-*.png
+
+public/app/client-view/
+CLAUDE.md

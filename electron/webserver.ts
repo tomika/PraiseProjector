@@ -63,8 +63,6 @@ export class WebServer {
   private settings: WebServerSettings;
   private remoteHighlightController: string = "";
   private pendingHighlightRequests: Map<string, express.Response> = new Map();
-  // Cached pages for different admin levels (matching C# adminPage, mainPage, localhostPage)
-  private mainPageContent: string = "";
   // Playlist storage (matching C# playList and playListId)
   private playlistId: string = "";
   // Connected clients tracking (matching C# Program.CurrentClients)
@@ -188,8 +186,6 @@ export class WebServer {
     // Load localization strings for server-side page preprocessing
     this.loadLocalizationStrings();
 
-    // Initialize main page content with leader-mode options
-    this.initMainPages(this.staticDir);
     // Initialize image page content for /netdisplay (matching C# imagePage)
     this.initImagePage(this.staticDir);
 
@@ -218,33 +214,40 @@ export class WebServer {
       next();
     });
 
-    // Serve index.html with preprocessing based on client admin status
-    this.app.get(/\/(index\.html?)?$/, (req, res) => {
-      // Workaround: ignore client cache validators for index route,
-      // always serve a fresh HTML document with current server-side options.
+    // Serve the new client view (built into <staticDir>/client-view via
+    // `npm run build:client-view`). This bare-directory request must be handled
+    // BEFORE the SPA index route below, which would otherwise return the legacy
+    // index.html for "/client-view/". Hashed bundle + asset requests fall
+    // through to express.static.
+    this.app.get(/^\/client-view\/?$/, async (req, res) => {
       delete req.headers["if-none-match"];
       delete req.headers["if-modified-since"];
+      const file = path.join(this.staticDir, "client-view", "client-view.html");
+      let data: string;
+      try {
+        data = await fs.promises.readFile(file, "utf8");
+      } catch {
+        res.status(404).send("Client view not built (run: npm run build:client-view)");
+        return;
+      }
+      // Inject the host-granted access level so the served client's capability
+      // model is correct up front (not merely optimistic): a GUEST viewer is not
+      // offered display control. The server still ENFORCES this on
+      // /display_update — the injection only keeps the UI honest. Note: on a
+      // client's very first contact the MAC may not be ARP-resolved yet, so a
+      // MAC-configured leader can briefly classify as GUEST until a reload.
+      const identity = await this.registerAndidentifyClient(req, false);
+      const clientType = this.getClientType(req.socket, identity);
+      const inject = `<script>window.__ppAccess=${JSON.stringify(clientType)};</script>`;
+      const html = data.replace(/<head>/i, (head) => head + inject);
+      this.setCommonHeaders(res, clientType);
+      res.type("html").send(html);
+    });
 
-      const pageContent = this.mainPageContent;
-      if (!pageContent) {
-        // Fallback if pages not initialized
-        const indexPath = path.join(this.staticDir, "index.html");
-        fs.readFile(indexPath, "utf8", (err, data) => {
-          if (err) return res.status(404).send("Not found");
-          const content = data.replace(/\/praiseprojector\//g, this.settings.webServerPath);
-          if (this.redirectToCanonicalIndexUrl(req, res, content)) {
-            return;
-          }
-          this.setCommonHeaders(res);
-          res.type("html").send(content);
-        });
-        return;
-      }
-      if (this.redirectToCanonicalIndexUrl(req, res, pageContent)) {
-        return;
-      }
+    // Redirect root and /index.html to the new client-view entry point.
+    this.app.get(/\/(index\.html?)?$/, (_req, res) => {
       this.setCommonHeaders(res);
-      res.type("html").send(pageContent);
+      res.redirect(302, this.settings.webServerPath + "client-view/");
     });
 
     // Serve static files with aggressive caching — cache-busting query params in HTML
@@ -269,23 +272,6 @@ export class WebServer {
     if (leaderModeAvailable) parts.push("leaderModeAvailable: true");
     if (leaderModeEnabled) parts.push("leaderModeEnabled: true");
     return "{" + parts.join(", ") + "}";
-  }
-
-  /**
-   * Initialize main page content with different admin levels (matching C# InitMainPage)
-   */
-  private initMainPages(staticDir: string): void {
-    const indexPath = path.join(staticDir, "index.html");
-
-    try {
-      const rawContent = fs.readFileSync(indexPath, "utf8");
-      // Replace /praiseprojector/ with config path and add cache-busting to file references
-      this.mainPageContent = this.updateFileReferences(rawContent.replace(/\/praiseprojector\//g, this.settings.webServerPath));
-
-      console.info("Main pages initialized with admin options");
-    } catch (err) {
-      console.error("Error initializing main pages:", err);
-    }
   }
 
   private normalizeIp(address: string): string {
@@ -464,36 +450,6 @@ export class WebServer {
       }
     }
     return "GUEST";
-  }
-
-  private getContentChecksum(content: string): string {
-    return crypto.createHash("sha1").update(content).digest("hex").substring(0, 12);
-  }
-
-  private redirectToCanonicalIndexUrl(req: express.Request, res: express.Response, content: string, expectedChecksum?: string): boolean {
-    const canonicalChecksum = expectedChecksum ?? this.getContentChecksum(content);
-    const currentRaw = req.query.v;
-    const currentChecksum = Array.isArray(currentRaw) ? String(currentRaw[0] ?? "") : currentRaw != null ? String(currentRaw) : "";
-
-    if (currentChecksum === canonicalChecksum) {
-      return false;
-    }
-
-    const targetPath = this.settings.webServerPath + "index.html";
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(req.query)) {
-      if (value == null || key === "v") continue;
-      if (Array.isArray(value)) {
-        for (const item of value) params.append(key, String(item));
-      } else {
-        params.set(key, String(value));
-      }
-    }
-    params.set("v", canonicalChecksum);
-
-    this.setCommonHeaders(res);
-    res.redirect(302, `${targetPath}?${params.toString()}`);
-    return true;
   }
 
   private setCommonHeaders(res: express.Response, clientType?: "GUEST" | "LEADER" | "LOCAL") {
@@ -1132,7 +1088,6 @@ export class WebServer {
     };
 
     this.verifyWebServerPath();
-    this.initMainPages(this.staticDir);
     this.initImagePage(this.staticDir);
 
     // Restart server if port or path changed

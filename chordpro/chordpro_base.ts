@@ -1,4 +1,5 @@
-import { AbcVisualParams, renderAbc, strTranspose, synth, TuneObjectArray } from "abcjs";
+import type { AbcVisualParams, TuneObjectArray } from "abcjs";
+import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { allChordInfo, ChordInfo, chordMap, findOrCreateChordVariant, rxChordExtension } from "./allchords";
 import { ChordDetails, Key, NoteSystem, NoteSystemCode } from "./note_system";
 import { ItemToPosition } from "./placer";
@@ -812,9 +813,17 @@ export class ChordProAbc extends ChordProLine {
     this.styles.set("start_of_abc", label, current);
   }
   render(element: HTMLElement, renderParams?: AbcVisualParams, current = true) {
-    return renderAbc(element, this.getAbc(current), renderParams);
+    if (!isAbcjsLoaded()) {
+      void loadAbcjs();
+      return undefined;
+    }
+    return abcjs().renderAbc(element, this.getAbc(current), renderParams);
   }
   generateSvg(renderParams?: AbcRenderParams, current = true) {
+    if (!isAbcjsLoaded()) {
+      void loadAbcjs();
+      return { svg: "", width: 0, height: 0 };
+    }
     const div = document.createElement("div");
     this.render(div, renderParams, current);
     const svg = div.getElementsByTagName("svg")[0];
@@ -843,7 +852,11 @@ export class ChordProAbc extends ChordProLine {
     return img;
   }
   generateMidi(chordsOff = false, current = true) {
-    return synth.getMidiFile(this.getAbc(current, false), {
+    if (!isAbcjsLoaded()) {
+      void loadAbcjs();
+      return undefined;
+    }
+    return abcjs().synth.getMidiFile(this.getAbc(current, false), {
       chordsOff,
       midiOutputType: "binary",
     })[0];
@@ -864,8 +877,12 @@ export class ChordProAbc extends ChordProLine {
   }
   transpose(shift: number): this {
     if (shift) {
+      if (!isAbcjsLoaded()) {
+        void loadAbcjs();
+        return this;
+      }
       const code = this.getAbc(true);
-      const transposed = strTranspose(code, renderAbc("*", code) as TuneObjectArray, shift);
+      const transposed = abcjs().strTranspose(code, abcjs().renderAbc("*", code) as TuneObjectArray, shift);
       this.lines.splice(0, this.lines.length);
       for (const line of transposed.split("\n")) this.push(line);
     }
@@ -890,7 +907,13 @@ export class ChordProAbc extends ChordProLine {
       chords = [];
       return gridLine;
     };
-    for (const visualObj of renderAbc("*", this.getAbc(current), {}) as TuneObjectArray) {
+    if (!isAbcjsLoaded()) {
+      // abcjs chunk still loading: yield an empty grid line; the editor schedules a
+      // redraw once it resolves (ChordProEditor.ensureAbcjsLoaded).
+      void loadAbcjs();
+      return single ? genLine() : [genLine()];
+    }
+    for (const visualObj of abcjs().renderAbc("*", this.getAbc(current), {}) as TuneObjectArray) {
       for (const line of visualObj.lines) {
         for (const staff of line.staff ?? []) {
           let found = true;

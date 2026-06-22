@@ -9,7 +9,7 @@ import { webBluetoothService } from "../services/webBluetooth";
 import { getHostDeviceDiscoveredSessions, initHostDevicePpd, isHostDevicePpdAvailable, scanHostDeviceSessions } from "../services/hostDevicePpd";
 import "./SessionsForm.css";
 import { useLeader } from "../contexts/LeaderContext";
-import { useSessionUrl, buildCloudUrl, generateQRCodeSVG, buildLocalUrl } from "../hooks/useSessionUrl";
+import { useSessionUrl, buildCloudUrl } from "../hooks/useSessionUrl";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -38,9 +38,7 @@ interface SessionDisplay {
 
 const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath, onConnect }) => {
   const { t } = useLocalization();
-  const { settings } = useSettings();
   const { user } = useAuth();
-  const { selectedLeader, guestLeaderId } = useLeader();
   const selfId = user?.leaderId || "";
 
   const [sessions, setSessions] = useState<SessionDisplay[]>([]);
@@ -50,7 +48,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const [showDetails, setShowDetails] = useState(false);
   const [scanAddress, setScanAddress] = useState<string | null>(null);
   // Check for Electron APIs - use state to ensure stable value after initial detection
-  const [isElectron, setIsElectron] = useState(false);
+  const [_, setIsElectron] = useState(false);
   const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
   // Check for Web Bluetooth availability (works in browser without pairing)
   const [_hasWebBluetooth, setHasWebBluetooth] = useState(false);
@@ -313,34 +311,6 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     };
   }, [isDragging, dragOffset]);
 
-  // Get local URL
-  const localUrl = useSessionUrl("local");
-
-  const handleBrowserClick = () => {
-    // If a cloud session is selected, open that session's URL
-    // If no session selected, open local webserver URL (matching C# OnStartBrowser)
-    let url = "";
-
-    if (selectedSession) {
-      if (selectedSession.type === "cloud") {
-        url = selectedSession.url;
-      } else {
-        // For local sessions, we can't directly open in browser (different device)
-        // Show the local URL instead
-        url = selectedSession.url;
-      }
-    } else if (isElectron) {
-      url = buildLocalUrl(settings, true) || "";
-    } else {
-      url = buildCloudUrl(selectedLeader?.id || guestLeaderId);
-    }
-
-    if (url) {
-      window.open(url, "_blank");
-      onClose();
-    }
-  };
-
   const handleConnectClick = () => {
     // Connect to selected session (matching C# SessionsForm Connect button)
     // This enables "watch mode" for the selected session
@@ -445,31 +415,6 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
       setBleConnecting(false);
     }
   };
-
-  const isBrowserEnabled = settings?.externalWebDisplayEnabled || (isElectron && settings?.iWebEnabled);
-
-  // Compute the URL that the Browser button would open (for the QR code)
-  const browserUrl = useMemo(() => {
-    if (selectedSession) return selectedSession.url;
-    if (isElectron) return localUrl || "";
-    return buildCloudUrl(selectedLeader?.id || guestLeaderId);
-  }, [selectedSession, isElectron, localUrl, selectedLeader?.id, guestLeaderId]);
-
-  // QR code popout toggle
-  const [qrExpanded, setQrExpanded] = useState(false);
-  const qrPopoutRef = useRef<HTMLDivElement>(null);
-
-  // Close expanded QR on click outside
-  useEffect(() => {
-    if (!qrExpanded) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (qrPopoutRef.current && !qrPopoutRef.current.contains(e.target as Node)) {
-        setQrExpanded(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [qrExpanded]);
 
   // Title with scan address (matching C# Text = Properties.Strings.SessionsTitle + " - " + scanAddress)
   const title = scanAddress ? `${t("SessionsTitle")} - ${scanAddress}` : t("SessionsTitle");
@@ -585,30 +530,16 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
             <button type="button" className="btn btn-primary" onClick={handleConnectClick} disabled={!selectedSession}>
               {t("SessionsConnect")}
             </button>
-            <div className="sessions-browser-btn-wrapper" ref={qrPopoutRef}>
-              {qrExpanded && browserUrl && (
-                <div className="sessions-qr-popout" onClick={() => setQrExpanded(false)}>
-                  <div dangerouslySetInnerHTML={{ __html: generateQRCodeSVG(browserUrl, 160) }} />
-                  <div className="sessions-qr-popout-url">{browserUrl}</div>
-                </div>
-              )}
+            <div className="sessions-browser-btn-wrapper">
               <button
                 type="button"
                 className="btn btn-primary d-flex align-items-center gap-2"
-                onClick={handleBrowserClick}
-                disabled={!isBrowserEnabled}
+                onClick={() => {
+                  window.dispatchEvent(new Event("pp-show-client-view"));
+                  onClose();
+                }}
               >
-                {isBrowserEnabled && browserUrl && (
-                  <div
-                    className="sessions-browser-qr"
-                    dangerouslySetInnerHTML={{ __html: generateQRCodeSVG(browserUrl, 30) }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setQrExpanded((v) => !v);
-                    }}
-                  />
-                )}
-                {t("SessionsBrowser")}
+                {t("SessionsSwitchUI")}
               </button>
             </div>
           </div>

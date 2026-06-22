@@ -1,0 +1,56 @@
+/**
+ * OptionsOverlay — the slide-in panel (#options.overlay) holding the chord
+ * options, search bar and song list. Visibility is driven by the controller's
+ * `optionsOpen` flag (legacy openOptions/closeOptions). The close button and
+ * picking a song both return to the song view.
+ */
+
+import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { isFollowerView } from "../controller/ClientViewStore";
+import { icon } from "./assets";
+import { LeaderPlaylistPicker } from "./LeaderPlaylistPicker";
+import { OptionsBar } from "./OptionsBar";
+import { PlaylistEditor } from "./PlaylistEditor";
+import { SearchBar } from "./SearchBar";
+import { SongList } from "./SongList";
+
+export function OptionsOverlay() {
+  const store = useClientViewStore();
+  const state = useClientViewState();
+
+  // Follower (Client mode, no control): no song browser — only the chord options
+  // above and a single netdisplay button (legacy setLeader(false)).
+  const follower = isFollowerView(state);
+  const canEdit = state.capabilities.canEditWorkingPlaylist;
+  const editingPlaylist = canEdit && state.listMode === "playlist";
+  const leaderLists = canEdit && state.listMode === "leaderlists";
+
+  return (
+    <div id="options" className={`overlay${state.optionsOpen ? " open" : ""}`}>
+      <div className="overlay-content">
+        <div className="options">
+          {/* OptionsBar holds the chord controls plus the panel chrome: close ends
+              its first row, the more-menu ends its second row. */}
+          <div className="cv-options-header">
+            <OptionsBar />
+          </div>
+          {!follower && <SearchBar />}
+        </div>
+        {follower ? (
+          <div className="cv-netdisplay-wrap">
+            <button type="button" className="cv-netdisplay-btn" title="Open net display" onClick={() => store.openNetDisplay()}>
+              <img className="cv-netdisplay-icon" src={icon("netdisplay.png")} alt="" />
+              <span>Net display</span>
+            </button>
+          </div>
+        ) : editingPlaylist ? (
+          <PlaylistEditor />
+        ) : leaderLists ? (
+          <LeaderPlaylistPicker />
+        ) : (
+          <SongList />
+        )}
+      </div>
+    </div>
+  );
+}

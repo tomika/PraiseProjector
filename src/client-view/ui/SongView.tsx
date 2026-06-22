@@ -1,0 +1,422 @@
+/**
+ * SongView — read-only projection of the current display, with the page-turn
+ * animation.
+ *
+ * Wraps the shared, Database-free `chordProAPI` bridge (chordpro/chordProApi)
+ * rather than the heavier src/components/ChordProEditor.tsx, which imports the
+ * Database and would break the servability boundary. The flip itself is the
+ * shared, framework-agnostic {@link PageFlip} controller (chordpro/pageFlip),
+ * the same one the desktop ChordProEditor drives — so there is one page-turn
+ * implementation, not a copy per host.
+ *
+ * Three pages are stacked in a perspective container: the CURRENT page (the
+ * projected song) and the PREV / NEXT neighbour pages sitting behind it. A
+ * horizontal swipe — or the toolbar Prev/Next buttons via the imperative
+ * {@link SongViewHandle} — rotates the current page around its edge in 3D,
+ * revealing the neighbour, then advances the display. The neighbour list is the
+ * controller's active navigation list (working playlist, else the full
+ * catalogue), so navigation works while browsing ALL songs, not only playlists.
+ */
+
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { chordProAPI } from "../../../chordpro/chordProApi";
+import { PageFlip } from "../../../chordpro/pageFlip";
+import {
+  CHORDFORMAT_BB,
+  CHORDFORMAT_INKEY,
+  CHORDFORMAT_NOCHORDS,
+  CHORDFORMAT_NOSECTIONDUP,
+  CHORDFORMAT_SIMPLIFIED,
+  CHORDFORMAT_SUBSCRIPT,
+} from "../../../chordpro/chord_drawer";
+import type { Display } from "../api/ClientApi";
+import type { DisplaySettings, NavEntry } from "../controller/ClientViewStore";
+
+type BoundEditor = ReturnType<typeof chordProAPI.bind>;
+
+/** Imperative handle the toolbar uses so its Prev/Next buttons trigger the same
+ *  animated turn as a swipe (instead of an instant, un-animated song change). */
+export interface SongViewHandle {
+  navigate(next: boolean): void;
+}
+
+// The guitar chord-box renderer (chordpro_editor.ts) only draws when a
+// ChordSelector instance exists, and chordProApi.ensureChordSelector() creates
+// one only if a #chordsel element is present. We mount it hidden so guitar/piano
+// boxes render (piano works without it, but guitar requires it). Same markup the
+// legacy client and src/components/ChordProEditor use.
+const CHORDSEL_MARKUP = `
+  <div id="chordsel" class="chordSelector" style="display: none;">
+    <button id="closeSelector" type="button" class="chord-selector-close" aria-label="Close selector">&times;</button>
+    <table style="width: 100%">
+      <tr>
+        <td>Base&nbsp;note</td><td><select id="baseNoteSel"></select></td>
+        <td>&nbsp;&nbsp;Bass&nbsp;note</td><td><select id="bassNoteSel"></select></td>
+      </tr>
+      <tr><td>Chord</td><td colspan="3"><div><label id="customSpan" for="modifier"></label><select id="modifier"></select></div></td></tr>
+      <tr><td>Symbol</td><td colspan="3"><input id="subscript" type="text" /></td></tr>
+      <tr><td>Steps</td><td colspan="3"><div><label for="steps">1-</label><input id="steps" type="text" /></div></td></tr>
+      <tr><td>Notes</td><td colspan="3"><div><label id="baseNoteSpan"></label><input id="notes" type="text" /></div></td></tr>
+    </table>
+    <table style="width: 100%;">
+      <tr>
+        <td style="height: 100px; width: 30%;"><div id="musicChordBox" style="max-width:100px; display: block;"></div><input type="button" id="applySelector" value="OK"></td>
+        <td style="height: 100px; width: 42%;"><canvas id="pianoChordBox"></canvas></td>
+        <td style="height: 100px; width: 28%;"><canvas id="guitarChordBox"></canvas></td>
+      </tr>
+    </table>
+  </div>
+`;
+
+function buildChordFlags(s: DisplaySettings): number {
+  let flags: number = s.chordMode;
+  if (s.subscript) flags |= CHORDFORMAT_SUBSCRIPT;
+  if (s.bb) flags |= CHORDFORMAT_BB;
+  if (s.simplified) flags |= CHORDFORMAT_SIMPLIFIED;
+  if (s.noSecChordDup) flags |= CHORDFORMAT_NOSECTIONDUP;
+  if (s.autoTone) flags |= CHORDFORMAT_INKEY;
+  return flags;
+}
+
+/**
+ * Scale the whole editor (song canvas + title/meta overlays) as ONE unit via
+ * `zoom`, so it fits the pane and the overlays stay aligned with the song and it
+ * top-aligns like the original. FIT (full page) fits both dimensions; SCROLL
+ * (full width) fits the width and lets the pane scroll vertically. Zoom is
+ * cleared before measuring so the editor's natural rendered size is read.
+ */
+function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean): void {
+  const container = host.parentElement;
+  if (container) container.classList.toggle("cv-scroll", scrollMode);
+  host.style.removeProperty("zoom");
+  api.fitToPane(scrollMode);
+  const ew = host.offsetWidth || 1;
+  const eh = host.offsetHeight || 1;
+  const cw = container?.clientWidth || ew;
+  const ch = container?.clientHeight || eh;
+  const z = scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
+  host.style.setProperty("zoom", String(z));
+}
+
+/** Render a song into an editor and fit it to its pane. Used for the neighbour
+ *  pages; the current page uses the slightly richer effect below (transpose
+ *  delta + highlight). Mirrors praiseprojector.ts displayChanged(). */
+function renderSong(
+  host: HTMLDivElement,
+  api: BoundEditor,
+  text: string,
+  shift: number,
+  settings: DisplaySettings,
+  dark: boolean,
+  scrollMode: boolean
+): void {
+  api.load(text, false);
+  const maxText = settings.maxText;
+  const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
+  const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
+  const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+  api.setDisplayMode(
+    maxText ? !settings.zoomHideTitle : true,
+    maxText ? !settings.zoomHideMeta : true,
+    tagMode !== "HIDDEN",
+    tagMode === "ABBREV",
+    maxText,
+    flags,
+    boxType
+  );
+  if (shift !== 0) api.transpose(shift);
+  api.darkMode(dark);
+  fitAndZoom(host, api, scrollMode);
+}
+
+export const SongView = forwardRef<SongViewHandle, { display: Display; settings: DisplaySettings; dark: boolean }>(function SongView(
+  { display, settings, dark },
+  ref
+) {
+  const store = useClientViewStore();
+  const state = useClientViewState();
+  const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
+
+  const swipeRef = useRef<HTMLDivElement>(null);
+  const currentPageRef = useRef<HTMLDivElement>(null);
+  const prevPageRef = useRef<HTMLDivElement>(null);
+  const nextPageRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const prevHostRef = useRef<HTMLDivElement>(null);
+  const nextHostRef = useRef<HTMLDivElement>(null);
+
+  const apiRef = useRef<BoundEditor | null>(null);
+  const prevApiRef = useRef<BoundEditor | null>(null);
+  const nextApiRef = useRef<BoundEditor | null>(null);
+
+  const loadedTextRef = useRef<string | null>(null);
+  const appliedTransposeRef = useRef(0);
+  const scrollModeRef = useRef(false);
+
+  // The shared page-turn controller (chordpro/pageFlip), the same one the desktop
+  // ChordProEditor drives. Created in an effect so its config closures — which
+  // read the stable refs/store — are never evaluated during render; they see live
+  // state on every gesture.
+  const flipRef = useRef<PageFlip | null>(null);
+  useEffect(() => {
+    const flip = new PageFlip({
+      container: () => swipeRef.current,
+      currentPage: () => currentPageRef.current,
+      prevPage: () => prevPageRef.current,
+      nextPage: () => nextPageRef.current,
+      hasNeighbour: (next) => !!store.neighbourEntry(next),
+      onAdvance: (next) => void (next ? store.nextSong() : store.prevSong()),
+      // The client uses `visibility` (not `display`) so the neighbour stays laid
+      // out and measurable behind the opaque current page.
+      setNeighbourVisible: (page, visible) => {
+        page.style.visibility = visible ? "visible" : "hidden";
+      },
+      // Stop un-clipping at the full-view box; the page rotates within it.
+      isFlipBoundary: (el) => el.id === "mainView",
+      canFlip: () => true, // the client view is always a read-only viewer
+      isInteractive: () => !apiRef.current?.isInMarkingState(),
+      isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
+    });
+    flipRef.current = flip;
+    return () => {
+      flip.dispose();
+      flipRef.current = null;
+    };
+  }, [store]);
+
+  useImperativeHandle(ref, () => ({ navigate: (next: boolean) => flipRef.current?.turn(next) }), []);
+
+  // Track landscape orientation. In closed-landscape the main toolbar sits as a
+  // vertical bar on the RIGHT (see client-view.css) and the song pane is
+  // wide-and-short, where fit-page would shrink the song to nothing — so that
+  // layout forces full-width SCROLL mode (see the display effect below).
+  const [landscape, setLandscape] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(orientation: landscape)").matches);
+  useEffect(() => {
+    const mql = window.matchMedia?.("(orientation: landscape)");
+    if (!mql) return;
+    const onChange = () => setLandscape(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  // "Toolbar on the right" ⟺ landscape AND options closed (matches the
+  // `@media (orientation: landscape) #mainView:not(.options-open)` CSS rule).
+  const toolbarOnRight = landscape && !optionsOpen;
+  // Closed-landscape (toolbar on the right) forces full-width SCROLL geometry
+  // regardless of the user's zoom preset; otherwise honour the zoom setting.
+  const scrollMode = toolbarOnRight || (settings.maxText && settings.zoomScrollable);
+  // Mirror into a ref the once-bound ResizeObserver can read.
+  useEffect(() => {
+    scrollModeRef.current = scrollMode;
+  }, [scrollMode]);
+
+  // Pointer plumbing: forward swipe gestures to the shared controller. We do NOT
+  // setPointerCapture — capturing on #swipe-handler would steal taps from the
+  // editor canvas inside it and break the editor's lyrics-hit (highlight) handler.
+  // Events still reach us by bubbling from the canvas; pointerleave finalises a
+  // gesture that runs off the element (mirrors the desktop ChordProEditor).
+  useEffect(() => {
+    const el = swipeRef.current;
+    if (!el) return;
+    let pointerId: number | null = null;
+    const down = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      pointerId = e.pointerId;
+      flipRef.current?.handlePointer("down", e);
+    };
+    const move = (e: PointerEvent) => {
+      if (!e.isPrimary || pointerId !== e.pointerId) return;
+      flipRef.current?.handlePointer("move", e);
+    };
+    const up = (e: PointerEvent) => {
+      if (pointerId !== e.pointerId) return;
+      pointerId = null;
+      flipRef.current?.handlePointer("up", e);
+    };
+    const cancel = (e: PointerEvent) => {
+      if (pointerId !== e.pointerId) return;
+      pointerId = null;
+      flipRef.current?.cancel();
+    };
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", cancel);
+    el.addEventListener("pointerleave", up);
+    return () => {
+      el.removeEventListener("pointerdown", down);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", cancel);
+      el.removeEventListener("pointerleave", up);
+    };
+  }, []);
+
+  // ── editors: bind the three pages once; re-fit all on pane resize ─────────────
+  useEffect(() => {
+    const host = hostRef.current;
+    const pane = swipeRef.current;
+    if (!host || !pane) return;
+    apiRef.current = chordProAPI.bind(host);
+    if (prevHostRef.current) prevApiRef.current = chordProAPI.bind(prevHostRef.current);
+    if (nextHostRef.current) nextApiRef.current = chordProAPI.bind(nextHostRef.current);
+
+    // Re-fit + re-zoom on pane resize / orientation change. Observe the PANE
+    // (the perspective container), not the zoomed hosts (which would feed back
+    // into the observer and loop).
+    let raf = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (apiRef.current && hostRef.current) fitAndZoom(hostRef.current, apiRef.current, scrollModeRef.current);
+        if (prevApiRef.current && prevHostRef.current) fitAndZoom(prevHostRef.current, prevApiRef.current, scrollModeRef.current);
+        if (nextApiRef.current && nextHostRef.current) fitAndZoom(nextHostRef.current, nextApiRef.current, scrollModeRef.current);
+      });
+    });
+    observer.observe(pane);
+
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(raf);
+      apiRef.current?.dispose();
+      prevApiRef.current?.dispose();
+      nextApiRef.current?.dispose();
+      apiRef.current = prevApiRef.current = nextApiRef.current = null;
+      loadedTextRef.current = null;
+    };
+  }, []);
+
+  // ── current page: reflect display + render-setting changes ────────────────────
+  // Reload only when the song text changes; re-apply display flags and highlight
+  // on every change (cheap). Mirrors praiseprojector.ts displayChanged().
+  useEffect(() => {
+    const api = apiRef.current;
+    const host = hostRef.current;
+    if (!api || !host) return;
+    const text = display.song ?? "";
+    if (!text) {
+      // Nothing projected — leave the editor empty and show the empty-state hint.
+      loadedTextRef.current = null;
+      appliedTransposeRef.current = 0;
+      host.style.removeProperty("zoom");
+      return;
+    }
+    if (loadedTextRef.current !== text) {
+      loadedTextRef.current = text;
+      api.load(text, false);
+      // A freshly loaded document starts at shift 0.
+      appliedTransposeRef.current = 0;
+    }
+    // The editor's net shift is the manual transpose minus the capo: a capo on
+    // fret N displays the chords N semitones lower (praiseprojector.ts capoChanged
+    // applies the same delta). chordProAPI.transpose() is relative, so apply only
+    // the delta from what is already applied.
+    const activeCapo = settings.useCapo ? Math.max(display.capo ?? 0, 0) : 0;
+    const wantShift = (display.transpose ?? 0) - activeCapo;
+    const shiftDelta = wantShift - appliedTransposeRef.current;
+    if (shiftDelta !== 0) {
+      api.transpose(shiftDelta);
+      appliedTransposeRef.current = wantShift;
+    }
+    // maxText (zoom) applies the user's zoom preset; otherwise show full title /
+    // meta / tags. Mirrors praiseprojector.ts displayChanged().
+    const maxText = settings.maxText;
+    const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
+    // NO_CHORDS is a pseudo box-type: hide chords entirely with an empty box.
+    const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
+    const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+    api.setDisplayMode(
+      maxText ? !settings.zoomHideTitle : true,
+      maxText ? !settings.zoomHideMeta : true,
+      tagMode !== "HIDDEN",
+      tagMode === "ABBREV",
+      maxText, // autoSplit long lines in zoom mode
+      flags,
+      boxType
+    );
+    api.darkMode(dark);
+    // Instructions: set the text on the editor, then toggle the overlay via the
+    // render mode (legacy displayChanged → enableInstructionRendering): "FULL" in
+    // scroll mode, "FIRST_LINE" in fit mode, "" off. Re-applied on every load
+    // since api.load() rebuilds the editor instance. fitAndZoom redraws, so
+    // draw=false here is enough.
+    api.applyInstructions(display.instructions ?? "", false);
+    api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
+    // Scale the editor as a unit to fit the pane (full page) or fit width + scroll.
+    fitAndZoom(host, api, scrollMode);
+    // Show the display's highlighted range only when highlight is on (legacy chkHighlight).
+    if (highlightOn) {
+      api.highlight(display.from ?? 0, display.to ?? 0);
+    } else {
+      api.highlight(0, 0);
+    }
+    // Leader highlight control: while on, a tap on a lyrics section pushes its
+    // {from,to,section} as the display highlight. Re-installed after each load.
+    api.setLyricsHitHandler(highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section) : null);
+    // If this load completed a page turn, drop the rotated-away page on top of the
+    // revealed neighbour (a no-op when no turn is pending).
+    requestAnimationFrame(() => flipRef.current?.finishPending());
+  }, [display, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, store]);
+
+  // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (entry: NavEntry | undefined, host: HTMLDivElement | null, api: BoundEditor | null) => {
+      if (!api || !host) return;
+      if (!entry) {
+        api.load("", false);
+        host.style.removeProperty("zoom");
+        return;
+      }
+      try {
+        const data = await store.getSongData(entry.songId);
+        if (cancelled) return;
+        const shift = (entry.transpose ?? 0) - (settings.useCapo ? Math.max(entry.capo ?? 0, 0) : 0);
+        renderSong(host, api, data.text, shift, settings, dark, scrollMode);
+      } catch {
+        /* a neighbour that fails to load simply won't reveal during a flip */
+      }
+    };
+    void load(store.neighbourEntry(false), prevHostRef.current, prevApiRef.current);
+    void load(store.neighbourEntry(true), nextHostRef.current, nextApiRef.current);
+    return () => {
+      cancelled = true;
+    };
+  }, [display.songId, state.playlist, state.songs, settings, dark, scrollMode, store]);
+
+  // Push highlight opacity to all three editor instances immediately when it
+  // changes (triggered by the opacity slider dialog), then redraw the current
+  // page. Neighbour pages don't show highlights but we sync them so they stay
+  // accurate when they become current after a page turn.
+  useEffect(() => {
+    apiRef.current?.setHighlightOpacity(highlightOpacity);
+    prevApiRef.current?.setHighlightOpacity(highlightOpacity);
+    nextApiRef.current?.setHighlightOpacity(highlightOpacity);
+    apiRef.current?.update();
+  }, [highlightOpacity]);
+
+  return (
+    <div id="swipe-handler" className="pp-flip-perspective" ref={swipeRef}>
+      {/* Prev/next pages sit behind the current page and are revealed as it
+          rotates away during a page turn (mirrors praiseprojector.ts). */}
+      <div className="cv-page cv-page-prev" ref={prevPageRef}>
+        <div className="editor" ref={prevHostRef} tabIndex={-1} />
+      </div>
+      <div className="cv-page cv-page-next" ref={nextPageRef}>
+        <div className="editor" ref={nextHostRef} tabIndex={-1} />
+      </div>
+      <div className="cv-page cv-page-current" ref={currentPageRef}>
+        <div className="editor" id="editor" ref={hostRef} tabIndex={-1} />
+      </div>
+      {!display.songId && (
+        <div className="cv-empty-state">
+          <p className="cv-empty-title">No song selected</p>
+          <p className="cv-empty-hint">Tap the options icon to search and pick a song.</p>
+        </div>
+      )}
+      {/* Hidden chord-selector host required by the guitar chord-box renderer. */}
+      <div dangerouslySetInnerHTML={{ __html: CHORDSEL_MARKUP }} />
+    </div>
+  );
+});

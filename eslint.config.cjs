@@ -74,4 +74,35 @@ module.exports = [
     ],
   },
   ...compatConfigs,
+  {
+    // Servability boundary: the client-view UI and controller layers must reach
+    // the backend ONLY through the ClientApi port, never via Electron-only or
+    // in-process modules. This keeps the same bundle runnable when served by the
+    // Electron webserver or deployed standalone. Adapters under api/rest are
+    // exempt (they are the place backend wiring is allowed).
+    files: ["src/client-view/ui/**/*.{ts,tsx}", "src/client-view/controller/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/db-common/**",
+                "**/services/hostDevicePpd*",
+                "**/services/webServerBridge*",
+                "**/state/CurrentSongStore*",
+                "**/api/rest/**",
+                "**/api/direct/**",
+                "electron",
+                "electron-*",
+                "**/electron/**",
+              ],
+              message: "Client-view UI/controller must reach the backend only through ClientApi (keep the bundle servable by the webserver).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

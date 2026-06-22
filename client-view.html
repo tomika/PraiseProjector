@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,width=device-width,user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>PraiseProjector</title>
+    <script>
+      // Resolve where the legacy assets and the data API live for THIS mount.
+      //  - Vite dev server: publicDir is exposed under /app; the data API is the
+      //    Vite proxy at /praiseprojector (handled by config.ts as before).
+      //  - Electron webserver: public/app is served at the site root and the
+      //    client view is mounted at /client-view/, so legacy assets are at "/"
+      //    and the data API (/songs, /display_query, …) is the origin root.
+      (function () {
+        var served = location.pathname.indexOf("/client-view/") >= 0;
+        window.__ppAssetBase = served ? "" : "/app";
+        window.__ppApiBase = served ? location.origin : "";
+        ["chordpro.css", "chordselector.css"].forEach(function (file) {
+          var link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = window.__ppAssetBase + "/" + file;
+          document.head.appendChild(link);
+        });
+        try {
+          var systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.setAttribute("data-theme", systemDark ? "dark" : "light");
+        } catch {
+          /* fall back to CSS defaults */
+        }
+        // On the public website this page doubles as the installable client PWA
+        // (it replaces the retired /app/main.html); the adapted client manifest
+        // lives at /app/manifest.json with start_url pointed back here. Wire it
+        // ONLY for that /webapp deployment — the Electron-served (/client-view/)
+        // and Android (file://, base "./") hosts are native shells and must not
+        // load a /webapp manifest or register a service worker.
+        if (location.pathname.indexOf("/webapp/") === 0) {
+          var manifestLink = document.createElement("link");
+          manifestLink.rel = "manifest";
+          manifestLink.href = "/app/manifest.json";
+          document.head.appendChild(manifestLink);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/client-view/boot/client-view.tsx"></script>
+    <script>
+      // Register the service worker only on the public /webapp deployment so the
+      // installed client PWA works offline. The /webapp service worker controls
+      // this page (a /app/sw.js could not — scope rule). Electron-served and
+      // Android hosts are native shells whose pathname is not under /webapp, so
+      // they skip registration entirely. Mirrors index.html's auto-update flow.
+      if ("serviceWorker" in navigator && window.location.pathname.startsWith("/webapp")) {
+        window.addEventListener("load", () => {
+          let hasReloadedForUpdate = false;
+          const reloadForUpdate = () => {
+            if (hasReloadedForUpdate) return;
+            hasReloadedForUpdate = true;
+            window.location.reload();
+          };
+
+          const setupAutoUpdate = (reg) => {
+            if (reg.waiting) {
+              reg.waiting.postMessage("skipWaiting");
+            }
+
+            reg.addEventListener("updatefound", () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  newWorker.postMessage("skipWaiting");
+                }
+              });
+            });
+
+            setInterval(() => {
+              reg.update().catch(() => {});
+            }, 60 * 1000);
+
+            document.addEventListener("visibilitychange", () => {
+              if (document.visibilityState === "visible") {
+                reg.update().catch(() => {});
+              }
+            });
+
+            window.addEventListener("focus", () => {
+              reg.update().catch(() => {});
+            });
+          };
+
+          navigator.serviceWorker.addEventListener("controllerchange", reloadForUpdate);
+
+          navigator.serviceWorker
+            .register("/webapp/sw.js", { scope: "/webapp/" })
+            .then((reg) => {
+              setupAutoUpdate(reg);
+            })
+            .catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>

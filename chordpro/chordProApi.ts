@@ -6,6 +6,8 @@ import {
   CHORDFORMAT_SUBSCRIPT,
   ChordProEditorEventHandlers,
   ChordProEditor,
+  HighlightingParams,
+  InstructionsRenderMode,
 } from "./chordpro_editor";
 import { getChordSystem, ChordSystem, ChordProDocument } from "./chordpro_base";
 import { ChordSelector } from "./chord_selector";
@@ -201,6 +203,19 @@ function bindEditor(editorDiv: HTMLDivElement) {
       if (!instance) return;
       applyDisplaySettings(instance, title, meta, superscript, bb, mollMode, tagMode, scale, noChords);
     },
+    setDisplayMode: (
+      title: boolean,
+      meta: boolean,
+      tag: boolean,
+      abbrevTag: boolean,
+      autoSplitLines: boolean,
+      chordFlags: number,
+      chordBoxType?: ChordBoxType
+    ) => {
+      const instance = getBoundEditor();
+      if (!instance) return;
+      instance.setDisplayMode(title, meta, tag, abbrevTag, autoSplitLines, chordFlags, chordBoxType);
+    },
     transpose: (shift: number) => {
       const instance = getBoundEditor();
       if (!instance) return;
@@ -227,6 +242,26 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (!instance) return;
       instance.highlight(from, to);
+    },
+    /** Set the song's display-instructions TEXT on the editor (legacy
+     *  applyInstructions). Whether/how it is drawn is controlled separately by
+     *  enableInstructionRendering. */
+    applyInstructions: (instructions: string, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.applyInstructions(instructions, draw);
+    },
+    /** Toggle how the instructions overlay is rendered: "FULL" / "FIRST_LINE" /
+     *  "" (off) — mirrors the legacy chkInstructions toggle (praiseprojector.ts
+     *  enableInstructionRendering at the displayChanged call site). */
+    enableInstructionRendering: (mode: InstructionsRenderMode, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.enableInstructionRendering(mode, draw);
+    },
+    /** Install (or clear with null) a tap handler that fires {from,to,section}
+     *  for the tapped lyrics line — drives leader highlight control. */
+    setLyricsHitHandler: (handler: ((hit: HighlightingParams) => void) | null) => {
+      const instance = getBoundEditor();
+      if (instance) instance.onLyricsHit = handler;
     },
     updateDocument: (chp: string) => {
       const instance = getBoundEditor();
@@ -256,9 +291,33 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (instance) instance.darkMode(dark);
     },
+    setHighlightOpacity: (opacity: number) => {
+      const instance = getBoundEditor();
+      if (instance) instance.highlightOpacity = Math.max(0, Math.min(1, opacity));
+    },
+    update: () => {
+      const instance = getBoundEditor();
+      if (instance) instance.update();
+    },
     refreshDisplayProps: () => {
       const instance = getBoundEditor();
       if (instance) instance.refreshDisplayProps();
+    },
+    /**
+     * Re-layout the song to its pane (mirrors praiseprojector.ts updateEditor).
+     * scrollMode false = FULL PAGE: lay the song out to the pane's aspect ratio so
+     * it fills the screen. scrollMode true = FULL WIDTH: natural layout so CSS can
+     * fit the width and scroll vertically.
+     */
+    fitToPane: (scrollMode = false) => {
+      const instance = getBoundEditor();
+      if (!instance) return;
+      const container = editorDiv.parentElement;
+      const w = container?.clientWidth || editorDiv.clientWidth || 1;
+      const h = container?.clientHeight || editorDiv.clientHeight || 1;
+      instance.targetRatio = scrollMode ? 0 : w / h;
+      instance.scale = Math.max(1.00000001, Math.round(Math.max(w, h) / 500) + 1);
+      instance.update();
     },
     setStyles: (styles: ChordProStylesSettings | null) => {
       const instance = getBoundEditor();

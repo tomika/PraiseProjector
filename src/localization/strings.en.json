@@ -123,7 +123,7 @@
   "AskRemoteHighlightModifyPermission": "Enable client display remote control?",
   "RemoteHighlight": "Remote Highlight",
   "SessionsTitle": "Searching for sessions",
-  "SessionsBrowser": "Start browser for this session",
+  "SessionsSwitchUI": "Switch UI",
   "SessionsConnect": "Connect session",
   "SessionsNameCol": "Name",
   "SessionsTypeCol": "Type",

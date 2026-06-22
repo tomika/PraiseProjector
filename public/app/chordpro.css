@@ -106,15 +106,27 @@
 }
 
 .instructions-line .plus {
-    right: 2.2em;
-    top: 50%;    
+    right: 2.5em;
+    top: 50%;
     transform: translateY(-50%);
 }
 
 .instructions-line .minus {
-    right: 1em;
-    top: 50%;    
+    right: 0.5em;
+    top: 50%;
     transform: translateY(-50%);
+}
+
+.instructions-line .raise {
+    right: 1.5em;
+    top: -1px;
+    height: 0.8em;
+}
+
+.instructions-line .lower {
+    right: 1.5em;
+    bottom: -1px;
+    height: 0.8em;
 }
 
 .song-editor {

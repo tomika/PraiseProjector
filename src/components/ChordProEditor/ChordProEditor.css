@@ -1,4 +1,10 @@
 /* ChordProEditor - 3-tab editor component */
+
+/* Shared page-turn 3D depth + during-flip scrollbar suppression (single source of
+   truth next to the PageFlip controller). Applied via .pp-flip-perspective on
+   .editor-iframe-container and .pp-flip-hide-scrollbar (added by the controller). */
+@import "../../../chordpro/pageFlip.css";
+
 .chordpro-editor-container {
   display: flex;
   flex-direction: column;
@@ -205,16 +211,10 @@
   flex: 1 1 auto;
   min-height: 200px; /* Prevent collapse when content is empty */
   position: relative;
-  /* Perspective lives on the container (the page-turn parent), exactly like
-     #swipe-handler in praiseprojector.ts, so the rotating page uses a plain
-     rotateY() and "comes out" of the plane. overflow is hidden normally and
-     toggled to visible during a flip so the page can overlap the tabs above. */
+  /* 3D perspective for the page-turn comes from .pp-flip-perspective (shared, in
+     chordpro/pageFlip.css). overflow is hidden normally and toggled to visible
+     during a flip so the page can overlap the tabs above. */
   overflow: hidden;
-  -webkit-perspective: 1000vw;
-  perspective: 1000vw;
-  -webkit-transform-style: preserve-3d;
-  transform-style: preserve-3d;
-  perspective-origin: 50% 50%;
 }
 
 /* The three stacked pages (prev / next / current). */

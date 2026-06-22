@@ -1,0 +1,1712 @@
+/*
+ * Client-view styling — fresh, self-contained CSS (no legacy sheet) that
+ * reproduces the original praiseprojector.hu/app/main.html look:
+ *
+ *   - a LIGHT song pane (white, black text, red chords from chordpro.css), and
+ *   - a DARK options/song-list panel (translucent black, light text),
+ *
+ * shown as a two-pane SPLIT on wide screens (song left, panel right) and as a
+ * full-screen overlay on narrow screens. Tokens (dark rgba(0,0,0,0.9) panel,
+ * white song pane, ~40px toolbar, dense list) were measured from the live
+ * main.html computed styles. Class names match the legacy DOM the components use.
+ */
+
+/* Shared page-turn 3D depth + during-flip scrollbar suppression (single source of
+   truth next to the PageFlip controller). Applied via .pp-flip-perspective on
+   #swipe-handler and .pp-flip-hide-scrollbar (added by the controller). */
+@import "../../../chordpro/pageFlip.css";
+
+:root {
+  --cv-panel-bg: rgba(0, 0, 0, 0.92);
+  --cv-panel-fg: #e9e9e9;
+  --cv-panel-border: rgba(255, 255, 255, 0.12);
+  --cv-accent: #ffb14e;
+  --cv-song-bg: #ffffff;
+  --cv-song-fg: #1a1a1a;
+  --cv-toolbar-bg: #efefef;
+  --cv-field-bg: #1c1c1c;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+/* Layout model mirrors the original: #mainView is a fixed full-viewport box;
+   .mainTable and #options are both position:fixed (not flex children). The
+   responsive behaviour is ORIENTATION-based, not width-based:
+     - portrait  → song fills the screen; options slides down as an overlay.
+     - landscape → split: song left 50%, options pinned right 50% (always shown). */
+#mainView.split {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family:
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 16px;
+}
+
+.mainTable {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: width 0.3s;
+  background: var(--cv-song-bg);
+  color: var(--cv-song-fg);
+}
+
+.cv-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #888;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* Toolbar — slim strip over the light song pane --------------------------- */
+
+#mainToolbar {
+  display: flex;
+  align-items: center;
+  /* Spread the buttons evenly across the bar, exactly like the original. */
+  justify-content: space-between;
+  height: 40px;
+  flex: none;
+  padding: 0 10px;
+  background: var(--cv-toolbar-bg);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+#mainToolbar .btnDiv {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btnImg {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+
+/* Capo / transpose: only the icon (and the value once set) are visible; the
+   native <select> is an invisible overlay that opens on click, exactly like
+   the original's `.mainTable select { opacity: 0 }`. */
+#capo,
+#transpose {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+#capo {
+  gap: 2px;
+}
+
+#capoToggle {
+  gap: 3px;
+}
+
+#capoDropdown {
+  min-width: 16px;
+  justify-content: center;
+}
+
+#capoDropdown.cv-disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#capo .cv-capo-caret {
+  font-size: 11px;
+  line-height: 1;
+}
+
+#capoValue,
+#shiftValue {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#transpose select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#capo .cv-capo-picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#netstatus {
+  cursor: pointer;
+}
+
+/* All network-status icons are mounted at once (see MainToolbar) and switched by
+   toggling .cv-net-active, so changing status is a pure CSS show/hide — never an
+   <img src> swap. Swapping src cancels the in-flight load (0 B / "(unknown)" in
+   devtools) and blanks the indicator between frames whenever the status flips. */
+#netstatus .cv-net-icon {
+  display: none;
+}
+#netstatus .cv-net-icon.cv-net-active {
+  display: inline-block;
+}
+
+@keyframes cv-spin {
+  0% {
+    transform: rotateZ(0deg);
+  }
+  100% {
+    transform: rotateZ(360deg);
+  }
+}
+
+.cv-spin {
+  animation: cv-spin 1s infinite linear;
+}
+
+/* Song view --------------------------------------------------------------- */
+
+#swipe-handler {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--cv-song-bg);
+  /* 3D perspective for the page-turn comes from .pp-flip-perspective (shared,
+     in chordpro/pageFlip.css). overflow is hidden normally and toggled to
+     visible during a flip (SongView.beginFlip) so the page can overlap the
+     chrome above it. */
+}
+
+/* The three stacked pages (prev / next / current). Each is an opaque, absolutely
+   positioned full-pane layer; the current one rotates during a turn and the
+   prev/next ones sit behind it (revealed as it rotates away). */
+.cv-page {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  /* Centre the inline-block editor horizontally; it top-aligns vertically. */
+  text-align: center;
+  background: var(--cv-song-bg);
+  /* Read-only projection: never let a swipe/flip drag start a text selection
+     (which left the song title highlighted after a page turn). */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.cv-page-current {
+  z-index: 0;
+}
+
+.cv-page-prev,
+.cv-page-next {
+  z-index: -1;
+  /* Laid out (so they can be measured/fitted) but only painted while revealed
+     during a turn — SongView.setPagePhase flips this to `visible`. */
+  visibility: hidden;
+}
+
+/* Full-width SCROLL mode: fit the width and scroll vertically for tall songs
+   (toggled per page by SongView.fitAndZoom). */
+.cv-page.cv-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#swipe-handler .cv-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* above the (empty) current page */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: #9a9a9a;
+  pointer-events: none;
+  padding: 24px;
+}
+
+#swipe-handler .cv-empty-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+#swipe-handler .cv-empty-hint {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* FULL-PAGE / FULL-WIDTH fit: the whole editor (song canvas + title/meta
+   overlays) is scaled as ONE unit via `zoom` (set per render by SongView), so
+   the overlays stay aligned with the song and it top-aligns like the original.
+   `zoom` (unlike `transform`) also scales the layout box, so vertical scroll in
+   full-width mode measures correctly. */
+.editor {
+  display: inline-block;
+  vertical-align: top;
+  outline: none;
+}
+
+/* Options / song-list panel — dark --------------------------------------- */
+
+/* Portrait: the panel is a full-width overlay that slides DOWN from the top
+   (animating height 0 → 100%) when opened, exactly like the original. */
+#options.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  z-index: 100;
+  background: var(--cv-panel-bg);
+  color: var(--cv-panel-fg);
+  transition: 0.5s;
+}
+
+#options.overlay.open {
+  height: 100%;
+}
+
+/* Landscape (measured from the original):
+   - CLOSED: full-width song + a VERTICAL toolbar on the RIGHT. .mainTable is
+     row-reverse so #mainToolbar (its first child) sits on the right, and the
+     toolbar itself becomes a narrow vertical column.
+   - OPEN: two-pane split (song left 50%, options right 50%) with the toolbar
+     back horizontal on top of the left pane. Closing drops .options-open and
+     collapses the split to full-width. */
+@media (orientation: landscape) {
+  #mainView:not(.options-open) .mainTable {
+    flex-direction: row-reverse;
+  }
+  #mainView:not(.options-open) #mainToolbar {
+    flex-direction: column;
+    width: 56px;
+    height: 100%;
+    padding: 8px 0;
+    /* Prevent the last button from being clipped by safe-area (Android nav bar). */
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
+    border-bottom: none;
+    border-left: 1px solid rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  #mainView.options-open .mainTable {
+    width: 50%;
+  }
+  #mainView.options-open #options.overlay {
+    left: 50%;
+    width: 50%;
+    height: 100%;
+  }
+  #mainView.options-open #mainToolbar #btnOptions {
+    display: none;
+  }
+  /* Only the full-width SCROLL page needs vertical scroll in the split pane;
+     in full-page (FIT) mode keep it clipped, otherwise `zoom` rounding leaves a
+     1–2px phantom scrollbar (e.g. when the chord-box type / content changes). */
+  #mainView.options-open .cv-page-current.cv-scroll {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+
+/* Multi-colour icons (e.g. the highlight lamp) must NOT be inverted on the dark
+   panel — inversion turns the yellow lamp blue. Opt them out. */
+#options .btnImg.cv-color-icon {
+  filter: none;
+}
+
+/* Forced monochrome: render a multi-colour icon as a flat white silhouette on the
+   dark panel (the highlight lamp in its OFF state). brightness(0) collapses every
+   colour to black, then invert(1) flips it to white — so the yellow lamp reads as a
+   plain white icon matching the others, instead of inverting to blue. */
+#options .btnImg.cv-mono-icon {
+  filter: grayscale(1);
+}
+
+/* Icons rendered on the dark panel are dark SVGs — invert them to read light. */
+#options .btnImg {
+  filter: invert(1);
+}
+
+/* Leader-mode switch (legacy chkAdmin). leader.svg is a dark monochrome glyph, so
+   the panel's base `#options .btnImg{filter:invert(1)}` already renders it white;
+   dimmed when off, lit with the same blue glow the toolbar toggles use when on.
+   cv-toolbtn-on is scoped to #mainToolbar, so the options-bar button carries its
+   own on-state rule here (and must re-state invert(1) since filter is one prop). */
+#options .cv-leaderbtn .btnImg {
+  opacity: 0.55;
+}
+#options .cv-leaderbtn.cv-toolbtn-on {
+  border-color: #6bf;
+}
+#options .cv-leaderbtn.cv-toolbtn-on .btnImg {
+  opacity: 1;
+  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+}
+
+/* Zoom toggle now uses a button (not hidden checkbox), but keeps the same
+   dimmed-off / glowing-on affordance as other option toggles. */
+#options .cv-zoom-btn .btnImg {
+  opacity: 0.7;
+}
+#options .cv-zoom-btn.cv-zoom-btn-on {
+  border-color: #6bf;
+}
+#options .cv-zoom-btn.cv-zoom-btn-on .btnImg {
+  opacity: 1;
+  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+}
+
+/* Follower view: the song browser is replaced by a single "open net display"
+   button (legacy btnNetDisplay). netdisplay.png is a colour raster, so it is NOT
+   given the .btnImg class and keeps its own colours (no panel invert). */
+.cv-netdisplay-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  padding: 28px 16px;
+}
+.cv-netdisplay-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 26px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cv-netdisplay-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.cv-netdisplay-icon {
+  width: 72px;
+  height: 72px;
+  filter: none;
+}
+
+.cv-options-header {
+  display: flex;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--cv-panel-border);
+}
+
+/* More-menu (overflow dropdown) ------------------------------------------- */
+
+/* The more-menu is the last control of the options second row; it anchors its
+   dropdown. */
+.cv-more {
+  position: relative;
+}
+
+/* Match the close button's padding so the more-menu lines up exactly under it. */
+.cv-more-btn {
+  padding: 3px;
+}
+
+/* The dropdown floats over the song list below; anchored to the menu button's
+   right edge so it never overflows the panel on narrow phones. */
+.cv-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 8px;
+  background: #1d1d1d;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.cv-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cv-panel-fg);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv-more-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cv-more-item .cv-opt-icon {
+  flex: none;
+}
+
+.cv-options-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 18px;
+}
+
+/* Two FIXED rows (not a wrapping single row) so the controls can be as large as
+   possible, like the original's two chord-option rows. */
+.cv-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cv-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: 1.5em;
+  line-height: 1.1;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* "V1 Am / V2 Am" — side-by-side on wide, stacked on narrow phones (the
+   original's #chkNoSecChordDupLabel responsive behaviour). */
+.cv-secdup {
+  display: inline-flex;
+  flex-direction: row;
+  gap: 0.5em;
+}
+.cv-secdup s {
+  text-decoration: line-through;
+}
+@media (max-width: 30rem) {
+  .cv-secdup {
+    flex-direction: column;
+    gap: 0;
+    font-size: 0.8em;
+    line-height: 1.1;
+  }
+}
+
+/* The raw checkbox is hidden; checked state is shown by a glow on the adjacent
+   glyph/icon (the original's `input:checked + label` blue glow). The wrapping
+   <label> still toggles the hidden input on click. */
+.cv-opt input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cv-opt > span,
+.cv-opt > .cv-opt-icon {
+  opacity: 0.7;
+  transition:
+    opacity 0.1s,
+    text-shadow 0.1s,
+    filter 0.1s;
+}
+
+#options .cv-opt input:checked + span {
+  opacity: 1;
+  color: #fff;
+  text-shadow:
+    0 0 0.1em #fff,
+    0 0 0.3em #4af,
+    0 0 0.5em #4af,
+    0 0 0.7em #4af;
+}
+
+#options .cv-opt input:checked + img {
+  opacity: 1;
+  filter: invert(1) drop-shadow(0 0 0.16em #6bf);
+}
+
+.cv-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+/* ── Uniform button borders (build-time switch UNIFORM_BUTTON_BORDERS) ─────────
+   By default the chrome buttons render FLAT (icon only); when #mainView carries
+   the .cv-bordered class every tappable control in the toolbar + options panel
+   gets a matching border + subtle background, so the look is uniform either way.
+   Scoped to #options / #mainToolbar so dialog .cv-iconbtns keep their own border. */
+
+/* Flat (default): strip the .cv-iconbtn border/background inside the options panel
+   so the icon buttons match the borderless checkbox toggles next to them. */
+#mainView:not(.cv-bordered) #options .cv-iconbtn {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+
+#options .cv-iconbtn {
+  padding: 0;
+}
+
+/* Bordered: give the options checkbox-toggles and the toolbar buttons the same
+   border the .cv-iconbtns already carry. */
+#mainView.cv-bordered #options .cv-opt {
+  padding: 2px 6px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#mainView.cv-bordered #mainToolbar .btnDiv:not(#netstatus) {
+  padding: 1px 4px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 5px;
+}
+
+#mainView.cv-bordered.dark #mainToolbar .btnDiv:not(#netstatus) {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.cv-select {
+  font-size: 16px;
+  padding: 2px 4px;
+  background: #222;
+  color: #eee;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 3px;
+}
+
+.cv-opt-icon {
+  width: 32px;
+  height: 32px;
+}
+
+/* Search row -------------------------------------------------------------- */
+
+#filterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  flex: none;
+  border-bottom: 1px solid var(--cv-panel-border);
+}
+
+#filterRow #filter {
+  flex: 1 1 auto;
+  font-size: 15px;
+  padding: 4px 6px;
+  background: var(--cv-field-bg);
+  color: #eee;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+}
+
+/* Song list --------------------------------------------------------------- */
+
+#list {
+  flex: 1 1 auto;
+  width: 100%;
+  border-collapse: collapse;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: block;
+  color: var(--cv-panel-fg);
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+#list::-webkit-scrollbar {
+  width: 0.7em;
+}
+#list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+#list::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+  border-radius: 4px;
+}
+
+#list tr {
+  cursor: pointer;
+}
+
+#list tr:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#list tr.selected {
+  background: rgba(255, 177, 78, 0.18);
+}
+
+#list tr.selected td {
+  color: var(--cv-accent);
+  font-weight: 600;
+}
+
+#list td {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#list mark {
+  background: var(--cv-accent);
+  color: #000;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+/* Dark mode --------------------------------------------------------------- */
+/* Darkens the song pane + toolbar (the options/list panel is always dark).
+   Mirrors the original updateColorScheme: body/pages dark + toolbar icons
+   inverted. The ChordPro canvas recolours itself via chordProAPI.darkMode(). */
+#mainView.dark .mainTable {
+  background: #000;
+  color: #e9e9e9;
+}
+
+#mainView.dark #swipe-handler,
+#mainView.dark .cv-page,
+#mainView.dark .editor {
+  background: #000;
+}
+
+#mainView.dark #mainToolbar {
+  background: #111;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+#mainView.dark #mainToolbar .btnImg {
+  filter: invert(1);
+}
+
+/* colored status icons — don't invert them in dark mode */
+#mainView.dark #mainToolbar #netstatus.net-online .btnImg,
+#mainView.dark #mainToolbar #netstatus.net-watching .btnImg,
+#mainView.dark #mainToolbar #netstatus.net-offline .btnImg {
+  filter: none;
+}
+
+#mainView.dark #capoValue,
+#mainView.dark #shiftValue {
+  color: #e9e9e9;
+}
+
+/* Dark scrollbars for the song area (the list panel is already dark). */
+#mainView.dark #swipe-handler,
+#mainView.dark .cv-page {
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+#mainView.dark #swipe-handler::-webkit-scrollbar-track,
+#mainView.dark .cv-page::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+#mainView.dark #swipe-handler::-webkit-scrollbar-thumb,
+#mainView.dark .cv-page::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+}
+
+/* Shared modal backdrop (login, sessions dialogs) ------------------------- */
+
+.cv-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* maxText zoom panel (contextmenu-like, anchored below the zoom button) ---- */
+
+/* Position:relative wrapper so the panel can anchor via top:100%. */
+.cv-zoom-wrap {
+  position: relative;
+}
+
+/* Inline panel — always dark (matches the options panel), floats over the song
+   list below it. Anchored to the right edge of the zoom wrap so it never
+   overflows the panel on narrow screens (same pattern as .cv-more-menu). */
+.cv-zoom-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 180px;
+  padding: 14px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 8px;
+  background: #1d1d1d;
+  color: #e9e9e9;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+
+/* Title / Meta toggles: plain when the option is off; strikethrough + blue glow
+   when on (= that element is hidden during zoom). Mirrors the original
+   `input:checked + label { text-shadow: … }` neon-glow pattern. */
+.cv-zoom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.cv-zoom-toggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cv-zoom-label {
+  font-size: 15px;
+  opacity: 0.6;
+  transition:
+    opacity 0.1s,
+    text-shadow 0.1s,
+    color 0.1s;
+}
+
+.cv-zoom-toggle input:checked ~ .cv-zoom-label {
+  opacity: 1;
+  color: #fff;
+  text-decoration: line-through;
+  text-shadow:
+    0 0 0.1em #fff,
+    0 0 0.2em #fff,
+    0 0 0.3em #05e,
+    0 0 0.4em #05e,
+    0 0 0.5em #05e,
+    0 0 0.6em #05e,
+    0 0 0.7em #05e;
+}
+
+.cv-zoom-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.cv-zoom-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cv-zoom-btn.active {
+  border-color: #2f7bff;
+  box-shadow: 0 0 0 2px rgba(47, 123, 255, 0.4);
+}
+
+.cv-zoom-btn .btnImg {
+  width: 1.7em;
+  height: 1.7em;
+}
+
+/* Playlist editor (working-list) ----------------------------------------- */
+
+/* List-mode toggle in the search row: a bare icon button. The icon represents
+   the CURRENT mode and tapping cycles to the next (catalogue ↔ playlist ↔
+   leader lists). */
+.cv-listmode-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Leader-playlists controls: leader + date selects plus the replace button,
+   living INSIDE the search row (#filterRow) in place of the song filter. Fills
+   the row's remaining width; stretch so the replace button matches the selects'
+   height regardless of its (text) content. */
+.cv-leaderlists-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv-leader-select,
+.cv-date-select {
+  font-size: 15px;
+  padding: 4px 6px;
+  background: #222;
+  color: #eee;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+  min-width: 0;
+}
+
+/* The leader name can be long; let it take the slack, keep the date compact. */
+.cv-leader-select {
+  flex: 1 1 auto;
+}
+
+.cv-date-select {
+  flex: 0 1 auto;
+}
+
+.cv-leader-select:disabled,
+.cv-date-select:disabled {
+  opacity: 0.5;
+}
+
+.cv-leader-replace-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Vertical padding is 0: height is driven by the stretched row (matching the
+     selects); horizontal padding keeps the label off the edges. */
+  padding: 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  color: var(--cv-panel-fg);
+}
+
+.cv-leader-replace-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Catalogue/search rows: [✓ add] Title (excerpt) [marker] [▶]. The title cell
+   takes the slack; the others shrink to content and the row stays one line. */
+#list td.cv-song-title {
+  width: 100%;
+}
+
+#list.cv-catalogue td.cv-song-title {
+  max-width: 0;
+}
+
+#list.cv-catalogue .cv-song-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#list.cv-catalogue td.cv-add-col {
+  width: 2.3rem;
+  min-width: 2.3rem;
+}
+
+#list.cv-catalogue td.cv-found-marker {
+  width: 2.3rem;
+  min-width: 2.3rem;
+}
+
+#list.cv-catalogue td.cv-play-col {
+  width: 2.1rem;
+  min-width: 2.1rem;
+}
+
+/* The matching excerpt shown after the title for non-title hits (lyrics/meta/…). */
+#list td.cv-song-title .cv-snippet {
+  font-style: italic;
+  font-size: 0.82em;
+  opacity: 0.8;
+}
+
+/* Add/remove toggle (left) — circular button showing "+" when the song is not in
+   the working list and "✓" (green) when it is. */
+#list td.cv-add-col {
+  width: 1%;
+  padding: 4px 4px 4px 10px;
+  text-align: center;
+}
+
+.cv-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--cv-panel-border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cv-panel-fg);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cv-add-btn.in {
+  background: rgba(58, 167, 87, 0.25);
+  border-color: #3aa757;
+  color: #8fe6a8;
+}
+
+/* Found-type marker (found_<type>[_words].svg) — a light-on-transparent badge
+   showing WHERE the match was (title / header / lyrics / words / meta). */
+#list td.cv-found-marker {
+  width: 2.5rem;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Play (▶) — projects the song (and adds it to the working list when editable). */
+#list td.cv-play-col {
+  width: 1%;
+  padding: 4px 8px 4px 4px;
+  text-align: center;
+}
+
+.cv-play-btn {
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  color: var(--cv-accent);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Working-list rows: drag handle, dragging/insertion feedback, title editing,
+  and legacy-like transpose/capo selector cells. */
+#list.cv-playlist td.cv-drag-handle {
+  width: 1.4rem;
+  min-width: 1.4rem;
+  padding: 5px 2px 5px 6px;
+  color: #777;
+  font-size: 18px;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#list.cv-playlist tr.cv-dragging {
+  opacity: 0.4;
+}
+
+#list.cv-playlist tr.cv-drag-over td {
+  box-shadow: inset 0 2px 0 0 var(--cv-accent);
+}
+
+#list.cv-playlist td.cv-song-title {
+  width: 100%;
+  min-width: 8rem;
+  padding-right: 4px;
+}
+
+#list.cv-playlist .cv-pl-title-edit {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--cv-accent);
+  border-radius: 4px;
+  background: var(--cv-panel-bg);
+  color: var(--cv-panel-fg);
+  font: inherit;
+}
+
+#list.cv-playlist td.transposeColumn,
+#list.cv-playlist td.capoColumn {
+  position: relative;
+  width: 1.9rem;
+  min-width: 1.9rem;
+  padding: 5px 2px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#list.cv-playlist td.transposeColumn > span,
+#list.cv-playlist td.capoColumn > span {
+  position: relative;
+  z-index: 1;
+  color: var(--cv-panel-fg);
+  min-width: 1rem;
+  display: inline-block;
+}
+
+#list.cv-playlist .cv-pl-select-icon {
+  margin-left: 2px;
+  width: 1em;
+  height: 1em;
+  opacity: 0.9;
+  filter: invert(1);
+}
+
+#list.cv-playlist td.transposeColumn > select,
+#list.cv-playlist td.capoColumn > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+#list.cv-playlist td.transposeColumn > select option,
+#list.cv-playlist td.capoColumn > select option {
+  color: #111;
+  background: #fff;
+}
+
+#list.cv-playlist {
+  table-layout: fixed;
+}
+
+/* Trash drop bar (legacy #trashCan): a bottom strip that appears during a drag
+   and turns red when it is the active drop target. */
+#trashCan {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  border-top: 1px solid var(--cv-panel-border);
+  background: rgba(192, 57, 43, 0.14);
+  transition: background 0.15s;
+}
+
+#trashCan.hidden {
+  display: none;
+}
+
+#trashCan.droptarget {
+  background: rgba(192, 57, 43, 0.55);
+}
+
+#trashCan img {
+  width: 32px;
+  height: 32px;
+  filter: invert(1);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Empty working-list placeholder. */
+.cv-playlist-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: #9a9a9a;
+  padding: 24px;
+}
+
+.cv-playlist-empty-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.cv-playlist-empty-hint {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Disabled more-menu items (Clear/Save on an empty list). */
+.cv-more-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cv-more-item:disabled:hover {
+  background: transparent;
+}
+
+/* Login + sessions dialogs ------------------------------------------------- */
+
+/* Shared dialog shell, layered over the .cv-modal-backdrop. The panel is dark,
+   so its icons (dark SVGs) are inverted to read light, like the options panel. */
+.cv-dialog {
+  z-index: 1051;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(92vw, 360px);
+  max-height: 86vh;
+  padding: 18px;
+  border-radius: 10px;
+  background: #1d1d1d;
+  color: var(--cv-panel-fg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.cv-dialog .btnImg {
+  filter: invert(1);
+}
+
+.cv-dialog-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.cv-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cv-iconbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Labelled text fields (login). */
+.cv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 15px;
+}
+
+.cv-field > span {
+  opacity: 0.8;
+}
+
+.cv-field input[type="text"],
+.cv-field input[type="password"] {
+  width: 100%;
+  font-size: 16px;
+  padding: 8px 10px;
+  background: var(--cv-field-bg);
+  color: #eee;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 6px;
+}
+
+.cv-field-input {
+  display: flex;
+  gap: 6px;
+}
+
+.cv-field-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cv-reveal {
+  flex: none;
+  padding: 0 10px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cv-panel-fg);
+  cursor: pointer;
+}
+
+/* Plain visible checkbox (the .cv-opt glow pattern is scoped to #options). */
+.cv-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.cv-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.cv-dialog-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(192, 57, 43, 0.2);
+  color: #ff9b8f;
+  font-size: 14px;
+}
+
+.cv-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cv-dialog-ok,
+.cv-dialog-cancel {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cv-dialog-ok {
+  border: none;
+  background: #2f7bff;
+  color: #fff;
+}
+
+.cv-dialog-ok:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cv-dialog-cancel {
+  border: 1px solid var(--cv-panel-border);
+  background: transparent;
+  color: var(--cv-panel-fg);
+}
+
+/* About dialog. */
+.cv-about-dialog {
+  width: min(92vw, 460px);
+}
+
+/* Confirmation dialog (legacy `confirm`) — animated-SVG message + ok/cancel icon
+   buttons. Narrower than the form dialogs and centred. */
+.cv-confirm-dialog {
+  width: min(86vw, 320px);
+  align-items: center;
+}
+
+.cv-confirm-body {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+/* The message IS a script-driven animated SVG embedded via <object> (legacy
+   images/<anim>.svg), built for a dark popup, so it is shown as-is (the
+   .cv-dialog .btnImg invert does not reach it). Purely decorative → no pointer
+   capture, so backdrop/Esc dismissal still works naturally. */
+.cv-confirm-anim {
+  display: block;
+  width: min(56vmin, 200px);
+  height: min(56vmin, 200px);
+  max-height: 48vh;
+  pointer-events: none;
+}
+
+.cv-confirm-anim-fallback {
+  width: 100%;
+  height: 100%;
+}
+
+.cv-confirm-dialog .cv-dialog-actions {
+  justify-content: center;
+  gap: 28px;
+}
+
+/* Round icon buttons carrying ok.svg / cancel.svg (the .cv-dialog .btnImg rule
+   inverts the dark-stroked icons to read light on the dark panel). */
+.cv-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  padding: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--cv-panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.cv-confirm-btn .btnImg {
+  width: 34px;
+  height: 34px;
+}
+
+.cv-confirm-ok {
+  border-color: #2f7bff;
+}
+
+.cv-confirm-cancel {
+  border-color: #c0392b;
+}
+
+.cv-about-body {
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.45;
+  /* The dialog shell is always dark, so keep its scrollbar dark too. */
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+.cv-about-body::-webkit-scrollbar {
+  width: 0.7em;
+}
+
+.cv-about-body::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.cv-about-body::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+  border-radius: 4px;
+}
+
+.cv-about-body p {
+  margin: 0 0 8px;
+}
+
+.cv-about-version {
+  font-weight: 600;
+}
+
+.cv-about-section-title {
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.cv-about-section-name {
+  font-weight: 600;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+
+.cv-about-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.cv-about-list li {
+  padding: 1px 0;
+}
+
+.cv-about-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #6bb0ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cv-about-thanks {
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+/* Sessions picker list. */
+.cv-sessions-dialog {
+  width: min(92vw, 420px);
+}
+
+.cv-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 60px;
+  max-height: 50vh;
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+.cv-session-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: #9a9a9a;
+}
+
+.cv-session-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: transparent;
+  color: var(--cv-panel-fg);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv-session-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cv-session-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-session-kind {
+  flex: none;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 0.85;
+}
+
+/* Song preview modal (click-to-preview) ----------------------------------- */
+/* Layered over the shared .cv-modal-backdrop. Unlike the dark dialogs this shows
+   the song, so the panel + body are LIGHT (dark in dark mode). */
+.cv-preview {
+  position: relative;
+  z-index: 1051;
+  display: flex;
+  flex-direction: column;
+  width: min(94vw, 720px);
+  height: min(86vh, 900px);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--cv-song-bg);
+  /* Distinct from the backdrop: light rim + raised drop shadow for a 3D feel. */
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.cv-preview-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Full-width fit: scroll vertically for long songs instead of shrinking them. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Centre the inline-block editor; it top-aligns vertically (matches .cv-page). */
+  text-align: center;
+  background: var(--cv-song-bg);
+  border-radius: 6px;
+}
+
+/* Floating close button — pinned to the upper-right corner, layered over the song
+   so it doesn't take vertical space away from it. */
+.cv-preview-close {
+  position: absolute;
+  top: 8px;
+  /* Clear the body's vertical scrollbar (~15px) plus the panel's 12px padding so
+     the button never overlaps the scrollbar. */
+  right: 30px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #222;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#mainView.dark .cv-preview,
+#mainView.dark .cv-preview-body {
+  background: #000;
+}
+
+#mainView.dark .cv-preview {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.7),
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+#mainView.dark .cv-preview-close {
+  color: #e9e9e9;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Instructions + highlight controls ---------------------------------------- */
+
+/* Active state for toolbar toggles (instructions/capo): match the options-bar
+   "checked" glow language instead of a solid backplate. */
+#mainToolbar .btnDiv.cv-toolbtn-on {
+  background: transparent;
+}
+
+#mainToolbar .btnDiv.cv-toolbtn-on .btnImg {
+  opacity: 1;
+  filter: drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(107, 187, 255, 0.7));
+}
+
+#mainView.dark #mainToolbar .btnDiv.cv-toolbtn-on .btnImg {
+  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+}
+
+#mainToolbar .btnDiv.cv-toolbtn-on #capoValue,
+#mainToolbar .btnDiv.cv-toolbtn-on #shiftValue {
+  color: #fff;
+  text-shadow:
+    0 0 0.1em #fff,
+    0 0 0.3em #4af,
+    0 0 0.5em #4af,
+    0 0 0.7em #4af;
+}
+
+/* Highlight opacity popup --------------------------------------------------- */
+
+/* Lamp button wrapper: position:relative so the popup can anchor to it. */
+.cv-lamp-wrap {
+  position: relative;
+}
+
+/* Spinning gear shown while a highlight-control permission request is in flight
+   (Client mode), mirroring the legacy #highlight_loader. */
+.cv-highlight-loader {
+  animation: cv-spin 1.5s infinite linear;
+}
+
+/* Inline popup that appears directly below the lamp button. */
+.cv-opacity-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #1d1d1d;
+  color: var(--cv-panel-fg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+.cv-opacity-preview {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.cv-opacity-preview-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #ffd080;
+}
+
+.cv-opacity-slider {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 28px;
+  height: 140px;
+  cursor: pointer;
+}
+
+.cv-opacity-label {
+  font-size: 13px;
+  opacity: 0.8;
+}

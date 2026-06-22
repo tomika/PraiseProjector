@@ -113,28 +113,46 @@ export default defineConfig(({ command, mode }) => {
       sourcemap: isDev,
       chunkSizeWarningLimit: 600,
       rollupOptions: {
+        // Web builds emit the standalone client view as a second page alongside
+        // the main app. The Electron build keeps its single index.html entry.
+        input: isWeb
+          ? {
+              main: path.resolve(__dirname, 'index.html'),
+              'client-view': path.resolve(__dirname, 'client-view.html'),
+            }
+          : undefined,
         output: {
-          manualChunks: {
-            // React core + React-dependent UI libraries (must stay together)
-            'vendor-react': ['react', 'react-dom', 'react-dnd', 'react-dnd-html5-backend', 'react-resizable-panels'],
-            // PDF handling
-            'vendor-pdf': ['pdfjs-dist'],
-            // Music - ABC notation (used throughout the app for chord rendering)
-            'vendor-abcjs': ['abcjs'],
-            // Music - MIDI
-            'vendor-midi': ['midi.js'],
-            // Word document processing - NOTE: excluded from manual chunks
-            // so it bundles with lazy-loaded SongImporterWizard
-            // Diff library
-            'vendor-diff': ['diff'],
-            // Functional programming
-            'vendor-fp': ['fp-ts', 'io-ts'],
-            // Storage
-            'vendor-storage': ['localforage'],
-            // QR code generation
-            'vendor-qrcode': ['qrcode.react'],
-            // Utilities
-            'vendor-utils': ['uuid', 'bootstrap', 'axios'],
+          // Function form (not the object/array form): the array form matches by
+          // package *entry id*, so shared runtime modules like `react/jsx-runtime`
+          // are NOT captured by `'react'` and Rollup buckets them with whichever
+          // chunk references them first. That leaked the JSX runtime into
+          // vendor-react-editor, forcing the standalone client-view page to preload
+          // the editor-only react-dnd chunk it never uses. Routing by node_modules
+          // path keeps the shared React runtime in vendor-react.
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            const inPkg = (...names: string[]) =>
+              names.some((n) => id.includes(`node_modules/${n}/`));
+            // Editor-only React libraries — checked BEFORE react core so the page
+            // that uses native HTML5 drag-and-drop (client-view) never pulls them
+            // into its initial payload (Phase C bundle diet).
+            if (inPkg('react-dnd', 'react-dnd-html5-backend', 'dnd-core', '@react-dnd', 'react-resizable-panels'))
+              return 'vendor-react-editor';
+            // React core + the shared runtime (jsx-runtime, scheduler) every entry needs.
+            if (inPkg('react', 'react-dom', 'react-is', 'scheduler')) return 'vendor-react';
+            if (inPkg('pdfjs-dist')) return 'vendor-pdf';
+            // Music - ABC notation (dynamically imported; see chordpro/abcjs-lazy.ts)
+            if (inPkg('abcjs')) return 'vendor-abcjs';
+            // Music - MIDI (dynamically imported; see chordpro/midi.ts)
+            if (inPkg('midi.js')) return 'vendor-midi';
+            // Word document processing (mammoth) is intentionally left unassigned so
+            // it bundles with the lazy-loaded SongImporterWizard.
+            if (inPkg('diff')) return 'vendor-diff';
+            if (inPkg('fp-ts', 'io-ts')) return 'vendor-fp';
+            if (inPkg('localforage')) return 'vendor-storage';
+            if (inPkg('qrcode.react')) return 'vendor-qrcode';
+            if (inPkg('uuid', 'bootstrap', 'axios')) return 'vendor-utils';
+            return undefined;
           },
         },
       },

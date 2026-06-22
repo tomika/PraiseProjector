@@ -1,10 +1,25 @@
-import * as MIDI from "midi.js";
+import type * as MIDINS from "midi.js";
+
+// Phase C bundle diet: midi.js (~31 KB) is only needed when the user actually plays
+// a chord/song, so it is dynamically imported and cached. Rollup splits it into its
+// own chunk, keeping it out of the initial client-view payload.
+type MidiModule = typeof MIDINS;
+let MIDI: MidiModule | null = null;
+let midiLoad: Promise<MidiModule> | null = null;
+
+function loadMidi(): Promise<MidiModule> {
+  if (MIDI) return Promise.resolve(MIDI);
+  if (!midiLoad) midiLoad = import("midi.js").then((mod) => (MIDI = mod as MidiModule));
+  return midiLoad;
+}
 
 // `import * as` only captures init-time properties. Methods like noteOn/chordOn/programChange
 // are added dynamically by setDefaultPlugin after plugin loads, so they're invisible in the
 // namespace proxy. Use (MIDI as any).default to get the live mutable root object.
-function getMidiRoot(): typeof MIDI {
-  return ((MIDI as Record<string, unknown>)["default"] as typeof MIDI) ?? MIDI;
+function getMidiRoot(): MidiModule {
+  const mod = MIDI;
+  if (!mod) throw new Error("midi.js accessed before load");
+  return ((mod as Record<string, unknown>)["default"] as MidiModule) ?? mod;
 }
 
 export type Instrument = "" | "PIANO" | "GUITAR";
@@ -19,7 +34,8 @@ export function setMidiSoundfontUrl(url: string) {
 }
 
 function resumeMidiAudioContext() {
-  const midiWithWebAudio = MIDI as typeof MIDI & {
+  if (!MIDI) return;
+  const midiWithWebAudio = MIDI as MidiModule & {
     WebAudio?: {
       getContext?: () => AudioContext | undefined;
     };
@@ -48,33 +64,42 @@ function initialize(onsuccess: () => void) {
       ? "webaudio"
       : "audiotag";
 
-  MIDI.loadPlugin({
-    api: pluginApi,
-    instruments: ["acoustic_grand_piano", "acoustic_guitar_nylon"],
-    soundfontUrl: midiSoundfontUrl,
-    onsuccess: () => {
-      initializationInProgress = false;
-      initalized = true;
-      resumeMidiAudioContext();
+  void loadMidi()
+    .then((mod) => {
+      mod.loadPlugin({
+        api: pluginApi,
+        instruments: ["acoustic_grand_piano", "acoustic_guitar_nylon"],
+        soundfontUrl: midiSoundfontUrl,
+        onsuccess: () => {
+          initializationInProgress = false;
+          initalized = true;
+          resumeMidiAudioContext();
 
-      const root = getMidiRoot();
-      // Guard for partial/failed plugin states where MIDI methods may be missing.
-      if (typeof root.programChange === "function" && root.GM?.byName && root.channels) {
-        root.programChange(0, root.GM.byName.acoustic_grand_piano.number);
-        root.programChange(1, root.GM.byName.acoustic_guitar_nylon.number);
-        for (let i = 2; i < 16; ++i) root.programChange(i, root.GM.byName.acoustic_grand_piano.number);
-      }
+          const root = getMidiRoot();
+          // Guard for partial/failed plugin states where MIDI methods may be missing.
+          if (typeof root.programChange === "function" && root.GM?.byName && root.channels) {
+            root.programChange(0, root.GM.byName.acoustic_grand_piano.number);
+            root.programChange(1, root.GM.byName.acoustic_guitar_nylon.number);
+            for (let i = 2; i < 16; ++i) root.programChange(i, root.GM.byName.acoustic_grand_piano.number);
+          }
 
-      const callbacks = pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
-      callbacks.forEach((cb) => cb());
-    },
-    onerror: (error?: unknown) => {
+          const callbacks = pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
+          callbacks.forEach((cb) => cb());
+        },
+        onerror: (error?: unknown) => {
+          initializationInProgress = false;
+          initalized = false;
+          console.error("Load MIDI Plugin error", error);
+          pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
+        },
+      });
+    })
+    .catch((error: unknown) => {
       initializationInProgress = false;
       initalized = false;
-      console.error("Load MIDI Plugin error", error);
+      console.error("Load MIDI module error", error);
       pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
-    },
-  });
+    });
 }
 export function playNote(instrument: Instrument, note: number, length: number = 1) {
   playChord(instrument, [note], length);
@@ -125,18 +150,15 @@ export function playChord(instrument: Instrument, chord: number[], length: numbe
   else play();
 }
 
-export function playMidiFile(
-  data: string,
-  bpm: number,
-  onError?: (error?: unknown) => void
-): { stop: () => void; playing: boolean; currentTime: number; endTime: number } {
-  const player = MIDI.Player;
+// midi.js is loaded lazily (Phase C), so the Player object cannot be returned
+// synchronously on the first call; it is resolved inside `play` after init.
+export function playMidiFile(data: string, bpm: number, onError?: (error?: unknown) => void): void {
   const play = () => {
     resumeMidiAudioContext();
+    const player = getMidiRoot().Player;
     if (!isNaN(bpm)) player.BPM = bpm;
     player.loadFile(data, () => player.start(), null, onError);
   };
   if (!initalized) initialize(play);
   else play();
-  return player;
 }
