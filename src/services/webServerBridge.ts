@@ -28,10 +28,13 @@ type NativeWireMethod = "syncJson" | "queryJson" | "respondJson";
 const WEB_SERVER_EVENT_NAME = "pp-webserver-event";
 const APP_SW_PATH = "/app/sw.js";
 const APP_ASSET_PREFIX = "/app/";
+// Authoritative list of files the host webserver serves for the new client-view, emitted by
+// build:client-view (vite.client-view.config.ts). Preferred over scraping the legacy sw.js.
+const CLIENT_VIEW_PRECACHE_PATH = "/app/client-view/precache.json";
 const REQUIRED_NATIVE_WIRE_METHODS: NativeWireMethod[] = ["syncJson", "queryJson", "respondJson"];
 
 let cachedWebServer: WebServerInterface | undefined;
-let swAssetListPromise: Promise<string[] | null> | null = null;
+let assetListPromise: Promise<string[] | null> | null = null;
 let lastSyncedAppAssetSignature = "";
 
 const getErrorMessage = (error: unknown) => {
@@ -294,49 +297,85 @@ const parseAppAssetListFromSw = (source: string): string[] => {
   return Array.from(paths);
 };
 
-const loadAppAssetListFromSw = async (): Promise<string[] | null> => {
-  if (typeof window === "undefined") return null;
+const sanitizeAssetPath = (rawPath: string): string | null => {
+  const trimmed = rawPath.trim();
+  if (!trimmed.startsWith(APP_ASSET_PREFIX)) return null;
+  const sanitized = trimmed.split("?")[0]?.split("#")[0] || "";
+  if (!sanitized || sanitized.includes("..")) return null;
+  return sanitized;
+};
 
-  if (!swAssetListPromise) {
-    swAssetListPromise = (async () => {
-      try {
-        const response = await fetch(APP_SW_PATH, { cache: "no-store" });
-        if (!response.ok) {
-          console.warn("WebServer", "Unable to load app service worker asset list", { status: response.status });
-          return null;
-        }
+const parsePrecacheManifest = (source: string): string[] => {
+  const parsed = parseJsonOrNull<unknown>(source);
+  if (!Array.isArray(parsed)) return [];
+  const paths = new Set<string>();
+  for (const entry of parsed) {
+    if (typeof entry !== "string") continue;
+    const sanitized = sanitizeAssetPath(entry);
+    if (sanitized) paths.add(sanitized);
+  }
+  return Array.from(paths);
+};
 
-        const source = await response.text();
-        const assets = parseAppAssetListFromSw(source);
-        if (assets.length === 0) {
-          console.warn("WebServer", "No /app assets found in service worker script");
-          return null;
-        }
-
-        return assets;
-      } catch (error) {
-        console.warn("WebServer", "Failed to read app service worker asset list", error);
-        return null;
-      }
-    })();
+const fetchServedClientAssetList = async (): Promise<string[] | null> => {
+  // Prefer the new client-view precache manifest (the build-emitted source of truth for the
+  // served client). Fall back to scraping the legacy /app/sw.js when it's absent (pre-deploy).
+  try {
+    const response = await fetch(CLIENT_VIEW_PRECACHE_PATH, { cache: "no-store" });
+    if (response.ok) {
+      const assets = parsePrecacheManifest(await response.text());
+      if (assets.length > 0) return assets;
+      console.warn("WebServer", "client-view precache manifest empty; falling back to sw.js");
+    } else if (response.status !== 404) {
+      console.warn("WebServer", "Unable to load client-view precache manifest", { status: response.status });
+    }
+  } catch (error) {
+    console.warn("WebServer", "Failed to read client-view precache manifest", error);
   }
 
-  const assets = await swAssetListPromise;
+  try {
+    const response = await fetch(APP_SW_PATH, { cache: "no-store" });
+    if (!response.ok) {
+      console.warn("WebServer", "Unable to load app service worker asset list", { status: response.status });
+      return null;
+    }
+
+    const assets = parseAppAssetListFromSw(await response.text());
+    if (assets.length === 0) {
+      console.warn("WebServer", "No /app assets found in service worker script");
+      return null;
+    }
+
+    return assets;
+  } catch (error) {
+    console.warn("WebServer", "Failed to read app service worker asset list", error);
+    return null;
+  }
+};
+
+const loadServedClientAssetList = async (): Promise<string[] | null> => {
+  if (typeof window === "undefined") return null;
+
+  if (!assetListPromise) {
+    assetListPromise = fetchServedClientAssetList();
+  }
+
+  const assets = await assetListPromise;
   if (!assets || assets.length === 0) {
-    swAssetListPromise = null;
+    assetListPromise = null;
   }
 
   return assets;
 };
 
-export const syncAndroidAppAssetsFromServiceWorker = async (): Promise<void> => {
+export const syncAndroidServedClientAssets = async (): Promise<void> => {
   if (typeof window === "undefined") return;
   if (!window.webServerNativeWire) return;
 
   const webServer = getWebServerInterface();
   if (!webServer) return;
 
-  const assets = await loadAppAssetListFromSw();
+  const assets = await loadServedClientAssetList();
   if (!assets || assets.length === 0) return;
 
   const signature = assets.join("\n");

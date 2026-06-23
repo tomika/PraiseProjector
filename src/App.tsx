@@ -72,7 +72,7 @@ import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
 import type { WebServerApiRequest } from "../common/webserver-interface";
-import { getWebServerInterface, syncAndroidAppAssetsFromServiceWorker } from "./services/webServerBridge";
+import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 
 type LeadersResponse = LeaderDBProfile[];
@@ -1124,7 +1124,7 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    void syncAndroidAppAssetsFromServiceWorker();
+    void syncAndroidServedClientAssets();
   }, []);
 
   useEffect(() => {

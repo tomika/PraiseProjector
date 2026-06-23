@@ -13,10 +13,17 @@ import { ClientViewStore } from "../controller/ClientViewStore";
 import { ClientViewProvider } from "../controller/ClientViewContext";
 import { ClientView } from "../ui/ClientView";
 import { cloudApiBaseUrl } from "../../config";
+import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
 export async function mountClientView(rootEl: HTMLElement, config: ClientConfig = {}): Promise<ClientViewStore> {
   const api = new RestClientApi();
   const store = new ClientViewStore(api);
+  // Resolve MIDI soundfonts through the same legacy asset base as icon() (assets.ts):
+  // the soundfont files live at <assetBase>/soundfont/ (upstream /app/soundfont/), NOT under
+  // the hashed client-view bundle. When served by a host webserver (__ppAssetBase="") this
+  // becomes /soundfont/, which the host maps back to /app/soundfont/ for offline playback.
+  const assetBase = (typeof window !== "undefined" ? window.__ppAssetBase : undefined) ?? "/app";
+  setMidiSoundfontUrl(`${assetBase}/soundfont/`);
   // When served by the Electron webserver the entry HTML sets __ppApiBase to the
   // serving origin (root). Otherwise use the base resolved in src/config.ts (the
   // Vite proxy target in dev). Callers may still override via config.
