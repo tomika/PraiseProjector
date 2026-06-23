@@ -30,6 +30,10 @@ function getStaticDir(): string {
 }
 
 export interface WebServerSettings {
+  /** The local-webserver on/off toggle (renderer `iWebEnabled`). When false the HTTP
+   *  server is stopped — it stops serving clients AND stops the UDP host advertising an
+   *  http url (the offer becomes a pure PPD/UDP session). */
+  webServerEnabled: boolean;
   webServerPort: number;
   webServerPath: string;
   webServerDomainName: string;
@@ -91,6 +95,7 @@ export class WebServer {
 
   constructor(initialSettings?: Partial<WebServerSettings>) {
     this.settings = {
+      webServerEnabled: initialSettings?.webServerEnabled ?? true,
       webServerPort: initialSettings?.webServerPort ?? 19740,
       webServerPath: initialSettings?.webServerPath ?? "/",
       webServerDomainName: initialSettings?.webServerDomainName ?? "",
@@ -1075,6 +1080,7 @@ export class WebServer {
     const portOrPathChanged =
       (newSettings.webServerPort != null && newSettings.webServerPort !== this.settings.webServerPort) ||
       (newSettings.webServerPath != null && newSettings.webServerPath !== this.settings.webServerPath);
+    const enabledChanged = newSettings.webServerEnabled != null && newSettings.webServerEnabled !== this.settings.webServerEnabled;
 
     // Revoke all leader tokens when the authorized client list changes
     if (newSettings.leaderModeClients !== undefined) {
@@ -1089,6 +1095,18 @@ export class WebServer {
 
     this.verifyWebServerPath();
     this.initImagePage(this.staticDir);
+
+    // Honor the on/off toggle: start or stop the HTTP server. Takes precedence over a
+    // port/path restart (no point restarting a server we're about to stop).
+    if (enabledChanged) {
+      if (this.settings.webServerEnabled) {
+        if (!this.server) this.start();
+      } else {
+        this.stop();
+      }
+      flushAllDisplayChangeListeners();
+      return;
+    }
 
     // Restart server if port or path changed
     if (portOrPathChanged && this.server) {
@@ -1149,6 +1167,12 @@ export class WebServer {
 
   public getPort(): number {
     return this.settings.webServerPort;
+  }
+
+  /** Whether the HTTP server is actually listening (not merely configured). Used by
+   *  the UDP host so a PPD offer only advertises an http url when it really works. */
+  public isRunning(): boolean {
+    return !!this.server;
   }
 
   public getRemoteHighlightController(): string {

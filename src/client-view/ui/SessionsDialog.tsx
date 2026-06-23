@@ -1,14 +1,15 @@
 /**
- * SessionsDialog — discover and follow online/nearby sessions, gated off
- * capabilities.canFollowSessions (the cloud-backed client; the served client
- * auto-follows its serving host and the desktop embed IS the host, so both
- * declare it false). Mirrors the legacy #sessionList picker: a list of
- * discoverable sessions (cloud + nearby/PPD), tapping one follows it. Reflects
- * state.network.status and offers stop-following while watching.
+ * SessionsDialog — the App-mode sessions hub (opened from MoreMenu → "Sessions",
+ * gated on capabilities.canFollowSessions). It ports the legacy main.html session
+ * controls into one panel:
+ *   - host a session: Start session (PPD) / Start online session, and Stop while active;
+ *   - search: Web / Nearby (+ refresh);
+ *   - the found-session selector: tap a discovered session to attach (per-type).
+ * Each control dispatches a controller action; the dialog reflects state.network.status.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { OnlineSessionEntry } from "../api/ClientApi";
+import type { ExternalSearchMode, OnlineSessionEntry } from "../api/ClientApi";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { icon } from "./assets";
 
@@ -26,37 +27,51 @@ export function SessionsDialog() {
   const state = useClientViewState();
   const [loading, setLoading] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      await store.refreshSessions("BOTH");
-    } finally {
-      setLoading(false);
-    }
-  }, [store]);
+  const search = useCallback(
+    async (mode: ExternalSearchMode) => {
+      setLoading(true);
+      try {
+        await store.refreshSessions(mode);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [store]
+  );
 
   // Discover sessions when the picker opens (legacy searchExternalSessions on show).
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void search("BOTH");
+  }, [search]);
 
-  const follow = (session: OnlineSessionEntry) => {
-    void store.watchSession(session);
+  const attach = (session: OnlineSessionEntry) => {
+    void store.attachSession(session);
     store.closeSessionsDialog();
   };
-
-  const watching = state.network.status === "watching" || state.network.status === "leading";
 
   return (
     <div className="cv-modal-backdrop" onClick={() => store.closeSessionsDialog()}>
       <div className="cv-dialog cv-sessions-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="cv-dialog-head">
-          <h2 className="cv-dialog-title">Follow a session</h2>
-          <button type="button" className="cv-iconbtn" title="Search again" onClick={() => void refresh()} disabled={loading}>
+          <h2 className="cv-dialog-title">Find a session</h2>
+          <button type="button" className="cv-iconbtn" title="Search again" onClick={() => void search("BOTH")} disabled={loading}>
             <img className="btnImg cv-opt-icon" src={icon("reset.svg")} alt="Search again" />
           </button>
         </div>
 
+        {/* Search the web and the local network on demand. */}
+        <div className="cv-session-search">
+          <button type="button" className="cv-session-action" onClick={() => void search("WEB")} disabled={loading}>
+            <img className="btnImg cv-opt-icon" src={icon("www.svg")} alt="" />
+            <span>Web</span>
+          </button>
+          <button type="button" className="cv-session-action" onClick={() => void search("NEARBY")} disabled={loading}>
+            <img className="btnImg cv-opt-icon" src={icon("nearby.svg")} alt="" />
+            <span>Nearby</span>
+          </button>
+        </div>
+
+        {/* Found-session selector — tap to attach (per-type). */}
         <ul className="cv-session-list">
           {state.sessions.length === 0 ? (
             <li className="cv-session-empty">{loading ? "Searching…" : "No sessions found"}</li>
@@ -65,7 +80,7 @@ export function SessionsDialog() {
               const kind = sessionKind(session);
               return (
                 <li key={session.id}>
-                  <button type="button" className="cv-session-item" onClick={() => follow(session)}>
+                  <button type="button" className="cv-session-item" onClick={() => attach(session)}>
                     <img className="btnImg cv-opt-icon" src={icon(kind.image)} alt="" />
                     <span className="cv-session-name">{session.name}</span>
                     <span className="cv-session-kind">{kind.label}</span>
@@ -77,18 +92,6 @@ export function SessionsDialog() {
         </ul>
 
         <div className="cv-dialog-actions">
-          {watching && (
-            <button
-              type="button"
-              className="cv-dialog-cancel"
-              onClick={() => {
-                void store.stopWatching();
-                store.closeSessionsDialog();
-              }}
-            >
-              Stop following
-            </button>
-          )}
           <button type="button" className="cv-dialog-ok" onClick={() => store.closeSessionsDialog()}>
             Close
           </button>

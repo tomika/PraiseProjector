@@ -194,6 +194,16 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
         setSettings(merged);
         setInitialSettings(merged);
+        // Push the persisted settings to the backend at startup — they otherwise only
+        // reach main on Save. Critical for the webserver on/off toggle: the server boots
+        // ENABLED by default, so a persisted "disabled" must be applied now to stop it
+        // (mirrors syncToBackend's Electron-vs-web branching).
+        if (window.electronAPI?.syncSettings) {
+          window.electronAPI.syncSettings(merged);
+        } else {
+          const webServer = getWebServerInterface();
+          if (webServer) void webServer.sync({ kind: "config", config: toWebServerConfig(merged) });
+        }
       })
       .catch(() => {
         setSettings(defaultSettings);

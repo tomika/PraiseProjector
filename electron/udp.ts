@@ -92,6 +92,11 @@ export class UdpServer {
   // Shared protocol handler (handles view/ack/display/off logic for both UDP and BT)
   private protocolHandler: PpdProtocolHandler;
 
+  // Whether we host a PPD session (answer scans with an offer + accept watchers).
+  // Default true preserves the legacy "electron always hosts" behavior; the renderer
+  // can toggle it via advertiseNearby (→ setHostingEnabled) for an explicit start/stop.
+  private hostingEnabled = true;
+
   private constructor(private readonly webServer: WebServer) {
     this.socket = dgram.createSocket("udp4");
 
@@ -185,7 +190,23 @@ export class UdpServer {
     };
   }
 
+  /**
+   * Enable/disable hosting a PPD session. When disabled we stop answering scans with
+   * an offer (so we become undiscoverable) and stop leading (which notifies current
+   * watchers and halts display retransmits). Toggled from the renderer via the
+   * advertiseNearby bridge so the new session UI's Start/Stop works on the desktop.
+   */
+  public setHostingEnabled(enabled: boolean): void {
+    this.hostingEnabled = enabled;
+    if (enabled) this.protocolHandler.startLeading();
+    else this.protocolHandler.stopLeading();
+  }
+
   private handleScanRequest(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
+    // Suppressed while hosting is disabled (the renderer's Stop session) so we don't
+    // advertise an offer and remain discoverable.
+    if (!this.hostingEnabled) return;
+
     // Get webserver settings to respond with
     const settings = this.webServer.getSettings();
 
@@ -194,7 +215,12 @@ export class UdpServer {
       op: "offer",
       port: this.getPort(),
       name: settings.currentLeader,
-      url: `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`,
+      // Only advertise an http url when the webserver is actually listening; with it
+      // down this is a pure PPD (UDP) session — sending a dead url makes scanners try
+      // to open a broken endpoint instead of following over UDP.
+      url: this.webServer.isRunning()
+        ? `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`
+        : undefined,
       device: this.getHostId(),
     };
 

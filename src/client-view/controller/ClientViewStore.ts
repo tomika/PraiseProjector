@@ -1189,8 +1189,31 @@ export class ClientViewStore {
     await this.api.session.watch(session);
   }
 
+  /** Attach to a discovered session, dispatched by type (PPD/cloud follow, or open a
+   *  LAN server's URL) — the found-session selector. See {@link SessionApi.attach}. */
+  async attachSession(session: OnlineSessionEntry): Promise<void> {
+    await this.api.session.attach(session);
+  }
+
   async stopWatching(): Promise<void> {
     await this.api.session.stopWatching();
+  }
+
+  /** Begin hosting a local PPD session so nearby devices can follow (legacy
+   *  startPpdSession). App mode + a host bridge only (canHostLocalSession). */
+  async startLocalSession(): Promise<void> {
+    await this.api.session.startLocal();
+  }
+
+  /** Stop hosting the local PPD session (legacy stopPpdSession). */
+  async stopLocalSession(): Promise<void> {
+    await this.api.session.stopLocal();
+  }
+
+  /** Host an online (cloud) session — register as a leader others can follow. App
+   *  mode + authed only (canHostOnlineSession). */
+  async startOnlineSession(): Promise<void> {
+    await this.api.session.createOnline();
   }
 
   /** Force an immediate reconnect to the followed server (the legacy goOnline()),

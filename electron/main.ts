@@ -23,7 +23,7 @@ const execAsync = promisify(execCb);
 import { getProxyConfigValue, initializeProxy } from "./proxy";
 import { UdpServer, getUdpServerInstance } from "./udp";
 import { P2PTransport, getP2PTransportInstance } from "./p2p-transport";
-import { initializeWebServer, getWebServerInstance } from "./webserver";
+import { initializeWebServer, getWebServerInstance, type WebServerSettings } from "./webserver";
 import { Settings } from "../src/types";
 import type { WebServerConfig } from "../common/webserver-interface";
 import { installLoggerInterceptor, setupLoggerIPC, closeLogViewerWindow } from "./logger";
@@ -318,7 +318,7 @@ function applyWebServerConfig(config: WebServerConfig): void {
   const webServer = getWebServerInstance();
   if (!webServer) return;
 
-  webServer.updateSettings({
+  const update: Partial<WebServerSettings> = {
     webServerPort: config.webServerPort,
     webServerPath: config.webServerPath,
     webServerDomainName: config.webServerDomainName,
@@ -328,7 +328,11 @@ function applyWebServerConfig(config: WebServerConfig): void {
     leaderModeClients: config.leaderModeClients,
     stylesToClients: config.stylesToClients,
     chordProStyles: (config.chordProStyles as Settings["chordProStyles"]) ?? null,
-  });
+  };
+  // Only act on the on/off toggle when the caller actually provided it — the
+  // sync-settings path omits it, and a stray `undefined` would clobber the state.
+  if (config.webServerEnabled !== undefined) update.webServerEnabled = config.webServerEnabled;
+  webServer.updateSettings(update);
 }
 
 // Install logger interceptor early to capture all console output
@@ -1469,6 +1473,10 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
   if (getWebServerInstance()) {
     applyWebServerConfig({
+      // The Electron renderer syncs settings through THIS path (window.electronAPI
+      // .syncSettings), not webserver-sync-config — so the on/off toggle must be
+      // carried here too, else disabling the webserver never stops it.
+      webServerEnabled: settings.iWebEnabled,
       webServerPort: settings.webServerPort,
       webServerPath: settings.webServerPath,
       webServerDomainName: settings.webServerDomainName,
@@ -1798,6 +1806,9 @@ ipcMain.handle("hostdevice-close-udp-port", () => {
 ipcMain.handle("hostdevice-check-nearby-permissions", () => true);
 
 ipcMain.handle("hostdevice-advertise-nearby", (_event, enabled: boolean) => {
+  // Also gate the UDP host (answer-scan + leading) so the renderer's Start/Stop
+  // session truly makes this device discoverable/undiscoverable, not just Bluetooth.
+  getUdpServerInstance()?.setHostingEnabled(enabled);
   const p2p = getP2PTransportInstance();
   if (!p2p) return false;
   if (enabled) return p2p.startAdvertising();

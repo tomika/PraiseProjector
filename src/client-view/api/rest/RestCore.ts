@@ -22,7 +22,9 @@ import {
   isHostDevicePpdAvailable,
   scanHostDeviceSessions,
   startHostDeviceWatching,
+  startHostDevicePpdHosting,
   stopHostDeviceWatching,
+  stopHostDevicePpdHosting,
 } from "../../../services/hostDevicePpd";
 import { NO_CAPABILITIES } from "../ClientApi";
 import type { ClientCapabilities, ClientConfig, ClientMode, LeaderIdentity, NetworkState, Unsubscribe } from "../ClientApi";
@@ -140,6 +142,7 @@ export class RestCore {
 
   dispose(): void {
     this.stopFollow();
+    void stopHostDevicePpdHosting();
   }
 
   private resolveClientId(): string {
@@ -227,8 +230,10 @@ export class RestCore {
         canChangeLeader: false,
         canPersistPlaylist: false,
         // Locked to its serving host (auto-follows via config.follow); no manual
-        // session picker.
+        // session picker, and it never hosts its own session.
         canFollowSessions: false,
+        canHostLocalSession: false,
+        canHostOnlineSession: false,
         // The full editor (index.html) is served by the same webserver, but only
         // makes sense on a real browser/desktop, not the native host.
         canOpenFullEditor: !hasHostBridge,
@@ -248,6 +253,11 @@ export class RestCore {
       canChangeLeader: true,
       canPersistPlaylist: true,
       canFollowSessions: true,
+      // Hosting a local PPD session needs a native transport (Android / Electron
+      // desktop); a plain browser has none. Hosting an online session needs a
+      // leader identity (the cloud session row is keyed by it).
+      canHostLocalSession: hasHostBridge,
+      canHostOnlineSession: this.authed,
       canOpenFullEditor: !hasHostBridge,
       isPwa,
       hasHostBridge,
@@ -323,6 +333,21 @@ export class RestCore {
     const sessions = infos.map(toOnlineSessionEntry);
     this.sessionEvents.emit(sessions);
     return sessions;
+  }
+
+  // ── hosting a session ──────────────────────────────────────────────────────────
+
+  /** Begin hosting a local PPD session (legacy startPpdSession). The host loop pushes
+   *  THIS client's current display to followers — see {@link getDisplay}. */
+  async startLocalHost(): Promise<void> {
+    const started = await startHostDevicePpdHosting(() => this.getDisplay());
+    if (started) this.setNetworkState({ status: "leading" });
+  }
+
+  /** Stop hosting the local PPD session (legacy stopPpdSession). */
+  async stopLocalHost(): Promise<void> {
+    await stopHostDevicePpdHosting();
+    this.setNetworkState({ status: "online" });
   }
 
   // ── following a session ──────────────────────────────────────────────────────

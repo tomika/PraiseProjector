@@ -1,15 +1,20 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useLocalization } from "../localization/LocalizationContext";
-import { useSettings } from "../hooks/useSettings";
 import { useAuth } from "../contexts/AuthContext";
 import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
 import { webBluetoothService } from "../services/webBluetooth";
-import { getHostDeviceDiscoveredSessions, initHostDevicePpd, isHostDevicePpdAvailable, scanHostDeviceSessions } from "../services/hostDevicePpd";
+import {
+  getHostDeviceDiscoveredSessions,
+  initHostDevicePpd,
+  isHostDevicePpdAvailable,
+  scanHostDeviceSessions,
+  startHostDevicePpdHosting,
+  stopHostDevicePpdHosting,
+} from "../services/hostDevicePpd";
+import { getCurrentDisplay } from "../state/CurrentSongStore";
 import "./SessionsForm.css";
-import { useLeader } from "../contexts/LeaderContext";
-import { useSessionUrl, buildCloudUrl } from "../hooks/useSessionUrl";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -53,6 +58,10 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // Check for Web Bluetooth availability (works in browser without pairing)
   const [_hasWebBluetooth, setHasWebBluetooth] = useState(false);
   const [_bleConnecting, setBleConnecting] = useState(false);
+  // Hosting a PPD session — the desktop hosts by default (electron/udp.ts is always-on
+  // until toggled), so the control starts in the "Stop" state.
+  const [hosting, setHosting] = useState(true);
+  const [onlineStarting, setOnlineStarting] = useState(false);
 
   // Detect Electron and Web Bluetooth on mount
   useEffect(() => {
@@ -333,6 +342,47 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     setSelectedSession(session);
   };
 
+  // Start/stop hosting a local PPD session via the shared host controller. On the
+  // Electron desktop the MAIN process is the host, so this toggles its advertising +
+  // scan-answer gate (see hostDevicePpd.startHostDevicePpdHosting / udp.ts gate).
+  const handleToggleHosting = useCallback(async () => {
+    if (hosting) {
+      await stopHostDevicePpdHosting();
+      setHosting(false);
+    } else {
+      const ok = await startHostDevicePpdHosting(() => getCurrentDisplay());
+      setHosting(ok);
+    }
+  }, [hosting]);
+
+  // Start an online (cloud) session by force-registering the current projected display
+  // under our leader id — the /display_update upsert makes us discoverable at once.
+  const handleStartOnline = useCallback(async () => {
+    if (!selfId) return;
+    setOnlineStarting(true);
+    try {
+      const d = getCurrentDisplay();
+      await cloudApi.sendDisplayUpdate({
+        songId: d.songId,
+        from: d.from,
+        to: d.to,
+        section: d.section,
+        sectionRepeatCounts: d.sectionRepeatCounts,
+        sectionRepeatNonce: d.sectionRepeatNonce,
+        transpose: d.transpose,
+        leaderId: selfId,
+        playlist: d.playlist,
+        song: d.song,
+        message: d.message,
+        instructions: d.instructions,
+      });
+    } catch (error) {
+      console.error("App", "Failed to start online session", error);
+    } finally {
+      setOnlineStarting(false);
+    }
+  }, [selfId]);
+
   const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setBroadcastAddress(value);
@@ -522,6 +572,27 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
               )}
             </div>
           )*/}
+
+          {/* Host controls — start/stop a local PPD session and start an online
+              (cloud) session, mirroring the new client-view's sessions hub. */}
+          <div className="session-host-buttons">
+            {hasHostDevicePpd && (
+              <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => void handleToggleHosting()}>
+                {hosting ? t("SessionsStopHosting") || "Stop session" : t("SessionsStartHosting") || "Start session"}
+              </button>
+            )}
+            {selfId && (
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm"
+                onClick={() => void handleStartOnline()}
+                disabled={onlineStarting}
+                title={t("SessionsStartOnlineTooltip") || "Register this device as an online session others can follow"}
+              >
+                {t("SessionsStartOnline") || "Start online session"}
+              </button>
+            )}
+          </div>
 
           <div className="session-action-buttons">
             <button type="button" className="btn btn-secondary" onClick={onClose}>

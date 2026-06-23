@@ -26,6 +26,7 @@ import { getEmptyDisplay } from "../../../../common/pp-utils";
 import { formatLocalDateKey, formatLocalDateLabel } from "../../../../common/date-only";
 import { getCurrentDisplay, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
 import { getSharedSongFilter, setSharedSongFilter, subscribeSharedSongFilter } from "../../../state/SongFilterStore";
+import { isHostDevicePpdAvailable, startHostDevicePpdHosting, stopHostDevicePpdHosting } from "../../../services/hostDevicePpd";
 import { createDeviceApi } from "../rest/restPorts";
 import type {
   AuthApi,
@@ -33,6 +34,7 @@ import type {
   ClientMode,
   DeviceApi,
   DisplayApi,
+  NetworkState,
   PlaylistApi,
   SessionApi,
   SongApi,
@@ -52,6 +54,10 @@ export class DirectClientApi implements ClientApi {
   private hostStateUnsub: (() => void) | null = null;
   private readonly capabilityListeners = new Set<(capabilities: ClientCapabilities) => void>();
   private readonly authListeners = new Set<(authed: boolean) => void>();
+  // Session/network state for the embed's own hosting (a local PPD session, or an
+  // online cloud session). Drives the toolbar indicator + the MoreMenu Start/Stop.
+  private readonly networkListeners = new Set<(state: NetworkState) => void>();
+  private networkState: NetworkState = { status: "online" };
 
   readonly song: SongApi = this.createSongApi();
   readonly playlist: PlaylistApi = this.createPlaylistApi();
@@ -79,6 +85,11 @@ export class DirectClientApi implements ClientApi {
       canPersistPlaylist: !!this.getSelectedLeader(),
       // It IS the host — there is nothing external to discover or follow.
       canFollowSessions: false,
+      // The desktop renderer has the native host bridge, so it can advertise a local
+      // PPD session; online (cloud) hosting needs a login (the session is keyed by the
+      // leader id). Mirrors the legacy iconStartSession/iconStartOnlineSession gating.
+      canHostLocalSession: isHostDevicePpdAvailable(),
+      canHostOnlineSession: this.isExternalWebDisplayEnabled(),
       // The embedded desktop view IS the editor's sibling face; switching back is
       // the home button's job, not a navigation to index.html.
       canOpenFullEditor: false,
@@ -100,6 +111,18 @@ export class DirectClientApi implements ClientApi {
       return db.getLeaderById(id) ?? db.getLeaderByName(id) ?? null;
     } catch {
       return null;
+    }
+  }
+
+  /** The host app's "publish display to the cloud" toggle (Settings.externalWebDisplayEnabled,
+   *  persisted in the pp-settings localStorage). Gates the embed's online-session
+   *  hosting — start-online is offered only when external web display is enabled. */
+  private isExternalWebDisplayEnabled(): boolean {
+    try {
+      const raw = window.localStorage?.getItem("pp-settings");
+      return raw ? !!(JSON.parse(raw) as { externalWebDisplayEnabled?: boolean }).externalWebDisplayEnabled : false;
+    } catch {
+      return false;
     }
   }
 
@@ -131,8 +154,10 @@ export class DirectClientApi implements ClientApi {
     this.songListUnsub = null;
     this.hostStateUnsub?.();
     this.hostStateUnsub = null;
+    void stopHostDevicePpdHosting();
     this.capabilityListeners.clear();
     this.authListeners.clear();
+    this.networkListeners.clear();
   }
 
   getCapabilities(): ClientCapabilities {
@@ -274,14 +299,48 @@ export class DirectClientApi implements ClientApi {
     };
   }
 
+  private setNetworkState(state: NetworkState): void {
+    this.networkState = state;
+    for (const cb of this.networkListeners) cb(state);
+  }
+
   private createSessionApi(): SessionApi {
     return {
+      // The embed doesn't discover/follow others — it only HOSTS (start/stop).
       scanLocalServers: async () => [],
       searchExternal: async () => [],
-      startLocal: async () => undefined,
-      stopLocal: async () => undefined,
-      createOnline: async () => undefined,
+      // Host a local PPD session via the shared controller (Electron branch →
+      // advertiseNearby + the udp.ts host gate). The host loop reads the live
+      // projected display so followers mirror what the desktop is projecting.
+      startLocal: async () => {
+        const started = await startHostDevicePpdHosting(() => getCurrentDisplay());
+        if (started) this.setNetworkState({ status: "leading" });
+      },
+      stopLocal: async () => {
+        await stopHostDevicePpdHosting();
+        this.setNetworkState({ status: "online" });
+      },
+      // Host an online (cloud) session: force-register the current projected display
+      // under the authed leader (the /display_update upsert makes us discoverable now).
+      createOnline: async () => {
+        const d = getCurrentDisplay();
+        await cloudApi.sendDisplayUpdate({
+          songId: d.songId,
+          from: d.from,
+          to: d.to,
+          section: d.section,
+          sectionRepeatCounts: d.sectionRepeatCounts,
+          sectionRepeatNonce: d.sectionRepeatNonce,
+          transpose: d.transpose,
+          playlist: d.playlist,
+          song: d.song,
+          message: d.message,
+          instructions: d.instructions,
+        });
+        this.setNetworkState({ status: "leading" });
+      },
       watch: async () => undefined,
+      attach: async () => undefined,
       stopWatching: async () => undefined,
       // The embedded desktop view IS the host — there is no remote link to
       // re-establish, so reconnect is a no-op (its indicator is hidden anyway).
@@ -289,8 +348,9 @@ export class DirectClientApi implements ClientApi {
       // App mode has no follower netdisplay button, so this is never called.
       netDisplayUrl: () => "",
       subscribeNetworkState: (callback) => {
-        callback({ status: "online" });
-        return () => undefined;
+        this.networkListeners.add(callback);
+        callback(this.networkState);
+        return () => this.networkListeners.delete(callback);
       },
       subscribeSessions: () => () => undefined,
     };

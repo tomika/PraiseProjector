@@ -171,6 +171,24 @@ export function createDisplayApi(core: RestCore): DisplayApi {
   };
 }
 
+/**
+ * Attach to a session picked from the discovery list, dispatching by its url SCHEME
+ * (legacy found-session selector, praiseprojector.ts:4934-4980 / sessionKind):
+ *  - an http(s) url → a LAN webserver: open it in a browser;
+ *  - a udp:// or nrb:// url, or NO url → follow it ({@link RestCore.watch} picks the
+ *    PPD transport for a locally-discovered peer, else a cloud long-poll).
+ * Keying off the scheme (not "is it a discovered peer") is what makes a PPD host that
+ * runs no webserver follow over UDP instead of opening a (non-existent) http endpoint.
+ */
+async function attachSession(core: RestCore, session: OnlineSessionEntry): Promise<void> {
+  const url = session.localUrl;
+  if (url && /^https?:\/\//i.test(url)) {
+    if (typeof window !== "undefined") window.open(url, "_blank");
+    return;
+  }
+  await core.watch(session);
+}
+
 export function createSessionApi(core: RestCore): SessionApi {
   return {
     scanLocalServers: (address) => core.scanLocal(address),
@@ -189,20 +207,18 @@ export function createSessionApi(core: RestCore): SessionApi {
       core.sessionEvents.emit(results);
       return results;
     },
-    // NOTE: full local PPD hosting (offer/view/ack handshake) is wired in a later
-    // step; for now we surface the leading state so the UI stays consistent.
-    startLocal: async () => {
-      // Hosting happens within App mode now (no separate OnlineSession mode).
-      core.setNetworkState({ status: "leading" });
-    },
-    stopLocal: async () => {
-      core.setNetworkState({ status: "online" });
-    },
+    startLocal: () => core.startLocalHost(),
+    stopLocal: () => core.stopLocalHost(),
     createOnline: async (leaderId) => {
-      core.config = { ...core.config, leaderId };
+      // Force-register the cloud session now (user-chosen): a /display_update carrying
+      // the leader id upserts the sessions row, so the leader appears for followers at
+      // once rather than only on the next project. Cloud hosting lives within App mode.
+      core.config = { ...core.config, leaderId: leaderId ?? core.leader?.id };
+      await pushDisplay(core, core.getDisplay());
       core.setNetworkState({ status: "leading" });
     },
     watch: (session) => core.watch(session),
+    attach: (session) => attachSession(core, session),
     stopWatching: async () => {
       core.stopFollow();
       core.setNetworkState({ status: "online" });

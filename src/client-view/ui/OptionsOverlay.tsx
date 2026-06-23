@@ -21,6 +21,11 @@ export function OptionsOverlay() {
   // Follower (Client mode, no control): no song browser — only the chord options
   // above and a single netdisplay button (legacy setLeader(false)).
   const follower = isFollowerView(state);
+  // App mode while watching a session is also view-only (legacy ppdWatchMode): hide
+  // the browser, but offer a Stop-following button instead of netdisplay (the cloud
+  // App has no host /netdisplay route — that button is Client/host-served only).
+  const appWatching = state.mode === "App" && state.network.status === "watching";
+  const viewer = follower || appWatching;
   const canEdit = state.capabilities.canEditWorkingPlaylist;
   const editingPlaylist = canEdit && state.listMode === "playlist";
   const leaderLists = canEdit && state.listMode === "leaderlists";
@@ -34,13 +39,20 @@ export function OptionsOverlay() {
           <div className="cv-options-header">
             <OptionsBar />
           </div>
-          {!follower && <SearchBar />}
+          {!viewer && <SearchBar />}
         </div>
         {follower ? (
           <div className="cv-netdisplay-wrap">
             <button type="button" className="cv-netdisplay-btn" title="Open net display" onClick={() => store.openNetDisplay()}>
               <img className="cv-netdisplay-icon" src={icon("netdisplay.png")} alt="" />
               <span>Net display</span>
+            </button>
+          </div>
+        ) : appWatching ? (
+          <div className="cv-netdisplay-wrap">
+            <button type="button" className="cv-netdisplay-btn" title="Stop following" onClick={() => void store.stopWatching()}>
+              <img className="cv-netdisplay-icon" src={icon("stop.svg")} alt="" />
+              <span>Stop following</span>
             </button>
           </div>
         ) : editingPlaylist ? (

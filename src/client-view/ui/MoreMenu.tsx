@@ -48,6 +48,11 @@ export function MoreMenu() {
   // Clear/Save act on the live working playlist; greyed out while it is empty
   // (legacy makeDisabled(iconClearList, playlist.length === 0)).
   const emptyList = state.playlist.length === 0;
+  // Session host state (legacy iconStartSession/iconStartOnlineSession/iconStopSession
+  // visibility): Start is offered while idle, Stop while a session is active.
+  const leading = state.network.status === "leading";
+  const watching = state.network.status === "watching";
+  const sessionActive = leading || watching;
   const items: MenuItem[] = [
     // Account + session: the cloud-only affordances (canLogin / canFollowSessions
     // are false for the host-gated served client and the desktop embed).
@@ -59,7 +64,29 @@ export function MoreMenu() {
       show: caps.canLogin && state.authed,
       run: () => void store.logout(),
     },
-    { id: "sessions", label: "Follow a session", image: "online.svg", show: caps.canFollowSessions, run: () => store.openSessionsDialog() },
+    // Host a session (start/stop) — direct quick actions, mirroring the legacy
+    // more-panel play / play-online / stop icons. Online (play-online) is offered when
+    // online hosting is enabled (Settings.externalWebDisplayEnabled in the embed);
+    // otherwise a local PPD session (play.svg) — mutually exclusive, like the legacy
+    // iconStartSession vs iconStartOnlineSession.
+    {
+      id: "startLocal",
+      label: "Start session",
+      image: "play.svg",
+      show: caps.canHostLocalSession && !caps.canHostOnlineSession && !sessionActive,
+      run: () => void store.startLocalSession(),
+    },
+    {
+      id: "startOnline",
+      label: "Start online session",
+      image: "play-online.svg",
+      show: caps.canHostOnlineSession && !sessionActive,
+      run: () => void store.startOnlineSession(),
+    },
+    { id: "stopSession", label: "Stop session", image: "stop.svg", show: leading, run: () => void store.stopLocalSession() },
+    { id: "stopFollowing", label: "Stop following", image: "stop.svg", show: watching, run: () => void store.stopWatching() },
+    // Discover + attach (search / found-session selector) lives in the dialog.
+    { id: "sessions", label: "Find a session", image: "online.svg", show: caps.canFollowSessions, run: () => store.openSessionsDialog() },
     { id: "editor", label: "Open editor", image: "edit-instructions.svg", show: caps.canOpenFullEditor, run: () => store.openFullEditor() },
     {
       id: "save",

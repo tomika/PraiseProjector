@@ -113,6 +113,19 @@ export interface ClientCapabilities {
    */
   canFollowSessions: boolean;
   /**
+   * May host a local PPD session (advertise + serve display to nearby followers).
+   * **App mode only**, and only where a native host bridge is present (Android, or
+   * the Electron desktop) — a plain browser has no UDP/Nearby transport. False in
+   * Client mode and in the desktop embed. See {@link SessionApi.startLocal}.
+   */
+  canHostLocalSession: boolean;
+  /**
+   * May host an online (cloud) session — register itself as a leader others can
+   * follow. **App mode only**, and only when authenticated (the session row is
+   * keyed by the leader id). See {@link SessionApi.createOnline}.
+   */
+  canHostOnlineSession: boolean;
+  /**
    * May navigate to the full multi-panel editor (index.html). True in a real
    * browser/desktop where that editor is usable and reachable; false on the
    * native host (Android) and in the desktop embed (which IS the editor and
@@ -135,6 +148,8 @@ export const NO_CAPABILITIES: ClientCapabilities = {
   canChangeLeader: false,
   canPersistPlaylist: false,
   canFollowSessions: false,
+  canHostLocalSession: false,
+  canHostOnlineSession: false,
   canOpenFullEditor: false,
   isPwa: false,
   hasHostBridge: false,
@@ -338,6 +353,13 @@ export interface SessionApi {
   createOnline(leaderId?: string): Promise<void>;
   /** Follow a session — drives {@link DisplayApi.subscribeDisplay}. */
   watch(session: OnlineSessionEntry): Promise<void>;
+  /**
+   * Attach to a session picked from the discovery list, dispatching by its type
+   * (the legacy found-session selector, praiseprojector.ts:4934-4980): a LAN server
+   * (an `http(s)://` localUrl that is not a discovered PPD peer) opens its URL in a
+   * browser; a PPD/nearby or cloud session is followed via {@link watch}.
+   */
+  attach(session: OnlineSessionEntry): Promise<void>;
   /** Stop following the current session. */
   stopWatching(): Promise<void>;
   /**

@@ -10,42 +10,42 @@
     "icons": [
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "72x72"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "96x96"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "128x128"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "144x144"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "152x152"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "192x192"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "384x384"
         },
         {
             "src": "/app/images/pp.svg",
-            "type": "image/png",
+            "type": "image/svg+xml",
             "sizes": "512x512"
         }
     ]

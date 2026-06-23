@@ -85,6 +85,17 @@
   flex-wrap: wrap;
 }
 
+/* Host controls row (start/stop session, start online session). */
+.sessions-modal-footer .session-host-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sessions-modal-footer .session-host-buttons:empty {
+  display: none;
+}
+
 .sessions-modal-footer .session-action-buttons {
   display: flex;
   width: 100%;

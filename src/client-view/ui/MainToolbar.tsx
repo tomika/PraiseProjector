@@ -59,9 +59,10 @@ const NET_STATUSES: NetworkStatus[] = ["startup", "watching", "online", "leading
 export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; onPrev?: () => void; onNext?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
-  // Follower (Client, no control): no navigation or transpose, mirroring the
-  // leader's display (legacy setLeader(false) hid btnPrev/btnNext/divTranspose).
-  const follower = isFollowerView(state);
+  // View-only: a Client follower, OR App mode while watching a session (legacy
+  // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
+  // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
+  const follower = isFollowerView(state) || (state.mode === "App" && state.network.status === "watching");
   const capoSelectRef = useRef<HTMLSelectElement | null>(null);
 
   // The toolbar is a vertical column when landscape AND options closed.
@@ -128,6 +129,9 @@ export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; o
   const netLabel = NET_STATUS_LABEL[netStatus] ?? netStatus;
   const netDetail = netStatus === "error" && state.network.error ? `: ${state.network.error}` : "";
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
+  // In App mode the indicator is normally hidden, but a hosted/followed session is a
+  // live link worth showing (legacy divNetStatus shown while ppdWatchers != null).
+  const netActiveInApp = netStatus === "leading" || netStatus === "watching";
 
   const openCapoPicker = () => {
     if (!state.displaySettings.useCapo) return;
@@ -261,7 +265,7 @@ export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; o
     // shows as 0 B / "(unknown)" / Initiator "Other" in devtools) and blanks the
     // indicator between frames — very visible when the status flips repeatedly.
     netstatus:
-      state.mode !== "App" ? (
+      state.mode !== "App" || netActiveInApp ? (
         <div
           id="netstatus"
           className={`btnDiv net-${netStatus}`}

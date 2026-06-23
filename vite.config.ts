@@ -50,12 +50,18 @@ export default defineConfig(({ command, mode }) => {
           const swPath = path.join(__dirname, 'dist', 'webapp', 'sw.js');
           try {
             const content = fs.readFileSync(swPath, 'utf8');
-            // Derive a stable build ID from the content of index.html.
-            // Vite embeds content-hashed asset filenames in index.html, so this
-            // hash changes if and only if the actual bundle output changed.
-            const indexPath = path.join(__dirname, 'dist', 'webapp', 'index.html');
-            const indexContent = fs.readFileSync(indexPath, 'utf8');
-            const shortHash = crypto.createHash('sha256').update(indexContent).digest('hex').slice(0, 8);
+            // Derive a stable build ID from the content of the entry HTML pages.
+            // Vite embeds content-hashed asset filenames in each page, so this hash
+            // changes if and only if the actual bundle output changed. client-view.html
+            // is included so a follower-client-only change still busts the SW cache.
+            const entryPages = ['index.html', 'client-view.html'];
+            const entryContent = entryPages
+              .map((page) => {
+                const p = path.join(__dirname, 'dist', 'webapp', page);
+                return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+              })
+              .join('\n');
+            const shortHash = crypto.createHash('sha256').update(entryContent).digest('hex').slice(0, 8);
             const buildId = `${pkg.version}-${shortHash}`;
             const patched = content.replace(
               /const CACHE_VERSION = '[^']*'/,

@@ -102,7 +102,9 @@ body,
   width: 32px;
   height: 32px;
   object-fit: contain;
-  transition: opacity 140ms ease, filter 140ms ease;
+  transition:
+    opacity 140ms ease,
+    filter 140ms ease;
 }
 
 /* Capo / transpose: only the icon (and the value once set) are visible; the
@@ -593,7 +595,9 @@ body,
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
 }
 
 /* ── Uniform button borders (build-time switch UNIFORM_BUTTON_BORDERS) ─────────
@@ -1543,6 +1547,51 @@ body,
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.12);
   opacity: 0.85;
+}
+
+/* Host + search control rows (the sessions hub: start/stop/online + web/nearby). */
+.cv-session-host,
+.cv-session-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cv-session-host:empty {
+  display: none;
+}
+
+.cv-session-search {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.cv-session-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cv-panel-fg);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.cv-session-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.cv-session-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cv-session-action .btnImg {
+  width: 20px;
+  height: 20px;
 }
 
 /* Song preview modal (click-to-preview) ----------------------------------- */

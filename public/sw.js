@@ -4,13 +4,20 @@ const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `praiseprojector-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `praiseprojector-dynamic-${CACHE_VERSION}`;
 
-// Core assets that must be cached for offline use
+// Core assets that must be cached for offline use.
+// client-view.html is the standalone follower client (installable PWA start_url);
+// it is a separate Vite entry from index.html with its own hashed bundle, so it
+// must be precached and asset-discovered independently of the main app.
 const CORE_ASSETS = [
   '/webapp/',
   '/webapp/index.html',
+  '/webapp/client-view.html',
   '/webapp/projector.html',
   '/webapp/manifest.json'
 ];
+
+// HTML entry points whose JS/CSS bundles should be discovered and precached.
+const ENTRY_PAGES = ['/webapp/index.html', '/webapp/client-view.html'];
 
 // Install event - cache core assets and discover JS/CSS bundles
 self.addEventListener('install', (event) => {
@@ -21,32 +28,34 @@ self.addEventListener('install', (event) => {
       // Cache core assets
       await cache.addAll(CORE_ASSETS);
 
-      // Also try to cache the main JS/CSS bundles by fetching the index and parsing
-      try {
-        const response = await fetch('/webapp/index.html');
-        const html = await response.text();
+      // Also try to cache the main JS/CSS bundles by fetching each entry page and parsing.
+      for (const page of ENTRY_PAGES) {
+        try {
+          const response = await fetch(page);
+          const html = await response.text();
 
-        // Extract JS and CSS file references
-        const assetMatches = html.matchAll(/(?:src|href)="([^"]*\.(?:js|css))"/g);
-        const assets = [];
-        for (const match of assetMatches) {
-          const url = match[1];
-          if (url.startsWith('/webapp/') || url.startsWith('./') || url.startsWith('assets/')) {
-            const fullUrl = url.startsWith('/') ? url : '/webapp/' + url.replace('./', '');
-            assets.push(fullUrl);
+          // Extract JS and CSS file references
+          const assetMatches = html.matchAll(/(?:src|href)="([^"]*\.(?:js|css))"/g);
+          const assets = [];
+          for (const match of assetMatches) {
+            const url = match[1];
+            if (url.startsWith('/webapp/') || url.startsWith('./') || url.startsWith('assets/')) {
+              const fullUrl = url.startsWith('/') ? url : '/webapp/' + url.replace('./', '');
+              assets.push(fullUrl);
+            }
           }
-        }
 
-        console.log('[SW] Caching', assets.length, 'discovered assets');
-        for (const asset of assets) {
-          try {
-            await cache.add(asset);
-          } catch (e) {
-            console.warn('[SW] Failed to cache:', asset);
+          console.log('[SW] Caching', assets.length, 'discovered assets from', page);
+          for (const asset of assets) {
+            try {
+              await cache.add(asset);
+            } catch (e) {
+              console.warn('[SW] Failed to cache:', asset);
+            }
           }
+        } catch (e) {
+          console.warn('[SW] Could not discover assets from', page, ':', e);
         }
-      } catch (e) {
-        console.warn('[SW] Could not discover assets:', e);
       }
     })
   );
@@ -82,6 +91,10 @@ function isApiRequest(url) {
 
 function isProjectorNavigation(url) {
   return new URL(url).pathname === '/webapp/projector.html';
+}
+
+function isClientViewNavigation(url) {
+  return new URL(url).pathname === '/webapp/client-view.html';
 }
 
 // Helper: is this a static asset?
@@ -126,7 +139,13 @@ self.addEventListener('fetch', (event) => {
             if (cached) {
               return cached;
             }
-            const fallbackPath = isProjectorNavigation(event.request.url) ? '/webapp/projector.html' : '/webapp/index.html';
+            // Fall back to the matching entry page so an offline cold launch of the
+            // installed client PWA does not load the full desktop app (index.html).
+            const fallbackPath = isProjectorNavigation(event.request.url)
+              ? '/webapp/projector.html'
+              : isClientViewNavigation(event.request.url)
+                ? '/webapp/client-view.html'
+                : '/webapp/index.html';
             return caches.match(fallbackPath);
           });
         })
