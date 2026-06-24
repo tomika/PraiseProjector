@@ -10,7 +10,7 @@
   "toolbar_settings": "Beállítások",
   "toolbar_launch_browser": "Kliens indítása az alapértelmezett böngészőben",
   "toolbar_logs": "Naplók megnyitása",
-  
+
   "playlist_load": "Lejászási lista betöltése fájlból",
   "playlist_save": "Lejátszási lista mentése fájlba",
   "playlist_add": "Kiválasztott dal hozzáadása a listához",
@@ -24,7 +24,7 @@
   "playlist_capo_down": "Capo leeresztése",
   "playlist_load_profile": "Lejászási lista betöltése a naptárból",
   "playlist_save_profile": "Lejátszási lista mentése a naptárba",
-  
+
   "format_bold": "Félkövér",
   "format_italic": "Dőlt",
   "format_underline": "Aláhúzott",
@@ -34,14 +34,15 @@
   "format_text_color": "Szöveg színének kiválasztása",
   "format_background_color": "Háttérszín kiválasztása",
   "format_content_based": "Tartalom alapú tördelés ki/bekapcsolása",
-  
+
   "display_enabled": "Az elérhető képernyők közötti váltás",
+  "display_enabled_single_monitor": "Csak egy monitor érzékelve – csatlakoztass egy második képernyőt a kivetítéshez",
   "display_lyrics": "Szöveg ki/bekapcsolása",
   "display_image": "Háttérkép ki/bekapcsolása",
   "display_message": "Dalszöveg és Üzenet közti váltás",
   "display_freeze": "Vetítés kimerevítése",
   "display_instructions": "Instrukcióknak megfelelő vetítési lista ki/be kapcsolása",
-  
+
   "editor_readonly": "Csak olvasható mód ki/bekapcsolása",
   "editor_save_as_new": "Aktuális dal mentése újként",
   "editor_transpose_up": "Minden akkord transzponálása fél hanggal fel",
@@ -51,12 +52,12 @@
   "editor_set_bridge": "A kiválasztott sorok legyenek: Híd",
   "editor_set_grid": "A kiválasztott sorok legyenek: Hangszeres",
   "editor_set_title": "Kiválasztott szövegrészlet címként való alkalmazása",
-  
+
   "instructions_clear": "Törlés",
   "instructions_reset": "Visszaállítás",
   "instructions_save": "Mentés",
   "instructions_store_profile": "Mentés a dicséretvezető profiljába",
-  
+
   "song_filter": "Dalok szűrése cím vagy tartalom alapján",
   "song_filter_show_all": "Összes dal megjelenítése",
   "song_filter_show_preferred_only": "Csak kedvelt dalok megjelenítése",
@@ -78,11 +79,11 @@
   "preview_controls_page_down": "Következő jelzés ugrása a következő dalblokkra (Page Down)",
   "preview_controls_down": "Következő jelzés mozgatása lefelé (Le nyíl)",
   "preview_controls_enter": "Következő szakasz kivetítése vagy ismétlés léptetése (Enter)",
-  
+
   "settings_ok": "Változtatások mentése és bezárás",
   "settings_cancel": "Változtatások elvetése és bezárás",
   "settings_apply": "Változtatások alkalmazása bezárás nélkül",
-  
+
   "songtree": "Böngésszen és keressen a dalkönyvtárban.\nKattintson a dal betöltéséhez a szerkesztőbe.\nDupla kattintás a dal hozzáadása a lejátszási listához és azonnali vetítéséhez.\nJobb klikk a további lehetőségekért.",
   "playlist": "Kattintson a kijelöléshez és megjelenítéshez.\nHúzza az átrendezéshez.\nJobb klikk a transzponáláshoz, capóhoz és egyebekhez.",
   "sectionlist": "Kattintson a szakasz kivetítéséhez.\nA színek jelzik az akt./köv. szakaszt\nilletve hogy a jelenlegi beállításokkal\na szakasz hogyan fér el a képernyőn.\n* Enter - következő szakaszra ugrás\n* Nyilak - következő szakasz mozgatása\n* Oldalváltó gombok - dal blokk váltás\n* Visszatörlés - ugrás a dal blokk elejére\n* Esc - kijelölés törlése",
@@ -95,7 +96,7 @@
 
   "preview_no_qrcode": "Kattintson a QR kód megjelenítéséhez a kivetítőn.\nA nézők telefonjukkal beolvashatják\nés saját képernyőjükön követhetik a dalszöveget.",
   "preview_qrcode": "Húzással mozgatható · Görgővel átméretezhető · Kattintással elrejthető",
- 
+
   "imagelist_expand": "Képlista nagyítása",
   "imagelist_external_image": "Külső kép a mappából",
 

@@ -376,6 +376,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const [hasConnectedClients, setHasConnectedClients] = useState(false);
     const [currentMonitorIndex, setCurrentMonitorIndex] = useState(-1);
     const [availableMonitors, setAvailableMonitors] = useState<MonitorDisplay[]>([]);
+    // Total number of physical displays (Electron only). Defaults to 2 so the
+    // projector button is never falsely disabled in web mode or before the first probe.
+    const [electronDisplayCount, setElectronDisplayCount] = useState(2);
     const [projectorWindowRef, setProjectorWindowRef] = useState<Window | null>(null);
     const [_displayAspectRatio, setDisplayAspectRatio] = useState(16 / 9); // Default aspect ratio
     const [projectorWidth, setProjectorWidth] = useState(1920);
@@ -431,6 +434,29 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       void poll(); // immediate first check
       const id = setInterval(poll, 2000);
       return () => clearInterval(id);
+    }, []);
+
+    // Track the number of connected displays (Electron only) so the projector
+    // switch button can be disabled when there is only one monitor to project on.
+    // Displays can be plugged/unplugged at runtime, so we re-probe periodically.
+    useEffect(() => {
+      const api = window.electronAPI;
+      if (!api?.getAllDisplays) return;
+      let cancelled = false;
+      const poll = async () => {
+        try {
+          const displays = await api.getAllDisplays!();
+          if (!cancelled) setElectronDisplayCount(displays.length);
+        } catch {
+          // ignore transient errors
+        }
+      };
+      void poll(); // immediate first check
+      const id = setInterval(poll, 2000);
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
     }, []);
 
     // When no projector window is open, render at the user-configured net display resolution
@@ -2753,7 +2779,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     className={`btn ${projectorEnabled ? "btn-light btn-active" : "btn-light"}`}
                     aria-label="Display Enabled"
                     onClick={handleProjectorToggle}
-                    title={tt("display_enabled")}
+                    disabled={!!window.electronAPI && electronDisplayCount <= 1}
+                    title={!!window.electronAPI && electronDisplayCount <= 1 ? tt("display_enabled_single_monitor") : tt("display_enabled")}
                   >
                     <Icon type={IconType.DISPLAY} />
                     {currentMonitorIndex >= 0 && availableMonitors.length > 2 && <span className="monitor-label">{currentMonitorIndex + 1}</span>}
