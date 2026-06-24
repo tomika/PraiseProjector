@@ -753,6 +753,46 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       };
     }, []);
 
+    // Attention-flash state for the side control buttons. When a section is
+    // selected but its current state prevents real projection (preview frozen,
+    // lyrics hidden, or no display/client attached), the button responsible for
+    // that blocking state is flashed to draw the user's attention to it.
+    type AttentionButton = "freeze" | "showText" | "projector";
+    const [flashingButtons, setFlashingButtons] = useState<Record<AttentionButton, boolean>>({
+      freeze: false,
+      showText: false,
+      projector: false,
+    });
+    const buttonFlashTimersRef = useRef<Partial<Record<AttentionButton, ReturnType<typeof setTimeout>>>>({});
+
+    const triggerButtonFlash = useCallback((button: AttentionButton) => {
+      const existing = buttonFlashTimersRef.current[button];
+      if (existing) clearTimeout(existing);
+      // Restart the CSS animation cleanly even if it is already running.
+      setFlashingButtons((prev) => ({ ...prev, [button]: false }));
+      const frameId = requestAnimationFrame(() => {
+        setFlashingButtons((prev) => ({ ...prev, [button]: true }));
+      });
+      buttonFlashTimersRef.current[button] = setTimeout(() => {
+        cancelAnimationFrame(frameId);
+        setFlashingButtons((prev) => ({ ...prev, [button]: false }));
+        delete buttonFlashTimersRef.current[button];
+      }, 1500);
+    }, []);
+
+    const triggerFreezeButtonFlash = useCallback(() => triggerButtonFlash("freeze"), [triggerButtonFlash]);
+    const triggerShowTextButtonFlash = useCallback(() => triggerButtonFlash("showText"), [triggerButtonFlash]);
+    const triggerProjectorButtonFlash = useCallback(() => triggerButtonFlash("projector"), [triggerButtonFlash]);
+
+    useEffect(() => {
+      return () => {
+        for (const t of Object.values(buttonFlashTimersRef.current)) {
+          if (t) clearTimeout(t);
+        }
+        buttonFlashTimersRef.current = {};
+      };
+    }, []);
+
     // QR size context menu state
     const [qrContextMenu, setQrContextMenu] = useState<{ x: number; y: number } | null>(null);
     const qrContextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1713,15 +1753,25 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         return;
       }
 
-      if (
-        settings?.warningFlashInPreview &&
-        !freezePreview &&
-        selectedSectionIndex >= 0 &&
-        (!showText || (!projectorEnabled && !hasConnectedClients))
-      ) {
-        triggerFlash();
+      const noProjectionTarget = !projectorEnabled && !hasConnectedClients;
+      if (selectedSectionIndex >= 0 && (freezePreview || !showText || noProjectionTarget)) {
+        if (settings?.warningFlashInPreview) triggerFlash();
+        if (freezePreview) triggerFreezeButtonFlash();
+        if (!showText) triggerShowTextButtonFlash();
+        if (noProjectionTarget) triggerProjectorButtonFlash();
       }
-    }, [selectedSectionIndex, settings?.warningFlashInPreview, freezePreview, showText, projectorEnabled, hasConnectedClients, triggerFlash]);
+    }, [
+      selectedSectionIndex,
+      settings?.warningFlashInPreview,
+      freezePreview,
+      showText,
+      projectorEnabled,
+      hasConnectedClients,
+      triggerFlash,
+      triggerFreezeButtonFlash,
+      triggerShowTextButtonFlash,
+      triggerProjectorButtonFlash,
+    ]);
 
     const handleSectionClick = (index: number) => {
       selectSectionIndex(index, { advanceRepeat: selectedSectionIndex === index });
@@ -2783,7 +2833,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     </button>
                   )}
                   <button
-                    className={`btn ${projectorEnabled ? "btn-light btn-active" : "btn-light"}${projectorSwitchDisabled ? " btn-look-disabled" : ""}`}
+                    className={`btn ${projectorEnabled ? "btn-light btn-active" : "btn-light"}${projectorSwitchDisabled ? " btn-look-disabled" : ""}${flashingButtons.projector ? " preview-button-flash" : ""}`}
                     aria-label="Display Enabled"
                     aria-disabled={projectorSwitchDisabled ? "true" : "false"}
                     onClick={handleProjectorToggle}
@@ -2793,7 +2843,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     {currentMonitorIndex >= 0 && availableMonitors.length > 2 && <span className="monitor-label">{currentMonitorIndex + 1}</span>}
                   </button>
                   <button
-                    className={`btn ${showText ? "btn-light btn-active" : "btn-light"}`}
+                    className={`btn ${showText ? "btn-light btn-active" : "btn-light"}${flashingButtons.showText ? " preview-button-flash" : ""}`}
                     aria-label="Display Text"
                     onClick={() => toggleButton(showText, setShowText, "showTextInPreview")}
                     title={tt("display_lyrics")}
@@ -2837,7 +2887,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                 </div>
                 <div className="btn-group-vertical mt-auto">
                   <button
-                    className={`btn ${freezePreview ? "btn-light btn-active" : "btn-light"}`}
+                    className={`btn ${freezePreview ? "btn-light btn-active" : "btn-light"}${flashingButtons.freeze ? " preview-button-flash" : ""}`}
                     aria-label="Freeze"
                     onClick={() => toggleButton(freezePreview, setFreezePreview)}
                   >

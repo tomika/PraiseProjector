@@ -794,3 +794,54 @@
 [data-theme="dark"] .preview-tab-content {
   background-color: var(--pp-bg-secondary);
 }
+
+/* Attention flash for a control button whose state blocks projecting the
+   selected section (freeze on, lyrics hidden, or no display/client attached).
+   Pulses an amber glow to pull the user's eye to the offending button.
+
+   Rendered via an ::after overlay rather than the button's own box-shadow /
+   background, because the active-button styles above use `!important`, which
+   wins over CSS animation declarations in the cascade. The freeze button
+   flashes precisely while it is active, so animating the element directly
+   would be invisible. The overlay is a separate box those rules can't touch. */
+.preview-button-column .btn.preview-button-flash {
+  position: relative;
+}
+
+.preview-button-column .btn.preview-button-flash::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 5;
+  animation: preview-button-attention 0.5s ease-in-out 3;
+}
+
+@keyframes preview-button-attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0);
+    background-color: rgba(255, 165, 0, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 3px rgba(255, 165, 0, 0.9);
+    background-color: rgba(255, 165, 0, 0.35);
+  }
+}
+
+[data-theme="dark"] .preview-button-column .btn.preview-button-flash::after {
+  animation-name: preview-button-attention-dark;
+}
+
+@keyframes preview-button-attention-dark {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 179, 71, 0);
+    background-color: rgba(255, 179, 71, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(255, 179, 71, 0.95);
+    background-color: rgba(255, 179, 71, 0.4);
+  }
+}
