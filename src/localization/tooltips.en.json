@@ -10,7 +10,7 @@
   "toolbar_settings": "Settings",
   "toolbar_launch_browser": "Start client in default browser",
   "toolbar_logs": "Open logs",
-  
+
   "playlist_load": "Load playlist from file",
   "playlist_save": "Save playlist into file",
   "playlist_add": "Add selected song to playlist",
@@ -24,7 +24,7 @@
   "playlist_capo_down": "Lower recommended capo value of playlist item",
   "playlist_load_profile": "Load leader's playlist from calendar",
   "playlist_save_profile": "Save leader's playlist into calendar",
-  
+
   "format_bold": "Bold",
   "format_italic": "Italic",
   "format_underline": "Underline",
@@ -34,14 +34,15 @@
   "format_text_color": "Select text color",
   "format_background_color": "Select background color",
   "format_content_based": "Toggle content based text formatting",
-  
+
   "display_enabled": "Switch between available screens",
+  "display_enabled_single_monitor": "Only one monitor detected — connect a second screen to project",
   "display_lyrics": "Toggle lyrics visibility",
   "display_image": "Toggle image visibility",
   "display_message": "Switch between message and lyrics",
   "display_freeze": "Toggle freezed state",
   "display_instructions": "Toggle instructions based section list",
-  
+
   "editor_readonly": "Switch readonly state",
   "editor_save_as_new": "Save actual song as new",
   "editor_transpose_up": "Transpose all chords a half note higher",
@@ -51,12 +52,12 @@
   "editor_set_bridge": "Set selected lines Bridge",
   "editor_set_grid": "Set selected lines Grid (instrumental)",
   "editor_set_title": "Set selection as title",
-  
+
   "instructions_clear": "Clear",
   "instructions_reset": "Reset",
   "instructions_save": "Save",
   "instructions_store_profile": "Store instructions in leader profile",
-  
+
   "song_filter": "Filter songs by title or content",
   "song_filter_show_all": "Show all songs",
   "song_filter_show_preferred_only": "Showing preferred only",
@@ -78,11 +79,11 @@
   "preview_controls_page_down": "Move next marker to next song block (Page Down)",
   "preview_controls_down": "Move next marker down (Down Arrow)",
   "preview_controls_enter": "Project next section or advance repeat (Enter)",
-  
+
   "settings_ok": "Save changes and close",
   "settings_cancel": "Discard changes and close",
   "settings_apply": "Apply changes without closing",
-  
+
   "songtree": "Browse and search your song library.\nSelect a song to load it in the editor.\nDouble-click a song to add it to the playlist and project it immediately.\nRight-click for more options.",
   "playlist": "Click to select and project a song.\nDrag to reorder.\nRight-click for transpose, capo and more options.",
   "sectionlist": "Click to project the section.\nColors indicate current/next section\nand whether the section fits on the screen with current settings.\n* Enter - jump to next section\n* Arrows - move next section up/down\n* Page keys - switch song block\n* Backspace - jump to beginning of song block\n* Esc - clear selection",
