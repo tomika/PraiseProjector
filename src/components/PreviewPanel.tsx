@@ -1913,9 +1913,16 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       focusElement?.focus();
     };
 
+    // True when running in Electron with only a single monitor — there is no
+    // secondary screen to project onto, so the projector switch is disabled.
+    const projectorSwitchDisabled = !!window.electronAPI && electronDisplayCount <= 1;
+
     // Projector button handler - matching C# OnSwitchButtonClicked + UpdateDisplaySetting
     const handleProjectorToggle = async () => {
       const isElectron = !!window.electronAPI;
+
+      // Defensive: ignore activation when there is no secondary screen to project on.
+      if (projectorSwitchDisabled) return;
 
       if (isElectron) {
         // Electron mode: enumerate displays and cycle through them
@@ -2767,11 +2774,11 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     </button>
                   )}
                   <button
-                    className={`btn ${projectorEnabled ? "btn-light btn-active" : "btn-light"}`}
+                    className={`btn ${projectorEnabled ? "btn-light btn-active" : "btn-light"}${projectorSwitchDisabled ? " btn-look-disabled" : ""}`}
                     aria-label="Display Enabled"
+                    aria-disabled={projectorSwitchDisabled ? "true" : "false"}
                     onClick={handleProjectorToggle}
-                    disabled={!!window.electronAPI && electronDisplayCount <= 1}
-                    title={!!window.electronAPI && electronDisplayCount <= 1 ? tt("display_enabled_single_monitor") : tt("display_enabled")}
+                    title={projectorSwitchDisabled ? tt("display_enabled_single_monitor") : tt("display_enabled")}
                   >
                     <Icon type={IconType.DISPLAY} />
                     {currentMonitorIndex >= 0 && availableMonitors.length > 2 && <span className="monitor-label">{currentMonitorIndex + 1}</span>}

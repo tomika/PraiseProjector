@@ -667,6 +667,19 @@
   background-color: transparent !important;
 }
 
+/* Projector switch when only one monitor is available: looks/behaves disabled,
+   but stays hoverable so its explanatory title tooltip still appears. Native
+   tooltips never fire on a truly [disabled] element (it receives no pointer
+   events), so we dim it via this class instead of the disabled attribute. */
+.preview-button-column .btn.btn-look-disabled,
+.preview-button-column .btn.btn-look-disabled:hover {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: auto;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
 .preview-button-column .btn-group-vertical {
   gap: var(--spacing-xs);
 }
