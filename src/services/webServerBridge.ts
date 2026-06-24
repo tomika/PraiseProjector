@@ -26,11 +26,11 @@ const parseJsonOrNull = <T>(json: string): T | null => {
 
 type NativeWireMethod = "syncJson" | "queryJson" | "respondJson";
 const WEB_SERVER_EVENT_NAME = "pp-webserver-event";
-const APP_SW_PATH = "/app/sw.js";
-const APP_ASSET_PREFIX = "/app/";
-// Authoritative list of files the host webserver serves for the new client-view, emitted by
-// build:client-view (vite.client-view.config.ts). Preferred over scraping the legacy sw.js.
-const CLIENT_VIEW_PRECACHE_PATH = "/app/client-view/precache.json";
+const APP_SW_PATH = "/webapp/sw.js";
+const APP_ASSET_PREFIX = "/webapp/";
+// Authoritative list of every file the host webserver serves for the /webapp client, emitted by
+// build:web (scripts/stage-web-client.js). Preferred over scraping the sw.js.
+const CLIENT_VIEW_PRECACHE_PATH = "/webapp/precache.json";
 const REQUIRED_NATIVE_WIRE_METHODS: NativeWireMethod[] = ["syncJson", "queryJson", "respondJson"];
 
 let cachedWebServer: WebServerInterface | undefined;
@@ -279,7 +279,7 @@ export const getWebServerInterface = (): WebServerInterface | null => {
 
 const parseAppAssetListFromSw = (source: string): string[] => {
   const paths = new Set<string>();
-  const pathPattern = /["'](\/app\/[^"']+)["']/g;
+  const pathPattern = /["'](\/webapp\/[^"']+)["']/g;
   let match: RegExpExecArray | null;
 
   while ((match = pathPattern.exec(source)) !== null) {
@@ -290,9 +290,8 @@ const parseAppAssetListFromSw = (source: string): string[] => {
     paths.add(sanitizedPath);
   }
 
-  // Ensure primary entry points are always available even if omitted from sw.js.
-  paths.add("/app/index.html");
-  paths.add("/app/main.html");
+  // Ensure the client-view entry is always available even if omitted from sw.js.
+  paths.add("/webapp/client-view.html");
 
   return Array.from(paths);
 };

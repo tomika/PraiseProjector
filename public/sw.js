@@ -13,8 +13,14 @@ const CORE_ASSETS = [
   '/webapp/index.html',
   '/webapp/client-view.html',
   '/webapp/projector.html',
-  '/webapp/manifest.json'
+  '/webapp/manifest.json',
+  '/webapp/manifest-client.json'
 ];
+
+// Build-emitted manifest of every file under /webapp (hashed bundles + lifted
+// legacy assets: icons, soundfonts, chordpro CSS). Precached so the installed
+// client PWA — including the follower view and offline MIDI — works fully offline.
+const PRECACHE_MANIFEST = '/webapp/precache.json';
 
 // HTML entry points whose JS/CSS bundles should be discovered and precached.
 const ENTRY_PAGES = ['/webapp/index.html', '/webapp/client-view.html'];
@@ -56,6 +62,31 @@ self.addEventListener('install', (event) => {
         } catch (e) {
           console.warn('[SW] Could not discover assets from', page, ':', e);
         }
+      }
+
+      // Precache the full /webapp tree (build-emitted) so the client PWA works
+      // fully offline. Added individually (not addAll) so one miss never aborts
+      // the whole install.
+      try {
+        const manifestResp = await fetch(PRECACHE_MANIFEST, { cache: 'no-store' });
+        if (manifestResp.ok) {
+          const paths = await manifestResp.json();
+          if (Array.isArray(paths)) {
+            console.log('[SW] Precaching', paths.length, 'assets from', PRECACHE_MANIFEST);
+            for (const assetPath of paths) {
+              if (typeof assetPath !== 'string') continue;
+              try {
+                await cache.add(assetPath);
+              } catch (e) {
+                console.warn('[SW] Failed to precache:', assetPath);
+              }
+            }
+          }
+        } else {
+          console.warn('[SW] Precache manifest unavailable:', manifestResp.status);
+        }
+      } catch (e) {
+        console.warn('[SW] Could not load precache manifest:', e);
       }
     })
   );

@@ -7,16 +7,23 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>PraiseProjector</title>
     <script>
-      // Resolve where the legacy assets and the data API live for THIS mount.
-      //  - Vite dev server: publicDir is exposed under /app; the data API is the
-      //    Vite proxy at /praiseprojector (handled by config.ts as before).
-      //  - Electron webserver: public/app is served at the site root and the
-      //    client view is mounted at /client-view/, so legacy assets are at "/"
-      //    and the data API (/songs, /display_query, …) is the origin root.
+      // Single self-contained /webapp artifact. ONE build serves three roles,
+      // distinguished by what the HOST injects (Electron/Android inject a
+      // <script>window.__ppApiBase=…;window.__ppAccess=…</script> right after
+      // <head>, BEFORE this script):
+      //   - Host-served follower (Electron/Android webserver): __ppApiBase is the
+      //     host origin ⇒ the data API (/songs, /display_query, …) is that origin,
+      //     and the client runs in follower mode (RestCore.computeCapabilities).
+      //   - Cloud PWA (public /webapp): no injection ⇒ __ppApiBase stays "" and
+      //     config.ts derives the cloud host from window.location.origin.
+      // Assets (icons, soundfonts, chordpro CSS) always live under /webapp here;
+      // the Vite dev server (base "/") exposes publicDir under /app instead.
       (function () {
-        var served = location.pathname.indexOf("/client-view/") >= 0;
-        window.__ppAssetBase = served ? "" : "/app";
-        window.__ppApiBase = served ? location.origin : "";
+        // Preserve any host-injected globals; default to the cloud configuration.
+        window.__ppApiBase = window.__ppApiBase || "";
+        var served = !!window.__ppApiBase;
+        var underWebapp = location.pathname.indexOf("/webapp") === 0;
+        window.__ppAssetBase = window.__ppAssetBase || (underWebapp ? "/webapp" : "/app");
         ["chordpro.css", "chordselector.css"].forEach(function (file) {
           var link = document.createElement("link");
           link.rel = "stylesheet";
@@ -29,16 +36,13 @@
         } catch {
           /* fall back to CSS defaults */
         }
-        // On the public website this page doubles as the installable client PWA
-        // (it replaces the retired /app/main.html); the adapted client manifest
-        // lives at /app/manifest.json with start_url pointed back here. Wire it
-        // ONLY for that /webapp deployment — the Electron-served (/client-view/)
-        // and Android (file://, base "./") hosts are native shells and must not
-        // load a /webapp manifest or register a service worker.
-        if (location.pathname.indexOf("/webapp/") === 0) {
+        // Only the cloud PWA (public /webapp, NOT host-served) is installable and
+        // gets the client manifest + service worker. Host-served followers
+        // (Electron/Android native shells) must not register a /webapp SW.
+        if (!served && underWebapp) {
           var manifestLink = document.createElement("link");
           manifestLink.rel = "manifest";
-          manifestLink.href = "/app/manifest.json";
+          manifestLink.href = "/webapp/manifest-client.json";
           document.head.appendChild(manifestLink);
         }
       })();
@@ -48,12 +52,11 @@
     <div id="root"></div>
     <script type="module" src="/src/client-view/boot/client-view.tsx"></script>
     <script>
-      // Register the service worker only on the public /webapp deployment so the
-      // installed client PWA works offline. The /webapp service worker controls
-      // this page (a /app/sw.js could not — scope rule). Electron-served and
-      // Android hosts are native shells whose pathname is not under /webapp, so
-      // they skip registration entirely. Mirrors index.html's auto-update flow.
-      if ("serviceWorker" in navigator && window.location.pathname.startsWith("/webapp")) {
+      // Register the service worker only on the public /webapp deployment (the
+      // cloud PWA) so the installed client works offline. Host-served followers
+      // (Electron/Android) inject window.__ppApiBase and are native shells, so
+      // they skip registration. Mirrors index.html's auto-update flow.
+      if ("serviceWorker" in navigator && !window.__ppApiBase && window.location.pathname.startsWith("/webapp")) {
         window.addEventListener("load", () => {
           let hasReloadedForUpdate = false;
           const reloadForUpdate = () => {

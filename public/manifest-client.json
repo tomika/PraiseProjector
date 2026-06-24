@@ -1,0 +1,52 @@
+{
+    "name": "Praise​Projector",
+    "short_name": "Praise​Proj",
+    "start_url": "/webapp/client-view.html",
+    "id": "/webapp/client-view.html",
+    "scope": "/webapp/",
+    "display": "fullscreen",
+    "background_color": "black",
+    "theme_color": "black",
+    "icons": [
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "72x72"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "96x96"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "128x128"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "144x144"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "152x152"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "192x192"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "384x384"
+        },
+        {
+            "src": "/webapp/images/pp.svg",
+            "type": "image/svg+xml",
+            "sizes": "512x512"
+        }
+    ]
+}

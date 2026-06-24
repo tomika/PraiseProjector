@@ -12,16 +12,15 @@
     "dev": "npx vite",
     "dev:web": "npx vite --mode web",
     "dev:electron": "electron .",
-    "build": "npm run build --workspace=client && npx vite build && npm run build:client-view",
-    "build:web": "npx vite build --mode web && rimraf dist/webapp/app",
-    "build:client-view": "npx vite build --config vite.client-view.config.ts",
+    "build": "npm run build --workspace=client && npx vite build",
+    "build:web": "npx vite build --mode web && node scripts/stage-web-client.js",
     "generate-icons": "node scripts/generate-icons.js",
     "deploy": "npm run clean && npm run build --workspace=client && npm run dist:linux && npm run dist:mac && npm run generate-icons && npm run dist:win && npm run build:web",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:win": "node -e \"const v=require('electron/package.json').version; require('child_process').execSync('npm run generate-icons && npm run build && npx electron-builder --win --publish never -c.electronVersion=' + v, {stdio: 'inherit'})\"",
-    "dist:mac": "node -e \"process.platform === 'darwin' ? require('child_process').execSync('npm run generate-icons && npm run build && npx electron-builder --mac --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js mac', {stdio: 'inherit'})\"",
-    "dist:linux": "node -e \"process.platform === 'linux' ? require('child_process').execSync('npm run generate-icons && npm run build && npx electron-builder --linux --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js linux', {stdio: 'inherit'})\"",
-    "dist:pkg": "npm run build && node scripts/dist-pkg.js",
+    "dist": "npm run build:web && npm run build && electron-builder --publish never",
+    "dist:win": "node -e \"const v=require('electron/package.json').version; require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --win --publish never -c.electronVersion=' + v, {stdio: 'inherit'})\"",
+    "dist:mac": "node -e \"process.platform === 'darwin' ? require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --mac --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js mac', {stdio: 'inherit'})\"",
+    "dist:linux": "node -e \"process.platform === 'linux' ? require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --linux --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js linux', {stdio: 'inherit'})\"",
+    "dist:pkg": "npm run build:web && npm run build && node scripts/dist-pkg.js",
     "clean": "rimraf dist public/assets/pp.icns public/assets/pp.ico public/assets/pp.png",
     "postinstall": "node scripts/run-electron-rebuild.js",
     "rebuild": "node scripts/run-electron-rebuild.js",
@@ -117,6 +116,13 @@
       {
         "from": "public",
         "to": "public",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "dist/web",
+        "to": "webclient",
         "filter": [
           "**/*"
         ]

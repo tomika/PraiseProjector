@@ -37,6 +37,11 @@ export default defineConfig(({ command, mode }) => {
   // otherwise fall back to relative path (runtime origin detection).
   const apiBaseUrl = isWeb ? '/praiseprojector' : (cloudApiBaseUrl || '/praiseprojector');
 
+  // The web build (cloud PWA + the artifact the Electron/Android host webservers serve
+  // and the public /webapp deploy) gets its own outDir so it never collides with the
+  // Electron *renderer* build (base "./", loaded via file://) which keeps dist/webapp.
+  const webOutDir = 'dist/web';
+
   return {
     plugins: [
       react(),
@@ -46,8 +51,10 @@ export default defineConfig(({ command, mode }) => {
       {
         name: 'patch-sw-cache-version',
         closeBundle() {
-          if (command !== 'build') return;
-          const swPath = path.join(__dirname, 'dist', 'webapp', 'sw.js');
+          // Only the web build emits a service worker (the Electron renderer build
+          // is loaded via file:// and never registers one).
+          if (command !== 'build' || !isWeb) return;
+          const swPath = path.join(__dirname, webOutDir, 'sw.js');
           try {
             const content = fs.readFileSync(swPath, 'utf8');
             // Derive a stable build ID from the content of the entry HTML pages.
@@ -57,7 +64,7 @@ export default defineConfig(({ command, mode }) => {
             const entryPages = ['index.html', 'client-view.html'];
             const entryContent = entryPages
               .map((page) => {
-                const p = path.join(__dirname, 'dist', 'webapp', page);
+                const p = path.join(__dirname, webOutDir, page);
                 return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
               })
               .join('\n');
@@ -72,7 +79,7 @@ export default defineConfig(({ command, mode }) => {
               return;
             }
             fs.writeFileSync(swPath, patched, 'utf8');
-            console.log(`[patch-sw] dist/webapp/sw.js CACHE_VERSION → ${buildId}`);
+            console.log(`[patch-sw] ${webOutDir}/sw.js CACHE_VERSION → ${buildId}`);
           } catch {
             // sw.js absent in this build variant (e.g. electron-only) — skip
           }
@@ -115,7 +122,7 @@ export default defineConfig(({ command, mode }) => {
     ],
     base: isElectronBuild ? './' : (isDev ? '/' : '/webapp/'),
     build: {
-      outDir: 'dist/webapp',
+      outDir: isWeb ? webOutDir : 'dist/webapp',
       sourcemap: isDev,
       chunkSizeWarningLimit: 600,
       rollupOptions: {

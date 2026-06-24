@@ -18,7 +18,10 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
-// Get the correct static directory path for both dev and packaged app
+// Get the correct static directory path for both dev and packaged app.
+// This is the LEGACY asset root (image.html / pp-api.js for the /netdisplay
+// projection surface, plus old client pages). The new client view is served
+// separately from getWebClientDir().
 function getStaticDir(): string {
   if (app.isPackaged) {
     // In packaged app, __dirname is inside app.asar, public is at same level
@@ -26,6 +29,18 @@ function getStaticDir(): string {
   } else {
     // In development, use relative path from project root
     return path.join(__dirname, "..", "..", "public", "app");
+  }
+}
+
+// Root of the single self-contained web build (dist/web, base "/webapp/"),
+// served to remote followers at /webapp. Bundled into the package as the
+// "webclient" extra resource. Distinct from the Electron *renderer* build
+// (dist/webapp, base "./") which the desktop window loads via file://.
+function getWebClientDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "webclient");
+  } else {
+    return path.join(__dirname, "..", "..", "dist", "web");
   }
 }
 
@@ -78,6 +93,7 @@ export class WebServer {
   // File checksum cache for cache-busting query params (matching C# checksumCache)
   private checksumCache: Map<string, string> = new Map();
   private staticDir: string = "";
+  private webClientDir: string = "";
   // Net display / image state (matching C# imagePage, imageData, imageId)
   private imagePageContent: string = "";
   private currentImageSourceDataUrl: string | null = null;
@@ -186,7 +202,9 @@ export class WebServer {
 
   private setupRoutes() {
     this.staticDir = getStaticDir();
+    this.webClientDir = getWebClientDir();
     console.info(`WebServer static directory: ${this.staticDir}`);
+    console.info(`WebServer client view directory: ${this.webClientDir}`);
 
     // Load localization strings for server-side page preprocessing
     this.loadLocalizationStrings();
@@ -219,40 +237,61 @@ export class WebServer {
       next();
     });
 
-    // Serve the new client view (built into <staticDir>/client-view via
-    // `npm run build:client-view`). This bare-directory request must be handled
-    // BEFORE the SPA index route below, which would otherwise return the legacy
-    // index.html for "/client-view/". Hashed bundle + asset requests fall
-    // through to express.static.
-    this.app.get(/^\/client-view\/?$/, async (req, res) => {
+    // ── New self-contained client view (single /webapp build) ──────────────
+    // Remote followers get the base "/webapp/" web build (dist/web →
+    // resources/webclient), the SAME artifact that runs as a cloud PWA. We
+    // inject the host context so it runs in follower mode instead:
+    //   __ppApiBase  → this webserver's origin (the data API root)
+    //   __ppAssetBase→ /webapp (where this server serves the lifted assets)
+    //   __ppAccess   → the host-granted access level (GUEST/LEADER/LOCAL)
+    // The server still ENFORCES access on /display_update; the injection only
+    // keeps the served UI honest. Note: on a client's very first contact the MAC
+    // may not be ARP-resolved yet, so a MAC-configured leader can briefly
+    // classify as GUEST until a reload.
+    //
+    // The bundle's base is the absolute "/webapp/", so a non-root webServerPath
+    // is not supported for the served client — the legacy served client likewise
+    // anchored its API on the bare origin.
+    const serveClientView = async (req: express.Request, res: express.Response) => {
       delete req.headers["if-none-match"];
       delete req.headers["if-modified-since"];
-      const file = path.join(this.staticDir, "client-view", "client-view.html");
+      const file = path.join(this.webClientDir, "client-view.html");
       let data: string;
       try {
         data = await fs.promises.readFile(file, "utf8");
       } catch {
-        res.status(404).send("Client view not built (run: npm run build:client-view)");
+        res.status(404).send("Client view not built (run: npm run build:web)");
         return;
       }
-      // Inject the host-granted access level so the served client's capability
-      // model is correct up front (not merely optimistic): a GUEST viewer is not
-      // offered display control. The server still ENFORCES this on
-      // /display_update — the injection only keeps the UI honest. Note: on a
-      // client's very first contact the MAC may not be ARP-resolved yet, so a
-      // MAC-configured leader can briefly classify as GUEST until a reload.
       const identity = await this.registerAndidentifyClient(req, false);
       const clientType = this.getClientType(req.socket, identity);
-      const inject = `<script>window.__ppAccess=${JSON.stringify(clientType)};</script>`;
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const apiBase = this.settings.webServerPath === "/" ? origin : origin + this.settings.webServerPath.replace(/\/$/, "");
+      const inject =
+        `<script>window.__ppApiBase=${JSON.stringify(apiBase)};` +
+        `window.__ppAssetBase="/webapp";` +
+        `window.__ppAccess=${JSON.stringify(clientType)};</script>`;
       const html = data.replace(/<head>/i, (head) => head + inject);
       this.setCommonHeaders(res, clientType);
       res.type("html").send(html);
+    };
+
+    // Entry route (must precede the static mount so the HTML is injected).
+    this.app.get(/^\/webapp\/client-view\.html$/, serveClientView);
+
+    // Serve the rest of the /webapp build (hashed bundles, images, soundfont, CSS).
+    this.app.use("/webapp", express.static(this.webClientDir, { maxAge: "6d", etag: true, lastModified: true }));
+
+    // Back-compat: the old served client lived at /client-view/.
+    this.app.get(/^\/client-view\/?$/, (_req, res) => {
+      this.setCommonHeaders(res);
+      res.redirect(302, this.settings.webServerPath + "webapp/client-view.html");
     });
 
-    // Redirect root and /index.html to the new client-view entry point.
+    // Redirect root and /index.html to the client-view entry point.
     this.app.get(/\/(index\.html?)?$/, (_req, res) => {
       this.setCommonHeaders(res);
-      res.redirect(302, this.settings.webServerPath + "client-view/");
+      res.redirect(302, this.settings.webServerPath + "webapp/client-view.html");
     });
 
     // Serve static files with aggressive caching — cache-busting query params in HTML
