@@ -20,6 +20,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { isFollowerView } from "../controller/ClientViewStore";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
 import {
@@ -111,7 +112,9 @@ function renderSong(
   dark: boolean,
   scrollMode: boolean
 ): void {
-  api.load(text, false);
+  // suppressDraw: apply settings + transpose before the first paint; fitAndZoom()
+  // below issues the single draw. Keeps preloaded neighbour pages flash-free too.
+  api.load(text, false, undefined, undefined, true);
   const maxText = settings.maxText;
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
@@ -174,7 +177,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       // Stop un-clipping at the full-view box; the page rotates within it.
       isFlipBoundary: (el) => el.id === "mainView",
-      canFlip: () => true, // the client view is always a read-only viewer
+      // No page-turn navigation in view-only mode: a plain Client follower, or App
+      // mode while watching a session. Mirrors MainToolbar hiding btnPrev/btnNext
+      // (legacy setLeader(false)/ppdWatchMode). Read live state so a mid-session
+      // capability/leader-mode change takes effect without rebuilding the flip.
+      canFlip: () => {
+        const s = store.getSnapshot();
+        return !isFollowerView(s) && !(s.mode === "App" && s.network.status === "watching");
+      },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
     });
@@ -304,7 +314,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     }
     if (loadedTextRef.current !== text) {
       loadedTextRef.current = text;
-      api.load(text, false);
+      // Construct without an initial paint (suppressDraw) so transpose/capo and
+      // display settings are applied before the first draw — the closing
+      // fitAndZoom() below draws once. Without this the editor briefly paints the
+      // untransposed song (a one-frame flash on every song switch).
+      api.load(text, false, undefined, undefined, true);
       // A freshly loaded document starts at shift 0.
       appliedTransposeRef.current = 0;
     }

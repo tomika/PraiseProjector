@@ -28,7 +28,7 @@ interface MenuItem {
   run: () => void;
 }
 
-export function MoreMenu() {
+export function MoreMenu({ onHome }: { onHome?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
   const [open, setOpen] = useState(false);
@@ -84,7 +84,13 @@ export function MoreMenu() {
       run: () => void store.startOnlineSession(),
     },
     { id: "stopSession", label: "Stop session", image: "stop.svg", show: leading, run: () => void store.stopLocalSession() },
-    { id: "stopFollowing", label: "Stop following", image: "stop.svg", show: watching, run: () => void store.stopWatching() },
+    {
+      id: "stopFollowing",
+      label: "Stop following",
+      image: "stop.svg",
+      show: watching && state.mode !== "Client",
+      run: () => void store.stopWatching(),
+    },
     // Discover + attach (search / found-session selector) lives in the dialog.
     { id: "sessions", label: "Find a session", image: "online.svg", show: caps.canFollowSessions, run: () => store.openSessionsDialog() },
     { id: "editor", label: "Open editor", image: "edit-instructions.svg", show: caps.canOpenFullEditor, run: () => store.openFullEditor() },
@@ -103,6 +109,16 @@ export function MoreMenu() {
       show: caps.canEditWorkingPlaylist,
       disabled: emptyList,
       run: () => void store.clearPlaylist(),
+    },
+    {
+      id: "home",
+      label: "Home",
+      image: "home.svg",
+      show: state.canExit,
+      run: () => {
+        if (onHome) onHome();
+        else window.location.assign("/");
+      },
     },
     { id: "about", label: "About", image: "about.svg", show: true, run: () => store.openAbout() },
     { id: "exit", label: "Exit", image: "power.svg", show: state.canExit, run: () => store.exitApp() },

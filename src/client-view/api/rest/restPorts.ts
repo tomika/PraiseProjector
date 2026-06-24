@@ -40,9 +40,18 @@ function readToken(): string {
   }
 }
 
-/** Push the given display to the backend — only when the current context
- *  permits control (a cloud leader, or a host-authorized served client). A
- *  follower/viewer updates its local display but never pushes. */
+/** Push the current song / section / preference state to the backend — WITHOUT
+ *  the working playlist. Pushes only when the current context permits control (a
+ *  cloud leader, or a host-authorized served client); a follower/viewer updates
+ *  its local display but never pushes.
+ *
+ *  The playlist is deliberately omitted: the Electron host's webserver routes a
+ *  display_update that carries a playlist to the playlist-ONLY branch
+ *  (App.tsx remoteDisplayUpdateHandler), so bundling the playlist here would make
+ *  every song/section change a silent no-op on a served host (it answers DONE but
+ *  never moves the projection). Playlist changes go through {@link pushPlaylist}.
+ *  This mirrors the legacy client, which sent song/preference updates and playlist
+ *  updates as separate POSTs. */
 async function pushDisplay(core: RestCore, display: Display): Promise<void> {
   if (!core.canControlDisplay()) return;
   await cloudApi.sendDisplayUpdate({
@@ -54,10 +63,28 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
     sectionRepeatNonce: display.sectionRepeatNonce,
     transpose: display.transpose,
     leaderId: core.leader?.id ?? core.config.leaderId,
-    playlist: display.playlist,
     song: display.song,
     message: display.message,
     instructions: display.instructions,
+  });
+}
+
+/** Push the working playlist as a playlist-only update (legacy
+ *  sendPlaylistUpdateRequest). The current song/section fields are carried along so
+ *  the cloud session keeps its highlight, but a served host treats it purely as a
+ *  playlist change. */
+async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<void> {
+  if (!core.canControlDisplay()) return;
+  const display = core.getDisplay();
+  await cloudApi.sendDisplayUpdate({
+    songId: display.songId,
+    from: display.from,
+    to: display.to,
+    section: display.section,
+    transpose: display.transpose,
+    leaderId: core.leader?.id ?? core.config.leaderId,
+    playlist,
+    song: "",
   });
 }
 
@@ -83,7 +110,7 @@ export function createPlaylistApi(core: RestCore): PlaylistApi {
   const applyPlaylist = async (entries: PlaylistEntry[]) => {
     core.setPlaylist(entries);
     core.patchDisplay({ playlist: entries });
-    await pushDisplay(core, core.getDisplay());
+    await pushPlaylist(core, entries);
   };
   const entriesForLeader = async (leaderId: string, label?: string) => {
     const profiles = await cloudApi.fetchLeadersProfiles();
@@ -215,6 +242,9 @@ export function createSessionApi(core: RestCore): SessionApi {
       // once rather than only on the next project. Cloud hosting lives within App mode.
       core.config = { ...core.config, leaderId: leaderId ?? core.leader?.id };
       await pushDisplay(core, core.getDisplay());
+      // Seed the freshly-registered cloud session with the working playlist so
+      // followers see it immediately (pushDisplay no longer carries the list).
+      if (core.getPlaylist().length) await pushPlaylist(core, core.getPlaylist());
       core.setNetworkState({ status: "leading" });
     },
     watch: (session) => core.watch(session),

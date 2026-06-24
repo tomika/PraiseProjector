@@ -15,17 +15,7 @@
 export const UNIFORM_BUTTON_BORDERS = false;
 
 /** The controls of the main toolbar, addressed by a stable key. */
-export type ToolbarButtonKey =
-  | "prev"
-  | "next"
-  | "home"
-  | "options"
-  | "instructions"
-  | "capo"
-  | "transpose"
-  | "unhighlight"
-  | "netstatus"
-  | "fullscreen";
+export type ToolbarButtonKey = "prev" | "next" | "options" | "instructions" | "capo" | "transpose" | "unhighlight" | "netstatus" | "fullscreen";
 
 /**
  * Main-toolbar button order, INDEPENDENT per layout — reorder these freely.
@@ -36,7 +26,6 @@ export type ToolbarButtonKey =
  */
 export const TOOLBAR_ORDER_HORIZONTAL: ToolbarButtonKey[] = [
   "prev",
-  "home",
   "options",
   "instructions",
   "capo",
@@ -53,7 +42,6 @@ export const TOOLBAR_ORDER_VERTICAL: ToolbarButtonKey[] = [
   "instructions",
   "prev",
   "next",
-  "home",
   "capo",
   "transpose",
   "unhighlight",

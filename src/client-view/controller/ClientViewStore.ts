@@ -64,6 +64,9 @@ export interface NavEntry {
   songId: string;
   transpose?: number;
   capo?: number;
+  /** Per-entry display instructions (playlist entries carry these). Carried into
+   *  prev/next projection so the optimistic render matches the backend echo. */
+  instructions?: string;
 }
 
 const systemPrefersDark = (): boolean => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
@@ -696,19 +699,29 @@ export class ClientViewStore {
   // ── highlight control (legacy chkHighlight) ──────────────────────────────────────
 
   /**
-   * Toggle highlight display on/off (the lamp's SHORT click — legacy chkHighlight).
+   * Toggle highlight on/off (the lamp's SHORT click — legacy chkHighlight).
    * Turning it off also releases control, since line-selection control without a
    * visible highlight is meaningless.
    *
-   * Turning it ON in Client mode silently VERIFIES an existing permission grant
-   * (verifyOnly → no leader prompt) and, if already granted, auto-enters control —
-   * so a follower who was previously approved gets control back on a single click
-   * without the deliberate request gesture. Requesting a NEW grant (which prompts
-   * the leader) remains the separate toggleHighlightControl gesture.
+   * In App mode the user always owns the display, so there is no intermediate
+   * "highlight visible but no control" state worth toggling through — a single
+   * click goes straight to highlight CONTROL (off ↔ control directly), no
+   * permission round-trip needed.
+   *
+   * In Client mode the display belongs to the host's session, so turning highlight
+   * ON silently VERIFIES an existing permission grant (verifyOnly → no leader
+   * prompt) and, if already granted, auto-enters control — so a follower who was
+   * previously approved gets control back on a single click without the deliberate
+   * request gesture. Requesting a NEW grant (which prompts the leader) remains the
+   * separate toggleHighlightControl gesture.
    */
   toggleHighlight(): void {
     if (this.state.highlightOn) {
       this.set({ highlightOn: false, highlightControl: false });
+      return;
+    }
+    if (this.state.capabilities.canControlDisplay) {
+      this.set({ highlightOn: true, highlightControl: true });
       return;
     }
     this.set({ highlightOn: true });
@@ -728,12 +741,15 @@ export class ClientViewStore {
    * Toggle highlight CONTROL — the lamp's LONG-press / right-click. Entering
    * control also turns the highlight on (control implies a visible highlight).
    *
-   * In Client mode the display belongs to the host's session, so highlight control
-   * is never implicit — it must be granted by the server (legacy
-   * queryHighlightPermission ran only for mode "Client"). Leader mode does NOT
-   * confer it: highlight is ORTHOGONAL to leading, granted via the separate
-   * /highlight flow, so a follower can hold it too. In App mode the toggle is
-   * local. Leaving control keeps the highlight on (only a short click off).
+   * Anyone who can control the display takes highlight control LOCALLY, with no
+   * permission round-trip: App mode (own session) and an admin-served Client (a
+   * leader-mode follower whose IP/MAC is allowlisted — canControlDisplay is true)
+   * both control by right, and the host auto-grants their /highlight pushes.
+   * Only a non-controlling Client follower (canControlDisplay false) must ask the
+   * leader: that goes through the server permission flow (verify → request), which
+   * the host approves via a confirm dialog. Highlight is ORTHOGONAL to leading —
+   * granted via the separate /highlight flow — so a plain follower can hold it too.
+   * Leaving control keeps the highlight on (only a short click turns it off).
    */
   toggleHighlightControl(): void {
     const { highlightControl, mode, capabilities } = this.state;
@@ -741,16 +757,10 @@ export class ClientViewStore {
       this.set({ highlightControl: false });
       return;
     }
-    // Client mode is a remote follower of someone else's display — entering
-    // control ALWAYS goes through the server permission flow (verify → request),
-    // for both the Electron-webserver follower and the cloud follower. The server
-    // keys the grant on this device's clientId (the `leader` param is unused by the
-    // webserver), and the leader approves via a confirm dialog. Only outside Client
-    // mode (App / own session) is control taken locally via canControlDisplay.
-    if (mode === "Client") {
-      void this.requestHighlightPermission();
-    } else if (capabilities.canControlDisplay) {
+    if (capabilities.canControlDisplay) {
       this.set({ highlightOn: true, highlightControl: true });
+    } else if (mode === "Client") {
+      void this.requestHighlightPermission();
     }
   }
 
@@ -842,13 +852,29 @@ export class ClientViewStore {
   }
 
   async nextSong(): Promise<void> {
-    const songId = this.neighbourEntry(true)?.songId;
-    if (songId) await this.selectSong(songId);
+    const entry = this.neighbourEntry(true);
+    if (entry) await this.selectNeighbour(entry);
   }
 
   async prevSong(): Promise<void> {
-    const songId = this.neighbourEntry(false)?.songId;
-    if (songId) await this.selectSong(songId);
+    const entry = this.neighbourEntry(false);
+    if (entry) await this.selectNeighbour(entry);
+  }
+
+  /** Project a prev/next neighbour carrying its per-entry transpose/capo/instructions.
+   *  Unlike a bare selectSong({ songId }), this makes the OPTIMISTIC local render
+   *  already match the state the backend echoes back via display_query — otherwise
+   *  the song flashes at its default (transpose 0) until the long-poll correction
+   *  lands. This is why playlist selection (which carries these) never flashed but
+   *  prev/next did. Mirrors selectPlaylistEntry. */
+  private async selectNeighbour(entry: NavEntry): Promise<void> {
+    await this.api.display.project({
+      songId: entry.songId,
+      transpose: entry.transpose ?? 0,
+      capo: entry.capo,
+      instructions: entry.instructions,
+    });
+    if (!this.landscape) this.set({ optionsOpen: false });
   }
 
   async setTranspose(value: number): Promise<void> {
@@ -1036,7 +1062,7 @@ export class ClientViewStore {
   /** Navigate to the full multi-panel editor. Caller must gate on
    *  capabilities.canOpenFullEditor. */
   openFullEditor(): void {
-    if (typeof window !== "undefined") window.location.assign(this.fullEditorUrl);
+    
   }
 
   // ── save playlist (date picker) ──────────────────────────────────────────────

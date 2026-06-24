@@ -208,8 +208,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     canFlip: () => !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext),
     isInteractive: () => !this.getBoundChordProAPI()?.isInMarkingState(),
     isChordSelectorOpen: () => !!this.getBoundChordProAPI()?.hasChordSelectorOpen(),
-    handleChordBoxTouch: (e, down) =>
-      this.chordProHost ? (this.getBoundChordProAPI()?.handleExternalChordBoxTouch(e as MouseEvent, down, true) ?? false) : false,
+    handleChordBoxTouch: (e, down) => {
+      const settings = this.props.settings;
+      if (settings?.sectionSelByEditorLineSel || settings?.sectionSelByEditorDblclk) return false;
+      return this.chordProHost ? (this.getBoundChordProAPI()?.handleExternalChordBoxTouch(e as MouseEvent, down, true) ?? false) : false;
+    },
   });
 
   constructor(props: ChordProEditorProps) {

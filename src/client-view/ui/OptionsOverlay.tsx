@@ -14,7 +14,7 @@ import { PlaylistEditor } from "./PlaylistEditor";
 import { SearchBar } from "./SearchBar";
 import { SongList } from "./SongList";
 
-export function OptionsOverlay() {
+export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
 
@@ -37,7 +37,7 @@ export function OptionsOverlay() {
           {/* OptionsBar holds the chord controls plus the panel chrome: close ends
               its first row, the more-menu ends its second row. */}
           <div className="cv-options-header">
-            <OptionsBar />
+            <OptionsBar onHome={onHome} />
           </div>
           {!viewer && <SearchBar />}
         </div>

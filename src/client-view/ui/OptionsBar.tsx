@@ -35,7 +35,7 @@ const CHORD_MODES: Array<{ value: DisplaySettings["chordMode"]; label: string }>
   { value: 3, label: "a" },
 ];
 
-export function OptionsBar() {
+export function OptionsBar({ onHome }: { onHome?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
   const s = state.displaySettings;
@@ -224,7 +224,7 @@ export function OptionsBar() {
         )}
 
         {/* More-menu ends the second row, directly under the close button. */}
-        <MoreMenu />
+        <MoreMenu onHome={onHome} />
       </div>
     </div>
   );

@@ -173,13 +173,15 @@ export class DirectClientApi implements ClientApi {
   // The desktop embed is always in control; the leader/follower toggle is N/A.
   setLeaderMode(): void {}
 
+  // Drive the host app via the SAME event the webserver clients use, so the main
+  // UI's selection/preview/playlist AND the projector all follow along — not just
+  // the shared CurrentSongStore (App.tsx remoteDisplayUpdateHandler).
+  private dispatchDisplayUpdate(detail: Record<string, unknown>): void {
+    window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail }));
+  }
+
   private createDisplayApi(): DisplayApi {
-    // Drive the host app via the SAME event the webserver clients use, so the
-    // main UI's selection + preview AND the projector all follow along — not just
-    // the shared CurrentSongStore (App.tsx remoteDisplayUpdateHandler).
-    const dispatch = (detail: Record<string, unknown>) => {
-      window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail }));
-    };
+    const dispatch = (detail: Record<string, unknown>) => this.dispatchDisplayUpdate(detail);
     const songId = () => getCurrentDisplay().songId;
     return {
       getCurrent: () => getCurrentDisplay(),
@@ -267,19 +269,25 @@ export class DirectClientApi implements ClientApi {
       const profile = profileFor(leaderId);
       return (label != null ? profile?.playlists.find((pl) => pl.label === label) : profile?.playlists[0])?.songs ?? [];
     };
+    // Apply a working-playlist change by routing it through the host's display
+    // pipeline as a playlist-only display_update, exactly like a webserver client
+    // (RestClientApi). This makes App.tsx remoteDisplayUpdateHandler call
+    // leftPanelRef.updatePlaylist(), which updates the full desktop view's
+    // PlaylistPanel AND syncs CurrentSongStore (via savePlaylist → playlist_id),
+    // so the embed's own subscribePlaylist fires too. Writing CurrentSongStore
+    // directly here would update the projector but leave the full view stale.
+    const applyPlaylist = (entries: ReturnType<typeof playlistOf>) =>
+      this.dispatchDisplayUpdate({ command: "display_update", id: getCurrentDisplay().songId, playlist: entries });
     return {
       getPlaylist: () => getCurrentDisplay().playlist ?? [],
-      // forceEmit: the working playlist is stored on the display, but compareDisplays()
-      // (which gates emitDisplayChange) does NOT diff `playlist`, so a playlist-only
-      // edit would never notify subscribers — the add/remove would silently no-op.
-      setPlaylist: async (entries) => updateCurrentDisplay({ playlist: entries }, { forceEmit: true }),
-      clear: async () => updateCurrentDisplay({ playlist: [] }, { forceEmit: true }),
+      setPlaylist: async (entries) => applyPlaylist(entries),
+      clear: async () => applyPlaylist([]),
       getLeaderPlaylists: async () =>
         Database.getInstance()
           .getLeaders()
           .map((leader) => leader.toJSON()),
       selectLeaderPlaylist: async (leaderId, label) => playlistOf(leaderId, label),
-      replaceCurrentWithSelected: async (leaderId, label) => updateCurrentDisplay({ playlist: playlistOf(leaderId, label) }, { forceEmit: true }),
+      replaceCurrentWithSelected: async (leaderId, label) => applyPlaylist(playlistOf(leaderId, label)),
       // Save the working list to the selected leader's LOCAL schedule (the desktop
       // app's db.schedule path) — there is no cloud here. Return "OVERWRITE" when a
       // dated playlist already exists, mirroring the cloud handshake so the store's

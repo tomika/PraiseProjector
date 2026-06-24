@@ -1,6 +1,6 @@
 /**
  * MainToolbar — the top control bar (#mainToolbar in the legacy index.html):
- * Prev / Home / Options / Capo / Transpose / network status / Fullscreen / Next.
+ * Prev / Options / Capo / Transpose / network status / Fullscreen / Next.
  * Every control dispatches a controller action; none touches the backend.
  *
  * The button ORDER is data-driven and INDEPENDENT per layout (see uiConfig):
@@ -44,7 +44,7 @@ const NET_STATUS_LABEL: Record<string, string> = {
 
 const NET_STATUS_ICON: Record<NetworkStatus, string> = {
   startup: "startup.svg",
-  watching: "online-watcher.svg",
+  watching: "online.svg",
   online: "online.svg",
   leading: "online-leader.svg",
   offline: "no-signal.svg",
@@ -56,7 +56,7 @@ const NET_STATUS_ICON: Record<NetworkStatus, string> = {
 // netstatus map iteration typed without an `Object.keys` cast.
 const NET_STATUSES: NetworkStatus[] = ["startup", "watching", "online", "leading", "offline", "error"];
 
-export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; onPrev?: () => void; onNext?: () => void }) {
+export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
   // View-only: a Client follower, OR App mode while watching a session (legacy
@@ -77,11 +77,6 @@ export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; o
   }, []);
   const vertical = landscape && !state.optionsOpen;
   const order = vertical ? TOOLBAR_ORDER_VERTICAL : TOOLBAR_ORDER_HORIZONTAL;
-
-  const goHome = () => {
-    if (onHome) onHome();
-    else window.location.assign("/");
-  };
 
   // Long-press plumbing for the wand (instructions) button. Editing is gated by
   // display-control capability. A long press opens the editor dialog; a short
@@ -159,13 +154,6 @@ export function MainToolbar({ onHome, onPrev, onNext }: { onHome?: () => void; o
         <img className="btnImg" src={icon("left.svg")} alt="Prev" />
       </div>
     ),
-    // Only shown when embedded in the desktop app (onHome provided). In the
-    // standalone/served client there is no "home" destination to navigate to.
-    home: onHome ? (
-      <div id="btnHome" className="btnDiv" title="Home" onClick={goHome}>
-        <img className="btnImg" src={icon("home.svg")} alt="Home" />
-      </div>
-    ) : null,
     options: (
       <div id="btnOptions" className="btnDiv left-aligned" onClick={() => store.toggleOptions()}>
         <img className="btnImg" src={icon("options.svg")} alt="Options" />

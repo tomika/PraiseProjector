@@ -34,9 +34,9 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
 
   return (
     <div id="mainView" className={`split${state.optionsOpen ? " options-open" : ""}${state.isDark ? " dark" : ""}${bordered}`}>
-      <OptionsOverlay />
+      <OptionsOverlay onHome={onHome} />
       <div className="mainTable">
-        <MainToolbar onHome={onHome} onPrev={() => songViewRef.current?.navigate(false)} onNext={() => songViewRef.current?.navigate(true)} />
+        <MainToolbar onPrev={() => songViewRef.current?.navigate(false)} onNext={() => songViewRef.current?.navigate(true)} />
         <SongView ref={songViewRef} display={state.display} settings={state.displaySettings} dark={state.isDark} />
       </div>
       <SongPreview />

@@ -116,13 +116,24 @@ function ensureChordSelector(system: ChordSystem): ChordSelector | undefined {
   return chordSelector;
 }
 
-function createEditor(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) {
+function createEditor(
+  editorDiv: HTMLDivElement,
+  chp: string,
+  editable?: boolean,
+  compareBase?: string,
+  eventHandlers?: ChordProEditorEventHandlers,
+  suppressDraw?: boolean
+) {
   const system = getChordSystem(NOTE_SYSTEM_CODE);
   const selector = ensureChordSelector(system);
 
   disposeEditor(editorDiv);
 
-  const editor = new ChordProEditor(system, editorDiv, chp, !!editable, undefined, selector, false, compareBase, true, false, eventHandlers);
+  // suppressDraw constructs the editor without an initial paint so the caller can
+  // apply transpose/capo + display settings first and draw exactly once (via
+  // fitToPane → update). This avoids a one-frame flash of the untransposed song
+  // when switching songs in the client view.
+  const editor = new ChordProEditor(system, editorDiv, chp, !!editable, undefined, selector, !!suppressDraw, compareBase, true, false, eventHandlers);
   if (eventHandlers?.OnCopy) {
     editor.onCopy = (plain, chordpro) => {
       // Write both MIME types to system clipboard (editor skips this when onCopy is set)
@@ -186,8 +197,8 @@ function bindEditor(editorDiv: HTMLDivElement) {
   const getBoundEditor = () => getEditorInstance(editorDiv);
 
   return {
-    load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) =>
-      chordProAPI.load(editorDiv, chp, editable, compareBase, eventHandlers),
+    load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers, suppressDraw?: boolean) =>
+      chordProAPI.load(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw),
     getText: () => getBoundEditor()?.chordProCode ?? "",
     setDisplay: (
       title: boolean,
@@ -336,8 +347,15 @@ export const chordProAPI = {
   bind(editorDiv: HTMLDivElement) {
     return bindEditor(editorDiv);
   },
-  load(editorDiv: HTMLDivElement, chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) {
-    createEditor(editorDiv, chp, editable, compareBase, eventHandlers);
+  load(
+    editorDiv: HTMLDivElement,
+    chp: string,
+    editable?: boolean,
+    compareBase?: string,
+    eventHandlers?: ChordProEditorEventHandlers,
+    suppressDraw?: boolean
+  ) {
+    createEditor(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw);
   },
   getText() {
     return getEditorInstance()?.chordProCode ?? "";

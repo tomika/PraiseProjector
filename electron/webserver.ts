@@ -420,6 +420,11 @@ export class WebServer {
   }
 
   private async resolveMacAddressForIp(ip: string): Promise<string> {
+    // Loopback / same-machine clients have no ARP entry, so spawning `arp` for them
+    // is pure cost (~60ms) that returns nothing and (below) never gets cached — paid
+    // on every /display_query, /display_update and /highlight. Short-circuit them.
+    if (ip === "127.0.0.1" || ip === "::1") return "";
+
     const cached = this.macCache.get(ip);
     const now = Date.now();
     if (cached && cached.validTo > now) {
@@ -451,9 +456,9 @@ export class WebServer {
       }
     }
 
-    if (mac) {
-      this.macCache.set(ip, { mac, validTo: now + 60_000 });
-    }
+    // Cache negatives too (shorter TTL) so a momentary resolution miss for a LAN
+    // client doesn't re-spawn `arp` on every subsequent request.
+    this.macCache.set(ip, { mac, validTo: now + (mac ? 60_000 : 10_000) });
 
     return mac;
   }
@@ -778,14 +783,31 @@ export class WebServer {
     });
 
     // Handle highlight permission and line change requests
-    this.app.get("/highlight", (req, res) => {
+    this.app.get("/highlight", async (req, res) => {
       this.setCommonHeaders(res);
 
       const permission = req.query.permission as string;
       const clientId = (req.query.deviceId as string) || "";
       const lineStr = req.query.line as string;
 
+      // Resolve the requesting client's access level. LEADER/LOCAL clients are
+      // admins (loopback, allClientsCanUseLeaderMode, or in the IP/MAC allowlist):
+      // they control the host display by right, so highlight control is granted to
+      // them automatically — no host-side approval prompt and no need for the
+      // client to send an explicit "request".
+      const ip = this.normalizeIp(req.socket.remoteAddress || "");
+      const mac = ip ? await this.resolveMacAddressForIp(ip) : "";
+      const identity: ClientIdentity = { ip, mac, id: mac || ip };
+      const isAdmin = this.getClientType(req.socket, identity) !== "GUEST";
+
       if (permission === "verify" || permission === "request") {
+        // Admins are auto-granted: register them as the controller and answer
+        // GRANTED immediately, bypassing the approval prompt entirely.
+        if (isAdmin) {
+          this.remoteHighlightController = clientId;
+          return res.json("GRANTED");
+        }
+
         // For "verify", immediately check if client is the controller and respond
         if (permission === "verify") {
           const result = this.remoteHighlightController === clientId ? "GRANTED" : "DENIED";
@@ -817,8 +839,11 @@ export class WebServer {
         return res.json(result);
       }
 
-      // Handle line highlight change
-      if (lineStr && clientId === this.remoteHighlightController) {
+      // Handle line highlight change. Admins may push directly (they took control
+      // without an explicit request); everyone else must be the granted controller.
+      // An admin push also (re)claims control so the controller state stays in sync.
+      if (lineStr && (isAdmin || clientId === this.remoteHighlightController)) {
+        if (isAdmin) this.remoteHighlightController = clientId;
         const lineNumber = parseInt(lineStr, 10);
         if (!isNaN(lineNumber)) {
           // Notify frontend about highlight line change
