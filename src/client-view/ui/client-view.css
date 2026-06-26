@@ -271,6 +271,66 @@ body,
   font-size: 15px;
 }
 
+.cv-navigation-actions {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top, 8px));
+  right: max(8px, env(safe-area-inset-right, 8px));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 1;
+  transform: translateZ(2px);
+  transition: opacity 250ms ease;
+}
+
+.cv-navigation-actions-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cv-navigation-mode {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 250ms ease;
+}
+
+.cv-navigation-mode img {
+  width: 22px;
+  height: 22px;
+}
+
+.cv-navigation-mode-disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.cv-navigation-add-current img {
+  width: 19px;
+  height: 19px;
+}
+
+#mainView.dark .cv-navigation-mode {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.62);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+#mainView.dark .cv-navigation-mode img {
+  filter: invert(1);
+}
+
 /* FULL-PAGE / FULL-WIDTH fit: the whole editor (song canvas + title/meta
    overlays) is scaled as ONE unit via `zoom` (set per render by SongView), so
    the overlays stay aligned with the song and it top-aligns like the original.
@@ -508,6 +568,7 @@ body,
   flex: 1 1 auto;
   min-width: 0;
   font-size: 18px;
+  container-type: inline-size;
 }
 
 /* Two FIXED rows (not a wrapping single row) so the controls can be as large as
@@ -541,7 +602,7 @@ body,
 .cv-secdup s {
   text-decoration: line-through;
 }
-@media (max-width: 30rem) {
+@container (max-width: 30rem) {
   .cv-secdup {
     flex-direction: column;
     gap: 0;
@@ -895,7 +956,7 @@ body,
 /* Playlist editor (working-list) ----------------------------------------- */
 
 /* List-mode toggle in the search row: a bare icon button. The icon represents
-   the CURRENT mode and tapping cycles to the next (catalogue ↔ playlist ↔
+   the CURRENT mode and tapping cycles to the next (database ↔ playlist ↔
    leader lists). */
 .cv-listmode-toggle {
   flex: none;
@@ -976,11 +1037,11 @@ body,
   width: 100%;
 }
 
-#list.cv-catalogue td.cv-song-title {
+#list.cv-database td.cv-song-title {
   max-width: 0;
 }
 
-#list.cv-catalogue .cv-song-label {
+#list.cv-database .cv-song-label {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -988,17 +1049,17 @@ body,
   white-space: nowrap;
 }
 
-#list.cv-catalogue td.cv-add-col {
+#list.cv-database td.cv-add-col {
   width: 2.3rem;
   min-width: 2.3rem;
 }
 
-#list.cv-catalogue td.cv-found-marker {
+#list.cv-database td.cv-found-marker {
   width: 2.3rem;
   min-width: 2.3rem;
 }
 
-#list.cv-catalogue td.cv-play-col {
+#list.cv-database td.cv-play-col {
   width: 2.1rem;
   min-width: 2.1rem;
 }
@@ -1490,83 +1551,6 @@ body,
 .cv-about-thanks {
   font-weight: 600;
   margin-top: 12px;
-}
-
-/* Song preview modal (click-to-preview) ----------------------------------- */
-/* Layered over the shared .cv-modal-backdrop. Unlike the dark dialogs this shows
-   the song, so the panel + body are LIGHT (dark in dark mode). */
-.cv-preview {
-  position: relative;
-  z-index: 1051;
-  display: flex;
-  flex-direction: column;
-  width: min(94vw, 720px);
-  height: min(86vh, 900px);
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--cv-song-bg);
-  /* Distinct from the backdrop: light rim + raised drop shadow for a 3D feel. */
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.55),
-    0 2px 6px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.cv-preview-body {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  /* Full-width fit: scroll vertically for long songs instead of shrinking them. */
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* Centre the inline-block editor; it top-aligns vertically (matches .cv-page). */
-  text-align: center;
-  background: var(--cv-song-bg);
-  border-radius: 6px;
-}
-
-/* Floating close button — pinned to the upper-right corner, layered over the song
-   so it doesn't take vertical space away from it. */
-.cv-preview-close {
-  position: absolute;
-  top: 8px;
-  /* Clear the body's vertical scrollbar (~15px) plus the panel's 12px padding so
-     the button never overlaps the scrollbar. */
-  right: 30px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  color: #222;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-#mainView.dark .cv-preview,
-#mainView.dark .cv-preview-body {
-  background: #000;
-}
-
-#mainView.dark .cv-preview {
-  border-color: rgba(255, 255, 255, 0.22);
-  box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.7),
-    0 2px 6px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-#mainView.dark .cv-preview-close {
-  color: #e9e9e9;
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.6);
 }
 
 /* Instructions + highlight controls ---------------------------------------- */

@@ -19,7 +19,6 @@ import { MainToolbar } from "./MainToolbar";
 import { OptionsOverlay } from "./OptionsOverlay";
 import { SchedulePickerDialog } from "./SchedulePickerDialog";
 import { SessionsDialog } from "./SessionsDialog";
-import { SongPreview } from "./SongPreview";
 import { SongView, type SongViewHandle } from "./SongView";
 import { UNIFORM_BUTTON_BORDERS } from "./uiConfig";
 
@@ -39,7 +38,6 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
         <MainToolbar onPrev={() => songViewRef.current?.navigate(false)} onNext={() => songViewRef.current?.navigate(true)} />
         <SongView ref={songViewRef} display={state.display} settings={state.displaySettings} dark={state.isDark} />
       </div>
-      <SongPreview />
       {state.loginDialogOpen && state.capabilities.canLogin && <LoginDialog />}
       {state.sessionsDialogOpen && state.mode === "App" && <SessionsDialog />}
       {state.saveDialogOpen && state.capabilities.canPersistPlaylist && <SchedulePickerDialog />}

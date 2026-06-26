@@ -47,8 +47,8 @@ const NET_STATUS_ICON: Record<NetworkStatus, string> = {
   watching: "online.svg",
   online: "online.svg",
   leading: "online-leader.svg",
-  offline: "no-signal.svg",
-  error: "no-signal.svg",
+  offline: "offline.svg",
+  error: "offline.svg",
 };
 
 // Every status icon is rendered at once (see the netstatus control) and switched

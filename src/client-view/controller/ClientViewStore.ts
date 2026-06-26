@@ -45,20 +45,25 @@ export type DarkMode = "auto" | "light" | "dark";
 /** maxText section-tag display: full word, abbreviation, or hidden. */
 export type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
 
-/** Which collection the options-panel song list shows: the full catalogue
+/** Which collection the options-panel song list shows: the full database
  *  (searchable), the editable working playlist, or the leader-playlists picker
  *  (load a dated playlist from a leader's cloud profile). Mirrors the legacy
  *  iconDatabase ↔ iconPlaylist switch plus the leader-playlist droplist; only
  *  meaningful where the working playlist is editable
  *  (capabilities.canEditWorkingPlaylist). */
-export type ListMode = "catalogue" | "playlist" | "leaderlists";
+export type ListMode = "database" | "playlist" | "leaderlists";
 
-/** The cycle order the list-mode toggle walks (catalogue → playlist →
- *  leaderlists → catalogue), shared by the toggle button and persistence. */
-export const LIST_MODES: readonly ListMode[] = ["catalogue", "playlist", "leaderlists"];
+/** The cycle order the list-mode toggle walks (database → playlist →
+ *  leaderlists → database), shared by the toggle button and persistence. */
+export const LIST_MODES: readonly ListMode[] = ["database", "playlist", "leaderlists"];
+
+/** Which collection the main song view's prev/next navigation walks. This is
+ *  intentionally separate from {@link ListMode}, which only controls what the
+ *  options panel is showing. */
+export type NavigationMode = "database" | "playlist" | "filter" | "archive";
 
 /** Minimal projection of a navigable song row (a {@link PlaylistEntry} or a
- *  catalogue {@link SongEntry}). The page-turn neighbour preloader needs only the
+ *  database {@link SongEntry}). The page-turn neighbour preloader needs only the
  *  id plus the per-song transpose/capo to render the reveal faithfully. */
 export interface NavEntry {
   songId: string;
@@ -71,7 +76,7 @@ export interface NavEntry {
 
 const systemPrefersDark = (): boolean => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
 
-/** Project a catalogue/search row down to the wire {@link PlaylistEntry} shape,
+/** Project a database/search row down to the wire {@link PlaylistEntry} shape,
  *  dropping search-only (`found`) and bulk (`songdata`) fields — mirrors the
  *  legacy `strip()` before pushing a playlist update. */
 function toPlaylistEntry(song: SongEntry | SongFound | PlaylistEntry): PlaylistEntry {
@@ -145,6 +150,7 @@ interface PersistedClientViewState {
   displaySettings: DisplaySettings;
   optionsOpen: boolean;
   listMode: ListMode;
+  navigationMode: NavigationMode;
   showInstructions: boolean;
   highlightOn: boolean;
   highlightControl: boolean;
@@ -160,7 +166,7 @@ interface PersistedClientViewState {
 
 /** device-preference key (the port namespaces it, e.g. "pp-pref-client-view-state"). */
 const PERSIST_KEY = "client-view-state";
-const PERSIST_VERSION = 1;
+const PERSIST_VERSION = 3;
 /** Coalesce rapid state changes into one write (localStorage is synchronous). */
 const PERSIST_DEBOUNCE_MS = 400;
 
@@ -187,10 +193,12 @@ export interface ClientViewState {
   leaderMode: boolean;
   sessions: OnlineSessionEntry[];
   optionsOpen: boolean;
-  /** Whether the song list shows the catalogue, the working-playlist editor, or
+  /** Whether the song list shows the database, the working-playlist editor, or
    *  the leader-playlists picker. Only acted on when
    *  capabilities.canEditWorkingPlaylist is true. */
   listMode: ListMode;
+  /** Explicit source for the main ChordPro view's prev/next navigation. */
+  navigationMode: NavigationMode;
   /** Leader profiles backing the leader-playlists picker (each carries that
    *  leader's dated playlists). Fetched lazily when leaderlists mode opens. */
   leaderProfiles: LeaderDBProfile[];
@@ -213,9 +221,6 @@ export interface ClientViewState {
   loginDialogOpen: boolean;
   /** The sessions hub (discover/attach + host) visibility — App mode only. */
   sessionsDialogOpen: boolean;
-  /** The song shown in the read-only preview modal (legacy click-to-preview), or
-   *  null when the preview is closed. */
-  previewSongId: string | null;
   /** Whether the song's display instructions are overlaid on the song view
    *  (legacy chkInstructions wand toggle). */
   showInstructions: boolean;
@@ -287,7 +292,8 @@ function initialState(): ClientViewState {
     leaderMode: false,
     sessions: [],
     optionsOpen: false,
-    listMode: "catalogue",
+    listMode: "database",
+    navigationMode: "database",
     leaderProfiles: [],
     leaderProfilesLoading: false,
     selectedLeaderId: null,
@@ -298,7 +304,6 @@ function initialState(): ClientViewState {
     zoomDialogOpen: false,
     loginDialogOpen: false,
     sessionsDialogOpen: false,
-    previewSongId: null,
     showInstructions: false,
     highlightOn: false,
     highlightControl: false,
@@ -328,10 +333,9 @@ export class ClientViewStore {
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
   /** Whether the viewport is landscape. In landscape the options panel is a
-   *  side-by-side split (not an overlay covering the song), so it must NOT
-   *  auto-close when the song changes — only an explicit close collapses it.
-   *  Tracked here (mirrors the CSS orientation media queries) so selectSong can
-   *  branch on it. */
+   *  side-by-side split (not an overlay covering the song), so song picks keep it
+   *  open. Tracked here (mirrors the CSS orientation media queries) so selection
+   *  can close only the portrait overlay. */
   private landscape = typeof window !== "undefined" && !!window.matchMedia?.("(orientation: landscape)").matches;
   /** Debounce timer + dedupe cache + gate for UI-state persistence. Saving stays
    *  OFF until init's restore/seed completes (persistenceReady), so none of the
@@ -393,7 +397,7 @@ export class ClientViewStore {
     // initialSongId projection, so a URL-provided song still wins over a saved one).
     this.applyPersisted(persisted, config);
     // App mode (desktop embed): bind the filter box to the host's LeftPanel filter.
-    // Seed from the host's current value (which switches to catalogue when set), then
+    // Seed from the host's current value (which switches to database when set), then
     // mirror future host changes — setSearchText pushes our edits back, so the two
     // filter boxes stay in lockstep. The shared store dedupes, so this never loops.
     const hostFilter = this.api.song.hostFilter;
@@ -435,8 +439,8 @@ export class ClientViewStore {
       mql.addEventListener("change", onChange);
       this.unsubscribes.push(() => mql.removeEventListener("change", onChange));
     }
-    // Track orientation so selectSong knows whether the panel is a split (keep
-    // open) or an overlay (auto-close). No state change — only selectSong reads it.
+    // Track orientation so selection closes only the portrait overlay and first
+    // load can auto-open the landscape split panel.
     const orientationMql = typeof window !== "undefined" ? window.matchMedia?.("(orientation: landscape)") : undefined;
     if (orientationMql) {
       this.landscape = orientationMql.matches;
@@ -503,6 +507,7 @@ export class ClientViewStore {
       displaySettings: s.displaySettings,
       optionsOpen: s.optionsOpen,
       listMode: s.listMode,
+      navigationMode: s.navigationMode,
       showInstructions: s.showInstructions,
       highlightOn: s.highlightOn,
       highlightControl: s.highlightControl,
@@ -541,6 +546,14 @@ export class ClientViewStore {
     if (typeof persisted.optionsOpen === "boolean") patch.optionsOpen = persisted.optionsOpen;
     if (typeof persisted.leaderMode === "boolean") patch.leaderMode = persisted.leaderMode;
     if (persisted.listMode && LIST_MODES.includes(persisted.listMode)) patch.listMode = persisted.listMode;
+    if (
+      persisted.navigationMode === "database" ||
+      persisted.navigationMode === "playlist" ||
+      persisted.navigationMode === "filter" ||
+      persisted.navigationMode === "archive"
+    ) {
+      patch.navigationMode = persisted.navigationMode;
+    }
     if (typeof persisted.showInstructions === "boolean") patch.showInstructions = persisted.showInstructions;
     if (typeof persisted.highlightOpacity === "number") patch.highlightOpacity = persisted.highlightOpacity;
     // Highlight on/control are permission-sensitive in Client mode: a remote
@@ -562,12 +575,12 @@ export class ClientViewStore {
       this.setSearchText(persisted.searchText);
     }
 
-    // Restore the projected song ONLY when nothing else already dictates one: a
-    // URL-provided initialSongId wins, a follower's display is driven by the
-    // backend, and an already-seeded display (e.g. the desktop host's current
-    // projection) must not be clobbered. Projecting at all requires control.
+    // Restore the locally viewed song ONLY when nothing else already dictates
+    // one: a URL-provided initialSongId wins, a follower's display is driven by
+    // the backend, and an already-seeded display (e.g. the desktop host's current
+    // projection) must not be clobbered.
     if (persisted.songId && !config.initialSongId && !config.follow && this.state.capabilities.canControlDisplay && !this.state.display.songId) {
-      void this.api.display.project({ songId: persisted.songId, transpose: persisted.transpose ?? 0, capo: persisted.capo }).catch(() => undefined);
+      void this.loadLocalEntry({ songId: persisted.songId, transpose: persisted.transpose ?? 0, capo: persisted.capo }).catch(() => undefined);
     }
   }
 
@@ -608,7 +621,7 @@ export class ClientViewStore {
       const songs = await this.api.song.listAllSongs();
       this.set({ songs });
     } catch {
-      /* a missing catalogue is non-fatal (e.g. not yet synced) */
+      /* a missing database is non-fatal (e.g. not yet synced) */
     }
   }
 
@@ -616,11 +629,12 @@ export class ClientViewStore {
 
   setSearchText(text: string): void {
     const patch: Partial<ClientViewState> = { searchText: text };
-    // Searching returns the list to the searchable catalogue: the working-playlist
+    // Searching returns the list to the searchable database: the working-playlist
     // editor and the leader-playlists picker have no search of their own, so a
-    // query must show the catalogue results (the legacy filter box lived only in
-    // catalogue mode). Empty text leaves the current mode alone.
-    if (text.trim() && this.state.listMode !== "catalogue") patch.listMode = "catalogue";
+    // query must show the database results (the legacy filter box lived only in
+    // database mode). Empty text leaves the current mode alone.
+    if (text.trim() && this.state.listMode !== "database") patch.listMode = "database";
+    if (!text.trim() && this.state.navigationMode === "filter") patch.navigationMode = "database";
     this.set(patch);
     // Keep the host app's LeftPanel filter in lockstep (desktop embed / App mode
     // only; a no-op on adapters without a host filter binding).
@@ -647,44 +661,87 @@ export class ClientViewStore {
 
   // ── projection / navigation ──────────────────────────────────────────────────
 
-  async selectSong(songId: string): Promise<void> {
-    await this.api.display.project({ songId });
-    // Picking a song returns to the song view by closing the options OVERLAY
-    // (portrait). In landscape the panel is a side-by-side split that does not
-    // cover the song, so keep it open — it only closes on an explicit close.
+  private setNavigationMode(mode: NavigationMode): void {
+    const patch: Partial<ClientViewState> = { navigationMode: mode };
+    if (mode === "playlist") patch.listMode = "playlist";
+    this.set(patch);
+  }
+
+  private closePortraitOptions(): void {
     if (!this.landscape) this.set({ optionsOpen: false });
+  }
+
+  async selectSong(songId: string): Promise<void> {
+    await this.selectDatabaseSong(songId);
+  }
+
+  async selectDatabaseSong(songId: string): Promise<void> {
+    this.setNavigationMode("database");
+    await this.loadLocalEntry({ songId });
+  }
+
+  async selectFilteredSong(songId: string): Promise<void> {
+    this.setNavigationMode("filter");
+    await this.loadLocalEntry({ songId });
   }
 
   /** Project a specific working-playlist entry, preserving its per-item
    *  transpose/capo/instructions values (legacy updateTableFromEntries row pick). */
   async selectPlaylistEntry(entry: PlaylistEntry): Promise<void> {
+    this.setNavigationMode("playlist");
+    await this.projectEntry(entry);
+  }
+
+  /** Project a row from a selected archived/leader playlist without adding it to
+   *  the working playlist. Prev/next then walks that selected archive list. */
+  async selectArchiveEntry(entry: PlaylistEntry): Promise<void> {
+    this.setNavigationMode("archive");
+    await this.loadLocalEntry(entry);
+  }
+
+  private async loadLocalEntry(entry: NavEntry): Promise<void> {
+    const data = await this.api.song.getSongData(entry.songId);
+    const transpose = entry.transpose ?? 0;
+    const capo = entry.capo;
+    this.set({
+      display: {
+        ...this.state.display,
+        songId: entry.songId,
+        song: data.text,
+        system: data.system,
+        from: 0,
+        to: 0,
+        section: -1,
+        transpose,
+        capo,
+        instructions: entry.instructions,
+      },
+      transpose,
+      capo: capo ?? 0,
+    });
+    this.closePortraitOptions();
+  }
+
+  private async projectEntry(entry: NavEntry): Promise<void> {
     await this.api.display.project({
       songId: entry.songId,
       transpose: entry.transpose ?? 0,
       capo: entry.capo,
       instructions: entry.instructions,
     });
-    if (!this.landscape) this.set({ optionsOpen: false });
-  }
-
-  /** Open / close the read-only song preview (legacy click-to-preview). */
-  openPreview(songId: string): void {
-    this.set({ previewSongId: songId });
-  }
-
-  closePreview(): void {
-    this.set({ previewSongId: null });
+    this.closePortraitOptions();
   }
 
   /** The legacy "▶" quick-load: add the row to the working playlist when it is
    *  editable and not already present, then project it (which returns to the
-   *  song view). Closes any open preview. */
+   *  song view). Since it projects from the playlist affordance, prev/next then
+   *  walks the working playlist. */
   async playSong(song: SongEntry | SongFound | PlaylistEntry): Promise<void> {
-    this.set({ previewSongId: null });
-    if (this.state.capabilities.canEditWorkingPlaylist && !this.state.playlist.some((entry) => entry.songId === song.songId)) {
-      await this.setPlaylist([...this.state.playlist, toPlaylistEntry(song)]);
+    const entry = toPlaylistEntry(song);
+    if (this.state.capabilities.canEditWorkingPlaylist && !this.state.playlist.some((item) => item.songId === entry.songId)) {
+      await this.setPlaylist([...this.state.playlist, entry]);
     }
-    await this.selectSong(song.songId);
+    await this.selectPlaylistEntry(entry);
   }
 
   // ── instructions (legacy wand) ─────────────────────────────────────────────────
@@ -692,6 +749,61 @@ export class ClientViewStore {
   /** Show/hide the current song's display instructions overlaid on the song
    *  (legacy chkInstructions). SongView toggles the editor's instruction render
    *  mode accordingly. */
+  currentSongIsInPlaylist(): boolean {
+    const songId = this.state.display.songId;
+    return !!songId && this.state.playlist.some((entry) => entry.songId === songId);
+  }
+
+  canUsePlaylistNavigation(): boolean {
+    return this.state.capabilities.canControlDisplay && this.state.playlist.length > 0;
+  }
+
+  currentSongCanBeAddedToPlaylist(): boolean {
+    const songId = this.state.display.songId;
+    return this.state.capabilities.canEditWorkingPlaylist && !!songId && !this.currentSongIsInPlaylist();
+  }
+
+  /** Return prev/next to the working playlist without re-projecting the current
+   *  song. Re-projecting would clear the currently selected section/highlight. */
+  async returnCurrentSongToPlaylistNavigation(): Promise<void> {
+    if (!this.state.playlist.length || !this.state.capabilities.canControlDisplay) return;
+    const projected = this.api.display.getCurrent();
+    this.setNavigationMode("playlist");
+    this.set({
+      display: projected,
+      transpose: projected.transpose,
+      capo: projected.capo ?? 0,
+    });
+    this.closePortraitOptions();
+  }
+
+  /** Add the currently displayed song to the working playlist, project that new
+   *  row, then make the playlist the active navigation source and options list. */
+  async addCurrentSongToPlaylistAndProject(): Promise<void> {
+    const songId = this.state.display.songId;
+    if (!songId || !this.state.capabilities.canEditWorkingPlaylist) return;
+    const existing = this.state.playlist.find((entry) => entry.songId === songId);
+    const entry = existing ?? this.currentDisplayPlaylistEntry();
+    if (!existing) await this.setPlaylist([...this.state.playlist, entry]);
+    await this.selectPlaylistEntry(entry);
+  }
+
+  private currentDisplayPlaylistEntry(): PlaylistEntry {
+    const { display } = this.state;
+    const songId = display.songId;
+    const known =
+      this.state.songs.find((entry) => entry.songId === songId) ??
+      this.state.searchResults.find((entry) => entry.songId === songId) ??
+      this.selectedLeaderEntries().find((entry) => entry.songId === songId);
+    return {
+      songId,
+      title: known?.title ?? songId,
+      transpose: display.transpose,
+      capo: display.capo,
+      instructions: display.instructions,
+    };
+  }
+
   toggleInstructions(on?: boolean): void {
     this.set({ showInstructions: on ?? !this.state.showInstructions });
   }
@@ -824,14 +936,20 @@ export class ClientViewStore {
     this.set({ instructionsEditorOpen: false });
   }
 
-  /** The ordered collection prev/next navigation walks. Prefers the working
-   *  playlist when the current song belongs to it; otherwise falls back to the
-   *  full catalogue, so the client can page through ALL songs — not only playlist
-   *  members (the common case when browsing the song list without a playlist). */
+  /** The ordered collection prev/next navigation walks. It is explicit so a song
+   *  that exists in several lists does not silently switch navigation source. */
   private navList(): NavEntry[] {
-    const { playlist, songs, display } = this.state;
-    if (display.songId && playlist.some((entry) => entry.songId === display.songId)) return playlist;
-    return songs;
+    switch (this.state.navigationMode) {
+      case "playlist":
+        return this.state.playlist;
+      case "filter":
+        return this.state.searchResults;
+      case "archive":
+        return this.selectedLeaderEntries();
+      case "database":
+      default:
+        return this.state.songs;
+    }
   }
 
   /** The neighbouring song in the active navigation list (see {@link navList}) in
@@ -868,13 +986,8 @@ export class ClientViewStore {
    *  lands. This is why playlist selection (which carries these) never flashed but
    *  prev/next did. Mirrors selectPlaylistEntry. */
   private async selectNeighbour(entry: NavEntry): Promise<void> {
-    await this.api.display.project({
-      songId: entry.songId,
-      transpose: entry.transpose ?? 0,
-      capo: entry.capo,
-      instructions: entry.instructions,
-    });
-    if (!this.landscape) this.set({ optionsOpen: false });
+    if (this.state.navigationMode === "playlist") await this.projectEntry(entry);
+    else await this.loadLocalEntry(entry);
   }
 
   async setTranspose(value: number): Promise<void> {
@@ -899,12 +1012,14 @@ export class ClientViewStore {
     await this.api.playlist.clear();
   }
 
-  /** Switch the song list between the catalogue, the working-playlist editor and
+  /** Switch the song list between the database, the working-playlist editor and
    *  the leader-playlists picker. Caller gates the affordance on
    *  capabilities.canEditWorkingPlaylist. Entering leaderlists lazily loads the
    *  leader profiles (refreshing them, like the legacy updatePlaylistDroplist). */
   setListMode(mode: ListMode): void {
-    this.set({ listMode: mode });
+    const patch: Partial<ClientViewState> = { listMode: mode };
+    if (mode === "database" || mode === "playlist") patch.navigationMode = mode;
+    this.set(patch);
     if (mode === "leaderlists") void this.loadLeaderPlaylists();
   }
 
@@ -978,7 +1093,7 @@ export class ClientViewStore {
     if (!(await this.confirm("overwrite"))) return;
     const next = entries.map(toPlaylistEntry);
     await this.setPlaylist(next);
-    this.set({ listMode: "playlist" });
+    this.setNavigationMode("playlist");
     // If the projected song isn't part of the freshly loaded list, jump to its
     // first song (legacy replaceCurrentPlaylistWithSelected returned to the song
     // view on the new list). Only when this client may drive the display.
@@ -988,7 +1103,7 @@ export class ClientViewStore {
     }
   }
 
-  /** Add a catalogue/search result to the end of the working playlist, or remove
+  /** Add a database/search result to the end of the working playlist, or remove
    *  it if already present — the legacy add-checkbox toggle. */
   async togglePlaylistEntry(song: SongEntry | SongFound | PlaylistEntry): Promise<void> {
     const list = this.state.playlist;

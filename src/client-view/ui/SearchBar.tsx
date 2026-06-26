@@ -7,7 +7,7 @@
  * toggle (the legacy iconDatabase ↔ iconPlaylist switch): the visible icon is
  * the mode you can switch TO. The filter field shows in every mode EXCEPT
  * leaderlists (which swaps in the leader/date pickers); typing a query returns
- * the list to the searchable catalogue (see ClientViewStore.setSearchText).
+ * the list to the searchable database (see ClientViewStore.setSearchText).
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
@@ -16,7 +16,7 @@ import { icon } from "./assets";
 import { LeaderPlaylistControls } from "./LeaderPlaylistControls";
 
 const LIST_MODE_META: Record<ListMode, { svg: string; label: string }> = {
-  catalogue: { svg: "database.svg", label: "song catalogue" },
+  database: { svg: "database.svg", label: "song database" },
   playlist: { svg: "playlist.svg", label: "current playlist" },
   leaderlists: { svg: "calendar.svg", label: "leader playlists" },
 };
@@ -26,9 +26,9 @@ export function SearchBar() {
   const state = useClientViewState();
 
   const canEdit = state.capabilities.canEditWorkingPlaylist;
-  // While editing, the toggle cycles catalogue → playlist → leaderlists. The
-  // filter field shows in catalogue AND playlist (typing in playlist switches
-  // back to the catalogue); only leaderlists swaps in its own pickers.
+  // While editing, the toggle cycles database → playlist → leaderlists. The
+  // filter field shows in database AND playlist (typing in playlist switches
+  // back to the database); only leaderlists swaps in its own pickers.
   const showSearch = !canEdit || state.listMode !== "leaderlists";
   const nextMode = LIST_MODES[(LIST_MODES.indexOf(state.listMode) + 1) % LIST_MODES.length];
   const current = LIST_MODE_META[state.listMode];

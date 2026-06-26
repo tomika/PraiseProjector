@@ -14,8 +14,7 @@
  * horizontal swipe — or the toolbar Prev/Next buttons via the imperative
  * {@link SongViewHandle} — rotates the current page around its edge in 3D,
  * revealing the neighbour, then advances the display. The neighbour list is the
- * controller's active navigation list (working playlist, else the full
- * catalogue), so navigation works while browsing ALL songs, not only playlists.
+ * controller's explicit navigation source.
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -32,9 +31,17 @@ import {
   CHORDFORMAT_SUBSCRIPT,
 } from "../../../chordpro/chord_drawer";
 import type { Display } from "../api/ClientApi";
-import type { DisplaySettings, NavEntry } from "../controller/ClientViewStore";
+import type { DisplaySettings, NavEntry, NavigationMode } from "../controller/ClientViewStore";
+import { icon } from "./assets";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
+
+const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string }> = {
+  database: { icon: "database.svg", label: "Song database navigation" },
+  playlist: { icon: "playlist.svg", label: "Current playlist navigation" },
+  filter: { icon: "magnifier.svg", label: "Filtered database navigation" },
+  archive: { icon: "calendar.svg", label: "Archived playlist navigation" },
+};
 
 /** Imperative handle the toolbar uses so its Prev/Next buttons trigger the same
  *  animated turn as a swipe (instead of an instant, un-animated song change). */
@@ -140,6 +147,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const store = useClientViewStore();
   const state = useClientViewState();
   const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
+  const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
+  const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
+  const hasSongText = !!display.song?.trim();
+  const playlistReturnTitle = canUsePlaylistNavigation
+    ? "Return to current song in playlist navigation"
+    : state.playlist.length === 0
+      ? "Current playlist is empty"
+      : "Playlist navigation is unavailable";
 
   const swipeRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef<HTMLDivElement>(null);
@@ -156,6 +171,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const loadedTextRef = useRef<string | null>(null);
   const appliedTransposeRef = useRef(0);
   const scrollModeRef = useRef(false);
+  const [navigationActionsHidden, setNavigationActionsHidden] = useState(false);
 
   // The shared page-turn controller (chordpro/pageFlip), the same one the desktop
   // ChordProEditor drives. Created in an effect so its config closures — which
@@ -187,6 +203,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
+      onFlipActiveChange: setNavigationActionsHidden,
     });
     flipRef.current = flip;
     return () => {
@@ -306,10 +323,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     if (!api || !host) return;
     const text = display.song ?? "";
     if (!text) {
-      // Nothing projected — leave the editor empty and show the empty-state hint.
-      loadedTextRef.current = null;
+      // Nothing projected: clear the editor so stale song content cannot remain
+      // visible under the empty-state hint.
+      if (loadedTextRef.current !== "") api.load("", false);
+      loadedTextRef.current = "";
       appliedTransposeRef.current = 0;
       host.style.removeProperty("zoom");
+      api.highlight(0, 0);
+      api.setLyricsHitHandler(null);
       return;
     }
     if (loadedTextRef.current !== text) {
@@ -397,7 +418,20 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     return () => {
       cancelled = true;
     };
-  }, [display.songId, state.playlist, state.songs, settings, dark, scrollMode, store]);
+  }, [
+    display.songId,
+    state.navigationMode,
+    state.songs,
+    state.searchResults,
+    state.playlist,
+    state.leaderProfiles,
+    state.selectedLeaderId,
+    state.selectedPlaylistLabel,
+    settings,
+    dark,
+    scrollMode,
+    store,
+  ]);
 
   // Push highlight opacity to all three editor instances immediately when it
   // changes (triggered by the opacity slider dialog), then redraw the current
@@ -423,12 +457,39 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       <div className="cv-page cv-page-current" ref={currentPageRef}>
         <div className="editor" id="editor" ref={hostRef} tabIndex={-1} />
       </div>
-      {!display.songId && (
+      {!hasSongText && (
         <div className="cv-empty-state">
           <p className="cv-empty-title">No song selected</p>
           <p className="cv-empty-hint">Tap the options icon to search and pick a song.</p>
         </div>
       )}
+      <div
+        className={`cv-navigation-actions${navigationActionsHidden || state.navigationMode === "playlist" ? " cv-navigation-actions-hidden" : ""}`}
+      >
+        <button
+          type="button"
+          className={`cv-navigation-mode${canUsePlaylistNavigation ? "" : " cv-navigation-mode-disabled"}`}
+          title={playlistReturnTitle}
+          aria-label={playlistReturnTitle}
+          aria-disabled={!canUsePlaylistNavigation}
+          onClick={() => {
+            if (canUsePlaylistNavigation) void store.returnCurrentSongToPlaylistNavigation();
+          }}
+        >
+          <img src={icon(NAVIGATION_MODE_META[state.navigationMode].icon)} alt="" />
+        </button>
+        {canAddCurrentSongToPlaylist && (
+          <button
+            type="button"
+            className="cv-navigation-mode cv-navigation-add-current"
+            title="Add current song to playlist and project it"
+            aria-label="Add current song to playlist and project it"
+            onClick={() => void store.addCurrentSongToPlaylistAndProject()}
+          >
+            <img src={icon("play.svg")} alt="" />
+          </button>
+        )}
+      </div>
       {/* Hidden chord-selector host required by the guitar chord-box renderer. */}
       <div dangerouslySetInnerHTML={{ __html: CHORDSEL_MARKUP }} />
     </div>

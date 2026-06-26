@@ -1,6 +1,6 @@
 /**
- * SongList — the catalogue/search table (#list). Shows search results while
- * filtering, the full catalogue otherwise. Mirrors the legacy search-result row:
+ * SongList — the database/search table (#list). Shows search results while
+ * filtering, the full database otherwise. Mirrors the legacy search-result row:
  *
  *   [✓ add]  Title (matching excerpt…)  [found-type marker]  [▶ play]
  *
@@ -9,8 +9,8 @@
  *    (lyrics/meta/header/words) shows the plain title PLUS the matching excerpt,
  *    so a hit outside the title is still visible (was missing before);
  *  - the found-type MARKER (found_<type>[_words].svg) shows WHERE it matched;
- *  - clicking the row opens a read-only PREVIEW (legacy click-to-preview);
- *  - the ▶ PLAY button adds the song (if editable) and projects it to the display.
+ *  - clicking the row projects it in database/filter navigation mode;
+ *  - the ▶ PLAY button adds the song (if editable) and projects it in playlist-navigation mode.
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
@@ -72,15 +72,16 @@ export function SongList() {
   const inPlaylist = new Set(state.playlist.map((entry) => entry.songId));
 
   return (
-    <table className="cv-catalogue" id="list" cellSpacing={0} cellPadding={0}>
+    <table className="cv-database" id="list" cellSpacing={0} cellPadding={0}>
       <tbody>
         {rows.map((entry) => {
           const added = inPlaylist.has(entry.songId);
+          const selectedMode = usingSearch ? "filter" : "database";
           return (
             <tr
               key={entry.songId}
-              className={entry.songId === state.display.songId ? "selected" : ""}
-              onClick={() => store.openPreview(entry.songId)}
+              className={state.navigationMode === selectedMode && entry.songId === state.display.songId ? "selected" : ""}
+              onClick={() => void (usingSearch ? store.selectFilteredSong(entry.songId) : store.selectDatabaseSong(entry.songId))}
             >
               {canEdit && (
                 <td className="cv-add-col">

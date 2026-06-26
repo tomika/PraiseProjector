@@ -64,6 +64,8 @@ export interface PageFlipConfig {
   /** Optional: let a tap on a chord box pre-empt the gesture (returns true when it
    *  handled the event). Present only where chord editing is offered. */
   handleChordBoxTouch?(e: PointerEvent | MouseEvent, down: boolean): boolean;
+  /** Optional: host UI can fade/disable controls while a page is turning. */
+  onFlipActiveChange?(active: boolean): void;
 }
 
 export class PageFlip {
@@ -428,6 +430,7 @@ export class PageFlip {
     const el = this.cfg.container();
     if (!el || this.flipActive) return;
     this.flipActive = true;
+    this.cfg.onFlipActiveChange?.(true);
     // Suppress the rotating page's scrollbar for the duration of the turn: a tall,
     // scrollable song otherwise rotates a scrollbar gutter edge-on, which looks
     // broken. This is purely visual (the class only hides the scrollbar, it does
@@ -456,6 +459,7 @@ export class PageFlip {
     const el = this.cfg.container();
     if (!el || !this.flipActive) return;
     this.flipActive = false;
+    this.cfg.onFlipActiveChange?.(false);
     this.clearShadow();
     if (this.scrollbarHidden) {
       this.scrollbarHidden.classList.remove(PageFlip.HIDE_SCROLLBAR_CLASS);

@@ -2,8 +2,8 @@
  * LeaderPlaylistPicker — the song-list body of the leader-playlists mode (legacy
  * selPlaylists droplist). The leader + date selectors and the replace button
  * live in the search row (see LeaderPlaylistControls); this renders the chosen
- * playlist's songs as catalogue-style rows ([＋ add] Title [▶ play]), reusing the
- * #list.cv-catalogue look so picking songs works exactly like the catalogue.
+ * playlist's songs as database-style rows ([＋ add] Title [▶ play]), reusing the
+ * #list.cv-database look.
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
@@ -26,15 +26,15 @@ export function LeaderPlaylistPicker() {
           )}
         </div>
       ) : (
-        <table className="cv-catalogue" id="list" cellSpacing={0} cellPadding={0}>
+        <table className="cv-database" id="list" cellSpacing={0} cellPadding={0}>
           <tbody>
             {entries.map((entry, index) => {
               const added = inPlaylist.has(entry.songId);
               return (
                 <tr
                   key={`${entry.songId}-${index}`}
-                  className={entry.songId === state.display.songId ? "selected" : ""}
-                  onClick={() => store.openPreview(entry.songId)}
+                  className={state.navigationMode === "archive" && entry.songId === state.display.songId ? "selected" : ""}
+                  onClick={() => void store.selectArchiveEntry(entry)}
                 >
                   <td className="cv-add-col">
                     <button

@@ -15,5 +15,7 @@ document.documentElement.style.fontSize = "16px";
 
 const rootEl = document.getElementById("root");
 if (rootEl) {
-  void mountClientView(rootEl);
+  void mountClientView(rootEl).finally(() => {
+    document.getElementById("pp-shell-loading")?.remove();
+  });
 }

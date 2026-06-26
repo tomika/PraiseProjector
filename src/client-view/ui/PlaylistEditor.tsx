@@ -9,7 +9,7 @@
  *   - double-click the title to edit it inline;
  *   - edit row transpose/capo with legacy-style select cells.
  *
- * Songs are ADDED from the catalogue (SongList's add toggle); this component is
+ * Songs are ADDED from the database (SongList's add toggle); this component is
  * the reorder/remove half of the same working playlist. Native DnD matches the
  * legacy behaviour and keeps the heavyweight react-dnd library out of this
  * bundle (a Phase-C bundle-diet constraint).
@@ -114,7 +114,7 @@ export function PlaylistEditor() {
     return (
       <div className="cv-playlist-empty">
         <p className="cv-playlist-empty-title">Current playlist is empty</p>
-        <p className="cv-playlist-empty-hint">Switch to the catalogue and tap ＋ to add songs.</p>
+        <p className="cv-playlist-empty-hint">Switch to the database and tap ＋ to add songs.</p>
       </div>
     );
   }
@@ -143,7 +143,7 @@ export function PlaylistEditor() {
           {playlist.map((entry, index) => {
             const transposeValue = entry.transpose ?? 0;
             const rowClass = [
-              entry.songId === state.display.songId ? "selected" : "",
+              state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
               index === dragIndex ? "cv-dragging" : "",
               dragging && index === overIndex && index !== dragIndex ? "cv-drag-over" : "",
             ]
