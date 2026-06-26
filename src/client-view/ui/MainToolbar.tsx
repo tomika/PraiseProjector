@@ -253,7 +253,7 @@ export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: 
     // shows as 0 B / "(unknown)" / Initiator "Other" in devtools) and blanks the
     // indicator between frames — very visible when the status flips repeatedly.
     netstatus:
-      state.mode !== "App" || netActiveInApp ? (
+      state.mode !== "App" ? (
         <div
           id="netstatus"
           className={`btnDiv net-${netStatus}`}

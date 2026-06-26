@@ -41,7 +41,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       </div>
       <SongPreview />
       {state.loginDialogOpen && state.capabilities.canLogin && <LoginDialog />}
-      {state.sessionsDialogOpen && state.capabilities.canFollowSessions && <SessionsDialog />}
+      {state.sessionsDialogOpen && state.mode === "App" && <SessionsDialog />}
       {state.saveDialogOpen && state.capabilities.canPersistPlaylist && <SchedulePickerDialog />}
       {state.instructionsEditorOpen && <InstructionsEditorDialog />}
       {state.aboutOpen && <AboutDialog />}

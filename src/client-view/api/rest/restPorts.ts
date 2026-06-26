@@ -9,6 +9,7 @@
  */
 
 import { cloudApi } from "../../../../common/cloudApi";
+import { getLocalBroadcastAddresses } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SongApi } from "../ClientApi";
@@ -219,6 +220,7 @@ async function attachSession(core: RestCore, session: OnlineSessionEntry): Promi
 export function createSessionApi(core: RestCore): SessionApi {
   return {
     scanLocalServers: (address) => core.scanLocal(address),
+    scanAddresses: () => getLocalBroadcastAddresses(),
     searchExternal: async (mode) => {
       const results: OnlineSessionEntry[] = [];
       if (mode === "WEB" || mode === "BOTH") {

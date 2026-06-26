@@ -229,9 +229,8 @@ export class RestCore {
         canLogin: false,
         canChangeLeader: false,
         canPersistPlaylist: false,
-        // Locked to its serving host (auto-follows via config.follow); no manual
-        // session picker, and it never hosts its own session.
-        canFollowSessions: false,
+        // Locked to its serving host (auto-follows via config.follow); it never
+        // hosts its own session.
         canHostLocalSession: false,
         canHostOnlineSession: false,
         // The full editor (index.html) is served by the same webserver, but only
@@ -252,7 +251,6 @@ export class RestCore {
       canLogin: true,
       canChangeLeader: true,
       canPersistPlaylist: true,
-      canFollowSessions: true,
       // Hosting a local PPD session needs a native transport (Android / Electron
       // desktop); a plain browser has none. Hosting an online session needs a
       // leader identity (the cloud session row is keyed by it).

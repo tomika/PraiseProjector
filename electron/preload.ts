@@ -335,7 +335,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // P2P session scanning (unified UDP + Bluetooth)
   // Methods maintain "udp" prefix for backwards compatibility
-  udpGetBroadcastAddress: () => ipcRenderer.invoke("udp-get-broadcast-address"),
   udpScanSessions: (broadcastAddress?: string) => ipcRenderer.invoke("udp-scan-sessions", broadcastAddress),
   udpGetDiscoveredSessions: () => ipcRenderer.invoke("udp-get-discovered-sessions"),
 
@@ -497,6 +496,7 @@ contextBridge.exposeInMainWorld("hostDevice", {
   exit: () => ipcRenderer.invoke("hostdevice-exit"),
   version: () => ipcRenderer.invoke("hostdevice-version"),
   info: (flags: number) => ipcRenderer.invoke("hostdevice-info", flags),
+  getNetworkInterfaces: () => ipcRenderer.invoke("hostdevice-get-network-interfaces"),
   enableNotification: (sessionId: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean) =>
     ipcRenderer.invoke("hostdevice-enable-notification", sessionId, name, descriptionText, checkIntervalMinutes, acquire),
   getCacheSize: () => ipcRenderer.invoke("hostdevice-get-cache-size"),

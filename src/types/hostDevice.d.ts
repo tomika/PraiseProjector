@@ -24,6 +24,10 @@ export interface ElectronHostDevice {
   exit?: () => void | Promise<void>;
   version?: () => string | Promise<string>;
   info?: (flags: number) => string | Promise<string>;
+  /** JSON array of active IPv4 interfaces — `{ name, address, netmask }[]` — for the
+   *  sessions form's scan-address picker. Electron: os.networkInterfaces(); Android:
+   *  NetworkInterface.getNetworkInterfaces(). */
+  getNetworkInterfaces?: () => string | Promise<string>;
   enableNotification?: (
     sessionId: string,
     name: string,

@@ -2035,6 +2035,27 @@ const AppContent: React.FC = () => {
     exitWatchModeRef.current = exitWatchMode;
   }, [exitWatchMode]);
 
+  // Project displays from a session the EMBEDDED client view is following. The
+  // embed's DirectClientApi runs the follow loop (PPD / cloud long-poll) and
+  // dispatches each display here, where the SAME applyDisplay path the full view's
+  // watch mode uses projects it (handles an arbitrary remote song via display.song,
+  // not just working-playlist songs). "pp-cv-watch-stop" exits watch mode.
+  useEffect(() => {
+    const onWatchDisplay = (e: Event) => {
+      const display = (e as CustomEvent<Display>).detail;
+      if (!display) return;
+      if (!watchedDisplayRef.current) watchedDisplayRef.current = getEmptyDisplay();
+      applyDisplay(display);
+    };
+    const onWatchStop = () => exitWatchModeRef.current();
+    window.addEventListener("pp-cv-watch-display", onWatchDisplay);
+    window.addEventListener("pp-cv-watch-stop", onWatchStop);
+    return () => {
+      window.removeEventListener("pp-cv-watch-display", onWatchDisplay);
+      window.removeEventListener("pp-cv-watch-stop", onWatchStop);
+    };
+  }, [applyDisplay]);
+
   // Enter session watching mode - matching C# ProjectorForm.EnterSessionWatchingMode
   // When watching a remote session, the playlist becomes read-only and song changes come from the remote session
   const enterWatchMode = useCallback(

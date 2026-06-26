@@ -113,7 +113,6 @@ export interface IElectronAPI {
 
   // UDP/P2P session scanning (for local network discovery)
   // These methods now use unified P2P transport (UDP + Bluetooth)
-  udpGetBroadcastAddress?: () => Promise<string>;
   udpScanSessions?: (broadcastAddress?: string) => Promise<{ success: boolean; address?: string; error?: string }>;
   udpGetDiscoveredSessions?: () => Promise<P2PSessionInfo[]>;
 

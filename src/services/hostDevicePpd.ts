@@ -443,6 +443,112 @@ export const scanHostDeviceSessions = async (address?: string): Promise<{ succes
   return { success: !!sentAddress, address: sentAddress || undefined };
 };
 
+/** One active IPv4 interface as reported by the host bridge (Electron / Android). */
+export type NetworkInterfaceDetail = { name: string; address: string; netmask: string };
+
+/** A selectable scan-address for the sessions form's picker: the broadcast `value`
+ *  used for scanning, plus a human `label` (interface name + broadcast). */
+export type ScanAddressOption = { value: string; label: string };
+
+/**
+ * All active IPv4 interfaces (name/address/netmask) from the host bridge's
+ * getNetworkInterfaces() — Electron's os.networkInterfaces() or Android's
+ * NetworkInterface enumeration. Empty in a plain browser (no bridge).
+ */
+/** Diagnostics that surface in the in-app log viewer (renderer console is NOT
+ *  intercepted; the host bridge's debugLog forwards to the main-process file log).
+ *  TODO(scan-address-debug): remove once the picker is confirmed working. */
+const netLog = (message: string): void => {
+  try {
+    void getHostDevice()?.debugLog?.("ScanAddr", message);
+  } catch {
+    /* ignore */
+  }
+  console.info("ScanAddr", message);
+};
+
+export const getNetworkInterfaces = async (): Promise<NetworkInterfaceDetail[]> => {
+  const hostDevice = getHostDevice();
+  netLog(`getNetworkInterfaces: hostDevice=${!!hostDevice} method=${typeof hostDevice?.getNetworkInterfaces}`);
+  if (!hostDevice?.getNetworkInterfaces) return [];
+  try {
+    const raw = await resolvePromise(hostDevice.getNetworkInterfaces());
+    netLog(`getNetworkInterfaces: raw=${typeof raw === "string" ? raw : JSON.stringify(raw)}`);
+    const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (i): i is NetworkInterfaceDetail =>
+        !!i && typeof (i as NetworkInterfaceDetail).address === "string" && typeof (i as NetworkInterfaceDetail).netmask === "string"
+    );
+  } catch (ex) {
+    netLog(`getNetworkInterfaces: error ${ex instanceof Error ? ex.message : String(ex)}`);
+    return [];
+  }
+};
+
+/** The subnet broadcast for an ip + dotted-quad netmask, e.g. (192.168.1.7,
+ *  255.255.255.0) -> 192.168.1.255. Null when either is malformed. */
+function broadcastFor(address: string, netmask: string): string | null {
+  const ip = address.split(".").map(Number);
+  const mask = netmask.split(".").map(Number);
+  if (ip.length !== 4 || mask.length !== 4 || [...ip, ...mask].some((n) => Number.isNaN(n))) return null;
+  return ip.map((octet, i) => octet | (mask[i] ^ 255)).join(".");
+}
+
+/** Adapters unlikely to carry real LAN sessions (VM host-only / virtual / tunnel
+ *  NICs). They stay in the picker but sort LAST so the default targets a real LAN. */
+const VIRTUAL_IFACE = /virtualbox|virtual|vmware|vmnet|hyper-?v|vethernet|host-only|docker|wsl|\btap\b|\btun\b|loopback|bluetooth/i;
+const HOST_ONLY_SUBNETS = [/^192\.168\.56\./]; // VirtualBox default
+
+function ifaceRank(iface: NetworkInterfaceDetail): number {
+  if (iface.address.startsWith("169.254.")) return 30;
+  if (HOST_ONLY_SUBNETS.some((pattern) => pattern.test(iface.address))) return 20;
+  if (VIRTUAL_IFACE.test(iface.name)) return 20;
+
+  if (iface.address.startsWith("192.168.")) return 0;
+  if (iface.address.startsWith("10.")) return 1;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(iface.address)) return 1;
+
+  return 5;
+}
+/**
+ * Candidate local-scan broadcast addresses + the preferred default, derived from
+ * the host bridge's full interface list (getNetworkInterfaces → broadcast per NIC),
+ * so a multi-homed Electron desktop AND Android both offer every subnet. Falls back
+ * to the older single-address info(2) bridge. Empty in a plain browser (callers
+ * then default to 255.255.255.255).
+ */
+export const getLocalBroadcastAddresses = async (): Promise<{ options: ScanAddressOption[]; default?: string }> => {
+  netLog("getLocalBroadcastAddresses: called");
+  // Real LAN adapters first, virtual/host-only/link-local last, so the default
+  // (options[0]) targets a usable subnet — all stay selectable in the combo. Each
+  // option is labelled with its interface name so the user can tell NICs apart.
+  const interfaces = (await getNetworkInterfaces()).slice().sort((a, b) => ifaceRank(a) - ifaceRank(b));
+  let options: ScanAddressOption[] = [];
+  for (const iface of interfaces) {
+    const broadcast = broadcastFor(iface.address, iface.netmask);
+    if (broadcast) options.push({ value: broadcast, label: iface.name ? `${iface.name} — ${broadcast}` : broadcast });
+  }
+
+  // Fallback for bridges without getNetworkInterfaces() (plain broadcast, no name).
+  const toOptions = (addresses: string[]) => addresses.map((value) => ({ value, label: value }));
+  if (!options.length && getHostDevice()?.info) {
+    try {
+      const raw = await resolvePromise(getHostDevice()!.info!(2));
+      const info = typeof raw === "string" ? (JSON.parse(raw) as { broadcast?: string }) : undefined;
+      if (info?.broadcast) options = toOptions([info.broadcast]);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // Drop blanks / the global broadcast and de-duplicate by value (preserve order).
+  const seen = new Set<string>();
+  options = options.filter((o) => o.value && o.value !== "0.0.0.0" && !seen.has(o.value) && seen.add(o.value));
+  netLog(`getLocalBroadcastAddresses: interfaces=${interfaces.length} options=${JSON.stringify(options)}`);
+  return { options, default: options[0]?.value };
+};
+
 export const getHostDeviceDiscoveredSessions = (): P2PSessionInfo[] => {
   const cutoff = now() - STALE_MS;
   const sessions: P2PSessionInfo[] = [];

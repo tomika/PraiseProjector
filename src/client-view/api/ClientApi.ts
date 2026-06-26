@@ -107,12 +107,6 @@ export interface ClientCapabilities {
   /** May persist named playlists to a leader profile. App·Rest only. */
   canPersistPlaylist: boolean;
   /**
-   * May discover and follow other online/nearby sessions. **App mode only** — the
-   * full client attaches to cloud/nearby sessions itself. False in Client mode,
-   * which is locked to its single serving host.
-   */
-  canFollowSessions: boolean;
-  /**
    * May host a local PPD session (advertise + serve display to nearby followers).
    * **App mode only**, and only where a native host bridge is present (Android, or
    * the Electron desktop) — a plain browser has no UDP/Nearby transport. False in
@@ -147,7 +141,6 @@ export const NO_CAPABILITIES: ClientCapabilities = {
   canLogin: false,
   canChangeLeader: false,
   canPersistPlaylist: false,
-  canFollowSessions: false,
   canHostLocalSession: false,
   canHostOnlineSession: false,
   canOpenFullEditor: false,
@@ -343,6 +336,13 @@ export type ExternalSearchMode = "NEARBY" | "WEB" | "BOTH";
 export interface SessionApi {
   /** Scan the LAN for local PraiseProjector servers (UDP/PPD). */
   scanLocalServers(address?: string): Promise<OnlineSessionEntry[]>;
+  /**
+   * Candidate scan-address options for the picker ({ value, label } per active NIC,
+   * label = interface name + broadcast), plus the preferred default value. Sourced
+   * from the host bridge (Electron multi-NIC lister / Android getNetworkInterfaces).
+   * Empty where there is no local transport (a plain browser).
+   */
+  scanAddresses(): Promise<{ options: { value: string; label: string }[]; default?: string }>;
   /** Discover external sessions via nearby transports and/or the cloud. */
   searchExternal(mode: ExternalSearchMode): Promise<OnlineSessionEntry[]>;
   /** Begin hosting a local PPD broadcast session. */

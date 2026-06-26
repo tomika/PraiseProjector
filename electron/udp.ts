@@ -247,19 +247,30 @@ export class UdpServer {
   }
 
   public getBroadcastAddress(): string | null {
+    return this.getBroadcastAddresses()[0] ?? null;
+  }
+
+  /**
+   * Every non-internal IPv4 subnet broadcast address on this machine — one per
+   * active NIC. Powers the sessions form's scan-address picker so the user can
+   * target a specific subnet on a multi-homed host.
+   */
+  public getBroadcastAddresses(): string[] {
     const interfaces = networkInterfaces();
+    const addresses: string[] = [];
     for (const name of Object.keys(interfaces)) {
       for (const net of interfaces[name]!) {
         // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
         if (net.family === "IPv4" && !net.internal) {
           const ip = net.address.split(".").map(Number);
           const subnet = net.netmask.split(".").map(Number);
-          const broadcast = ip.map((val, i) => val | (subnet[i] ^ 255));
-          return broadcast.join(".");
+          const broadcast = ip.map((val, i) => val | (subnet[i] ^ 255)).join(".");
+          if (!addresses.includes(broadcast)) addresses.push(broadcast);
         }
       }
     }
-    return null;
+    console.log("[hostdevice-get-broadcast-addresses] found", addresses.length, "broadcast addresses");
+    return addresses;
   }
 
   /**

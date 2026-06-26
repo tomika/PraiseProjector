@@ -26,7 +26,18 @@ import { getEmptyDisplay } from "../../../../common/pp-utils";
 import { formatLocalDateKey, formatLocalDateLabel } from "../../../../common/date-only";
 import { getCurrentDisplay, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
 import { getSharedSongFilter, setSharedSongFilter, subscribeSharedSongFilter } from "../../../state/SongFilterStore";
-import { isHostDevicePpdAvailable, startHostDevicePpdHosting, stopHostDevicePpdHosting } from "../../../services/hostDevicePpd";
+import {
+  getHostDeviceDiscoveredSessions,
+  getLocalBroadcastAddresses,
+  isHostDevicePpdAvailable,
+  scanHostDeviceSessions,
+  startHostDeviceWatching,
+  startHostDevicePpdHosting,
+  stopHostDeviceWatching,
+  stopHostDevicePpdHosting,
+} from "../../../services/hostDevicePpd";
+import type { Display } from "../../../../common/pp-types";
+import type { P2PSessionInfo } from "../../../types/electron";
 import { createDeviceApi } from "../rest/restPorts";
 import type {
   AuthApi,
@@ -35,6 +46,7 @@ import type {
   DeviceApi,
   DisplayApi,
   NetworkState,
+  OnlineSessionEntry,
   PlaylistApi,
   SessionApi,
   SongApi,
@@ -58,6 +70,18 @@ export class DirectClientApi implements ClientApi {
   // online cloud session). Drives the toolbar indicator + the MoreMenu Start/Stop.
   private readonly networkListeners = new Set<(state: NetworkState) => void>();
   private networkState: NetworkState = { status: "online" };
+
+  // Following a remote session from the embed: a discovered-peer cache (to recover
+  // PPD transport details), the cloud long-poll token/abort, and the active target
+  // (so reconnect can restart the SAME follow). The followed display is relayed
+  // through the host's display pipeline (dispatchDisplayUpdate), so the desktop
+  // PROJECTS it exactly like an embed-initiated project — and CurrentSongStore +
+  // the full view stay in sync.
+  private readonly localSessions = new Map<string, P2PSessionInfo>();
+  private followToken = 0;
+  private followAbort: AbortController | null = null;
+  private ppdWatching = false;
+  private lastFollow: { kind: "cloud"; leaderId?: string } | { kind: "ppd"; info: P2PSessionInfo } | null = null;
 
   readonly song: SongApi = this.createSongApi();
   readonly playlist: PlaylistApi = this.createPlaylistApi();
@@ -83,8 +107,6 @@ export class DirectClientApi implements ClientApi {
       canLogin: false,
       canChangeLeader: false,
       canPersistPlaylist: !!this.getSelectedLeader(),
-      // It IS the host — there is nothing external to discover or follow.
-      canFollowSessions: false,
       // The desktop renderer has the native host bridge, so it can advertise a local
       // PPD session; online (cloud) hosting needs a login (the session is keyed by the
       // leader id). Mirrors the legacy iconStartSession/iconStartOnlineSession gating.
@@ -154,6 +176,7 @@ export class DirectClientApi implements ClientApi {
     this.songListUnsub = null;
     this.hostStateUnsub?.();
     this.hostStateUnsub = null;
+    this.stopFollow();
     void stopHostDevicePpdHosting();
     this.capabilityListeners.clear();
     this.authListeners.clear();
@@ -314,9 +337,33 @@ export class DirectClientApi implements ClientApi {
 
   private createSessionApi(): SessionApi {
     return {
-      // The embed doesn't discover/follow others — it only HOSTS (start/stop).
-      scanLocalServers: async () => [],
-      searchExternal: async () => [],
+      // The embed can discover nearby PPD peers + cloud sessions (the sessions hub
+      // works here too), in addition to HOSTING its own (start/stop below).
+      scanLocalServers: async (address) => {
+        if (isHostDevicePpdAvailable()) {
+          try {
+            await scanHostDeviceSessions(address);
+          } catch {
+            /* scan failures are non-fatal — return whatever is already known */
+          }
+        }
+        return this.collectLocalSessions();
+      },
+      searchExternal: async (mode) => {
+        const results: OnlineSessionEntry[] = [];
+        if (mode === "WEB" || mode === "BOTH") {
+          try {
+            results.push(...(await cloudApi.fetchOnlineSessions()));
+          } catch {
+            /* cloud unreachable — surface whatever local discovery found */
+          }
+        }
+        if (mode === "NEARBY" || mode === "BOTH") {
+          results.push(...this.collectLocalSessions());
+        }
+        return results;
+      },
+      scanAddresses: () => getLocalBroadcastAddresses(),
       // Host a local PPD session via the shared controller (Electron branch →
       // advertiseNearby + the udp.ts host gate). The host loop reads the live
       // projected display so followers mirror what the desktop is projecting.
@@ -347,12 +394,34 @@ export class DirectClientApi implements ClientApi {
         });
         this.setNetworkState({ status: "leading" });
       },
-      watch: async () => undefined,
-      attach: async () => undefined,
-      stopWatching: async () => undefined,
-      // The embedded desktop view IS the host — there is no remote link to
-      // re-establish, so reconnect is a no-op (its indicator is hidden anyway).
-      reconnect: async () => undefined,
+      watch: (session) => this.watch(session),
+      // Dispatch by url SCHEME (legacy found-session selector): an http(s) url is a
+      // LAN webserver → open it; a udp://|nrb:// url or none → follow it.
+      attach: async (session) => {
+        const url = session.localUrl;
+        if (url && /^https?:\/\//i.test(url)) {
+          if (typeof window !== "undefined") window.open(url, "_blank");
+          return;
+        }
+        await this.watch(session);
+      },
+      stopWatching: async () => {
+        this.stopFollow();
+        // Let the host exit watch mode (clear the followed projection).
+        window.dispatchEvent(new CustomEvent("pp-cv-watch-stop"));
+        this.setNetworkState({ status: "online" });
+      },
+      reconnect: async () => {
+        const target = this.lastFollow;
+        if (!target) return;
+        this.stopFollow();
+        this.setNetworkState({ status: "startup" });
+        if (target.kind === "ppd" && isHostDevicePpdAvailable()) {
+          await this.startPpdFollow(target.info);
+        } else {
+          this.startCloudFollow(target.kind === "cloud" ? target.leaderId : undefined, true);
+        }
+      },
       // App mode has no follower netdisplay button, so this is never called.
       netDisplayUrl: () => "",
       subscribeNetworkState: (callback) => {
@@ -362,6 +431,97 @@ export class DirectClientApi implements ClientApi {
       },
       subscribeSessions: () => () => undefined,
     };
+  }
+
+  /** Snapshot the currently-discovered local PPD peers, retaining their transport
+   *  details so {@link watch} can recover what a bare OnlineSessionEntry lacks. */
+  private collectLocalSessions(): OnlineSessionEntry[] {
+    const infos = getHostDeviceDiscoveredSessions();
+    this.localSessions.clear();
+    for (const info of infos) this.localSessions.set(info.id, info);
+    return infos.map((info) => ({ id: info.id, name: info.name, localUrl: info.url || undefined }));
+  }
+
+  /** Follow a discovered session: a locally-discovered PPD peer over UDP/Nearby,
+   *  otherwise a cloud long-poll. The followed display is projected by the host. */
+  private async watch(session: OnlineSessionEntry): Promise<void> {
+    this.stopFollow();
+    const info = this.localSessions.get(session.id);
+    if (info && info.address && isHostDevicePpdAvailable()) {
+      await this.startPpdFollow(info);
+    } else {
+      this.startCloudFollow(session.id, true);
+    }
+  }
+
+  private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.lastFollow = { kind: "ppd", info };
+    this.setNetworkState({ status: "startup" });
+    this.ppdWatching = await startHostDeviceWatching(
+      info.id,
+      { address: info.address ?? "", port: info.port ?? 0, hostId: info.hostId },
+      (display) => {
+        this.relayFollowedDisplay(display);
+        this.setNetworkState({ status: "watching" });
+      },
+      () => {
+        this.ppdWatching = false;
+        this.setNetworkState({ status: "offline" });
+      }
+    );
+    if (this.ppdWatching) this.setNetworkState({ status: "watching" });
+  }
+
+  /** Long-poll /display_query and project each response, mirroring RestCore's
+   *  cloud follow (and App.tsx's WatchOnlineDisplay) but routed through the host. */
+  private startCloudFollow(leaderId?: string, forceFirst = false): void {
+    this.lastFollow = { kind: "cloud", leaderId };
+    const token = ++this.followToken;
+    const controller = new AbortController();
+    this.followAbort = controller;
+    this.setNetworkState({ status: "startup" });
+
+    const loop = async (): Promise<void> => {
+      let forced = forceFirst;
+      while (token === this.followToken && !controller.signal.aborted) {
+        try {
+          const { display } = await cloudApi.fetchDisplayQuery(getCurrentDisplay(), { leaderId, signal: controller.signal, forced });
+          forced = false;
+          if (token !== this.followToken) return;
+          this.relayFollowedDisplay(display);
+          this.setNetworkState({ status: "watching" });
+        } catch (error) {
+          if (controller.signal.aborted || token !== this.followToken) return;
+          this.setNetworkState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    };
+    void loop();
+  }
+
+  /** Project a followed display via the host's watch-mode handler (App.tsx
+   *  applyDisplay) — the SAME path the full desktop view uses, so an arbitrary
+   *  remote song projects (not just songs in the working playlist), and the
+   *  projector + CurrentSongStore stay in sync. */
+  private relayFollowedDisplay(display: Display): void {
+    window.dispatchEvent(new CustomEvent("pp-cv-watch-display", { detail: display }));
+  }
+
+  private stopFollow(): void {
+    this.followToken++;
+    if (this.followAbort) {
+      try {
+        this.followAbort.abort();
+      } catch {
+        /* ignore abort errors */
+      }
+      this.followAbort = null;
+    }
+    if (this.ppdWatching) {
+      stopHostDeviceWatching();
+      this.ppdWatching = false;
+    }
   }
 
   private createAuthApi(): AuthApi {

@@ -54,8 +54,8 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   const watching = state.network.status === "watching";
   const sessionActive = leading || watching;
   const items: MenuItem[] = [
-    // Account + session: the cloud-only affordances (canLogin / canFollowSessions
-    // are false for the host-gated served client and the desktop embed).
+    // Account: the cloud-only affordances (canLogin is false for the host-gated
+    // served client and the desktop embed).
     { id: "signin", label: "Sign in", image: "user.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },
     {
       id: "signout",
@@ -91,9 +91,9 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       show: watching && state.mode !== "Client",
       run: () => void store.stopWatching(),
     },
-    // Discover + attach (search / found-session selector) lives in the dialog.
-    { id: "sessions", label: "Find a session", image: "online.svg", show: caps.canFollowSessions, run: () => store.openSessionsDialog() },
-    { id: "editor", label: "Open editor", image: "edit-instructions.svg", show: caps.canOpenFullEditor, run: () => store.openFullEditor() },
+    // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
+    // App-mode only: Client mode is a fixed-source follower with no sessions hub.
+    { id: "sessions", label: "Sessions", image: "wifi.svg", show: state.mode === "App", run: () => store.openSessionsDialog() },
     {
       id: "save",
       label: "Save list",

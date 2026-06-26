@@ -1,0 +1,58 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+  <style><![CDATA[
+    :root, svg {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+
+    .ring {
+      fill: none;
+      stroke: #e9e9e9;
+      stroke-width: 6;
+      stroke-linecap: round;
+      opacity: 0;
+      animation: pp-scan-pulse 1.8s ease-in-out infinite;
+    }
+
+    .r1 { animation-delay: 0s; }
+    .r2 { animation-delay: 0.6s; }
+    .r3 { animation-delay: 1.2s; }
+
+    .dot {
+      fill: #e9e9e9;
+      animation: pp-scan-blink 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pp-scan-pulse {
+      0% {
+        opacity: 0;
+        stroke-width: 8;
+      }
+      20% {
+        opacity: 0.95;
+      }
+      70% {
+        opacity: 0.25;
+      }
+      100% {
+        opacity: 0;
+        stroke-width: 2;
+      }
+    }
+
+    @keyframes pp-scan-blink {
+      0%,
+      100% {
+        opacity: 0.95;
+      }
+      50% {
+        opacity: 0.45;
+      }
+    }
+  ]]></style>
+
+  <circle class="ring r1" cx="50" cy="50" r="14"/>
+  <circle class="ring r2" cx="50" cy="50" r="26"/>
+  <circle class="ring r3" cx="50" cy="50" r="38"/>
+  <circle class="dot" cx="50" cy="50" r="7"/>
+</svg>

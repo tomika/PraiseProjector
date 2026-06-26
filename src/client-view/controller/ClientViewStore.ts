@@ -211,7 +211,7 @@ export interface ClientViewState {
   zoomDialogOpen: boolean;
   /** The sign-in dialog visibility (cloud context only — capabilities.canLogin). */
   loginDialogOpen: boolean;
-  /** The follow-a-session picker visibility (capabilities.canFollowSessions). */
+  /** The sessions hub (discover/attach + host) visibility — App mode only. */
   sessionsDialogOpen: boolean;
   /** The song shown in the read-only preview modal (legacy click-to-preview), or
    *  null when the preview is closed. */
@@ -1059,12 +1059,6 @@ export class ClientViewStore {
 
   // ── more-menu actions ──────────────────────────────────────────────────────────
 
-  /** Navigate to the full multi-panel editor. Caller must gate on
-   *  capabilities.canOpenFullEditor. */
-  openFullEditor(): void {
-    
-  }
-
   // ── save playlist (date picker) ──────────────────────────────────────────────
 
   /** Open the save-playlist date picker and fetch the current leader's already-
@@ -1206,9 +1200,19 @@ export class ClientViewStore {
     this.set({ sessionsDialogOpen: false });
   }
 
-  async refreshSessions(mode: ExternalSearchMode = "BOTH"): Promise<void> {
+  async refreshSessions(mode: ExternalSearchMode = "BOTH", address?: string): Promise<void> {
+    // Trigger a fresh local (UDP/nearby) scan on the chosen broadcast address before
+    // collecting — searchExternal's NEARBY leg only reads already-discovered peers.
+    if (address && (mode === "BOTH" || mode === "NEARBY")) {
+      await this.api.session.scanLocalServers(address);
+    }
     const sessions = await this.api.session.searchExternal(mode);
     this.set({ sessions });
+  }
+
+  /** Candidate scan-address options ({ value, label }) + default for the picker. */
+  getScanAddresses(): Promise<{ options: { value: string; label: string }[]; default?: string }> {
+    return this.api.session.scanAddresses();
   }
 
   async watchSession(session: OnlineSessionEntry): Promise<void> {

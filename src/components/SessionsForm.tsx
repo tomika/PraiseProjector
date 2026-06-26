@@ -4,17 +4,16 @@ import { useAuth } from "../contexts/AuthContext";
 import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
-import { webBluetoothService } from "../services/webBluetooth";
 import {
   getHostDeviceDiscoveredSessions,
+  getLocalBroadcastAddresses,
   initHostDevicePpd,
   isHostDevicePpdAvailable,
   scanHostDeviceSessions,
-  startHostDevicePpdHosting,
-  stopHostDevicePpdHosting,
 } from "../services/hostDevicePpd";
 import { getCurrentDisplay } from "../state/CurrentSongStore";
-import "./SessionsForm.css";
+import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type SessionKind, type SessionRow } from "../shared/SessionsForm";
+import { icon } from "../client-view/ui/assets";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -31,7 +30,10 @@ interface SessionsFormProps {
 interface SessionDisplay {
   id: string;
   name: string;
+  /** Connect path: local = UDP/PPD peer (carries udpDetails); cloud = followed via cloudApi. */
   type: "local" | "cloud";
+  /** Type-column classification (ppd / webclient / online). */
+  kind: SessionKind;
   url: string;
   // For local sessions
   address?: string;
@@ -41,120 +43,57 @@ interface SessionDisplay {
   lastUpdate?: string;
 }
 
+/**
+ * Desktop GUI sessions hub. Thin wrapper over the shared <SessionsForm>: owns the
+ * data wiring (continuous local-UDP scan + cloud online-session fetch, host
+ * controls, broadcast address) and feeds the shared presentational form, which
+ * renders the desktop skin.
+ */
 const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath, onConnect }) => {
   const { t } = useLocalization();
   const { user } = useAuth();
   const selfId = user?.leaderId || "";
 
   const [sessions, setSessions] = useState<SessionDisplay[]>([]);
-  const [selectedSession, setSelectedSession] = useState<SessionDisplay | null>(null);
   const [broadcastAddress, setBroadcastAddress] = useState("255.255.255.255");
   const [addressError, setAddressError] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
   const [scanAddress, setScanAddress] = useState<string | null>(null);
-  // Check for Electron APIs - use state to ensure stable value after initial detection
-  const [_, setIsElectron] = useState(false);
   const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
-  // Check for Web Bluetooth availability (works in browser without pairing)
-  const [_hasWebBluetooth, setHasWebBluetooth] = useState(false);
-  const [_bleConnecting, setBleConnecting] = useState(false);
-  // Hosting a PPD session — the desktop hosts by default (electron/udp.ts is always-on
-  // until toggled), so the control starts in the "Stop" state.
-  const [hosting, setHosting] = useState(true);
   const [onlineStarting, setOnlineStarting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  // Host-supplied default broadcast address, used to (re)seed and to reset to.
+  const defaultAddressRef = useRef("255.255.255.255");
 
-  // Detect Electron and Web Bluetooth on mount
+  // Detect the HostDevice PPD bridge on mount (gates local discovery + hosting).
   useEffect(() => {
     const checkElectron = () => {
       const hasHostDevice = isHostDevicePpdAvailable();
-      const hasElectron = typeof window !== "undefined" && !!window.electronAPI;
       setHasHostDevicePpd(hasHostDevice);
-      setIsElectron(hasElectron);
-      console.debug("App", `SessionsForm: Electron runtime: ${hasElectron}, HostDevice PPD: ${hasHostDevice}`);
+      console.debug("App", `SessionsForm: HostDevice PPD: ${hasHostDevice}`);
     };
-
-    // Check for Web Bluetooth
-    setHasWebBluetooth(webBluetoothService.isAvailable());
-
-    // Check immediately
     checkElectron();
-
     // Also check after a short delay in case APIs are loaded async
     const timeout = setTimeout(checkElectron, 100);
     return () => clearTimeout(timeout);
   }, []);
 
-  // Draggable dialog state
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isMobile, setIsMobile] = useState(false);
-
   // Scan timer ref
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Detect mobile viewport
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
-
-  // Center dialog on mount and resize (only when not in mobile mode)
-  useEffect(() => {
-    if (!dialogRef.current) return;
-
-    if (isMobile) {
-      // Clear inline styles when switching to mobile mode - let CSS handle positioning
-      dialogRef.current.style.left = "";
-      dialogRef.current.style.top = "";
-      return;
-    }
-
-    const centerDialog = () => {
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-      const dialogWidth = dialog.offsetWidth;
-      const dialogHeight = dialog.offsetHeight;
-
-      dialog.style.left = `${Math.max(0, (windowWidth - dialogWidth) / 2)}px`;
-      dialog.style.top = `${Math.max(0, (windowHeight - dialogHeight) / 2)}px`;
-    };
-
-    centerDialog();
-    window.addEventListener("resize", centerDialog);
-
-    return () => window.removeEventListener("resize", centerDialog);
-  }, [isMobile]);
-
-  // Initialize broadcast address from HostDevice if available
+  // Initialize the broadcast address + the picker's options from the host bridge
+  // (Electron multi-NIC lister / Android info), falling back to the global broadcast.
   useEffect(() => {
     const initBroadcastAddress = async () => {
-      if (isHostDevicePpdAvailable()) {
-        await initHostDevicePpd();
-        try {
-          const infoRaw = await window.hostDevice?.info?.(2);
-          const info = typeof infoRaw === "string" ? (JSON.parse(infoRaw) as { broadcast?: string }) : undefined;
-          const addr = info?.broadcast || "255.255.255.255";
-          setBroadcastAddress(addr);
-          setScanAddress(addr);
-          return;
-        } catch {
-          // Fall through to default address.
-        }
-      }
-      setBroadcastAddress("255.255.255.255");
-      setScanAddress("255.255.255.255");
+      if (isHostDevicePpdAvailable()) await initHostDevicePpd();
+      const { options, default: def } = await getLocalBroadcastAddresses();
+      const addr = def || "255.255.255.255";
+      defaultAddressRef.current = addr;
+      setAddressOptions(options);
+      setBroadcastAddress(addr);
+      setScanAddress(addr);
     };
-    initBroadcastAddress();
+    void initBroadcastAddress();
   }, []);
 
   // Update online session list (matching C# UpdateOnlineSessionList)
@@ -183,6 +122,9 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
               id: session.id,
               name: session.name,
               type: "cloud",
+              // An http(s) localUrl is a LAN web client; an nrb://|udp:// one is a
+              // nearby PPD peer; no localUrl is a cloud (online) session.
+              kind: classifyOnlineSession(session.localUrl),
               url: session.localUrl || `${cloudHostBasePath}/view_session?leader=${session.id}`,
               lastUpdate: session.lastUpdate,
             });
@@ -219,6 +161,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
           id: session.id,
           name: session.name,
           type: "local",
+          // Locally-scanned sessions are always nearby/UDP PPD peers.
+          kind: "ppd",
           url: session.url,
           address: session.address,
           port: session.port,
@@ -232,31 +176,36 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
   // Scan timer tick (matching C# OnTimerTick)
   const onTimerTick = useCallback(async () => {
-    // 1. Scan for local sessions via HostDevice (Android/Electron parity)
-    if (hasHostDevicePpd) {
-      const tryAddress = broadcastAddress;
-      const result = await scanHostDeviceSessions(tryAddress);
+    setScanning(true);
+    try {
+      // 1. Scan for local sessions via HostDevice (Android/Electron parity)
+      if (hasHostDevicePpd) {
+        const tryAddress = broadcastAddress;
+        const result = await scanHostDeviceSessions(tryAddress);
 
-      if (result.success) {
-        if (result.address && result.address !== scanAddress) {
-          setScanAddress(result.address);
-          setAddressError(false);
+        if (result.success) {
+          if (result.address && result.address !== scanAddress) {
+            setScanAddress(result.address);
+            setAddressError(false);
+          }
+        } else if (tryAddress !== scanAddress) {
+          setAddressError(true);
         }
-      } else if (tryAddress !== scanAddress) {
-        setAddressError(true);
+
+        const discovered = getHostDeviceDiscoveredSessions();
+        updateLocalSessionList(discovered);
       }
 
-      const discovered = getHostDeviceDiscoveredSessions();
-      updateLocalSessionList(discovered);
-    }
-
-    // 2. Fetch online sessions from cloud (works in both Electron and web mode)
-    try {
-      const onlineSessions = await cloudApi.fetchOnlineSessions();
-      console.debug("App", `SessionsForm: Fetched online sessions: ${onlineSessions.length}`);
-      updateOnlineSessionList(onlineSessions);
-    } catch (error) {
-      console.error("App", "Failed to fetch online sessions", error);
+      // 2. Fetch online sessions from cloud (works in both Electron and web mode)
+      try {
+        const onlineSessions = await cloudApi.fetchOnlineSessions();
+        console.debug("App", `SessionsForm: Fetched online sessions: ${onlineSessions.length}`);
+        updateOnlineSessionList(onlineSessions);
+      } catch (error) {
+        console.error("App", "Failed to fetch online sessions", error);
+      }
+    } finally {
+      setScanning(false);
     }
   }, [hasHostDevicePpd, broadcastAddress, scanAddress, updateLocalSessionList, updateOnlineSessionList]);
 
@@ -279,81 +228,23 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     };
   }, [onTimerTick]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isMobile || !dialogRef.current) return;
+  // Connect to a specific session row (the per-row plug button). Enables "watch
+  // mode" for that session (matching C# SessionsForm Connect).
+  const handleConnect = (id: string) => {
+    const session = sessions.find((s) => s.id === id);
+    if (session) {
+      console.info("App", `Connecting to session: ${session.id} ${session.url} ${session.type}`);
 
-    const rect = dialogRef.current.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-    setIsDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!dialogRef.current) return;
-
-      const newLeft = e.clientX - dragOffset.x;
-      const newTop = e.clientY - dragOffset.y;
-
-      // Keep dialog within viewport
-      const maxLeft = window.innerWidth - dialogRef.current.offsetWidth;
-      const maxTop = window.innerHeight - dialogRef.current.offsetHeight;
-
-      dialogRef.current.style.left = `${Math.max(0, Math.min(maxLeft, newLeft))}px`;
-      dialogRef.current.style.top = `${Math.max(0, Math.min(maxTop, newTop))}px`;
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
-
-  const handleConnectClick = () => {
-    // Connect to selected session (matching C# SessionsForm Connect button)
-    // This enables "watch mode" for the selected session
-    if (selectedSession) {
-      console.info("App", `Connecting to session: ${selectedSession.id} ${selectedSession.url} ${selectedSession.type}`);
-
-      // Notify parent about the connection with full session details
       if (onConnect) {
         const udpDetails =
-          selectedSession.type === "local" && selectedSession.address && selectedSession.port && selectedSession.hostId
-            ? { address: selectedSession.address, port: selectedSession.port, hostId: selectedSession.hostId }
+          session.type === "local" && session.address && session.port && session.hostId
+            ? { address: session.address, port: session.port, hostId: session.hostId }
             : undefined;
-        onConnect(selectedSession.id, selectedSession.url, selectedSession.type, udpDetails);
+        onConnect(session.id, session.url, session.type, udpDetails);
       }
     }
     onClose();
   };
-
-  const handleSessionSelect = (session: SessionDisplay) => {
-    setSelectedSession(session);
-  };
-
-  // Start/stop hosting a local PPD session via the shared host controller. On the
-  // Electron desktop the MAIN process is the host, so this toggles its advertising +
-  // scan-answer gate (see hostDevicePpd.startHostDevicePpdHosting / udp.ts gate).
-  const handleToggleHosting = useCallback(async () => {
-    if (hosting) {
-      await stopHostDevicePpdHosting();
-      setHosting(false);
-    } else {
-      const ok = await startHostDevicePpdHosting(() => getCurrentDisplay());
-      setHosting(ok);
-    }
-  }, [hosting]);
 
   // Start an online (cloud) session by force-registering the current projected display
   // under our leader id — the /display_update upsert makes us discoverable at once.
@@ -383,8 +274,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     }
   }, [selfId]);
 
-  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleAddressChange = (value: string) => {
     setBroadcastAddress(value);
 
     // Validate IP address format
@@ -398,225 +288,61 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     }
   };
 
-  const handleResetAddress = async () => {
-    if (isHostDevicePpdAvailable()) {
-      try {
-        const infoRaw = await window.hostDevice?.info?.(2);
-        const info = typeof infoRaw === "string" ? (JSON.parse(infoRaw) as { broadcast?: string }) : undefined;
-        setBroadcastAddress(info?.broadcast || "255.255.255.255");
-      } catch {
-        setBroadcastAddress("255.255.255.255");
-      }
-    } else {
-      setBroadcastAddress("255.255.255.255");
-    }
+  const handleResetAddress = () => {
+    setBroadcastAddress(defaultAddressRef.current);
     setAddressError(false);
   };
 
-  const toggleDetails = () => {
-    setShowDetails(!showDetails);
-  };
-
-  // Open OS Bluetooth settings for device pairing (Classic Bluetooth/SPP)
-  const _handleOpenBluetoothSettings = async () => {
-    if (window.electronAPI?.openBluetoothSettings) {
-      await window.electronAPI.openBluetoothSettings();
-    }
-  };
-
-  // Connect via Web Bluetooth (BLE) - no pairing required!
-  const _handleWebBluetoothConnect = async () => {
-    if (!webBluetoothService.isAvailable()) {
-      console.warn("Web Bluetooth not available");
-      return;
-    }
-
-    try {
-      setBleConnecting(true);
-
-      // Request device from user (browser shows selection dialog)
-      const device = await webBluetoothService.requestDevice();
-      if (!device) {
-        // User cancelled
-        setBleConnecting(false);
-        return;
-      }
-
-      // Connect to the device
-      const connected = await webBluetoothService.connect();
-      if (connected) {
-        console.info("App", `Connected to BLE device: ${device.name}`);
-
-        // Add as a local session
-        setSessions((prev) => [
-          ...prev,
-          {
-            id: `ble_${device.id}`,
-            name: `🔵 ${device.name}`,
-            type: "local",
-            url: "",
-            hostId: device.id,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Web Bluetooth connection failed:", error);
-    } finally {
-      setBleConnecting(false);
-    }
-  };
-
-  // Title with scan address (matching C# Text = Properties.Strings.SessionsTitle + " - " + scanAddress)
+  // Dialog accessible name with the resolved scan address (no visible title bar).
   const title = scanAddress ? `${t("SessionsTitle")} - ${scanAddress}` : t("SessionsTitle");
 
+  const rows: SessionRow[] = sessions.map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
+
   return (
-    <div className="sessions-modal-backdrop">
-      <div ref={dialogRef} className={`sessions-modal-dialog ${isMobile ? "sessions-modal-mobile" : ""}`} onClick={(e) => e.stopPropagation()}>
-        <div className="sessions-modal-header" onMouseDown={handleMouseDown}>
-          <h5 className="sessions-modal-title">{title}</h5>
-          <button type="button" className="btn-close" onClick={onClose} aria-label="Close"></button>
-        </div>
-        <div className="sessions-modal-body">
-          {/* Web mode notice - local sessions not available */}
-          {!hasHostDevicePpd && (
-            <div className="alert alert-info py-2 mb-2" role="alert">
-              <small>🌐 {t("WebModeSessionsNotice") || "Local network sessions are only available in the desktop app."}</small>
-            </div>
-          )}
-          <div className="sessions-list-container">
-            <table className="table table-hover sessions-table">
-              <thead>
-                <tr>
-                  <th className="session-type-col">{t("SessionsTypeCol")}</th>
-                  <th>{t("SessionsNameCol")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.length === 0 ? (
-                  <tr>
-                    <td colSpan={2} className="text-muted text-center">
-                      {t("NoSessionsFound")}
-                    </td>
-                  </tr>
-                ) : (
-                  sessions.map((session) => (
-                    <tr
-                      key={session.id}
-                      className={selectedSession?.id === session.id ? "table-active" : ""}
-                      onClick={() => handleSessionSelect(session)}
-                    >
-                      <td className="session-type-icon">{session.type === "local" ? "🛜" : "🌐"}</td>
-                      <td>{session.name}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Details section - collapsed by default (matching C# SwapDetails) */}
-          {hasHostDevicePpd && (
-            <>
-              <div className="details-toggle">
-                <button className="btn btn-link btn-sm" onClick={toggleDetails}>
-                  {showDetails ? "▲" : "▼"}
-                </button>
-              </div>
-
-              {showDetails && (
-                <div className="details-section">
-                  <div className="input-group input-group-sm">
-                    <label htmlFor="broadcast-address" className="input-group-text">
-                      {t("SessionsAddress")}
-                    </label>
-                    <input
-                      id="broadcast-address"
-                      type="text"
-                      className={`form-control ${addressError ? "is-invalid" : ""}`}
-                      value={broadcastAddress}
-                      onChange={handleAddressChange}
-                    />
-                    <button className="btn btn-outline-secondary" type="button" onClick={handleResetAddress}>
-                      {t("SessionsResetAddress")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <div className="sessions-modal-footer">
-          {/* //Bluetooth options - DISABLED: untested, re-enable when ready
-          (
-            <div className="bluetooth-buttons">
-              {isElectron && window.electronAPI?.openBluetoothSettings && (
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  onClick={handleOpenBluetoothSettings}
-                  title={t("BluetoothSettingsTooltip") || "Open Bluetooth settings to pair devices"}
-                >
-                  ⚙️ {t("BluetoothSettings") || "Bluetooth Settings"}
-                </button>
-              )}
-              {hasWebBluetooth && (
-                <button
-                  type="button"
-                  className="btn btn-outline-primary btn-sm"
-                  onClick={handleWebBluetoothConnect}
-                  disabled={bleConnecting}
-                  title={t("WebBluetoothTooltip") || "Connect to a BLE device without pairing"}
-                >
-                  {bleConnecting ? "..." : "🔵"} {t("WebBluetooth") || "Quick BLE Connect"}
-                </button>
-              )}
-            </div>
-          )*/}
-
-          {/* Host controls — start/stop a local PPD session and start an online
-              (cloud) session, mirroring the new client-view's sessions hub. */}
-          <div className="session-host-buttons">
-            {hasHostDevicePpd && (
-              <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => void handleToggleHosting()}>
-                {hosting ? t("SessionsStopHosting") || "Stop session" : t("SessionsStartHosting") || "Start session"}
-              </button>
-            )}
-            {selfId && (
-              <button
-                type="button"
-                className="btn btn-outline-primary btn-sm"
-                onClick={() => void handleStartOnline()}
-                disabled={onlineStarting}
-                title={t("SessionsStartOnlineTooltip") || "Register this device as an online session others can follow"}
-              >
-                {t("SessionsStartOnline") || "Start online session"}
-              </button>
-            )}
-          </div>
-
-          <div className="session-action-buttons">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
-              {t("Cancel")}
-            </button>
-            <button type="button" className="btn btn-primary" onClick={handleConnectClick} disabled={!selectedSession}>
-              {t("SessionsConnect")}
-            </button>
-            <div className="sessions-browser-btn-wrapper">
-              <button
-                type="button"
-                className="btn btn-primary d-flex align-items-center gap-2"
-                onClick={() => {
-                  window.dispatchEvent(new Event("pp-show-client-view"));
-                  onClose();
-                }}
-              >
-                {t("SessionsSwitchUI")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SharedSessionsForm
+      variant="desktop"
+      title={title}
+      emptyLabel={t("NoSessionsFound")}
+      sessions={rows}
+      onConnect={handleConnect}
+      connectLabel={t("SessionsConnect")}
+      scanning={scanning}
+      scanIcon={icon("radar.svg")}
+      webModeNotice={hasHostDevicePpd ? null : `🌐 ${t("WebModeSessionsNotice") || "Local network sessions are only available in the desktop app."}`}
+      details={
+        hasHostDevicePpd
+          ? {
+              addressLabel: t("SessionsAddress"),
+              resetLabel: t("SessionsResetAddress"),
+              address: broadcastAddress,
+              addressError,
+              addressOptions,
+              pickLabel: "⮟",
+              onAddressChange: handleAddressChange,
+              onResetAddress: handleResetAddress,
+            }
+          : undefined
+      }
+      startOnline={
+        selfId
+          ? {
+              label: t("SessionsStartOnline") || "Start online session",
+              title: t("SessionsStartOnlineTooltip") || "Register this device as an online session others can follow",
+              starting: onlineStarting,
+              onStart: () => void handleStartOnline(),
+            }
+          : undefined
+      }
+      closeLabel={t("Close")}
+      onClose={onClose}
+      switchUi={{
+        label: t("SessionsSwitchUI"),
+        onClick: () => {
+          window.dispatchEvent(new Event("pp-show-client-view"));
+          onClose();
+        },
+      }}
+    />
   );
 };
 

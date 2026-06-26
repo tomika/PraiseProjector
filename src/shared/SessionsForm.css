@@ -1,0 +1,456 @@
+/*
+ * Styles for the shared <SessionsForm>.
+ *
+ * Base (unmodified) selectors carry the Electron desktop look; the client-view
+ * skin is layered on top through the `.sessions-form--cv` modifier (mirrors
+ * InstructionsEditor.css). The form is header-less: a slim top strip holds only
+ * the scan indicator and the close button, and the dialog is centred by its flex
+ * backdrop (no dragging).
+ */
+
+/* ── Structure + desktop base look ──────────────────────────────────────────── */
+
+.sessions-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Desktop: the form floats over the app without dimming it. */
+  background-color: transparent;
+}
+
+.sessions-modal-dialog {
+  display: flex;
+  flex-direction: column;
+  min-width: 360px;
+  max-width: 500px;
+  max-height: 80vh;
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Slim control strip in place of a title bar — just the close button (right). */
+.sessions-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0.4rem 0.6rem 0;
+}
+
+.sessions-close {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #555;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.sessions-close:hover {
+  color: #000;
+}
+
+.sessions-modal-body {
+  padding: 0.5rem 1rem 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.sessions-modal-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+  background-color: #f8f9fa;
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Host controls row (start online session). */
+.sessions-modal-footer .session-host-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sessions-modal-footer .session-host-buttons:empty {
+  display: none;
+}
+
+.sessions-modal-footer .btn {
+  min-width: 100px;
+}
+
+.sessions-modal-footer .btn-sm {
+  min-width: auto;
+}
+
+.sessions-browser-btn-wrapper {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sessions-list-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.sessions-scan {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  margin: auto;
+  background-color: transparent;
+}
+
+.sessions-scan img {
+  background-color: transparent;
+  border: none;
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.sessions-scan img {
+  visibility: visible;
+}
+
+.sessions-list-row .sessions-list-container {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sessions-list-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+}
+
+.sessions-table {
+  margin-bottom: 0;
+}
+
+.sessions-table .session-type-icon {
+  width: 30px;
+}
+
+/* Per-row connect/plug action column — sized to the icon button, right-aligned. */
+.sessions-table .session-connect-col {
+  width: 44px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sessions-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+/* Flat icon button carrying the 🔌 connect glyph. */
+.sessions-row-connect {
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.3rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.sessions-row-connect:hover {
+  background-color: rgba(13, 110, 253, 0.15);
+}
+
+.details-section {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background-color: #f8f9fa;
+  border-radius: 0.25rem;
+}
+
+/* Scan-address picker: [label] [ editable input + drop button ] [reset]. */
+.sessions-addr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sessions-addr-label {
+  flex: none;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* The combo wrapper anchors the drop button (bottom-right) + the dropdown list. */
+.sessions-addr-combo {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sessions-addr-input {
+  width: 100%;
+  /* room for the drop button at the right edge */
+  padding: 0.25rem 1.9rem 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #212529;
+}
+
+.sessions-addr-input.is-invalid {
+  border-color: #dc3545;
+}
+
+/* Drop button at the bottom-right corner of the input. */
+.sessions-addr-drop {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  top: 1px;
+  width: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid #ced4da;
+  background: transparent;
+  color: #495057;
+  cursor: pointer;
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.sessions-addr-drop:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Dropdown list, anchored UNDER the input. position:fixed (coords set inline from
+   the input's rect) so it escapes the dialog's overflow clipping and can spill
+   outside the dialog. Above the dialog (1051) / backdrop (1050). */
+.sessions-addr-list {
+  position: fixed;
+  z-index: 2000;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  max-height: 12rem;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.sessions-addr-item {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 0.6rem;
+  border: none;
+  background: transparent;
+  color: #212529;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sessions-addr-item:hover {
+  background: #f0f2f4;
+}
+
+.sessions-addr-item.is-current {
+  font-weight: 600;
+}
+
+.sessions-reset-addr-btn {
+  flex: none;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid #6c757d;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #495057;
+  cursor: pointer;
+}
+
+/* ── Desktop dark mode ──────────────────────────────────────────────────────── */
+
+[data-theme="dark"] .sessions-modal-dialog {
+  background-color: var(--pp-modal-bg);
+  border-color: var(--pp-border-color);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-close {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .sessions-close:hover {
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-modal-footer {
+  background-color: var(--pp-bg-secondary);
+  border-top-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .sessions-list-container {
+  background-color: var(--pp-bg-secondary);
+  border-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .details-section {
+  background-color: var(--pp-bg-secondary);
+}
+
+[data-theme="dark"] .sessions-addr-input,
+[data-theme="dark"] .sessions-addr-list {
+  background: var(--pp-input-bg, #2a2a2a);
+  border-color: var(--pp-border-color);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-addr-drop {
+  border-left-color: var(--pp-border-color);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-addr-item {
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-addr-item:hover {
+  background: var(--pp-bg-tertiary, rgba(255, 255, 255, 0.08));
+}
+
+[data-theme="dark"] .sessions-reset-addr-btn {
+  color: var(--pp-text-color);
+  border-color: var(--pp-border-color);
+}
+
+/* ── client-view (cv) reskin ────────────────────────────────────────────────── */
+
+/* Dark, centred modal over a dimmed backdrop (the cv has no Bootstrap, so the
+   controls are styled explicitly here rather than relying on .btn etc.). */
+.sessions-modal-backdrop.sessions-form--cv {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.sessions-form--cv .sessions-modal-dialog {
+  min-width: 0;
+  width: min(92vw, 420px);
+  max-height: 86vh;
+  background: #fff;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.sessions-form--cv.dark .sessions-modal-dialog {
+  background: #1d1d1d;
+  color: var(--cv-panel-fg, #e9e9e9);
+}
+
+.sessions-form--cv .sessions-modal-footer {
+  background: transparent;
+  border-color: transparent;
+}
+
+.sessions-form--cv.dark .sessions-close {
+  color: #bbb;
+}
+
+.sessions-form--cv.dark .sessions-close:hover {
+  color: #fff;
+}
+
+.sessions-form--cv.dark .sessions-list-container {
+  border-color: rgba(255, 255, 255, 0.12);
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+.sessions-form--cv.dark .sessions-table {
+  color: var(--cv-panel-fg, #e9e9e9);
+}
+
+.sessions-form--cv.dark .sessions-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.sessions-form--cv.dark .sessions-row-connect:hover {
+  background-color: rgba(47, 123, 255, 0.3);
+}
+
+/* cv control buttons — styled explicitly so they read correctly without Bootstrap. */
+.sessions-form--cv .session-host-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sessions-form--cv .sessions-online-btn {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cv-panel-fg, #e9e9e9);
+}
+
+.sessions-form--cv .sessions-online-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sessions-form--cv .sessions-online-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Broadcast-address picker — cv reskin (the base styles set the structure; here we
+   recolour for the dark client-view panel). */
+.sessions-form--cv.dark .details-section {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sessions-form--cv.dark .sessions-addr-input,
+.sessions-form--cv.dark .sessions-addr-list {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--cv-field-bg, #2a2a2a);
+  color: #eee;
+}
+
+.sessions-form--cv.dark .sessions-addr-drop {
+  border-left-color: rgba(255, 255, 255, 0.25);
+  color: #ddd;
+}
+
+.sessions-form--cv.dark .sessions-addr-item {
+  color: #eee;
+}
+
+.sessions-form--cv.dark .sessions-addr-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sessions-form--cv.dark .sessions-addr-list {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  scrollbar-color: #4d4d4d #1a1a1a;
+}
+
+.sessions-form--cv.dark .sessions-reset-addr-btn {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cv-panel-fg, #e9e9e9);
+}

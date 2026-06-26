@@ -1657,14 +1657,6 @@ ipcMain.handle("get-remote-highlight-controller", () => {
 
 // General API proxy - no specific handlers needed, webserver uses direct IPC communication
 
-// P2P session scanning IPC handlers (unified UDP + Bluetooth)
-// These handlers maintain the same "udp-" prefix for backwards compatibility
-// but internally use the P2P transport layer for both UDP and Bluetooth
-ipcMain.handle("udp-get-broadcast-address", () => {
-  const udpServer = getUdpServerInstance();
-  return udpServer?.getBroadcastAddress() || "255.255.255.255";
-});
-
 ipcMain.handle("udp-scan-sessions", async (_event, broadcastAddress?: string) => {
   const p2p = getP2PTransportInstance();
   if (!p2p) {
@@ -1956,6 +1948,21 @@ ipcMain.handle("hostdevice-info", (_event, flags = -1) => {
     info.broadcast = udpServer?.getBroadcastAddress() || "";
   }
   return JSON.stringify(info);
+});
+
+ipcMain.handle("hostdevice-get-network-interfaces", () => {
+  const result: { name: string; address: string; netmask: string }[] = [];
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const net of ifaces[name] ?? []) {
+      // family is "IPv4" (string) on older Node, 4 (number) on newer — accept both.
+      const isIPv4 = net.family === "IPv4" || (net.family as unknown) === 4;
+      if (isIPv4 && !net.internal) result.push({ name, address: net.address, netmask: net.netmask });
+    }
+  }
+  // TODO(scan-address-debug): remove once the picker is confirmed working.
+  console.log(`[ScanAddr] hostdevice-get-network-interfaces -> ${JSON.stringify(result)}`);
+  return JSON.stringify(result);
 });
 
 ipcMain.handle("hostdevice-keep-screen-on", (_event, keep: boolean) => {
