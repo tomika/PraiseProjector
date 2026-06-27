@@ -104,7 +104,7 @@ export interface ClientCapabilities {
   canLogin: boolean;
   /** May choose/create a different leader identity. App·Rest only (see canLogin). */
   canChangeLeader: boolean;
-  /** May persist named playlists to a leader profile. App·Rest only. */
+  /** May persist named playlists to a leader/profile target in the active adapter. */
   canPersistPlaylist: boolean;
   /**
    * May host a local PPD session (advertise + serve display to nearby followers).

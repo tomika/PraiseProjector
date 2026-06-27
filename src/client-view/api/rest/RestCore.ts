@@ -232,7 +232,9 @@ export class RestCore {
         canEditWorkingPlaylist: controllable,
         canLogin: false,
         canChangeLeader: false,
-        canPersistPlaylist: false,
+        // Saving a named list is a host-granted leader/profile operation; keep it
+        // available even before the client switches live display control on.
+        canPersistPlaylist: hasRight,
         // Locked to its serving host (auto-follows via config.follow); it never
         // hosts its own session.
         canHostLocalSession: false,

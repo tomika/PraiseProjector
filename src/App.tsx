@@ -67,7 +67,7 @@ import { Database, FormatFoundReason } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
-import { formatLocalDateLabel } from "../common/date-only";
+import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
@@ -1199,6 +1199,44 @@ const AppContent: React.FC = () => {
             data,
             headers: { "Content-Type": "application/json" },
           };
+        } else if (apiRequest.method === "POST" && apiRequest.path === "/store_list") {
+          type StoreListBody = {
+            label?: string;
+            scheduled?: number | string;
+            songs?: DisplayPlaylistEntry[];
+          };
+          const body = (apiRequest.body ?? {}) as StoreListBody;
+          const scheduledNumber = typeof body.scheduled === "number" ? body.scheduled : body.scheduled ? Number(body.scheduled) : 0;
+          const date =
+            scheduledNumber > 0
+              ? new Date(new Date(scheduledNumber).setHours(0, 0, 0, 0))
+              : (parseScheduleDate(body.label) ?? new Date(new Date().setHours(0, 0, 0, 0)));
+          const forced = apiRequest.query.forced === true || apiRequest.query.forced === "true";
+
+          if (!leader) {
+            response = {
+              status: 400,
+              data: "No leader selected",
+              headers: { "Content-Type": "application/json" },
+            };
+          } else {
+            const exists = leader.getSchedule().some((d) => formatLocalDateKey(d) === formatLocalDateKey(date));
+            if (exists && !forced) {
+              response = {
+                status: 200,
+                data: "OVERWRITE",
+                headers: { "Content-Type": "application/json" },
+              };
+            } else {
+              const entries = (body.songs ?? []).map((entry) => PlaylistEntry.fromJSON(entry));
+              db.schedule(leader, date, new Playlist(formatLocalDateLabel(date), entries));
+              response = {
+                status: 200,
+                data: "OK",
+                headers: { "Content-Type": "application/json" },
+              };
+            }
+          }
         } else if (apiRequest.method === "GET" && apiRequest.path === "/search") {
           const text = (apiRequest.query.text as string) || "";
           const limit = (apiRequest.query.limit as string) || "";

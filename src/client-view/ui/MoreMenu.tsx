@@ -4,8 +4,9 @@
  * power / about). Each item is gated off a capability so the same menu degrades
  * gracefully across the served, cloud and embedded contexts:
  *
+ *   - Sync             → always (refresh backend-derived collections / follow)
  *   - Open full editor → capabilities.canOpenFullEditor (browser/desktop only)
- *   - Save list        → capabilities.canPersistPlaylist (cloud leader)
+ *   - Save list        → capabilities.canPersistPlaylist (leader/profile target)
  *   - About            → always
  *   - Exit             → state.canExit (native host shells only)
  *
@@ -49,6 +50,13 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   const emptyList = state.playlist.length === 0;
   const watching = state.network.status === "watching";
   const items: MenuItem[] = [
+    {
+      id: "sync",
+      label: "Sync",
+      image: "sync.svg",
+      show: true,
+      run: () => void store.syncNow(),
+    },
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).
     { id: "signin", label: "Sign in", image: "user.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },

@@ -977,41 +977,8 @@ export class WebServer {
     this.app.post("/display_update", handleRemoteUpdateRequest);
     this.app.post("/song_update", handleRemoteUpdateRequest);
 
-    // Generic POST handler for other actions
-    this.app.post("/:path", (req, res) => {
-      const path = req.params.path;
-      console.debug(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] Generic POST to /${path}`, req.body);
-
-      switch (path) {
-        case "song":
-          // Handle save song
-          this.setCommonHeaders(res);
-          res.json({ success: true, songId: req.body.id || "new-song-id" });
-          break;
-        case "playlist":
-          // Handle save playlist
-          this.setCommonHeaders(res);
-          res.json({ success: true });
-          break;
-        case "delete_song":
-          // Handle delete song
-          this.setCommonHeaders(res);
-          res.json({ success: true });
-          break;
-        default:
-          res.status(404).send("Not Found");
-      }
-    });
-
-    // General proxy - forward ALL unhandled requests to frontend (must be last!)
-    this.app.use(async (req, res) => {
+    const proxyToFrontend = async (req: express.Request, res: express.Response) => {
       console.debug(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] Proxying request to frontend: ${req.method} ${req.path}`);
-
-      const proxyAllowedGetPaths = new Set(["/songs", "/leaders", "/search"]);
-      if (req.method !== "GET" || !proxyAllowedGetPaths.has(req.path)) {
-        res.status(404).json({ error: "Not Found" });
-        return;
-      }
 
       try {
         const mainWindow = getMainWindow();
@@ -1066,6 +1033,82 @@ export class WebServer {
         console.error(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] API proxy error:`, error);
         res.status(500).json({ error: "Internal server error" });
       }
+    };
+
+    // Generic POST handler for other actions
+    this.app.post("/:path", async (req, res) => {
+      const path = req.params.path;
+      console.debug(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] Generic POST to /${path}`, req.body);
+
+      switch (path) {
+        case "store_list":
+          this.setCommonHeaders(res);
+          if (!this.hasValidControlIntent(req)) {
+            console.warn(`[WebServer] Rejected ${req.path}: missing ${WebServer.CONTROL_INTENT_HEADER}`);
+            res.status(403).send("Missing control intent header");
+            break;
+          }
+
+          {
+            const ip = this.normalizeIp(req.socket.remoteAddress || "");
+            let clientType: "GUEST" | "LEADER" | "LOCAL";
+
+            if (req.socket.remoteAddress === req.socket.localAddress) {
+              clientType = "LOCAL";
+            } else if (this.settings.allClientsCanUseLeaderMode) {
+              clientType = "LEADER";
+            } else {
+              const intentValue = req.header(WebServer.CONTROL_INTENT_HEADER) ?? "";
+              if (intentValue !== WebServer.CONTROL_INTENT_VALUE && this.checkLeaderToken(intentValue, ip)) {
+                clientType = "LEADER";
+              } else {
+                const mac = ip ? await this.resolveMacAddressForIp(ip) : "";
+                const identity: ClientIdentity = { ip, mac, id: mac || ip };
+                clientType = this.getClientType(req.socket, identity);
+                if (clientType !== "GUEST") {
+                  res.set(WebServer.LEADER_TOKEN_HEADER, this.issueLeaderToken(ip));
+                }
+              }
+            }
+
+            if (clientType === "GUEST") {
+              console.warn(`[WebServer] Rejected ${req.path}: guest client (${ip})`);
+              res.status(403).send("Leader access required");
+              break;
+            }
+          }
+
+          await proxyToFrontend(req, res);
+          break;
+        case "song":
+          // Handle save song
+          this.setCommonHeaders(res);
+          res.json({ success: true, songId: req.body.id || "new-song-id" });
+          break;
+        case "playlist":
+          // Handle save playlist
+          this.setCommonHeaders(res);
+          res.json({ success: true });
+          break;
+        case "delete_song":
+          // Handle delete song
+          this.setCommonHeaders(res);
+          res.json({ success: true });
+          break;
+        default:
+          res.status(404).send("Not Found");
+      }
+    });
+
+    // General proxy - forward ALL unhandled requests to frontend (must be last!)
+    this.app.use(async (req, res) => {
+      const proxyAllowedGetPaths = new Set(["/songs", "/leaders", "/search"]);
+      if (req.method !== "GET" || !proxyAllowedGetPaths.has(req.path)) {
+        res.status(404).json({ error: "Not Found" });
+        return;
+      }
+
+      await proxyToFrontend(req, res);
     });
   }
 

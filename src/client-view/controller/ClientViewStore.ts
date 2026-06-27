@@ -626,6 +626,14 @@ export class ClientViewStore {
     }
   }
 
+  async syncNow(): Promise<void> {
+    await Promise.allSettled([
+      this.loadSongs(),
+      this.loadLeaderPlaylists(),
+      this.state.network.status === "watching" ? this.api.session.reconnect() : Promise.resolve(),
+    ]);
+  }
+
   // ── search ───────────────────────────────────────────────────────────────────
 
   setSearchText(text: string): void {

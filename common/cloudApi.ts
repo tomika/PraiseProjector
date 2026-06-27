@@ -364,7 +364,7 @@ export class CloudApiService {
   private async apiCall<T>(
     endpoint: string,
     postData?: unknown,
-    options?: { signal?: AbortSignal; allowEmpty?: boolean; skipRefresh?: boolean }
+    options?: { signal?: AbortSignal; allowEmpty?: boolean; skipRefresh?: boolean; headers?: Record<string, string> }
   ): Promise<T> {
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
@@ -394,7 +394,7 @@ export class CloudApiService {
       let refreshAttempted = false;
 
       for (let attempt = 0; ; attempt++) {
-        const headers = this.getHeaders();
+        const headers = { ...this.getHeaders(), ...options?.headers };
 
         if (this.proxyApi) {
           // Use Electron IPC proxy to avoid CORS issues
@@ -958,7 +958,10 @@ export class CloudApiService {
 
   /** Upload (store) a playlist to the server. Returns "OK", "OVERWRITE", or an error string */
   async storeList(forced: boolean, data: { label: string; scheduled: number; songs: SongPreferenceEntry[] }): Promise<string> {
-    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}`, data, { allowEmpty: true });
+    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}`, data, {
+      allowEmpty: true,
+      headers: { "X-PP-Intent": "control-update" },
+    });
     return result ?? "";
   }
 
