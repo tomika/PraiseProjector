@@ -23,6 +23,12 @@ const TAG_MODES: Array<{ value: ZoomTagMode; label: string }> = [
 export function ZoomPanel() {
   const store = useClientViewStore();
   const { displaySettings: s } = useClientViewState();
+  const tagModeIndex = Math.max(
+    0,
+    TAG_MODES.findIndex((mode) => mode.value === s.zoomTagMode)
+  );
+  const tagMode = TAG_MODES[tagModeIndex];
+  const nextTagMode = TAG_MODES[(tagModeIndex + 1) % TAG_MODES.length];
 
   return (
     <div className="cv-zoom-panel">
@@ -37,35 +43,24 @@ export function ZoomPanel() {
       </label>
 
       <div className="cv-zoom-row">
-        {TAG_MODES.map((m) => (
-          <button
-            key={m.value}
-            type="button"
-            className={`cv-zoom-btn${s.zoomTagMode === m.value ? " active" : ""}`}
-            title="Section tag display"
-            onClick={() => store.setDisplaySetting("zoomTagMode", m.value)}
-          >
-            {m.label}
-          </button>
-        ))}
+        <button
+          type="button"
+          className="cv-zoom-btn active cv-zoom-cycle-btn"
+          title={`Section tag display: ${tagMode.label}`}
+          onClick={() => store.setDisplaySetting("zoomTagMode", nextTagMode.value)}
+        >
+          {tagMode.label}
+        </button>
       </div>
 
       <div className="cv-zoom-row">
         <button
           type="button"
-          className={`cv-zoom-btn${!s.zoomScrollable ? " active" : ""}`}
-          title="Fit page"
-          onClick={() => store.setDisplaySetting("zoomScrollable", false)}
+          className="cv-zoom-btn active cv-zoom-cycle-btn"
+          title={s.zoomScrollable ? "Scroll" : "Fit page"}
+          onClick={() => store.setDisplaySetting("zoomScrollable", !s.zoomScrollable)}
         >
-          <img className="btnImg" src={icon("fitpage.svg")} alt="Fit page" />
-        </button>
-        <button
-          type="button"
-          className={`cv-zoom-btn${s.zoomScrollable ? " active" : ""}`}
-          title="Scroll (full width)"
-          onClick={() => store.setDisplaySetting("zoomScrollable", true)}
-        >
-          <img className="btnImg" src={icon("scrollpage.svg")} alt="Scroll" />
+          <img className="btnImg" src={icon(s.zoomScrollable ? "scrollpage.svg" : "fitpage.svg")} alt="" />
         </button>
       </div>
     </div>

@@ -98,6 +98,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       webServerDomainName: "",
       webServerAcceptLanClientsOnly: true,
       iWebEnabled: true,
+      ppdSessionEnabled: true,
       externalWebDisplayEnabled: false,
       registerLocalServer: true, // C# default: True
       longPollTimeout: 120, // C# default: 120, not 30
@@ -172,6 +173,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [t]);
 
+  const syncSettingsToBackend = useCallback((nextSettings: Settings) => {
+    const webServer = getWebServerInterface();
+    if (webServer) {
+      void webServer.sync({ kind: "config", config: toWebServerConfig(nextSettings) });
+    }
+  }, []);
+
   useEffect(() => {
     if (initializedRef.current) {
       return;
@@ -196,20 +204,14 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setInitialSettings(merged);
         // Push the persisted settings to the backend at startup — they otherwise only
         // reach main on Save. Critical for the webserver on/off toggle: the server boots
-        // ENABLED by default, so a persisted "disabled" must be applied now to stop it
-        // (mirrors syncToBackend's Electron-vs-web branching).
-        if (window.electronAPI?.syncSettings) {
-          window.electronAPI.syncSettings(merged);
-        } else {
-          const webServer = getWebServerInterface();
-          if (webServer) void webServer.sync({ kind: "config", config: toWebServerConfig(merged) });
-        }
+        // ENABLED by default, so a persisted "disabled" must be applied now to stop it.
+        syncSettingsToBackend(merged);
       })
       .catch(() => {
         setSettings(defaultSettings);
         setInitialSettings(defaultSettings);
       });
-  }, [createDefaultSettings]);
+  }, [createDefaultSettings, syncSettingsToBackend]);
 
   // Listen for theme and language changes from other contexts and update our settings
   useEffect(() => {
@@ -260,16 +262,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings(createDefaultSettings());
   }, [createDefaultSettings]);
 
-  // Sync current settings to backend via IPC
+  // Sync current settings to the backend through the webserver bridge.
   const syncToBackend = () => {
-    if (settings && window.electronAPI?.syncSettings) {
-      window.electronAPI.syncSettings(settings);
-    } else if (settings) {
-      const webServer = getWebServerInterface();
-      if (webServer) {
-        void webServer.sync({ kind: "config", config: toWebServerConfig(settings) });
-      }
-    }
+    if (settings) syncSettingsToBackend(settings);
   };
 
   // Update setting without auto-save (for SettingsForm - save only on Save button click)
@@ -278,34 +273,30 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   // Update setting with immediate auto-save (for Format panel and similar UI controls)
-  const updateSettingWithAutoSave = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setSettings((prev) => {
-      if (!prev) return null;
-      const newSettings = { ...prev, [key]: value };
-      // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
-      if (window.electronAPI?.syncSettings) {
-        window.electronAPI.syncSettings(newSettings);
-      } else {
-        const webServer = getWebServerInterface();
-        if (webServer) {
-          void webServer.sync({ kind: "config", config: toWebServerConfig(newSettings) });
-        }
-      }
-      // Auto-save settings immediately (matching C# behavior for format panel)
-      storeApi
-        .saveSettings(newSettings)
-        .then(() => {
-          // Keep cancel baseline aligned with the latest persisted settings.
-          setInitialSettings(newSettings);
-          // Dispatch custom event to notify components
-          window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-        })
-        .catch((error) => {
-          console.error("General", `Failed to auto-save setting '${key}'`, error);
-        });
-      return newSettings;
-    });
-  }, []);
+  const updateSettingWithAutoSave = useCallback(
+    <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      setSettings((prev) => {
+        if (!prev) return null;
+        const newSettings = { ...prev, [key]: value };
+        // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
+        syncSettingsToBackend(newSettings);
+        // Auto-save settings immediately (matching C# behavior for format panel)
+        storeApi
+          .saveSettings(newSettings)
+          .then(() => {
+            // Keep cancel baseline aligned with the latest persisted settings.
+            setInitialSettings(newSettings);
+            // Dispatch custom event to notify components
+            window.dispatchEvent(new CustomEvent("pp-settings-changed"));
+          })
+          .catch((error) => {
+            console.error("General", `Failed to auto-save setting '${key}'`, error);
+          });
+        return newSettings;
+      });
+    },
+    [syncSettingsToBackend]
+  );
 
   return (
     <SettingsContext.Provider

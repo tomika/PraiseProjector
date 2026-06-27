@@ -12,8 +12,9 @@ import { cloudApi } from "../../../../common/cloudApi";
 import { getLocalBroadcastAddresses } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
-import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SongApi } from "../ClientApi";
+import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
 import type { RestCore } from "./RestCore";
+import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
 
 const TOKEN_KEY = "sessionId";
 
@@ -218,6 +219,10 @@ async function attachSession(core: RestCore, session: OnlineSessionEntry): Promi
 }
 
 export function createSessionApi(core: RestCore): SessionApi {
+  const setFeatureEnabled = async (key: SessionFeatureKey, enabled: boolean) => {
+    saveSessionFeatureSetting(key, enabled);
+    core.refreshCapabilities();
+  };
   return {
     scanLocalServers: (address) => core.scanLocal(address),
     scanAddresses: () => getLocalBroadcastAddresses(),
@@ -238,6 +243,7 @@ export function createSessionApi(core: RestCore): SessionApi {
     },
     startLocal: () => core.startLocalHost(),
     stopLocal: () => core.stopLocalHost(),
+    setFeatureEnabled,
     createOnline: async (leaderId) => {
       // Force-register the cloud session now (user-chosen): a /display_update carrying
       // the leader id upserts the sessions row, so the leader appears for followers at

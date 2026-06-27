@@ -1,12 +1,11 @@
 /**
  * MoreMenu — the overflow menu (menu.svg) in the options-panel header, mirroring
- * the legacy index.html #btnMore dropdown (clear list / save / online / report /
+ * the legacy index.html #btnMore dropdown (save / online / report /
  * power / about). Each item is gated off a capability so the same menu degrades
  * gracefully across the served, cloud and embedded contexts:
  *
  *   - Open full editor → capabilities.canOpenFullEditor (browser/desktop only)
  *   - Save list        → capabilities.canPersistPlaylist (cloud leader)
- *   - Clear list       → capabilities.canEditWorkingPlaylist
  *   - About            → always
  *   - Exit             → state.canExit (native host shells only)
  *
@@ -45,14 +44,10 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   }, [open]);
 
   const caps = state.capabilities;
-  // Clear/Save act on the live working playlist; greyed out while it is empty
-  // (legacy makeDisabled(iconClearList, playlist.length === 0)).
+  // Save acts on the live working playlist; greyed out while it is empty.
+  // Clear list lives in the playlist search row.
   const emptyList = state.playlist.length === 0;
-  // Session host state (legacy iconStartSession/iconStartOnlineSession/iconStopSession
-  // visibility): Start is offered while idle, Stop while a session is active.
-  const leading = state.network.status === "leading";
   const watching = state.network.status === "watching";
-  const sessionActive = leading || watching;
   const items: MenuItem[] = [
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).
@@ -69,21 +64,6 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     // online hosting is enabled (Settings.externalWebDisplayEnabled in the embed);
     // otherwise a local PPD session (play.svg) — mutually exclusive, like the legacy
     // iconStartSession vs iconStartOnlineSession.
-    {
-      id: "startLocal",
-      label: "Start session",
-      image: "play.svg",
-      show: caps.canHostLocalSession && !caps.canHostOnlineSession && !sessionActive,
-      run: () => void store.startLocalSession(),
-    },
-    {
-      id: "startOnline",
-      label: "Start online session",
-      image: "play-online.svg",
-      show: caps.canHostOnlineSession && !sessionActive,
-      run: () => void store.startOnlineSession(),
-    },
-    { id: "stopSession", label: "Stop session", image: "stop.svg", show: leading, run: () => void store.stopLocalSession() },
     {
       id: "stopFollowing",
       label: "Stop following",
@@ -103,21 +83,13 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       run: () => void store.openSaveDialog(),
     },
     {
-      id: "clear",
-      label: "Clear list",
-      image: "clear.svg",
-      show: caps.canEditWorkingPlaylist,
-      disabled: emptyList,
-      run: () => void store.clearPlaylist(),
-    },
-    {
       id: "home",
       label: "Home",
       image: "home.svg",
-      show: state.canExit,
+      show: Boolean(onHome) || caps.canOpenFullEditor,
       run: () => {
         if (onHome) onHome();
-        else window.location.assign("/");
+        else store.openFullEditor();
       },
     },
     { id: "about", label: "About", image: "about.svg", show: true, run: () => store.openAbout() },

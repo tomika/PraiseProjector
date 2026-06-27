@@ -28,6 +28,7 @@ import type {
   NetworkState,
   OnlineSessionEntry,
   PlaylistEntry,
+  SessionFeatureKey,
   SongData,
   SongEntry,
   SongFound,
@@ -1253,6 +1254,12 @@ export class ClientViewStore {
     this.api.device.openExternal(url);
   }
 
+  /** Navigate from the focused client view to the full multi-panel editor. */
+  openFullEditor(): void {
+    if (typeof window === "undefined") return;
+    window.location.assign(this.fullEditorUrl);
+  }
+
   /** Terminate the app on hosts that support it (gated by state.canExit). */
   exitApp(): void {
     this.api.device.exit?.();
@@ -1353,6 +1360,10 @@ export class ClientViewStore {
   /** Stop hosting the local PPD session (legacy stopPpdSession). */
   async stopLocalSession(): Promise<void> {
     await this.api.session.stopLocal();
+  }
+
+  async setSessionFeatureEnabled(key: SessionFeatureKey, enabled: boolean): Promise<void> {
+    await this.api.session.setFeatureEnabled(key, enabled);
   }
 
   /** Host an online (cloud) session — register as a leader others can follow. App

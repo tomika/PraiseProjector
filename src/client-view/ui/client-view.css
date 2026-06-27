@@ -316,9 +316,9 @@ body,
   cursor: default;
 }
 
-.cv-navigation-add-current img {
-  width: 19px;
-  height: 19px;
+.cv-navigation-add-current {
+  font-size: 18px;
+  padding-left: 4px !important;
 }
 
 #mainView.dark .cv-navigation-mode {
@@ -733,6 +733,24 @@ body,
   border-radius: 4px;
 }
 
+.cv-search-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cv-search-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Song list --------------------------------------------------------------- */
 
 #list {
@@ -761,11 +779,15 @@ body,
   cursor: pointer;
 }
 
-#list tr:hover {
-  background: rgba(255, 255, 255, 0.06);
+#list tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.095);
 }
 
-#list tr.selected {
+#list tr:hover td {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+#list tr.selected td {
   background: rgba(255, 177, 78, 0.18);
 }
 
@@ -870,7 +892,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 180px;
+  min-width: 100px;
   padding: 14px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 8px;
@@ -903,6 +925,7 @@ body,
 .cv-zoom-label {
   font-size: 15px;
   opacity: 0.6;
+  margin: auto;
   transition:
     opacity 0.1s,
     text-shadow 0.1s,
@@ -946,6 +969,10 @@ body,
 .cv-zoom-btn.active {
   border-color: #2f7bff;
   box-shadow: 0 0 0 2px rgba(47, 123, 255, 0.4);
+}
+
+.cv-zoom-cycle-btn {
+  gap: 8px;
 }
 
 .cv-zoom-btn .btnImg {
@@ -1124,6 +1151,19 @@ body,
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+}
+
+.cv-navigation-mode.cv-navigation-add-current {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+#mainView.dark .cv-navigation-mode.cv-navigation-add-current {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.62);
 }
 
 /* Working-list rows: drag handle, dragging/insertion feedback, title editing,

@@ -1,7 +1,6 @@
 /**
  * SearchBar — the filter row inside the options overlay (#filterRow).
- * Typing debounces a search through the controller; the magnifier / Enter runs
- * it immediately.
+ * Typing debounces a search through the controller; Enter runs it immediately.
  *
  * When the working playlist is editable, the leading icon becomes a list-mode
  * toggle (the legacy iconDatabase ↔ iconPlaylist switch): the visible icon is
@@ -61,7 +60,29 @@ export function SearchBar() {
       {showSearch ? (
         <>
           <input id="filter" type="text" aria-label="Search songs" value={state.searchText} onChange={(e) => store.setSearchText(e.target.value)} />
-          <img id="apply-filter" className="btnImg" src={icon("magnifier.svg")} alt="Search" onClick={() => void store.runSearch(state.searchText)} />
+          <button
+            type="button"
+            id="clear-filter"
+            className="cv-search-icon-btn"
+            title="Clear filter"
+            aria-label="Clear filter"
+            onClick={() => store.setSearchText("")}
+          >
+            <img className="btnImg" src={icon("cancel.svg")} alt="" />
+          </button>
+          {canEdit && state.listMode === "playlist" && (
+            <button
+              type="button"
+              id="clear-playlist"
+              className="cv-search-icon-btn"
+              title="Clear list"
+              aria-label="Clear list"
+              disabled={state.playlist.length === 0}
+              onClick={() => void store.clearPlaylist()}
+            >
+              <img className="btnImg" src={icon("clear.svg")} alt="" />
+            </button>
+          )}
         </>
       ) : (
         <LeaderPlaylistControls />

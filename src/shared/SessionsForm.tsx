@@ -5,7 +5,7 @@
  *
  * It owns the presentation: the discovered-session list (each row carries a
  * connect/plug action), the always-visible scan-address picker (an editable combo
- * box), a scan-in-progress indicator and the start-online-session control.
+ * box), the scan-in-progress indicator and the session feature toggles.
  * Everything data-shaped is injected via props so each host supplies its own
  * wiring:
  *   - `variant` selects the CSS skin ("desktop" base look vs the "cv" reskin
@@ -49,11 +49,17 @@ export interface SessionRow {
   kind: SessionKind;
 }
 
-export interface SessionsFormStartOnline {
-  label: string;
-  title?: string;
-  starting?: boolean;
-  onStart: () => void;
+export interface SessionsFormToggle {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  showText?: boolean;
+  /** Whether the represented session feature is switched on. */
+  isFeatureEnabled: boolean;
+  /** Whether the toggle control itself cannot be used, usually because its backend is unavailable. */
+  isControlDisabled?: boolean;
+  onToggle: (nextFeatureEnabled: boolean) => void;
 }
 
 export interface SessionsFormDetails {
@@ -96,14 +102,11 @@ export interface SessionsFormProps {
   /** Always-visible broadcast-address picker. Omit to hide it (no local transport). */
   details?: SessionsFormDetails;
 
-  /** Start-online-session control. Omit to hide it. */
-  startOnline?: SessionsFormStartOnline;
+  /** Session hosting/discovery toggles shown at the end of the form. */
+  sessionToggles?: SessionsFormToggle[];
 
   closeLabel: string;
   onClose: () => void;
-
-  /** The "switch to the other UI" button (desktop → client-view). Omit to hide. */
-  switchUi?: { label: string; onClick: () => void };
 }
 
 export function SessionsForm({
@@ -118,10 +121,9 @@ export function SessionsForm({
   scanIcon,
   webModeNotice,
   details,
-  startOnline,
+  sessionToggles,
   closeLabel,
   onClose,
-  switchUi,
 }: SessionsFormProps) {
   const cvModifier = variant === "cv" ? " sessions-form--cv" : "";
   const darkClass = isDark ? " dark" : "";
@@ -263,28 +265,35 @@ export function SessionsForm({
           ) : null}
         </div>
 
-        {startOnline || switchUi ? (
+        {sessionToggles && sessionToggles.length > 0 ? (
           <div className="sessions-modal-footer">
-            {startOnline ? (
-              <div className="session-host-buttons">
+            <div className="session-toggle-grid" role="group" aria-label={title}>
+              {sessionToggles.map((toggle) => (
                 <button
+                  key={toggle.id}
                   type="button"
-                  className="btn btn-outline-primary btn-sm sessions-online-btn"
-                  onClick={startOnline.onStart}
-                  disabled={startOnline.starting}
-                  title={startOnline.title}
+                  className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}`}
+                  aria-pressed={toggle.isFeatureEnabled}
+                  disabled={toggle.isControlDisabled}
+                  onClick={() => toggle.onToggle(!toggle.isFeatureEnabled)}
                 >
-                  {startOnline.label}
+                  {toggle.showText === false ? null : (
+                    <span className="session-toggle-copy">
+                      <span className="session-toggle-title">{toggle.title}</span>
+                    </span>
+                  )}
+                  <span className="session-toggle-image-wrap" aria-hidden="true">
+                    <img src={toggle.icon} alt="" className="session-toggle-image" />
+                  </span>
+                  {toggle.showText === false ? null : (
+                    <span className="session-toggle-copy">
+                      <span className="session-toggle-description">{toggle.description}</span>
+                    </span>
+                  )}
+                  <span className="session-toggle-state" aria-hidden="true" />
                 </button>
-              </div>
-            ) : null}
-            {switchUi ? (
-              <div className="sessions-browser-btn-wrapper">
-                <button type="button" className="btn btn-primary d-flex align-items-center gap-2 sessions-switch-btn" onClick={switchUi.onClick}>
-                  {switchUi.label}
-                </button>
-              </div>
-            ) : null}
+              ))}
+            </div>
           </div>
         ) : null}
       </div>

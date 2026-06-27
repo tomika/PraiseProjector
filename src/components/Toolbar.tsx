@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Icon, IconType } from "../services/IconService";
+import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
 import { useUpdate } from "../contexts/UpdateContext";
 
@@ -11,6 +12,7 @@ interface ToolbarProps {
   onPrint?: () => void;
   onImport?: () => void;
   onLaunchViewer?: () => void;
+  onSwitchToMobileView?: () => void;
   canLoadSong?: boolean;
   canSaveSong?: boolean;
 }
@@ -23,13 +25,42 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onPrint,
   onImport,
   onLaunchViewer,
+  onSwitchToMobileView,
   canLoadSong,
   canSaveSong,
 }) => {
+  const { t } = useLocalization();
   const { tt } = useTooltips();
   const { hasUpdate } = useUpdate();
+  const [showViewerMenu, setShowViewerMenu] = useState(false);
+  const viewerMenuRef = useRef<HTMLDivElement>(null);
   const loadDisabled = canLoadSong === false;
   const saveDisabled = canSaveSong === false;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (viewerMenuRef.current && !viewerMenuRef.current.contains(event.target as Node)) {
+        setShowViewerMenu(false);
+      }
+    };
+
+    if (showViewerMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showViewerMenu]);
+
+  const handleLaunchViewerClick = () => {
+    setShowViewerMenu(false);
+    onLaunchViewer?.();
+  };
+
+  const handleMobileViewClick = () => {
+    setShowViewerMenu(false);
+    onSwitchToMobileView?.();
+  };
 
   return (
     <div className="btn-toolbar" role="toolbar">
@@ -62,9 +93,31 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <button className="btn btn-light" aria-label="Print" title={tt("toolbar_print")} onClick={onPrint}>
         <Icon type={IconType.PRINT} />
       </button>
-      <button className="btn btn-light" aria-label="Launch Viewer" title={tt("toolbar_launch_browser")} onClick={onLaunchViewer}>
-        <Icon type={IconType.VIEWER} />
-      </button>
+      <div className="btn-group position-relative toolbar-viewer-group" ref={viewerMenuRef}>
+        <button className="btn btn-light" aria-label="Launch Viewer" title={tt("toolbar_launch_browser")} onClick={handleLaunchViewerClick}>
+          <Icon type={IconType.VIEWER} />
+        </button>
+        <button
+          type="button"
+          className="btn btn-light dropdown-toggle-split sync-menu-toggle toolbar-viewer-menu-toggle"
+          aria-label={t("ViewerMenu")}
+          aria-expanded={showViewerMenu}
+          title={t("ViewerMenu")}
+          onClick={() => setShowViewerMenu(!showViewerMenu)}
+        >
+          <span className="sync-menu-indicator">{"\u25BE"}</span>
+        </button>
+        {showViewerMenu && (
+          <div className="dropdown-menu show sync-dropdown-menu toolbar-viewer-dropdown-menu">
+            <button type="button" className="dropdown-item" onClick={handleLaunchViewerClick}>
+              {t("MenuSessionManagement")}
+            </button>
+            <button type="button" className="dropdown-item" onClick={handleMobileViewClick}>
+              {t("MenuMobileView")}
+            </button>
+          </div>
+        )}
+      </div>
       <button
         type="button"
         className="btn btn-light position-relative"

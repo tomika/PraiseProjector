@@ -66,6 +66,7 @@ export interface Settings {
   fontSizeMode: "manual" | "auto-resolution" | "auto-resolution-dpi";
 
   iWebEnabled: boolean;
+  ppdSessionEnabled: boolean;
   webServerPort: number;
   webServerPath: string;
   webServerDomainName: string;

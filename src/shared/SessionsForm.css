@@ -71,17 +71,6 @@
   border-radius: 0 0 0.5rem 0.5rem;
 }
 
-/* Host controls row (start online session). */
-.sessions-modal-footer .session-host-buttons {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.sessions-modal-footer .session-host-buttons:empty {
-  display: none;
-}
-
 .sessions-modal-footer .btn {
   min-width: 100px;
 }
@@ -90,9 +79,105 @@
   min-width: auto;
 }
 
-.sessions-browser-btn-wrapper {
+.session-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.session-toggle-card {
+  position: relative;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 174px;
+  padding: 0.7rem;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
+  color: #212529;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.session-toggle-card:hover:not(:disabled) {
+  border-color: #7ba7df;
+  box-shadow: 0 6px 16px rgba(30, 68, 112, 0.16);
+  transform: translateY(-1px);
+}
+
+.session-toggle-card:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+.session-toggle-card.is-enabled {
+  border-color: #2f8f6b;
+  background: linear-gradient(180deg, #f8fffb 0%, #edf8f3 100%);
+  box-shadow: inset 0 0 0 1px rgba(47, 143, 107, 0.22);
+}
+
+.session-toggle-card:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.session-toggle-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 74px;
+  margin-bottom: 0.55rem;
+}
+
+.session-toggle-image {
+  display: block;
+  max-width: 72px;
+  max-height: 72px;
+  object-fit: contain;
+}
+
+.session-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  padding-right: 1.15rem;
+}
+
+.session-toggle-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.18;
+}
+
+.session-toggle-description {
+  font-size: 0.76rem;
+  line-height: 1.25;
+  color: #5c6672;
+}
+
+.session-toggle-state {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  border: 1px solid #aeb8c4;
+  background: #e7ebf0;
+}
+
+.session-toggle-card.is-enabled .session-toggle-state {
+  border-color: #24825f;
+  background: #28a36f;
+  box-shadow: 0 0 0 3px rgba(40, 163, 111, 0.16);
 }
 
 .sessions-list-row {
@@ -302,6 +387,31 @@
   border-top-color: var(--pp-border-color);
 }
 
+[data-theme="dark"] .session-toggle-card {
+  background: linear-gradient(180deg, var(--pp-bg-secondary) 0%, var(--pp-bg-tertiary, #252a31) 100%);
+  border-color: var(--pp-border-color);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .session-toggle-card:hover:not(:disabled) {
+  border-color: #6fa8dc;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .session-toggle-card.is-enabled {
+  border-color: #44b883;
+  background: linear-gradient(180deg, rgba(68, 184, 131, 0.14) 0%, rgba(68, 184, 131, 0.08) 100%);
+}
+
+[data-theme="dark"] .session-toggle-description {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .session-toggle-state {
+  border-color: var(--pp-border-color);
+  background: var(--pp-bg-tertiary, #343a40);
+}
+
 [data-theme="dark"] .sessions-list-container {
   background-color: var(--pp-bg-secondary);
   border-color: var(--pp-border-color);
@@ -364,6 +474,76 @@
   border-color: transparent;
 }
 
+.sessions-form--cv .session-toggle-grid {
+  gap: 0.55rem;
+}
+
+.sessions-form--cv .session-toggle-card {
+  align-items: center;
+  justify-content: center;
+  min-height: 94px;
+  padding: 0.65rem;
+  border-radius: 8px;
+}
+
+.sessions-form--cv .session-toggle-image-wrap {
+  height: 72px;
+  margin-bottom: 0;
+}
+
+.sessions-form--cv .session-toggle-image {
+  max-width: 70px;
+  max-height: 70px;
+}
+
+.sessions-form--cv .session-toggle-state {
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-color: rgba(108, 117, 125, 0.7);
+  background: #d7dde4;
+  box-shadow: 0 0 0 2px rgba(108, 117, 125, 0.12);
+}
+
+.sessions-form--cv.dark .session-toggle-card {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--cv-panel-fg, #e9e9e9);
+}
+
+.sessions-form--cv.dark .session-toggle-card:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(125, 173, 255, 0.55);
+}
+
+.sessions-form--cv.dark .session-toggle-card.is-enabled {
+  border-color: rgba(67, 199, 137, 0.76);
+  background: rgba(67, 199, 137, 0.13);
+}
+
+.sessions-form--cv.dark .session-toggle-state {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.sessions-form--cv.dark .session-toggle-card.is-enabled .session-toggle-state {
+  border-color: rgba(117, 255, 188, 0.95);
+  background: #43c789;
+  box-shadow:
+    0 0 0 3px rgba(67, 199, 137, 0.18),
+    0 0 12px rgba(67, 199, 137, 0.62);
+}
+
+.sessions-form--cv.dark .session-toggle-description {
+  color: #b8bec7;
+}
+
+.sessions-form--cv.dark .session-toggle-image {
+  filter: invert(1);
+}
+
 .sessions-form--cv.dark .sessions-close {
   color: #bbb;
 }
@@ -387,35 +567,6 @@
 
 .sessions-form--cv.dark .sessions-row-connect:hover {
   background-color: rgba(47, 123, 255, 0.3);
-}
-
-/* cv control buttons — styled explicitly so they read correctly without Bootstrap. */
-.sessions-form--cv .session-host-buttons {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.sessions-form--cv .sessions-online-btn {
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 6px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--cv-panel-fg, #e9e9e9);
-}
-
-.sessions-form--cv .sessions-online-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.sessions-form--cv .sessions-online-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* Broadcast-address picker — cv reskin (the base styles set the structure; here we
@@ -453,4 +604,29 @@
   border-color: rgba(255, 255, 255, 0.25);
   background: rgba(255, 255, 255, 0.06);
   color: var(--cv-panel-fg, #e9e9e9);
+}
+
+@media (max-width: 560px) {
+  .session-toggle-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-toggle-card {
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .session-toggle-image-wrap {
+    width: 58px;
+    height: 58px;
+    margin: 0;
+    flex: none;
+  }
+
+  .session-toggle-image {
+    max-width: 54px;
+    max-height: 54px;
+  }
 }

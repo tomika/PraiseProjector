@@ -45,7 +45,7 @@ if (window.electronAPI?.proxyGet && window.electronAPI?.proxyPost) {
 
 /**
  * Switches the desktop renderer between the main app and the embedded new client
- * view. The SessionsForm dispatches `pp-show-client-view`; the client view's home
+ * view. The toolbar dispatches `pp-show-client-view`; the client view's home
  * button switches back via the `onHome` callback.
  */
 function RootView() {

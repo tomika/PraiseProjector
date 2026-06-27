@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useAuth } from "../contexts/AuthContext";
+import { useSettings } from "../contexts/SettingsContext";
 import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
@@ -11,9 +12,9 @@ import {
   isHostDevicePpdAvailable,
   scanHostDeviceSessions,
 } from "../services/hostDevicePpd";
-import { getCurrentDisplay } from "../state/CurrentSongStore";
 import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type SessionKind, type SessionRow } from "../shared/SessionsForm";
 import { icon } from "../client-view/ui/assets";
+import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -52,6 +53,7 @@ interface SessionDisplay {
 const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath, onConnect }) => {
   const { t } = useLocalization();
   const { user } = useAuth();
+  const { settings, updateSettingWithAutoSave } = useSettings();
   const selfId = user?.leaderId || "";
 
   const [sessions, setSessions] = useState<SessionDisplay[]>([]);
@@ -60,7 +62,6 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
   const [scanAddress, setScanAddress] = useState<string | null>(null);
   const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
-  const [onlineStarting, setOnlineStarting] = useState(false);
   const [scanning, setScanning] = useState(false);
   // Host-supplied default broadcast address, used to (re)seed and to reset to.
   const defaultAddressRef = useRef("255.255.255.255");
@@ -161,8 +162,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
           id: session.id,
           name: session.name,
           type: "local",
-          // Locally-scanned sessions are always nearby/UDP PPD peers.
-          kind: "ppd",
+          kind: classifyOnlineSession(session.url),
           url: session.url,
           address: session.address,
           port: session.port,
@@ -235,6 +235,12 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     if (session) {
       console.info("App", `Connecting to session: ${session.id} ${session.url} ${session.type}`);
 
+      if (session.kind === "webclient" && /^https?:\/\//i.test(session.url)) {
+        window.open(session.url, "_blank");
+        onClose();
+        return;
+      }
+
       if (onConnect) {
         const udpDetails =
           session.type === "local" && session.address && session.port && session.hostId
@@ -245,34 +251,6 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     }
     onClose();
   };
-
-  // Start an online (cloud) session by force-registering the current projected display
-  // under our leader id — the /display_update upsert makes us discoverable at once.
-  const handleStartOnline = useCallback(async () => {
-    if (!selfId) return;
-    setOnlineStarting(true);
-    try {
-      const d = getCurrentDisplay();
-      await cloudApi.sendDisplayUpdate({
-        songId: d.songId,
-        from: d.from,
-        to: d.to,
-        section: d.section,
-        sectionRepeatCounts: d.sectionRepeatCounts,
-        sectionRepeatNonce: d.sectionRepeatNonce,
-        transpose: d.transpose,
-        leaderId: selfId,
-        playlist: d.playlist,
-        song: d.song,
-        message: d.message,
-        instructions: d.instructions,
-      });
-    } catch (error) {
-      console.error("App", "Failed to start online session", error);
-    } finally {
-      setOnlineStarting(false);
-    }
-  }, [selfId]);
 
   const handleAddressChange = (value: string) => {
     setBroadcastAddress(value);
@@ -297,6 +275,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const title = scanAddress ? `${t("SessionsTitle")} - ${scanAddress}` : t("SessionsTitle");
 
   const rows: SessionRow[] = sessions.map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
+
+  const hasWebServerBackend = isWebServerRuntimeAvailable();
 
   return (
     <SharedSessionsForm
@@ -323,25 +303,40 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
             }
           : undefined
       }
-      startOnline={
-        selfId
-          ? {
-              label: t("SessionsStartOnline") || "Start online session",
-              title: t("SessionsStartOnlineTooltip") || "Register this device as an online session others can follow",
-              starting: onlineStarting,
-              onStart: () => void handleStartOnline(),
-            }
+      sessionToggles={
+        settings
+          ? [
+              {
+                id: "cloud-session",
+                title: t("SessionsCloudToggleTitle") || "Cloud",
+                description: t("SessionsCloudToggleDescription") || "Publish this session through the cloud.",
+                icon: "/assets/cloud-session.png",
+                isFeatureEnabled: settings.externalWebDisplayEnabled,
+                onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("externalWebDisplayEnabled", nextFeatureEnabled),
+              },
+              {
+                id: "iweb-session",
+                title: t("SessionsIWebToggleTitle") || "iWeb",
+                description: t("SessionsIWebToggleDescription") || "Allow browsers on the local network to connect.",
+                icon: "/assets/iweb-session.png",
+                isFeatureEnabled: hasWebServerBackend && settings.iWebEnabled,
+                isControlDisabled: !hasWebServerBackend,
+                onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("iWebEnabled", nextFeatureEnabled),
+              },
+              {
+                id: "ppd-session",
+                title: t("SessionsPpdToggleTitle") || "PPD",
+                description: t("SessionsPpdToggleDescription") || "Allow nearby devices to follow the projection.",
+                icon: "/assets/ppd-session.png",
+                isFeatureEnabled: hasHostDevicePpd && settings.ppdSessionEnabled,
+                isControlDisabled: !hasHostDevicePpd,
+                onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("ppdSessionEnabled", nextFeatureEnabled),
+              },
+            ]
           : undefined
       }
       closeLabel={t("Close")}
       onClose={onClose}
-      switchUi={{
-        label: t("SessionsSwitchUI"),
-        onClick: () => {
-          window.dispatchEvent(new Event("pp-show-client-view"));
-          onClose();
-        },
-      }}
     />
   );
 };

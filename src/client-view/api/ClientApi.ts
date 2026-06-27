@@ -130,6 +130,8 @@ export interface ClientCapabilities {
   isPwa: boolean;
   /** A native host bridge (`window.hostDevice` / Android) is present. */
   hasHostBridge: boolean;
+  /** A local webserver backend is reachable for iWeb-style browser clients. */
+  hasWebServerBackend: boolean;
 }
 
 /** Locked-down capability set — the safe default before {@link ClientApi.init}
@@ -146,6 +148,7 @@ export const NO_CAPABILITIES: ClientCapabilities = {
   canOpenFullEditor: false,
   isPwa: false,
   hasHostBridge: false,
+  hasWebServerBackend: false,
 };
 
 /** One-time configuration passed to {@link ClientApi.init}. */
@@ -332,6 +335,7 @@ export interface DisplayApi {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type ExternalSearchMode = "NEARBY" | "WEB" | "BOTH";
+export type SessionFeatureKey = "externalWebDisplayEnabled" | "iWebEnabled" | "ppdSessionEnabled";
 
 export interface SessionApi {
   /** Scan the LAN for local PraiseProjector servers (UDP/PPD). */
@@ -349,6 +353,8 @@ export interface SessionApi {
   startLocal(): Promise<void>;
   /** Stop hosting the local PPD session. */
   stopLocal(): Promise<void>;
+  /** Persist a session feature toggle and let the active adapter sync its backend. */
+  setFeatureEnabled(key: SessionFeatureKey, enabled: boolean): Promise<void>;
   /** Create (and switch into) a cloud-hosted online session. */
   createOnline(leaderId?: string): Promise<void>;
   /** Follow a session — drives {@link DisplayApi.subscribeDisplay}. */

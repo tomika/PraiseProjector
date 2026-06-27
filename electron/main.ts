@@ -1487,6 +1487,7 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
       chordProStyles: settings.chordProStyles,
       stylesToClients: settings.stylesToClients,
     });
+    getUdpServerInstance()?.setPpdSessionEnabled(settings.ppdSessionEnabled !== false);
 
     // Re-encode and republish the latest net display frame when encode settings change.
     if (netDisplayEncodeChanged) {

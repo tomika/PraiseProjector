@@ -229,23 +229,23 @@ const stopWatchingInternal = () => {
 
 const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
   const sessionDeviceId = message.device || "";
-  if (!sessionDeviceId) return;
-  const sessionId = `udp_${sessionDeviceId}`;
-  const offerPort = message.port ?? packet.port;
+  if (!sessionDeviceId && !message.url) return;
+  const sessionId = sessionDeviceId ? `udp_${sessionDeviceId}` : `web_${message.url}`;
+  const offerPort = message.port ?? (sessionDeviceId ? packet.port : undefined);
   // A PPD host that runs no webserver sends an offer with NO url; it is a UDP/Nearby
   // session to FOLLOW, not a web endpoint to open. Synthesize a udp:// (or nrb://)
   // url so it classifies as PPD, mirroring the legacy `offer` handler — NOT http://,
   // which made url-less PPD offers look like a (broken) LAN webserver.
   const url = message.url
     ? message.url
-    : offerPort != null
+    : offerPort != null && sessionDeviceId
       ? `udp://${packet.from}:${offerPort}/${sessionDeviceId}`
       : `nrb://${packet.from}/${sessionDeviceId}`;
   const session: P2PSessionInfo = {
     id: sessionId,
-    name: message.name || sessionDeviceId,
-    deviceId: sessionDeviceId,
-    hostId: message.id || sessionDeviceId,
+    name: message.name || sessionDeviceId || message.url || sessionId,
+    deviceId: sessionDeviceId || sessionId,
+    hostId: message.id || sessionDeviceId || packet.from,
     url,
     transport: "udp",
     address: packet.from,

@@ -263,7 +263,7 @@ export class P2PTransport {
       const sessions = this.udpServer?.getDiscoveredSessions() || [];
       const sessionId = endpointId.substring(UDP_PREFIX.length);
       const session = sessions.find((s) => s.id === sessionId);
-      if (session && this.udpServer) {
+      if (session && session.port != null && this.udpServer) {
         this.udpServer.sendMessage(JSON.stringify(message), session.port, session.address);
         return true;
       }
@@ -303,7 +303,7 @@ export class P2PTransport {
       const sessionId = endpointId.substring(UDP_PREFIX.length);
       const sessions = this.udpServer?.getDiscoveredSessions() || [];
       const session = sessions.find((s) => s.id === sessionId);
-      if (session && this.udpServer) {
+      if (session && session.port != null && this.udpServer) {
         this.udpServer.startWatching(session.deviceId, session.hostId, session.address, session.port, onDisplayUpdate, onSessionEnded);
         return true;
       }

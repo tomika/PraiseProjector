@@ -26,8 +26,10 @@ import {
   stopHostDeviceWatching,
   stopHostDevicePpdHosting,
 } from "../../../services/hostDevicePpd";
+import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { NO_CAPABILITIES } from "../ClientApi";
 import type { ClientCapabilities, ClientConfig, ClientMode, LeaderIdentity, NetworkState, Unsubscribe } from "../ClientApi";
+import { readSessionToggleSettings } from "../sessionFeatureSettings";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -205,6 +207,8 @@ export class RestCore {
 
   private computeCapabilities(): ClientCapabilities {
     const hasHostBridge = isHostDevicePpdAvailable();
+    const hasWebServerBackend = isWebServerRuntimeAvailable();
+    const sessionToggles = readSessionToggleSettings();
     const isPwa =
       typeof window !== "undefined" &&
       (window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
@@ -238,6 +242,7 @@ export class RestCore {
         canOpenFullEditor: !hasHostBridge,
         isPwa,
         hasHostBridge,
+        hasWebServerBackend,
       };
     }
     // App mode (App·Rest): the standalone website / Android cloud app. The client
@@ -254,11 +259,12 @@ export class RestCore {
       // Hosting a local PPD session needs a native transport (Android / Electron
       // desktop); a plain browser has none. Hosting an online session needs a
       // leader identity (the cloud session row is keyed by it).
-      canHostLocalSession: hasHostBridge,
+      canHostLocalSession: hasHostBridge && sessionToggles.ppdSessionEnabled,
       canHostOnlineSession: this.authed,
       canOpenFullEditor: !hasHostBridge,
       isPwa,
       hasHostBridge,
+      hasWebServerBackend,
     };
   }
 
@@ -293,6 +299,10 @@ export class RestCore {
   private emitCapabilities(): void {
     this.capabilities = this.computeCapabilities();
     this.capabilityEvents.emit(this.capabilities);
+  }
+
+  refreshCapabilities(): void {
+    this.emitCapabilities();
   }
 
   setNetworkState(state: NetworkState): void {

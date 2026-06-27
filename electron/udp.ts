@@ -35,9 +35,9 @@ const udpMessageCodec = t.intersection([
       t.literal("ack"),
       t.literal("off"),
     ]),
-    device: t.string,
   }),
   t.partial({
+    device: t.string,
     id: t.string,
     port: t.number,
     name: t.string,
@@ -56,7 +56,7 @@ export interface LocalSessionInfo {
   hostId: string; // hostname from offer's "id" field
   url: string;
   address: string;
-  port: number;
+  port?: number;
   detected: number; // timestamp
 }
 
@@ -95,7 +95,7 @@ export class UdpServer {
   // Whether we host a PPD session (answer scans with an offer + accept watchers).
   // Default true preserves the legacy "electron always hosts" behavior; the renderer
   // can toggle it via advertiseNearby (→ setHostingEnabled) for an explicit start/stop.
-  private hostingEnabled = true;
+  private ppdSessionEnabled = true;
 
   private constructor(private readonly webServer: WebServer) {
     this.socket = dgram.createSocket("udp4");
@@ -127,8 +127,11 @@ export class UdpServer {
       this.sendMessage(JSON.stringify(augmented), targetPort, rinfo.address);
     };
 
-    // Route through shared protocol handler (handles view, ack, display, off)
-    this.protocolHandler.handleMessage(message as import("./ppd-protocol").PpdMessage, sendResponse);
+    // URL-only offers omit device/port, so they are discovery data rather than
+    // full PPD protocol messages.
+    if (message.device) {
+      this.protocolHandler.handleMessage(message as import("./ppd-protocol").PpdMessage, sendResponse);
+    }
 
     // Transport-specific handling
     switch (message.op) {
@@ -146,20 +149,23 @@ export class UdpServer {
   }
 
   private handleOfferMessage(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
-    if (!message.device) return;
+    if (!message.device && !message.url) return;
+
+    const sessionId = message.device || `web_${message.url}`;
+    const offerPort = message.port ?? (message.device ? rinfo.port : undefined);
 
     const session: LocalSessionInfo = {
-      id: message.device,
-      name: message.name || message.device,
-      deviceId: message.device,
-      hostId: message.id || message.device, // Store hostname from offer's id field
-      url: message.url || `http://${rinfo.address}:${message.port || 80}/`,
+      id: sessionId,
+      name: message.name || message.device || message.url || sessionId,
+      deviceId: message.device || sessionId,
+      hostId: message.id || message.device || rinfo.address, // Store hostname from offer's id field
+      url: message.url || (message.device && offerPort != null ? `udp://${rinfo.address}:${offerPort}/${message.device}` : ""),
       address: rinfo.address,
-      port: message.port || rinfo.port,
+      port: offerPort,
       detected: Date.now(),
     };
 
-    this.discoveredSessions.set(message.device, session);
+    this.discoveredSessions.set(sessionId, session);
     for (const listener of this.sessionChangeListeners) {
       try {
         listener("discovered", session.id, session.name);
@@ -196,32 +202,34 @@ export class UdpServer {
    * watchers and halts display retransmits). Toggled from the renderer via the
    * advertiseNearby bridge so the new session UI's Start/Stop works on the desktop.
    */
-  public setHostingEnabled(enabled: boolean): void {
-    this.hostingEnabled = enabled;
+  public setPpdSessionEnabled(enabled: boolean): void {
+    this.ppdSessionEnabled = enabled;
     if (enabled) this.protocolHandler.startLeading();
     else this.protocolHandler.stopLeading();
   }
 
-  private handleScanRequest(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
-    // Suppressed while hosting is disabled (the renderer's Stop session) so we don't
-    // advertise an offer and remain discoverable.
-    if (!this.hostingEnabled) return;
+  public setHostingEnabled(enabled: boolean): void {
+    this.setPpdSessionEnabled(enabled);
+  }
 
+  private handleScanRequest(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
     // Get webserver settings to respond with
     const settings = this.webServer.getSettings();
+    const webUrl = this.webServer.isRunning()
+      ? `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`
+      : undefined;
+    if (!this.ppdSessionEnabled && !webUrl) return;
 
     const response: UdpMessage = {
       id: message.id,
       op: "offer",
-      port: this.getPort(),
       name: settings.currentLeader,
       // Only advertise an http url when the webserver is actually listening; with it
       // down this is a pure PPD (UDP) session — sending a dead url makes scanners try
       // to open a broken endpoint instead of following over UDP.
-      url: this.webServer.isRunning()
-        ? `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`
-        : undefined,
-      device: this.getHostId(),
+      url: webUrl,
+      port: this.ppdSessionEnabled ? this.getPort() : undefined,
+      device: this.ppdSessionEnabled ? this.getHostId() : undefined,
     };
 
     const targetPort = message.port || rinfo.port;

@@ -2108,6 +2108,10 @@ const AppContent: React.FC = () => {
     setShowSessionsForm(true);
   }, [exitWatchMode]);
 
+  const handleSwitchToMobileView = useCallback(() => {
+    window.dispatchEvent(new Event("pp-show-client-view"));
+  }, []);
+
   // Export database to file - export from IndexedDB storage
   const handleExportDatabase = useCallback(async () => {
     saveErrorNotifiedRef.current = false;
@@ -2384,6 +2388,7 @@ const AppContent: React.FC = () => {
                       onPrint={handlePrint}
                       onImport={handleImportClick}
                       onLaunchViewer={handleLaunchViewer}
+                      onSwitchToMobileView={handleSwitchToMobileView}
                       canLoadSong={canLoadSong}
                       canSaveSong={canSaveSong}
                     />
@@ -2486,6 +2491,7 @@ const AppContent: React.FC = () => {
                     onPrint={handlePrint}
                     onImport={handleImportClick}
                     onLaunchViewer={handleLaunchViewer}
+                    onSwitchToMobileView={handleSwitchToMobileView}
                     canLoadSong={canLoadSong}
                     canSaveSong={canSaveSong}
                   />

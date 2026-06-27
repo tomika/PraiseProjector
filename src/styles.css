@@ -89,6 +89,20 @@
   justify-content: center;
 }
 
+.btn-toolbar .toolbar-viewer-group {
+  justify-self: end;
+  display: inline-flex;
+  overflow: visible;
+}
+
+.btn-toolbar .toolbar-viewer-group .btn {
+  justify-self: auto;
+}
+
+.toolbar-viewer-dropdown-menu {
+  min-width: 12.5rem;
+}
+
 .user-login-input-wrapper {
   flex: 1 1 auto;
   min-width: 0;

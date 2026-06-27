@@ -48,12 +48,15 @@ import type {
   NetworkState,
   OnlineSessionEntry,
   PlaylistApi,
+  SessionFeatureKey,
   SessionApi,
   SongApi,
   SongEntry,
   Unsubscribe,
 } from "../ClientApi";
 import type { ClientApi } from "../ClientApi";
+import { readSessionToggleSettings, saveSessionFeatureSetting } from "../sessionFeatureSettings";
+import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -99,6 +102,8 @@ export class DirectClientApi implements ClientApi {
   // SELECTED leader's local schedule (parity with the desktop app's save), so it
   // is offered only while a leader is selected.
   private computeCapabilities(): ClientCapabilities {
+    const hasHostBridge = isHostDevicePpdAvailable();
+    const hasWebServerBackend = isWebServerRuntimeAvailable();
     return {
       // The desktop embed is always the leader; there is no follower/leader toggle.
       leaderModeAvailable: false,
@@ -107,16 +112,16 @@ export class DirectClientApi implements ClientApi {
       canLogin: false,
       canChangeLeader: false,
       canPersistPlaylist: !!this.getSelectedLeader(),
-      // The desktop renderer has the native host bridge, so it can advertise a local
-      // PPD session; online (cloud) hosting needs a login (the session is keyed by the
-      // leader id). Mirrors the legacy iconStartSession/iconStartOnlineSession gating.
-      canHostLocalSession: isHostDevicePpdAvailable(),
+      // Local PPD hosting needs the native host bridge; online (cloud) hosting is
+      // controlled by its feature setting.
+      canHostLocalSession: hasHostBridge && this.isPpdSessionEnabled(),
       canHostOnlineSession: this.isExternalWebDisplayEnabled(),
       // The embedded desktop view IS the editor's sibling face; switching back is
       // the home button's job, not a navigation to index.html.
       canOpenFullEditor: false,
       isPwa: false,
-      hasHostBridge: true,
+      hasHostBridge,
+      hasWebServerBackend,
     };
   }
 
@@ -140,13 +145,17 @@ export class DirectClientApi implements ClientApi {
    *  persisted in the pp-settings localStorage). Gates the embed's online-session
    *  hosting — start-online is offered only when external web display is enabled. */
   private isExternalWebDisplayEnabled(): boolean {
-    try {
-      const raw = window.localStorage?.getItem("pp-settings");
-      return raw ? !!(JSON.parse(raw) as { externalWebDisplayEnabled?: boolean }).externalWebDisplayEnabled : false;
-    } catch {
-      return false;
-    }
+    return readSessionToggleSettings().externalWebDisplayEnabled;
   }
+
+  private isPpdSessionEnabled(): boolean {
+    return readSessionToggleSettings().ppdSessionEnabled;
+  }
+
+  private setSessionFeatureEnabled = async (key: SessionFeatureKey, enabled: boolean): Promise<void> => {
+    saveSessionFeatureSetting(key, enabled);
+    this.refreshHostState();
+  };
 
   private refreshHostState = (): void => {
     this.capabilities = this.computeCapabilities();
@@ -375,6 +384,7 @@ export class DirectClientApi implements ClientApi {
         await stopHostDevicePpdHosting();
         this.setNetworkState({ status: "online" });
       },
+      setFeatureEnabled: this.setSessionFeatureEnabled,
       // Host an online (cloud) session: force-register the current projected display
       // under the authed leader (the /display_update upsert makes us discoverable now).
       createOnline: async () => {

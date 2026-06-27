@@ -17,7 +17,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { OnlineSessionEntry } from "../api/ClientApi";
+import type { OnlineSessionEntry, SessionFeatureKey } from "../api/ClientApi";
+import { readSessionToggleSettings, type SessionToggleSettings } from "../api/sessionFeatureSettings";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { SessionsForm, classifyOnlineSession, type SessionRow } from "../../shared/SessionsForm";
 import { icon } from "./assets";
@@ -30,12 +31,12 @@ export function SessionsDialog() {
   const store = useClientViewStore();
   const state = useClientViewState();
 
-  const [onlineStarting, setOnlineStarting] = useState(false);
   const [searched, setSearched] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [broadcastAddress, setBroadcastAddress] = useState(FALLBACK_BROADCAST);
   const [addressError, setAddressError] = useState(false);
   const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
+  const [sessionToggleSettings, setSessionToggleSettings] = useState<SessionToggleSettings>(() => readSessionToggleSettings());
   const mountedRef = useRef(true);
   // Host-supplied default broadcast address (to reset to) + the live value for the poller.
   const defaultAddressRef = useRef(FALLBACK_BROADCAST);
@@ -58,6 +59,18 @@ export function SessionsDialog() {
       active = false;
     };
   }, [store]);
+
+  useEffect(() => {
+    const refreshToggles = () => setSessionToggleSettings(readSessionToggleSettings());
+    window.addEventListener("pp-settings-changed", refreshToggles);
+    return () => window.removeEventListener("pp-settings-changed", refreshToggles);
+  }, []);
+
+  const setSessionToggle = async (key: SessionFeatureKey, value: boolean) => {
+    setSessionToggleSettings((current) => ({ ...current, [key]: value }));
+    await store.setSessionFeatureEnabled(key, value);
+    setSessionToggleSettings(readSessionToggleSettings());
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -89,15 +102,6 @@ export function SessionsDialog() {
     store.closeSessionsDialog();
   };
 
-  const handleStartOnline = async () => {
-    setOnlineStarting(true);
-    try {
-      await store.startOnlineSession();
-    } finally {
-      if (mountedRef.current) setOnlineStarting(false);
-    }
-  };
-
   const handleAddressChange = (value: string) => {
     setBroadcastAddress(value);
     const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -119,6 +123,8 @@ export function SessionsDialog() {
     name: session.name,
     kind: classifyOnlineSession(session.localUrl),
   }));
+  const hasWebServerBackend = caps.hasWebServerBackend;
+  const hasPpdBackend = caps.hasHostBridge;
 
   return (
     <SessionsForm
@@ -145,16 +151,43 @@ export function SessionsDialog() {
             }
           : undefined
       }
-      startOnline={
-        caps.canHostOnlineSession
-          ? {
-              label: "Start online session",
-              title: "Register this device as an online session others can follow",
-              starting: onlineStarting,
-              onStart: () => void handleStartOnline(),
-            }
-          : undefined
-      }
+      sessionToggles={[
+        {
+          id: "cloud-session",
+          title: "Cloud",
+          description: "Publish this session through the cloud.",
+          icon: icon("cloud-session.svg"),
+          showText: false,
+          isFeatureEnabled: sessionToggleSettings.externalWebDisplayEnabled,
+          onToggle: (nextFeatureEnabled) => void setSessionToggle("externalWebDisplayEnabled", nextFeatureEnabled),
+        },
+        {
+          id: "iweb-session",
+          title: "iWeb",
+          description: "Allow local browsers to connect.",
+          icon: icon("iweb-session.svg"),
+          showText: false,
+          isFeatureEnabled: hasWebServerBackend && sessionToggleSettings.iWebEnabled,
+          isControlDisabled: !hasWebServerBackend,
+          onToggle: (nextFeatureEnabled) => void setSessionToggle("iWebEnabled", nextFeatureEnabled),
+        },
+        {
+          id: "ppd-session",
+          title: "PPD",
+          description: "Allow nearby devices to follow.",
+          icon: icon("ppd-session.svg"),
+          showText: false,
+          isFeatureEnabled: hasPpdBackend && sessionToggleSettings.ppdSessionEnabled,
+          isControlDisabled: !hasPpdBackend,
+          onToggle: (nextFeatureEnabled) => {
+            void (async () => {
+              await setSessionToggle("ppdSessionEnabled", nextFeatureEnabled);
+              if (nextFeatureEnabled) await store.startLocalSession();
+              else await store.stopLocalSession();
+            })();
+          },
+        },
+      ]}
       closeLabel="Close"
       onClose={() => store.closeSessionsDialog()}
     />

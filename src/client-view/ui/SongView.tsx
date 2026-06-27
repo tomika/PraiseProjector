@@ -464,8 +464,9 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         </div>
       )}
       <div
-        className={`cv-navigation-actions${navigationActionsHidden || state.navigationMode === "playlist" ? " cv-navigation-actions-hidden" : ""}`}
+        className={`cv-navigation-actions${navigationActionsHidden || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}
       >
+        {" "}
         <button
           type="button"
           className={`cv-navigation-mode${canUsePlaylistNavigation ? "" : " cv-navigation-mode-disabled"}`}
@@ -481,12 +482,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         {canAddCurrentSongToPlaylist && (
           <button
             type="button"
-            className="cv-navigation-mode cv-navigation-add-current"
+            className="cv-navigation-mode cv-navigation-add-current cv-play-btn"
             title="Add current song to playlist and project it"
             aria-label="Add current song to playlist and project it"
             onClick={() => void store.addCurrentSongToPlaylistAndProject()}
           >
-            <img src={icon("play.svg")} alt="" />
+            ▶
           </button>
         )}
       </div>
