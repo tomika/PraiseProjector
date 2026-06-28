@@ -411,6 +411,9 @@ export class ClientViewStore {
         })
       );
     }
+
+    if (this.api.mode === "Client") this.setNavigationMode("playlist");
+
     // Re-apply the restored leader-mode choice to the backend so the effective
     // capabilities reflect it (the API gates it on the still-granted right, and
     // re-emits — picked up by the subscribeCapabilities wiring above).
@@ -422,16 +425,21 @@ export class ClientViewStore {
 
     // Highlight defaults OFF and is only ever turned on by the user (or by a
     // restored snapshot above) — never auto-enabled from a server grant. When a
-    // restored snapshot DID hold highlight control, Client mode must re-confirm
-    // the leader still grants it (verifyOnly → no prompt); if not, keep the
-    // highlight visible but relinquish control.
+    // restored snapshot DID hold highlight control, Client mode requires the
+    // leader switch to be on: with it off the restored control drops to a plain
+    // visible highlight; with it on, re-confirm the leader still grants control
+    // (verifyOnly → no prompt) and relinquish it if not.
     if (this.api.mode === "Client" && this.state.highlightControl) {
-      void this.api.auth
-        .requestHighlightPermission(true)
-        .then((granted) => {
-          if (!granted) this.set({ highlightControl: false });
-        })
-        .catch(() => this.set({ highlightControl: false }));
+      if (!this.state.leaderMode) {
+        this.set({ highlightControl: false });
+      } else {
+        void this.api.auth
+          .requestHighlightPermission(true)
+          .then((granted) => {
+            if (!granted) this.set({ highlightControl: false });
+          })
+          .catch(() => this.set({ highlightControl: false }));
+      }
     }
 
     // "auto" dark-mode follows the OS preference; recompute when it flips.
@@ -829,11 +837,13 @@ export class ClientViewStore {
    * permission round-trip needed.
    *
    * In Client mode the display belongs to the host's session, so turning highlight
-   * ON silently VERIFIES an existing permission grant (verifyOnly → no leader
-   * prompt) and, if already granted, auto-enters control — so a follower who was
-   * previously approved gets control back on a single click without the deliberate
-   * request gesture. Requesting a NEW grant (which prompts the leader) remains the
-   * separate toggleHighlightControl gesture.
+   * ON only enters control when the LEADER SWITCH is on: it then silently VERIFIES
+   * an existing permission grant (verifyOnly → no leader prompt) and, if already
+   * granted, auto-enters control — so a leader-mode follower who was previously
+   * approved gets control back on a single click. With leader mode off the click
+   * just makes the highlight visible locally and never controls the display.
+   * Requesting a NEW grant (which prompts the leader) remains the separate
+   * toggleHighlightControl gesture.
    */
   toggleHighlight(): void {
     if (this.state.highlightOn) {
@@ -845,7 +855,11 @@ export class ClientViewStore {
       return;
     }
     this.set({ highlightOn: true });
-    if (this.state.mode === "Client") {
+    // Auto-reclaiming control on a single click is gated on the leader switch: a
+    // follower who hasn't turned leader mode on just shows the highlight locally
+    // and never enters control, even if a prior server grant still stands. Taking
+    // control deliberately remains the long-press toggleHighlightControl gesture.
+    if (this.state.mode === "Client" && this.state.leaderMode) {
       void this.api.auth
         .requestHighlightPermission(true)
         .then((granted) => {
