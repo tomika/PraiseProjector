@@ -118,6 +118,12 @@ export class RestCore {
     if (config.baseUrl) cloudApi.setBaseUrl(config.baseUrl);
     this.clientId = this.resolveClientId();
     cloudApi.setClientId(this.clientId);
+    // Advertise a device name so the host/webserver registers us in its connected
+    // clients list (used by the settings page for leader-mode selection). The
+    // backend only calls registerClient when an X-PP-Device-Name header is present
+    // on /display_query (see webserver.ts registerAndidentifyClient); without it
+    // the list stays permanently empty. Mirrors the legacy client (praiseprojector.ts).
+    await this.advertiseDeviceName();
     if (isHostDevicePpdAvailable()) {
       try {
         await initHostDevicePpd();
@@ -145,6 +151,25 @@ export class RestCore {
   dispose(): void {
     this.stopFollow();
     void stopHostDevicePpdHosting();
+  }
+
+  /** Resolve a human-readable device name and pin it as a fixed cloudApi header so
+   *  the host registers this client. Prefers the native host name/model, then the
+   *  browser UA, mirroring the legacy client's logic (praiseprojector.ts). */
+  private async advertiseDeviceName(): Promise<void> {
+    let name = "";
+    try {
+      const hostDevice = window.hostDevice;
+      if (hostDevice?.getName) name = (await Promise.resolve(hostDevice.getName())) || "";
+      if (!name.trim() && hostDevice?.getModel) name = (await Promise.resolve(hostDevice.getModel())) || "";
+    } catch {
+      /* host bridge name lookup is best-effort */
+    }
+    if (!name.trim()) {
+      const nav = typeof navigator !== "undefined" ? navigator : undefined;
+      name = nav?.userAgent || nav?.appVersion || nav?.platform || "";
+    }
+    cloudApi.setFixedHeader("X-PP-Device-Name", name.trim() || "Unknown Device");
   }
 
   private resolveClientId(): string {
