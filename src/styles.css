@@ -92,11 +92,25 @@
 .btn-toolbar .toolbar-viewer-group {
   justify-self: end;
   display: inline-flex;
+  position: relative;
+  align-items: stretch;
   overflow: visible;
 }
 
 .btn-toolbar .toolbar-viewer-group .btn {
   justify-self: auto;
+}
+
+.btn-toolbar .toolbar-viewer-group > .btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.viewer-menu-container > .toolbar-viewer-menu-toggle {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  min-width: 0 !important;
 }
 
 .toolbar-viewer-dropdown-menu {
@@ -362,6 +376,23 @@
 [data-theme="dark"] .btn-light:active {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8) !important;
   outline: none !important;
+}
+
+/* Viewer menu container - used to position the dropdown menu relative to the previous button right side */
+.viewer-menu-container {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  display: inline-flex;
+  align-items: stretch;
+  overflow: visible;
+}
+
+.viewer-menu-container .toolbar-viewer-dropdown-menu {
+  top: 100%;
+  right: 0;
+  left: auto;
+  margin-top: 0;
 }
 
 /* Loading overlay for long operations */

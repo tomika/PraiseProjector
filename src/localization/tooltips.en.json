@@ -8,7 +8,7 @@
   "toolbar_import_folder": "Import multiple songs from folder",
   "toolbar_print": "Print actual song",
   "toolbar_settings": "Settings",
-  "toolbar_launch_browser": "Start client in default browser",
+  "toolbar_sessions_form": "Sessions and UI settings",
   "toolbar_logs": "Open logs",
 
   "playlist_load": "Load playlist from file",
