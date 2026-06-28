@@ -280,7 +280,28 @@ export class WebServer {
     this.app.get(/^\/webapp\/client-view\.html$/, serveClientView);
 
     // Serve the rest of the /webapp build (hashed bundles, images, soundfont, CSS).
-    this.app.use("/webapp", express.static(this.webClientDir, { maxAge: "6d", etag: true, lastModified: true }));
+    // Cache policy mirrors the cloud (Apache): content-hashed bundles under
+    // /webapp/assets/ are immutable and cache for a year (the hash in the filename
+    // is the cache key), while everything else — the service worker, manifests,
+    // precache.json, the HTML shells and the non-hashed lifted assets — must
+    // revalidate so a new build is picked up immediately. Offline is unaffected:
+    // the PWA serves from the service worker's Cache Storage, which is populated
+    // explicitly and is independent of these HTTP cache-control headers.
+    this.app.use(
+      "/webapp",
+      express.static(this.webClientDir, {
+        etag: true,
+        lastModified: true,
+        setHeaders: (res, filePath) => {
+          const rel = path.relative(this.webClientDir, filePath).replace(/\\/g, "/");
+          if (rel.startsWith("assets/")) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      })
+    );
 
     // Back-compat: the old served client lived at /client-view/.
     this.app.get(/^\/client-view\/?$/, (_req, res) => {

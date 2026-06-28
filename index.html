@@ -166,7 +166,11 @@
 
           navigator.serviceWorker.addEventListener('controllerchange', reloadForUpdate);
 
-          navigator.serviceWorker.register('/webapp/sw.js', { scope: '/webapp/' })
+          // updateViaCache:'none' makes the browser bypass its HTTP cache when
+          // (re)fetching sw.js during update checks, so a new deploy is detected
+          // even if sw.js is briefly HTTP-cached. Offline is unaffected: the
+          // worker still serves from Cache Storage, independent of HTTP caching.
+          navigator.serviceWorker.register('/webapp/sw.js', { scope: '/webapp/', updateViaCache: 'none' })
             .then(reg => {
               setupAutoUpdate(reg);
               console.log('SW registered:', reg.scope);

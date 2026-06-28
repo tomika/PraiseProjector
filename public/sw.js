@@ -152,10 +152,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For navigation requests (HTML pages) - network first, cache fallback
+  // For navigation requests (HTML pages) - network first, cache fallback.
+  // cache:'no-store' bypasses the browser HTTP cache so a stale HTTP-cached
+  // shell can never shadow a freshly deployed one. This is the ONLINE path; when
+  // offline the fetch rejects and we fall through to caches.match below, so this
+  // does not weaken offline behaviour.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then((response) => {
           // Cache the response
           const responseClone = response.clone();
