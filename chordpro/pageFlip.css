@@ -33,3 +33,12 @@
 .pp-flip-hide-scrollbar *::-webkit-scrollbar {
   display: none; /* Chromium/Electron, WebKit */
 }
+
+/* Active drags are tracked on window so the pointer may leave the song pane.
+   While that drag is in flight, suppress browser text selection outside the
+   original swipe area. */
+.pp-flip-selection-guard,
+.pp-flip-selection-guard * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}

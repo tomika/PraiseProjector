@@ -204,6 +204,7 @@ body,
   min-height: 0;
   overflow: hidden;
   background: var(--cv-song-bg);
+  touch-action: none;
   /* 3D perspective for the page-turn comes from .pp-flip-perspective (shared,
      in chordpro/pageFlip.css). overflow is hidden normally and toggled to
      visible during a flip (SongView.beginFlip) so the page can overlap the

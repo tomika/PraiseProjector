@@ -73,6 +73,7 @@ export class PageFlip {
    *  hide that page's (and its descendants') scrollbar for the flip. The rule
    *  lives once in the shared `chordpro/pageFlip.css`, imported by both hosts. */
   static readonly HIDE_SCROLLBAR_CLASS = "pp-flip-hide-scrollbar";
+  static readonly SELECTION_GUARD_CLASS = "pp-flip-selection-guard";
 
   // ── page-turn shadow tunables ──────────────────────────────────────────────
   // The shadow is its own element (not a box-shadow), so horizontal reach,

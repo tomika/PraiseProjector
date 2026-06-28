@@ -171,6 +171,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private resizeObserver: ResizeObserver | null = null;
   private resizeAnimationFrame: number | null = null;
   private swipePointerId: number | null = null;
+  private swipeSelectionGuardActive = false;
   private pinchState: { startDistance: number; lastRatio: number } | null = null;
   private swipeContainerRef: HTMLDivElement | null = null;
   // Three stacked pages mirroring praiseprojector.ts: prev/next are pre-rendered
@@ -299,6 +300,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.cancelScheduledRefresh();
     this.cleanupThemeObserver();
     this.cleanupFontSizeObserver();
+    this.stopSwipePointerTracking();
     this.flip.dispose();
     if (this.prevHost) this.getBoundChordProAPI(this.prevHost)?.dispose?.();
     if (this.nextHost) this.getBoundChordProAPI(this.nextHost)?.dispose?.();
@@ -474,10 +476,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.swipeContainerRef.removeEventListener("touchend", this.pinchTouchHandler, opts);
       this.swipeContainerRef.removeEventListener("touchcancel", this.pinchTouchHandler, opts);
       this.swipeContainerRef.onpointerdown = null;
-      this.swipeContainerRef.onpointermove = null;
-      this.swipeContainerRef.onpointerup = null;
-      this.swipeContainerRef.onpointercancel = null;
-      this.swipeContainerRef.onpointerleave = null;
+      window.removeEventListener("pointermove", this.handleSwipePointerMove);
+      window.removeEventListener("pointerup", this.handleSwipePointerEnd);
+      window.removeEventListener("pointercancel", this.handleSwipePointerCancel);
       this.swipeContainerRef.onmousedown = null;
       this.swipeContainerRef.onmousemove = null;
       this.swipeContainerRef.onmouseup = null;
@@ -541,20 +542,12 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       element.onpointerdown = (e) => {
         if (!e.isPrimary) return;
         this.swipePointerId = e.pointerId;
+        if (!this.isEditable) this.startSwipeSelectionGuard();
         this.flip.handlePointer("down", e);
+        window.addEventListener("pointermove", this.handleSwipePointerMove);
+        window.addEventListener("pointerup", this.handleSwipePointerEnd);
+        window.addEventListener("pointercancel", this.handleSwipePointerCancel);
       };
-      element.onpointermove = (e) => {
-        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
-        this.flip.handlePointer("move", e);
-      };
-      const endPointer = (e: PointerEvent) => {
-        if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
-        this.flip.handlePointer("up", e);
-        this.swipePointerId = null;
-      };
-      element.onpointerup = endPointer;
-      element.onpointercancel = endPointer;
-      element.onpointerleave = endPointer;
       element.onmousedown = null;
       element.onmousemove = null;
       element.onmouseup = null;
@@ -566,6 +559,53 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     element.onmouseup = (e) => this.flip.handlePointer("up", e);
     element.onmouseleave = (e) => this.flip.handlePointer("up", e);
   }
+
+  private stopSwipePointerTracking() {
+    window.removeEventListener("pointermove", this.handleSwipePointerMove);
+    window.removeEventListener("pointerup", this.handleSwipePointerEnd);
+    window.removeEventListener("pointercancel", this.handleSwipePointerCancel);
+    this.stopSwipeSelectionGuard();
+  }
+
+  private clearSelection() {
+    window.getSelection()?.removeAllRanges();
+  }
+
+  private startSwipeSelectionGuard() {
+    this.swipeSelectionGuardActive = true;
+    document.documentElement.classList.add(PageFlip.SELECTION_GUARD_CLASS);
+    this.clearSelection();
+  }
+
+  private stopSwipeSelectionGuard() {
+    if (!this.swipeSelectionGuardActive) return;
+    this.swipeSelectionGuardActive = false;
+    document.documentElement.classList.remove(PageFlip.SELECTION_GUARD_CLASS);
+    this.clearSelection();
+  }
+
+  private handleSwipePointerMove = (e: PointerEvent) => {
+    if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+    if (this.swipeSelectionGuardActive) {
+      e.preventDefault();
+      this.clearSelection();
+    }
+    this.flip.handlePointer("move", e);
+  };
+
+  private handleSwipePointerEnd = (e: PointerEvent) => {
+    if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+    this.swipePointerId = null;
+    this.stopSwipePointerTracking();
+    this.flip.handlePointer("up", e);
+  };
+
+  private handleSwipePointerCancel = (e: PointerEvent) => {
+    if (!e.isPrimary || this.swipePointerId !== e.pointerId) return;
+    this.swipePointerId = null;
+    this.stopSwipePointerTracking();
+    this.flip.cancel();
+  };
 
   // Render the prev/next songs into their own read-only editor instances behind
   // the current page so they are already visible during the flip.

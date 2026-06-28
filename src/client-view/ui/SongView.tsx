@@ -241,42 +241,52 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   // Pointer plumbing: forward swipe gestures to the shared controller. We do NOT
   // setPointerCapture — capturing on #swipe-handler would steal taps from the
   // editor canvas inside it and break the editor's lyrics-hit (highlight) handler.
-  // Events still reach us by bubbling from the canvas; pointerleave finalises a
-  // gesture that runs off the element (mirrors the desktop ChordProEditor).
+  // Instead, once a swipe starts anywhere in the pane, track that pointer on
+  // window so margins/overlays around the rendered ChordPro canvas keep swiping.
   useEffect(() => {
     const el = swipeRef.current;
     if (!el) return;
     let pointerId: number | null = null;
+    const clearSelection = () => window.getSelection()?.removeAllRanges();
+    const stopTracking = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      document.documentElement.classList.remove(PageFlip.SELECTION_GUARD_CLASS);
+      clearSelection();
+    };
     const down = (e: PointerEvent) => {
       if (!e.isPrimary) return;
       pointerId = e.pointerId;
+      document.documentElement.classList.add(PageFlip.SELECTION_GUARD_CLASS);
+      clearSelection();
       flipRef.current?.handlePointer("down", e);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", cancel);
     };
     const move = (e: PointerEvent) => {
       if (!e.isPrimary || pointerId !== e.pointerId) return;
+      e.preventDefault();
+      clearSelection();
       flipRef.current?.handlePointer("move", e);
     };
     const up = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       pointerId = null;
+      stopTracking();
       flipRef.current?.handlePointer("up", e);
     };
     const cancel = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       pointerId = null;
+      stopTracking();
       flipRef.current?.cancel();
     };
     el.addEventListener("pointerdown", down);
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", cancel);
-    el.addEventListener("pointerleave", up);
     return () => {
       el.removeEventListener("pointerdown", down);
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", cancel);
-      el.removeEventListener("pointerleave", up);
+      stopTracking();
     };
   }, []);
 
