@@ -2085,14 +2085,24 @@ const AppContent: React.FC = () => {
       if (!watchedDisplayRef.current) watchedDisplayRef.current = getEmptyDisplay();
       applyDisplay(display);
     };
-    const onWatchStop = () => exitWatchModeRef.current();
+    const onWatchStop = () => {
+      // The embed-follow path projects via applyDisplay without entering the formal
+      // watch-mode state machine (watchedSessionId stays null), so exitWatchMode's
+      // guarded song-clear is skipped. This event only fires when the embed stops
+      // following, so clear the followed projection here — otherwise the last remote
+      // song lingers on the projector after Stop.
+      setEditedSong(null);
+      setProjectedSong(null);
+      updateCurrentSongText("");
+      exitWatchModeRef.current();
+    };
     window.addEventListener("pp-cv-watch-display", onWatchDisplay);
     window.addEventListener("pp-cv-watch-stop", onWatchStop);
     return () => {
       window.removeEventListener("pp-cv-watch-display", onWatchDisplay);
       window.removeEventListener("pp-cv-watch-stop", onWatchStop);
     };
-  }, [applyDisplay]);
+  }, [applyDisplay, updateCurrentSongText]);
 
   // Enter session watching mode - matching C# ProjectorForm.EnterSessionWatchingMode
   // When watching a remote session, the playlist becomes read-only and song changes come from the remote session

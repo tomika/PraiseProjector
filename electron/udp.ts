@@ -127,8 +127,9 @@ export class UdpServer {
       this.sendMessage(JSON.stringify(augmented), targetPort, rinfo.address);
     };
 
-    // URL-only offers omit device/port, so they are discovery data rather than
-    // full PPD protocol messages.
+    // The protocol handler serves the leading/following ops (view/ack/display/off),
+    // which always carry a `device`. Only url-only discovery offers omit it — those
+    // are handled purely as discovery data in the switch below, not routed here.
     if (message.device) {
       this.protocolHandler.handleMessage(message as import("./ppd-protocol").PpdMessage, sendResponse);
     }
@@ -254,31 +255,22 @@ export class UdpServer {
     });
   }
 
+  // First non-internal IPv4 subnet broadcast address (the default scan target). The
+  // multi-NIC picker is sourced separately from the renderer via the
+  // hostdevice-get-network-interfaces IPC, so this only needs the primary address.
   public getBroadcastAddress(): string | null {
-    return this.getBroadcastAddresses()[0] ?? null;
-  }
-
-  /**
-   * Every non-internal IPv4 subnet broadcast address on this machine — one per
-   * active NIC. Powers the sessions form's scan-address picker so the user can
-   * target a specific subnet on a multi-homed host.
-   */
-  public getBroadcastAddresses(): string[] {
     const interfaces = networkInterfaces();
-    const addresses: string[] = [];
     for (const name of Object.keys(interfaces)) {
       for (const net of interfaces[name]!) {
         // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
         if (net.family === "IPv4" && !net.internal) {
           const ip = net.address.split(".").map(Number);
           const subnet = net.netmask.split(".").map(Number);
-          const broadcast = ip.map((val, i) => val | (subnet[i] ^ 255)).join(".");
-          if (!addresses.includes(broadcast)) addresses.push(broadcast);
+          return ip.map((val, i) => val | (subnet[i] ^ 255)).join(".");
         }
       }
     }
-    console.log("[hostdevice-get-broadcast-addresses] found", addresses.length, "broadcast addresses");
-    return addresses;
+    return null;
   }
 
   /**

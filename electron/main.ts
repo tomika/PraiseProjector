@@ -1964,8 +1964,6 @@ ipcMain.handle("hostdevice-get-network-interfaces", () => {
       if (isIPv4 && !net.internal) result.push({ name, address: net.address, netmask: net.netmask });
     }
   }
-  // TODO(scan-address-debug): remove once the picker is confirmed working.
-  console.log(`[ScanAddr] hostdevice-get-network-interfaces -> ${JSON.stringify(result)}`);
   return JSON.stringify(result);
 });
 

@@ -455,33 +455,18 @@ export type ScanAddressOption = { value: string; label: string };
  * getNetworkInterfaces() — Electron's os.networkInterfaces() or Android's
  * NetworkInterface enumeration. Empty in a plain browser (no bridge).
  */
-/** Diagnostics that surface in the in-app log viewer (renderer console is NOT
- *  intercepted; the host bridge's debugLog forwards to the main-process file log).
- *  TODO(scan-address-debug): remove once the picker is confirmed working. */
-const netLog = (message: string): void => {
-  try {
-    void getHostDevice()?.debugLog?.("ScanAddr", message);
-  } catch {
-    /* ignore */
-  }
-  console.info("ScanAddr", message);
-};
-
 export const getNetworkInterfaces = async (): Promise<NetworkInterfaceDetail[]> => {
   const hostDevice = getHostDevice();
-  netLog(`getNetworkInterfaces: hostDevice=${!!hostDevice} method=${typeof hostDevice?.getNetworkInterfaces}`);
   if (!hostDevice?.getNetworkInterfaces) return [];
   try {
     const raw = await resolvePromise(hostDevice.getNetworkInterfaces());
-    netLog(`getNetworkInterfaces: raw=${typeof raw === "string" ? raw : JSON.stringify(raw)}`);
     const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (i): i is NetworkInterfaceDetail =>
         !!i && typeof (i as NetworkInterfaceDetail).address === "string" && typeof (i as NetworkInterfaceDetail).netmask === "string"
     );
-  } catch (ex) {
-    netLog(`getNetworkInterfaces: error ${ex instanceof Error ? ex.message : String(ex)}`);
+  } catch {
     return [];
   }
 };
@@ -519,7 +504,6 @@ function ifaceRank(iface: NetworkInterfaceDetail): number {
  * then default to 255.255.255.255).
  */
 export const getLocalBroadcastAddresses = async (): Promise<{ options: ScanAddressOption[]; default?: string }> => {
-  netLog("getLocalBroadcastAddresses: called");
   // Real LAN adapters first, virtual/host-only/link-local last, so the default
   // (options[0]) targets a usable subnet — all stay selectable in the combo. Each
   // option is labelled with its interface name so the user can tell NICs apart.
@@ -545,7 +529,6 @@ export const getLocalBroadcastAddresses = async (): Promise<{ options: ScanAddre
   // Drop blanks / the global broadcast and de-duplicate by value (preserve order).
   const seen = new Set<string>();
   options = options.filter((o) => o.value && o.value !== "0.0.0.0" && !seen.has(o.value) && seen.add(o.value));
-  netLog(`getLocalBroadcastAddresses: interfaces=${interfaces.length} options=${JSON.stringify(options)}`);
   return { options, default: options[0]?.value };
 };
 

@@ -371,6 +371,54 @@ export class WebServer {
     return !!req.header(WebServer.CONTROL_INTENT_HEADER);
   }
 
+  /**
+   * Shared leader-authorization gate for the control endpoints (display_update,
+   * song_update, store_list). Requires the control-intent header, then resolves the
+   * caller to LOCAL / LEADER / GUEST: same-host → LOCAL; open leader mode → LEADER;
+   * otherwise a token fast-path, then a MAC slow-path that issues a fresh token.
+   * On rejection it sends the 403 and returns false; on success returns true.
+   * Assumes the caller has already applied setCommonHeaders(res).
+   */
+  private async authorizeControlRequest(req: express.Request, res: express.Response): Promise<boolean> {
+    if (!this.hasValidControlIntent(req)) {
+      console.warn(`[WebServer] Rejected ${req.path}: missing ${WebServer.CONTROL_INTENT_HEADER}`);
+      res.status(403).send("Missing control intent header");
+      return false;
+    }
+
+    const ip = this.normalizeIp(req.socket.remoteAddress || "");
+    let clientType: "GUEST" | "LEADER" | "LOCAL";
+
+    if (req.socket.remoteAddress === req.socket.localAddress) {
+      clientType = "LOCAL";
+    } else if (this.settings.allClientsCanUseLeaderMode) {
+      clientType = "LEADER";
+    } else {
+      const intentValue = req.header(WebServer.CONTROL_INTENT_HEADER) ?? "";
+      // Fast path: valid token with matching IP
+      if (intentValue !== WebServer.CONTROL_INTENT_VALUE && this.checkLeaderToken(intentValue, ip)) {
+        clientType = "LEADER";
+      } else {
+        // Slow path: MAC fallback (covers server restart / stale token)
+        const mac = ip ? await this.resolveMacAddressForIp(ip) : "";
+        const identity: ClientIdentity = { ip, mac, id: mac || ip };
+        clientType = this.getClientType(req.socket, identity);
+        if (clientType !== "GUEST") {
+          // Issue fresh token so client self-corrects without another fallback
+          res.set(WebServer.LEADER_TOKEN_HEADER, this.issueLeaderToken(ip));
+        }
+      }
+    }
+
+    if (clientType === "GUEST") {
+      console.warn(`[WebServer] Rejected ${req.path}: guest client (${ip})`);
+      res.status(403).send("Leader access required");
+      return false;
+    }
+
+    return true;
+  }
+
   private issueLeaderToken(ip: string): string {
     for (const [token, tokenIp] of this.leaderTokens) {
       if (tokenIp === ip) {
@@ -862,41 +910,7 @@ export class WebServer {
       console.debug(`[WebServer (${req.socket.remoteAddress}:${req.socket.remotePort})] ${req.method} ${req.path} received`, req.body);
       this.setCommonHeaders(res);
 
-      if (!this.hasValidControlIntent(req)) {
-        console.warn(`[WebServer] Rejected ${req.path}: missing ${WebServer.CONTROL_INTENT_HEADER}`);
-        res.status(403).send("Missing control intent header");
-        return;
-      }
-
-      const ip = this.normalizeIp(req.socket.remoteAddress || "");
-      let clientType: "GUEST" | "LEADER" | "LOCAL";
-
-      if (req.socket.remoteAddress === req.socket.localAddress) {
-        clientType = "LOCAL";
-      } else if (this.settings.allClientsCanUseLeaderMode) {
-        clientType = "LEADER";
-      } else {
-        const intentValue = req.header(WebServer.CONTROL_INTENT_HEADER) ?? "";
-        // Fast path: valid token with matching IP
-        if (intentValue !== WebServer.CONTROL_INTENT_VALUE && this.checkLeaderToken(intentValue, ip)) {
-          clientType = "LEADER";
-        } else {
-          // Slow path: MAC fallback (covers server restart / stale token)
-          const mac = ip ? await this.resolveMacAddressForIp(ip) : "";
-          const identity: ClientIdentity = { ip, mac, id: mac || ip };
-          clientType = this.getClientType(req.socket, identity);
-          if (clientType !== "GUEST") {
-            // Issue fresh token so client self-corrects without another fallback
-            res.set(WebServer.LEADER_TOKEN_HEADER, this.issueLeaderToken(ip));
-          }
-        }
-      }
-
-      if (clientType === "GUEST") {
-        console.warn(`[WebServer] Rejected ${req.path}: guest client (${ip})`);
-        res.status(403).send("Leader access required");
-        return;
-      }
+      if (!(await this.authorizeControlRequest(req, res))) return;
 
       const command = req.path.includes("/display_update") ? "display_update" : "song_update";
       const params = (req.body ?? {}) as Record<string, unknown>;
@@ -1043,41 +1057,7 @@ export class WebServer {
       switch (path) {
         case "store_list":
           this.setCommonHeaders(res);
-          if (!this.hasValidControlIntent(req)) {
-            console.warn(`[WebServer] Rejected ${req.path}: missing ${WebServer.CONTROL_INTENT_HEADER}`);
-            res.status(403).send("Missing control intent header");
-            break;
-          }
-
-          {
-            const ip = this.normalizeIp(req.socket.remoteAddress || "");
-            let clientType: "GUEST" | "LEADER" | "LOCAL";
-
-            if (req.socket.remoteAddress === req.socket.localAddress) {
-              clientType = "LOCAL";
-            } else if (this.settings.allClientsCanUseLeaderMode) {
-              clientType = "LEADER";
-            } else {
-              const intentValue = req.header(WebServer.CONTROL_INTENT_HEADER) ?? "";
-              if (intentValue !== WebServer.CONTROL_INTENT_VALUE && this.checkLeaderToken(intentValue, ip)) {
-                clientType = "LEADER";
-              } else {
-                const mac = ip ? await this.resolveMacAddressForIp(ip) : "";
-                const identity: ClientIdentity = { ip, mac, id: mac || ip };
-                clientType = this.getClientType(req.socket, identity);
-                if (clientType !== "GUEST") {
-                  res.set(WebServer.LEADER_TOKEN_HEADER, this.issueLeaderToken(ip));
-                }
-              }
-            }
-
-            if (clientType === "GUEST") {
-              console.warn(`[WebServer] Rejected ${req.path}: guest client (${ip})`);
-              res.status(403).send("Leader access required");
-              break;
-            }
-          }
-
+          if (!(await this.authorizeControlRequest(req, res))) break;
           await proxyToFrontend(req, res);
           break;
         case "song":
