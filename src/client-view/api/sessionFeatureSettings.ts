@@ -1,5 +1,6 @@
 import type { Settings } from "../../types";
-import { getWebServerInterface, toWebServerConfig } from "../../services/webServerBridge";
+import { readPersistedSettings, writePersistedSettings } from "../../services/settingsStore";
+import { syncSettingsToBackend } from "../../services/settingsSync";
 import type { SessionFeatureKey } from "./ClientApi";
 
 export type SessionToggleSettings = Pick<Settings, SessionFeatureKey>;
@@ -11,36 +12,22 @@ export const DEFAULT_SESSION_TOGGLE_SETTINGS: SessionToggleSettings = {
 };
 
 export function readSessionToggleSettings(): SessionToggleSettings {
-  try {
-    const raw = window.localStorage?.getItem("pp-settings");
-    const parsed = raw ? (JSON.parse(raw) as Partial<SessionToggleSettings>) : {};
-    return {
-      externalWebDisplayEnabled: parsed.externalWebDisplayEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.externalWebDisplayEnabled,
-      iWebEnabled: parsed.iWebEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.iWebEnabled,
-      ppdSessionEnabled: parsed.ppdSessionEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.ppdSessionEnabled,
-    };
-  } catch {
-    return DEFAULT_SESSION_TOGGLE_SETTINGS;
-  }
+  const parsed = readPersistedSettings();
+  return {
+    externalWebDisplayEnabled: parsed.externalWebDisplayEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.externalWebDisplayEnabled,
+    iWebEnabled: parsed.iWebEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.iWebEnabled,
+    ppdSessionEnabled: parsed.ppdSessionEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.ppdSessionEnabled,
+  };
 }
 
+/**
+ * Persist one session feature toggle and push it to the backend. Goes through the
+ * shared settings store (single writer of `pp-settings`, so the full view's
+ * `SettingsContext` won't clobber it) and the shared, capability-detected sync
+ * (so the toggle reaches the Electron udp host / webserver, not just localStorage).
+ */
 export function saveSessionFeatureSetting(key: SessionFeatureKey, value: boolean): SessionToggleSettings {
-  let nextSettings: Partial<Settings> = {};
-  try {
-    const raw = window.localStorage?.getItem("pp-settings");
-    nextSettings = raw ? (JSON.parse(raw) as Partial<Settings>) : {};
-  } catch {
-    nextSettings = {};
-  }
-  nextSettings = { ...nextSettings, [key]: value };
-  try {
-    window.localStorage?.setItem("pp-settings", JSON.stringify(nextSettings));
-  } catch {
-    /* storage is optional in embedded webviews */
-  }
-  window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-  if (nextSettings.webServerPort != null && nextSettings.webServerPath != null && nextSettings.longPollTimeout != null) {
-    void getWebServerInterface()?.sync({ kind: "config", config: toWebServerConfig(nextSettings as Settings) });
-  }
+  const next = writePersistedSettings({ [key]: value });
+  syncSettingsToBackend(next as Settings);
   return readSessionToggleSettings();
 }

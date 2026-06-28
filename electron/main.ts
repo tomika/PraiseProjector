@@ -1473,9 +1473,12 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
   if (getWebServerInstance()) {
     applyWebServerConfig({
-      // The Electron renderer syncs settings through THIS path (window.electronAPI
-      // .syncSettings), not webserver-sync-config — so the on/off toggle must be
-      // carried here too, else disabling the webserver never stops it.
+      // Both Electron renderers (the full view AND the embedded client view) sync
+      // settings through THIS path — syncSettingsToBackend() detects window.electronAPI
+      // .syncSettings and routes here, NOT through webserver-sync-config. So the
+      // webserver on/off toggle must be carried here too (else disabling it never
+      // stops the server), and the host-only effects below (PPD gate, powerSaveBlocker,
+      // update channel, HW-accel, net-display re-encode) live on this path alone.
       webServerEnabled: settings.iWebEnabled,
       webServerPort: settings.webServerPort,
       webServerPath: settings.webServerPath,

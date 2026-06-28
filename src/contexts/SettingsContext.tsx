@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Settings } from "../types";
 import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
-import { getWebServerInterface, toWebServerConfig } from "../services/webServerBridge";
+import { syncSettingsToBackend } from "../services/settingsSync";
+import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -173,13 +174,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [t]);
 
-  const syncSettingsToBackend = useCallback((nextSettings: Settings) => {
-    const webServer = getWebServerInterface();
-    if (webServer) {
-      void webServer.sync({ kind: "config", config: toWebServerConfig(nextSettings) });
-    }
-  }, []);
-
   useEffect(() => {
     if (initializedRef.current) {
       return;
@@ -211,7 +205,35 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setSettings(defaultSettings);
         setInitialSettings(defaultSettings);
       });
-  }, [createDefaultSettings, syncSettingsToBackend]);
+  }, [createDefaultSettings]);
+
+  // Stay in sync when the session feature toggles are written from OUTSIDE this
+  // context — the client view's saveSessionFeatureSetting (which has no
+  // SettingsContext when booted standalone) writes pp-settings directly. Re-read
+  // only those keys so an in-progress SettingsForm draft of other fields is kept,
+  // and so a later full-view save doesn't clobber a client-view toggle.
+  useEffect(() => {
+    const onExternalChange = () => {
+      const persisted = readPersistedSettings();
+      const mergeToggles = (prev: Settings | null): Settings | null => {
+        if (!prev) return prev;
+        let changed = false;
+        const nextSettings = { ...prev };
+        for (const key of SESSION_TOGGLE_KEYS) {
+          const value = persisted[key];
+          if (typeof value === "boolean" && value !== prev[key]) {
+            nextSettings[key] = value;
+            changed = true;
+          }
+        }
+        return changed ? nextSettings : prev;
+      };
+      setSettings(mergeToggles);
+      setInitialSettings(mergeToggles);
+    };
+    window.addEventListener("pp-settings-changed", onExternalChange);
+    return () => window.removeEventListener("pp-settings-changed", onExternalChange);
+  }, []);
 
   // Listen for theme and language changes from other contexts and update our settings
   useEffect(() => {
@@ -273,30 +295,27 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   // Update setting with immediate auto-save (for Format panel and similar UI controls)
-  const updateSettingWithAutoSave = useCallback(
-    <K extends keyof Settings>(key: K, value: Settings[K]) => {
-      setSettings((prev) => {
-        if (!prev) return null;
-        const newSettings = { ...prev, [key]: value };
-        // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
-        syncSettingsToBackend(newSettings);
-        // Auto-save settings immediately (matching C# behavior for format panel)
-        storeApi
-          .saveSettings(newSettings)
-          .then(() => {
-            // Keep cancel baseline aligned with the latest persisted settings.
-            setInitialSettings(newSettings);
-            // Dispatch custom event to notify components
-            window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-          })
-          .catch((error) => {
-            console.error("General", `Failed to auto-save setting '${key}'`, error);
-          });
-        return newSettings;
-      });
-    },
-    [syncSettingsToBackend]
-  );
+  const updateSettingWithAutoSave = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
+    setSettings((prev) => {
+      if (!prev) return null;
+      const newSettings = { ...prev, [key]: value };
+      // Sync immediately so main process reacts to channel changes without waiting for disk persistence.
+      syncSettingsToBackend(newSettings);
+      // Auto-save settings immediately (matching C# behavior for format panel)
+      storeApi
+        .saveSettings(newSettings)
+        .then(() => {
+          // Keep cancel baseline aligned with the latest persisted settings.
+          setInitialSettings(newSettings);
+          // Dispatch custom event to notify components
+          window.dispatchEvent(new CustomEvent("pp-settings-changed"));
+        })
+        .catch((error) => {
+          console.error("General", `Failed to auto-save setting '${key}'`, error);
+        });
+      return newSettings;
+    });
+  }, []);
 
   return (
     <SettingsContext.Provider
