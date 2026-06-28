@@ -58,6 +58,34 @@ const compatConfigs = compat
     files: ["**/*.{ts,tsx}"],
   }));
 
+// --- Architectural import boundaries ---------------------------------------
+// Servability boundary: code that must run unchanged whether it is bundled into
+// the Electron app, served by the embedded webserver, or deployed standalone
+// (cloud/PWA) may reach the backend ONLY through the ClientApi port. It must
+// never pull in Electron-only or in-process modules. This applies to the
+// client-view UI/controller AND to src/shared (which the client-view consumes).
+// Adapters under client-view/api/** are exempt — they are the one place backend
+// wiring is allowed.
+const servabilityRestrictedGroups = [
+  "**/db-common/**",
+  "**/services/hostDevicePpd*",
+  "**/services/webServerBridge*",
+  "**/state/CurrentSongStore*",
+  "**/api/rest/**",
+  "**/api/direct/**",
+  "electron",
+  "electron-*",
+  "**/electron/**",
+];
+
+// Frontend-isolation boundary: src/shared is a leaf consumed by BOTH frontends,
+// so it must not import "upward" into either the full operator view
+// (src/components, src/App) or the client view (src/client-view) — otherwise one
+// frontend transitively drags in the other and import cycles become possible.
+// Anything frontend-specific is passed into shared components via props.
+const fullViewRestrictedGroups = ["**/components/**", "**/App"];
+const clientViewRestrictedGroups = ["**/client-view/**"];
+
 module.exports = [
   {
     ignores: [
@@ -75,11 +103,9 @@ module.exports = [
   },
   ...compatConfigs,
   {
-    // Servability boundary: the client-view UI and controller layers must reach
-    // the backend ONLY through the ClientApi port, never via Electron-only or
-    // in-process modules. This keeps the same bundle runnable when served by the
-    // Electron webserver or deployed standalone. Adapters under api/rest are
-    // exempt (they are the place backend wiring is allowed).
+    // Client-view UI/controller: servable, and must not reach directly into
+    // full-view components — anything shared with the full app belongs in
+    // src/shared and is imported from there.
     files: ["src/client-view/ui/**/*.{ts,tsx}", "src/client-view/controller/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -87,18 +113,35 @@ module.exports = [
         {
           patterns: [
             {
-              group: [
-                "**/db-common/**",
-                "**/services/hostDevicePpd*",
-                "**/services/webServerBridge*",
-                "**/state/CurrentSongStore*",
-                "**/api/rest/**",
-                "**/api/direct/**",
-                "electron",
-                "electron-*",
-                "**/electron/**",
-              ],
+              group: servabilityRestrictedGroups,
               message: "Client-view UI/controller must reach the backend only through ClientApi (keep the bundle servable by the webserver).",
+            },
+            {
+              group: fullViewRestrictedGroups,
+              message: "Client-view must not import full-view components directly. Extract the shared piece into src/shared and import it from there.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Shared components are consumed by BOTH the full operator view and the
+    // servable client-view. They must stay servable (same backend restriction)
+    // and frontend-agnostic (no importing either frontend's tree).
+    files: ["src/shared/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: servabilityRestrictedGroups,
+              message: "src/shared is consumed by the servable client-view — reach the backend only via props/ports, never Electron or in-process modules.",
+            },
+            {
+              group: [...fullViewRestrictedGroups, ...clientViewRestrictedGroups],
+              message: "src/shared must stay frontend-agnostic: do not import from the full view (src/components, src/App) or the client view (src/client-view). Pass frontend-specific bits in via props.",
             },
           ],
         },
