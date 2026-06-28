@@ -420,17 +420,18 @@ export class ClientViewStore {
     // the mode directly, bypassing setListMode's lazy load).
     if (this.state.listMode === "leaderlists") void this.loadLeaderPlaylists();
 
-    // In Client mode, silently verify whether highlight control permission was
-    // already granted in a previous interaction (verifyOnly=true → no leader
-    // prompt). Applies to both the Electron-webserver follower and the cloud
-    // follower; the server matches on this device's clientId.
-    if (this.api.mode === "Client") {
+    // Highlight defaults OFF and is only ever turned on by the user (or by a
+    // restored snapshot above) — never auto-enabled from a server grant. When a
+    // restored snapshot DID hold highlight control, Client mode must re-confirm
+    // the leader still grants it (verifyOnly → no prompt); if not, keep the
+    // highlight visible but relinquish control.
+    if (this.api.mode === "Client" && this.state.highlightControl) {
       void this.api.auth
         .requestHighlightPermission(true)
         .then((granted) => {
-          if (granted) this.set({ highlightOn: true, highlightControl: true });
+          if (!granted) this.set({ highlightControl: false });
         })
-        .catch(() => undefined);
+        .catch(() => this.set({ highlightControl: false }));
     }
 
     // "auto" dark-mode follows the OS preference; recompute when it flips.
@@ -557,15 +558,13 @@ export class ClientViewStore {
     }
     if (typeof persisted.showInstructions === "boolean") patch.showInstructions = persisted.showInstructions;
     if (typeof persisted.highlightOpacity === "number") patch.highlightOpacity = persisted.highlightOpacity;
-    // Highlight on/control are permission-sensitive in Client mode: a remote
-    // follower must be re-granted control by the leader, which init's verifyOnly
-    // probe already handles — so only restore them where control is local.
-    if (this.state.mode !== "Client") {
-      if (typeof persisted.highlightOn === "boolean") patch.highlightOn = persisted.highlightOn;
-      if (typeof persisted.highlightControl === "boolean") {
-        // Keep the invariant: control implies a visible highlight.
-        patch.highlightControl = persisted.highlightControl && (patch.highlightOn ?? this.state.highlightOn);
-      }
+    // Highlight visibility is a pure local display preference — restore it in
+    // every mode. Control implies a visible highlight (keep the invariant). In
+    // Client mode control is permission-sensitive, so a restored `highlightControl`
+    // is re-verified against the leader's grant by init's probe below.
+    if (typeof persisted.highlightOn === "boolean") patch.highlightOn = persisted.highlightOn;
+    if (typeof persisted.highlightControl === "boolean") {
+      patch.highlightControl = persisted.highlightControl && (patch.highlightOn ?? this.state.highlightOn);
     }
     this.set(patch);
 
