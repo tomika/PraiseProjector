@@ -50,5 +50,7 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
     </ClientViewProvider>
   );
 
+  window.hostDevice?.pageLoadedSuccessfully?.();
+
   return store;
 }
