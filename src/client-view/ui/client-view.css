@@ -1528,6 +1528,7 @@ body,
 /* Confirmation dialog (legacy `confirm`) — animated-SVG message + ok/cancel icon
    buttons. Narrower than the form dialogs and centred. */
 .cv-confirm-dialog {
+  position: relative;
   width: min(86vw, 320px);
   align-items: center;
 }
@@ -1571,7 +1572,7 @@ body,
 
 .cv-confirm-dialog .cv-dialog-actions {
   width: 100%;
-  justify-content: space-evenly;
+  justify-content: center;
   gap: 0;
 }
 
@@ -1595,11 +1596,30 @@ body,
   height: 100%;
 }
 
+/* OK button: neutral border (from .cv-confirm-btn) and slightly larger, centred
+   in the action row. */
 .cv-confirm-ok {
+  width: 64px;
+  height: 64px;
+}
+
+/* Cancel button tucked into the dialog's upper-right corner, made smaller. */
+.cv-confirm-cancel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+}
+
+/* The login dialog reuses the round .cv-confirm-btn shape but keeps the original
+   coloured borders and in-row layout — it does NOT take the confirm dialog's
+   borderless / repositioned treatment above. */
+.cv-login-ok {
   border-color: #2f7bff;
 }
 
-.cv-confirm-cancel {
+.cv-login-cancel {
   border-color: #c0392b;
 }
 

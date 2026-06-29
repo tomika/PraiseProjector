@@ -138,22 +138,22 @@ export function LoginDialog() {
 
         <div className="cv-dialog-actions">
           <button
-            type="button"
-            className="cv-confirm-btn cv-confirm-cancel"
-            title="Cancel"
-            aria-label="Cancel"
-            onClick={() => store.closeLoginDialog()}
-          >
-            <img className="btnImg" src={icon("cancel.svg")} alt="" />
-          </button>
-          <button
             type="submit"
-            className="cv-confirm-btn cv-confirm-ok"
+            className="cv-confirm-btn cv-login-ok"
             title="Sign in"
             aria-label="Sign in"
             disabled={pending || !!authResultAnim || !user.trim() || !password}
           >
             <img className="btnImg" src={icon("ok.svg")} alt="" />
+          </button>
+          <button
+            type="button"
+            className="cv-confirm-btn cv-login-cancel"
+            title="Cancel"
+            aria-label="Cancel"
+            onClick={() => store.closeLoginDialog()}
+          >
+            <img className="btnImg" src={icon("cancel.svg")} alt="" />
           </button>
         </div>
       </form>
