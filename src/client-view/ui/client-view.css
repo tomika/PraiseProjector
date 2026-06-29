@@ -25,6 +25,73 @@
   --cv-song-fg: #1a1a1a;
   --cv-toolbar-bg: #efefef;
   --cv-field-bg: #1c1c1c;
+  /* Panel/dialog tokens — DARK defaults. These are overridden with light values
+     for (a) the landscape options panel and (b) the cv-dialog shells when the view
+     is NOT in dark mode (see "Light panel/dialog theme" block lower down). The
+     portrait options overlay deliberately stays dark, so its light override is
+     scoped to landscape only. */
+  --cv-field-fg: #eee;
+  --cv-panel-solid: #1d1d1d; /* opaque dialog / popover background */
+  --cv-panel-btn-bg: rgba(255, 255, 255, 0.08);
+  --cv-panel-hover: rgba(255, 255, 255, 0.13);
+  --cv-panel-stripe: rgba(255, 255, 255, 0.095);
+  --cv-row-border: rgba(255, 255, 255, 0.07);
+  --cv-scroll-thumb: #4d4d4d;
+  --cv-scroll-track: #1a1a1a;
+  --cv-select-bg: #222;
+  --cv-select-fg: #eee;
+  --cv-checked-fg: #fff; /* "on" toggle glyph colour */
+  --cv-icon-invert: invert(1); /* dark SVG icons → white on a dark panel */
+  --cv-badge-invert: invert(0); /* found-marker badges are LIGHT svgs → invert on a light panel */
+}
+
+/* Light panel/dialog theme ------------------------------------------------- */
+/* Applied when #mainView is NOT in dark mode. Two scopes:
+   - the options panel, but ONLY in landscape (portrait keeps the dark overlay);
+   - every cv-dialog shell (Login / About / Confirm), in any orientation.
+   Each scope just re-points the panel tokens above to light values; the rules
+   that consume those tokens are unchanged. Popovers anchored inside the options
+   panel (more-menu, zoom panel) inherit the panel's tokens, so they follow it:
+   light in landscape light mode, dark in portrait / dark mode. */
+@media (orientation: landscape) {
+  #mainView:not(.dark) #options {
+    --cv-panel-bg: #efefef;
+    --cv-panel-fg: #1f1f1f;
+    --cv-panel-border: rgba(0, 0, 0, 0.18);
+    --cv-field-bg: #ffffff;
+    --cv-field-fg: #1a1a1a;
+    --cv-panel-solid: #f4f4f4;
+    --cv-panel-btn-bg: rgba(0, 0, 0, 0.06);
+    --cv-panel-hover: rgba(0, 0, 0, 0.08);
+    --cv-panel-stripe: rgba(0, 0, 0, 0.05);
+    --cv-row-border: rgba(0, 0, 0, 0.09);
+    --cv-scroll-thumb: #b5b5b5;
+    --cv-scroll-track: #e2e2e2;
+    --cv-select-bg: #ffffff;
+    --cv-select-fg: #1a1a1a;
+    --cv-checked-fg: #0b5fd6;
+    --cv-icon-invert: invert(0);
+    --cv-badge-invert: invert(1);
+  }
+}
+
+#mainView:not(.dark) .cv-dialog {
+  --cv-panel-bg: #efefef;
+  --cv-panel-fg: #1f1f1f;
+  --cv-panel-border: rgba(0, 0, 0, 0.18);
+  --cv-field-bg: #ffffff;
+  --cv-field-fg: #1a1a1a;
+  --cv-panel-solid: #f4f4f4;
+  --cv-panel-btn-bg: rgba(0, 0, 0, 0.06);
+  --cv-panel-hover: rgba(0, 0, 0, 0.08);
+  --cv-panel-stripe: rgba(0, 0, 0, 0.05);
+  --cv-row-border: rgba(0, 0, 0, 0.09);
+  --cv-scroll-thumb: #b5b5b5;
+  --cv-scroll-track: #e2e2e2;
+  --cv-select-bg: #ffffff;
+  --cv-select-fg: #1a1a1a;
+  --cv-checked-fg: #0b5fd6;
+  --cv-icon-invert: invert(0);
 }
 
 html,
@@ -438,9 +505,10 @@ body,
   filter: grayscale(1);
 }
 
-/* Icons rendered on the dark panel are dark SVGs — invert them to read light. */
+/* Icons rendered on the panel are dark SVGs — inverted to read light on the dark
+   panel, left as-is (invert(0)) when the panel is light (landscape light mode). */
 #options .btnImg {
-  filter: invert(1);
+  filter: var(--cv-icon-invert);
 }
 
 /* Leader-mode switch (legacy chkAdmin). leader.svg is a dark monochrome glyph, so
@@ -456,7 +524,7 @@ body,
 }
 #options .cv-leaderbtn.cv-toolbtn-on .btnImg {
   opacity: 1;
-  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
 /* Zoom toggle now uses a button (not hidden checkbox), but keeps the same
@@ -469,7 +537,7 @@ body,
 }
 #options .cv-zoom-btn.cv-zoom-btn-on .btnImg {
   opacity: 1;
-  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
 /* Follower view: the song browser is replaced by a single "open net display"
@@ -490,13 +558,13 @@ body,
   padding: 18px 26px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--cv-panel-btn-bg);
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
 .cv-netdisplay-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--cv-panel-hover);
 }
 .cv-netdisplay-icon {
   width: 72px;
@@ -535,7 +603,8 @@ body,
   padding: 4px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 8px;
-  background: #1d1d1d;
+  background: var(--cv-panel-solid);
+  color: var(--cv-panel-fg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
@@ -554,7 +623,7 @@ body,
 }
 
 .cv-more-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-panel-hover);
 }
 
 .cv-more-item .cv-opt-icon {
@@ -635,7 +704,7 @@ body,
 
 #options .cv-opt input:checked + span {
   opacity: 1;
-  color: #fff;
+  color: var(--cv-checked-fg);
   text-shadow:
     0 0 0.1em #fff,
     0 0 0.3em #4af,
@@ -645,7 +714,7 @@ body,
 
 #options .cv-opt input:checked + img {
   opacity: 1;
-  filter: invert(1) drop-shadow(0 0 0.16em #6bf);
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.16em #6bf);
 }
 
 .cv-iconbtn {
@@ -655,7 +724,7 @@ body,
   padding: 3px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-panel-btn-bg);
   cursor: pointer;
   transition:
     border-color 140ms ease,
@@ -686,7 +755,7 @@ body,
   padding: 2px 6px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-panel-btn-bg);
 }
 
 #mainView.cv-bordered #mainToolbar .btnDiv:not(#netstatus) {
@@ -702,8 +771,8 @@ body,
 .cv-select {
   font-size: 16px;
   padding: 2px 4px;
-  background: #222;
-  color: #eee;
+  background: var(--cv-select-bg);
+  color: var(--cv-select-fg);
   border: 1px solid var(--cv-panel-border);
   border-radius: 3px;
 }
@@ -729,7 +798,7 @@ body,
   font-size: 15px;
   padding: 4px 6px;
   background: var(--cv-field-bg);
-  color: #eee;
+  color: var(--cv-field-fg);
   border: 1px solid var(--cv-panel-border);
   border-radius: 4px;
 }
@@ -762,17 +831,17 @@ body,
   overflow-x: hidden;
   display: block;
   color: var(--cv-panel-fg);
-  scrollbar-color: #4d4d4d #1a1a1a;
+  scrollbar-color: var(--cv-scroll-thumb) var(--cv-scroll-track);
 }
 
 #list::-webkit-scrollbar {
   width: 0.7em;
 }
 #list::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: var(--cv-scroll-track);
 }
 #list::-webkit-scrollbar-thumb {
-  background: #4d4d4d;
+  background: var(--cv-scroll-thumb);
   border-radius: 4px;
 }
 
@@ -781,11 +850,11 @@ body,
 }
 
 #list tbody tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.095);
+  background: var(--cv-panel-stripe);
 }
 
 #list tr:hover td {
-  background: rgba(255, 255, 255, 0.13);
+  background: var(--cv-panel-hover);
 }
 
 #list tr.selected td {
@@ -799,7 +868,7 @@ body,
 
 #list td {
   padding: 5px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--cv-row-border);
   font-size: 17px;
   white-space: nowrap;
   overflow: hidden;
@@ -897,8 +966,8 @@ body,
   padding: 14px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 8px;
-  background: #1d1d1d;
-  color: #e9e9e9;
+  background: var(--cv-panel-solid);
+  color: var(--cv-panel-fg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
 }
 
@@ -935,7 +1004,7 @@ body,
 
 .cv-zoom-toggle input:checked ~ .cv-zoom-label {
   opacity: 1;
-  color: #fff;
+  color: var(--cv-checked-fg);
   text-decoration: line-through;
   text-shadow:
     0 0 0.1em #fff,
@@ -960,7 +1029,7 @@ body,
   justify-content: center;
   min-height: 36px;
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--cv-panel-border);
   border-radius: 6px;
   background: transparent;
   color: inherit;
@@ -1015,8 +1084,8 @@ body,
 .cv-date-select {
   font-size: 15px;
   padding: 4px 6px;
-  background: #222;
-  color: #eee;
+  background: var(--cv-select-bg);
+  color: var(--cv-select-fg);
   border: 1px solid var(--cv-panel-border);
   border-radius: 4px;
   min-width: 0;
@@ -1049,7 +1118,7 @@ body,
   line-height: 1;
   border: 1px solid var(--cv-panel-border);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-panel-btn-bg);
   cursor: pointer;
   color: var(--cv-panel-fg);
 }
@@ -1115,7 +1184,7 @@ body,
   height: 24px;
   border-radius: 50%;
   border: 1px solid var(--cv-panel-border);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-panel-btn-bg);
   color: var(--cv-panel-fg);
   font-size: 17px;
   line-height: 1;
@@ -1135,6 +1204,9 @@ body,
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+  /* The badge SVG is light-on-transparent (built for the dark panel); invert it
+     on a light panel so it stays visible. */
+  filter: var(--cv-badge-invert);
 }
 
 /* Play (▶) — projects the song (and adds it to the working list when editable). */
@@ -1229,7 +1301,7 @@ body,
   width: 1em;
   height: 1em;
   opacity: 0.9;
-  filter: invert(1);
+  filter: var(--cv-icon-invert);
 }
 
 #list.cv-playlist td.transposeColumn > select,
@@ -1280,7 +1352,7 @@ body,
 #trashCan img {
   width: 32px;
   height: 32px;
-  filter: invert(1);
+  filter: var(--cv-icon-invert);
   opacity: 0.85;
   pointer-events: none;
 }
@@ -1321,8 +1393,10 @@ body,
 
 /* Login + sessions dialogs ------------------------------------------------- */
 
-/* Shared dialog shell, layered over the .cv-modal-backdrop. The panel is dark,
-   so its icons (dark SVGs) are inverted to read light, like the options panel. */
+/* Shared dialog shell, layered over the .cv-modal-backdrop. Follows the view's
+   light/dark mode (see the "Light panel/dialog theme" token block near the top):
+   dark icons are inverted to read light on the dark panel, left as-is on a light
+   one. Mirrors the shared cv dialogs (Sessions / Schedule / Instructions). */
 .cv-dialog {
   z-index: 1051;
   display: flex;
@@ -1332,13 +1406,13 @@ body,
   max-height: 86vh;
   padding: 18px;
   border-radius: 10px;
-  background: #1d1d1d;
+  background: var(--cv-panel-solid);
   color: var(--cv-panel-fg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 .cv-dialog .btnImg {
-  filter: invert(1);
+  filter: var(--cv-icon-invert);
 }
 
 .cv-dialog-title {
@@ -1380,7 +1454,7 @@ body,
   border: 1px solid var(--cv-panel-border);
   border-radius: 6px;
   background: var(--cv-field-bg);
-  color: #eee;
+  color: var(--cv-field-fg);
   font-size: 16px;
 }
 
@@ -1415,7 +1489,7 @@ body,
 
 .cv-store-session-on .btnImg {
   opacity: 1;
-  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
 .cv-auth-result-overlay {
@@ -1452,18 +1526,36 @@ body,
   height: min(48vmin, 150px);
   /* Colour painted into the embedded SVG canvas so it matches the box behind it
      instead of Electron's opaque white base (see makeEmbeddedSvgTransparent). */
-  --cv-anim-canvas: #2d2d2d;
-  background: transparent;
+  --cv-anim-canvas: #d2d2d2;
+  background: #d2d2d2;
   /* Hidden until onLoad has fired and the canvas has been painted, so the
      animation fades in cleanly instead of flashing a white first frame;
      .cv-auth-result-anim-ready reveals it. */
   opacity: 0;
   transition: opacity 0.2s ease;
   pointer-events: none;
+  filter: invert(1);
 }
 
 .cv-auth-result-anim-ready {
   opacity: 1;
+}
+
+/* Light mode: the access-granted/denied animations are pure white-on-black line
+   art (no colour), so they vanish on a light surface. Inverting the whole <object>
+   flips its dark canvas to light and the white art to dark, making it read on the
+   light dialog — and the canvas then matches the dialog, so the dark framing box
+   is dropped. (The confirm animations are multi-colour and instead keep a dark
+   inset card — see .cv-confirm-anim above.) */
+#mainView:not(.dark) .cv-auth-result-box {
+  background: #f3f3f3;
+  box-shadow: none;
+}
+
+#mainView:not(.dark) .cv-auth-result-anim {
+  --cv-anim-canvas: #f3f3f3;
+  background: #f3f3f3;
+  filter: invert(0);
 }
 
 .cv-auth-result-fallback {
@@ -1551,7 +1643,7 @@ body,
   /* Canvas colour = the dialog panel (#1d1d1d), so the SVG surround blends with
      the panel instead of Electron's opaque white base (see assets.ts). */
   --cv-anim-canvas: #1d1d1d;
-  background: transparent;
+  background: #1d1d1d;
   /* Hidden until onLoad has painted the canvas, then faded in, so the white
      first frame Electron paints under the SVG never flashes; the
      .cv-confirm-anim-ready class reveals it. */
@@ -1562,6 +1654,16 @@ body,
 
 .cv-confirm-anim-ready {
   opacity: 1;
+}
+
+/* The confirm animations are multi-colour line art (reds/greys) built for a dark
+   popup, so they can't be inverted onto a light surface without wrong-colouring.
+   On a light dialog, present the dark canvas as an intentional rounded inset card
+   instead of a bare black rectangle. */
+#mainView:not(.dark) .cv-confirm-anim {
+  overflow: hidden;
+  --cv-anim-canvas: #f3f3f3;
+  background: #f3f3f3;
 }
 
 .cv-confirm-anim-fallback {
@@ -1587,7 +1689,7 @@ body,
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--cv-panel-border);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--cv-panel-btn-bg);
   cursor: pointer;
 }
 
@@ -1627,8 +1729,8 @@ body,
   overflow-y: auto;
   font-size: 14px;
   line-height: 1.45;
-  /* The dialog shell is always dark, so keep its scrollbar dark too. */
-  scrollbar-color: #4d4d4d #1a1a1a;
+  /* Scrollbar follows the dialog theme (dark in dark mode, light otherwise). */
+  scrollbar-color: var(--cv-scroll-thumb) var(--cv-scroll-track);
 }
 
 .cv-about-body::-webkit-scrollbar {
@@ -1636,11 +1738,11 @@ body,
 }
 
 .cv-about-body::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: var(--cv-scroll-track);
 }
 
 .cv-about-body::-webkit-scrollbar-thumb {
-  background: #4d4d4d;
+  background: var(--cv-scroll-thumb);
   border-radius: 4px;
 }
 
@@ -1702,7 +1804,7 @@ body,
 }
 
 #mainView.dark #mainToolbar .btnDiv.cv-toolbtn-on .btnImg {
-  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
 #mainToolbar .btnDiv.cv-toolbtn-on #capoValue,
