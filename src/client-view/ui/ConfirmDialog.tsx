@@ -9,14 +9,18 @@
  * OK resolves true; Cancel, a backdrop click, or Esc resolve false (Enter = OK).
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { icon } from "./assets";
+import { icon, makeEmbeddedSvgTransparent } from "./assets";
 
 export function ConfirmDialog() {
   const store = useClientViewStore();
   const state = useClientViewState();
   const anim = state.confirmAnim;
+  // Held false until the embedded SVG has loaded AND its canvas has been painted,
+  // so the animation fades in cleanly instead of flashing a white first frame
+  // (Electron paints embedded <object> documents on a white base — see assets.ts).
+  const [animReady, setAnimReady] = useState(false);
 
   // Keyboard affordances: Esc cancels, Enter confirms (matching common dialogs).
   useEffect(() => {
@@ -33,6 +37,9 @@ export function ConfirmDialog() {
     return () => document.removeEventListener("keydown", onKey);
   }, [store]);
 
+  // Re-arm the fade whenever a different animation is shown.
+  useEffect(() => setAnimReady(false), [anim]);
+
   if (!anim) return null;
 
   return (
@@ -44,7 +51,17 @@ export function ConfirmDialog() {
               only the first frame (legacy used <object> for exactly this reason).
               Designed for a dark popup, so it is NOT inverted (no btnImg class).
               The inner <img> is the static fallback if the object can't render. */}
-          <object className="cv-confirm-anim" type="image/svg+xml" data={icon(`${anim}.svg`)} aria-label="Confirmation">
+          <object
+            key={anim}
+            className={`cv-confirm-anim${animReady ? " cv-confirm-anim-ready" : ""}`}
+            type="image/svg+xml"
+            data={icon(`${anim}.svg`)}
+            aria-label="Confirmation"
+            onLoad={(e) => {
+              makeEmbeddedSvgTransparent(e.currentTarget);
+              setAnimReady(true);
+            }}
+          >
             <img className="cv-confirm-anim-fallback" src={icon(`${anim}.svg`)} alt="" />
           </object>
         </div>

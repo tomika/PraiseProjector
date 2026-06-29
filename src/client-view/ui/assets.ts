@@ -32,3 +32,31 @@ const assetBase = override ?? "/app";
 export function icon(name: string): string {
   return `${assetBase}/images/${name}`;
 }
+
+/** SVGator animations are embedded as their OWN document (via <object>) so their
+ *  scripts can run. For an SVG document the root <svg> background propagates to the
+ *  viewport canvas, which lets us colour that canvas to match the panel behind it.
+ *
+ *  A plain browser leaves the embedded canvas transparent, but Electron's renderer
+ *  paints embedded <object> documents on an opaque WHITE base — and an SVG root set
+ *  to `transparent` merely reveals that white. So instead of relying on
+ *  transparency we paint the canvas an OPAQUE colour that matches the surrounding
+ *  panel (read from the `--cv-anim-canvas` custom property on the <object>); an
+ *  opaque fill covers the white base in every runtime. Falls back to transparent
+ *  if no colour is supplied.
+ *
+ *  NB: do NOT set `color-scheme: dark` on the <object> — in Chromium that makes the
+ *  embedded canvas paint an opaque (white) base instead of staying transparent. */
+export function makeEmbeddedSvgTransparent(object: HTMLObjectElement): void {
+  const bg = getComputedStyle(object).getPropertyValue("--cv-anim-canvas").trim() || "transparent";
+  object.style.background = bg;
+  try {
+    const root = object.contentDocument?.documentElement;
+    if (!root) return;
+    root.style.setProperty("background-color", bg, "important");
+    object.contentDocument?.body?.style.setProperty("background-color", bg, "important");
+  } catch {
+    /* Cross-origin or not-yet-ready object documents are non-fatal; the
+       element-level background set above still applies. */
+  }
+}

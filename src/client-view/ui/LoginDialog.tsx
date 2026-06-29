@@ -13,6 +13,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { icon, makeEmbeddedSvgTransparent } from "./assets";
+
+type AuthResultAnim = "access-granted" | "access-denied";
 
 export function LoginDialog() {
   const store = useClientViewStore();
@@ -22,28 +25,51 @@ export function LoginDialog() {
   // Default "keep me signed in" on for native hosts (Android), off in a plain
   // browser — matches the legacy `keepLoggedIn.checked = !!hostDevice`.
   const [keep, setKeep] = useState(state.capabilities.hasHostBridge);
-  const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authResultAnim, setAuthResultAnim] = useState<AuthResultAnim | null>(null);
+  // Held false until the embedded SVG has loaded AND been made transparent, so the
+  // animation is revealed only once its canvas can't flash white for a frame.
+  const [animReady, setAnimReady] = useState(false);
   const userRef = useRef<HTMLInputElement>(null);
+  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     userRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
+    };
+  }, []);
+
+  const showAuthResult = (anim: AuthResultAnim, duration: number, after?: () => void): void => {
+    if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
+    setAnimReady(false);
+    setAuthResultAnim(anim);
+    resultTimerRef.current = setTimeout(() => {
+      setAuthResultAnim(null);
+      resultTimerRef.current = null;
+      after?.();
+    }, duration);
+  };
+
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     const username = user.trim();
-    if (!username || !password || pending) return;
+    if (!username || !password || pending || authResultAnim) return;
     setPending(true);
     setError(null);
     try {
       await store.login(username, password, keep);
       setPassword("");
-      store.closeLoginDialog();
+      showAuthResult("access-granted", 1000, () => store.closeLoginDialog());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      const message = err instanceof Error ? err.message : "Sign in failed";
+      setError(message);
       setPassword("");
+      showAuthResult("access-denied", 1500);
     } finally {
       setPending(false);
     }
@@ -52,45 +78,82 @@ export function LoginDialog() {
   return (
     <div className="cv-modal-backdrop" onClick={() => store.closeLoginDialog()}>
       <form className="cv-dialog cv-login-dialog" onClick={(e) => e.stopPropagation()} onSubmit={(e) => void submit(e)}>
-        <h2 className="cv-dialog-title">Sign in</h2>
+        <div className="cv-login-row">
+          <label className="cv-login-icon" htmlFor="cv-login-user" title="Username">
+            <img className="btnImg" src={icon("user.svg")} alt="" />
+          </label>
+          <input
+            id="cv-login-user"
+            ref={userRef}
+            type="text"
+            autoComplete="username"
+            aria-label="Username"
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+          />
+        </div>
 
-        <label className="cv-field">
-          <span>Username</span>
-          <input ref={userRef} type="text" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} />
-        </label>
+        <div className="cv-login-row">
+          <label className="cv-login-icon" htmlFor="cv-login-password" title="Password">
+            <img className="btnImg" src={icon("keys.svg")} alt="" />
+          </label>
+          <input
+            id="cv-login-password"
+            type="password"
+            autoComplete="current-password"
+            aria-label="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <label className={`cv-login-icon cv-store-session${keep ? " cv-store-session-on" : ""}`} title="Keep me signed in">
+            <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
+            <img className="btnImg" src={icon("save.svg")} alt="" />
+          </label>
+        </div>
 
-        <label className="cv-field">
-          <span>Password</span>
-          <div className="cv-field-input">
-            <input
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button type="button" className="cv-reveal" onClick={() => setShowPassword((v) => !v)}>
-              {showPassword ? "Hide" : "Show"}
-            </button>
+        {authResultAnim && (
+          <div
+            className="cv-auth-result-overlay"
+            role="status"
+            aria-label={error ?? (authResultAnim === "access-granted" ? "Sign in accepted" : "Sign in failed")}
+          >
+            {/* Rounded dark-gray box behind the animation (legacy reused the
+                #confirm-dialog panel, #3333 + rounded + shadow, over the form). */}
+            <div className="cv-auth-result-box">
+              <object
+                key={authResultAnim}
+                className={`cv-auth-result-anim${animReady ? " cv-auth-result-anim-ready" : ""}`}
+                type="image/svg+xml"
+                data={icon(`${authResultAnim}.svg`)}
+                onLoad={(e) => {
+                  makeEmbeddedSvgTransparent(e.currentTarget);
+                  setAnimReady(true);
+                }}
+              >
+                <img className="cv-auth-result-fallback" src={icon(`${authResultAnim}.svg`)} alt="" />
+              </object>
+            </div>
           </div>
-        </label>
-
-        <label className="cv-check">
-          <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
-          <span>Keep me signed in</span>
-        </label>
-
-        {error && (
-          <p className="cv-dialog-error" role="alert">
-            {error}
-          </p>
         )}
 
         <div className="cv-dialog-actions">
-          <button type="button" className="cv-dialog-cancel" onClick={() => store.closeLoginDialog()}>
-            Cancel
+          <button
+            type="button"
+            className="cv-confirm-btn cv-confirm-cancel"
+            title="Cancel"
+            aria-label="Cancel"
+            onClick={() => store.closeLoginDialog()}
+          >
+            <img className="btnImg" src={icon("cancel.svg")} alt="" />
           </button>
-          <button type="submit" className="cv-dialog-ok" disabled={pending || !user.trim() || !password}>
-            {pending ? "Signing in…" : "Sign in"}
+          <button
+            type="submit"
+            className="cv-confirm-btn cv-confirm-ok"
+            title="Sign in"
+            aria-label="Sign in"
+            disabled={pending || !!authResultAnim || !user.trim() || !password}
+          >
+            <img className="btnImg" src={icon("ok.svg")} alt="" />
           </button>
         </div>
       </form>

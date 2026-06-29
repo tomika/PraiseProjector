@@ -1359,72 +1359,118 @@ body,
   cursor: default;
 }
 
-/* Labelled text fields (login). */
-.cv-field {
+.cv-login-dialog {
+  position: relative;
+  width: min(92vw, 360px);
+  gap: 10px;
+}
+
+.cv-login-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 15px;
-}
-
-.cv-field > span {
-  opacity: 0.8;
-}
-
-.cv-field input[type="text"],
-.cv-field input[type="password"] {
-  width: 100%;
-  font-size: 16px;
-  padding: 8px 10px;
-  background: var(--cv-field-bg);
-  color: #eee;
-  border: 1px solid var(--cv-panel-border);
-  border-radius: 6px;
-}
-
-.cv-field-input {
-  display: flex;
-  gap: 6px;
-}
-
-.cv-field-input input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.cv-reveal {
-  flex: none;
-  padding: 0 10px;
-  border: 1px solid var(--cv-panel-border);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--cv-panel-fg);
-  cursor: pointer;
-}
-
-/* Plain visible checkbox (the .cv-opt glow pattern is scoped to #options). */
-.cv-check {
-  display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
-  cursor: pointer;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
-.cv-check input {
-  width: 18px;
-  height: 18px;
-}
-
-.cv-dialog-error {
-  margin: 0;
-  padding: 8px 10px;
+.cv-login-row input[type="text"],
+.cv-login-row input[type="password"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--cv-panel-border);
   border-radius: 6px;
-  background: rgba(192, 57, 43, 0.2);
-  color: #ff9b8f;
-  font-size: 14px;
+  background: var(--cv-field-bg);
+  color: #eee;
+  font-size: 16px;
+}
+
+.cv-login-icon {
+  flex: 0 0 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cv-login-icon .btnImg {
+  width: 32px;
+  height: 32px;
+}
+
+.cv-store-session {
+  flex-basis: 42px;
+}
+
+.cv-store-session input {
+  display: none;
+}
+
+.cv-store-session .btnImg {
+  opacity: 0.45;
+}
+
+.cv-store-session-on .btnImg {
+  opacity: 1;
+  filter: invert(1) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
+}
+
+.cv-auth-result-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: rgba(51, 51, 51, 0.2);
+  pointer-events: none;
+}
+
+/* Rounded dark-gray panel sitting behind the auth animation, mirroring the
+   legacy look (the old client reused the #confirm-dialog box: rounded corners,
+   dark-gray fill, padding, drop shadow) instead of only dimming the form. */
+.cv-auth-result-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Snug padding so the box hugs the animation rather than framing it. */
+  padding: 8px;
+  border-radius: 14px;
+  /* Opaque so the animation's canvas (painted this same colour) blends seamlessly
+     — see --cv-anim-canvas on .cv-auth-result-anim. */
+  background: #2d2d2d;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.cv-auth-result-anim {
+  display: block;
+  width: min(48vmin, 150px);
+  height: min(48vmin, 150px);
+  /* Colour painted into the embedded SVG canvas so it matches the box behind it
+     instead of Electron's opaque white base (see makeEmbeddedSvgTransparent). */
+  --cv-anim-canvas: #2d2d2d;
+  background: transparent;
+  /* Hidden until onLoad has fired and the canvas has been painted, so the
+     animation fades in cleanly instead of flashing a white first frame;
+     .cv-auth-result-anim-ready reveals it. */
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.cv-auth-result-anim-ready {
+  opacity: 1;
+}
+
+.cv-auth-result-fallback {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  filter: none;
 }
 
 .cv-dialog-actions {
@@ -1432,6 +1478,14 @@ body,
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+
+.cv-login-dialog .cv-dialog-actions {
+  width: 100%;
+  justify-content: space-evenly;
+  gap: 0;
+  padding-top: 4px;
+  margin-top: 0;
 }
 
 .cv-dialog-ok,
@@ -1461,6 +1515,11 @@ body,
   color: var(--cv-panel-fg);
 }
 
+.cv-login-dialog .cv-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* About dialog. */
 .cv-about-dialog {
   width: min(92vw, 460px);
@@ -1488,17 +1547,32 @@ body,
   width: min(56vmin, 200px);
   height: min(56vmin, 200px);
   max-height: 48vh;
+  /* Canvas colour = the dialog panel (#1d1d1d), so the SVG surround blends with
+     the panel instead of Electron's opaque white base (see assets.ts). */
+  --cv-anim-canvas: #1d1d1d;
+  background: transparent;
+  /* Hidden until onLoad has painted the canvas, then faded in, so the white
+     first frame Electron paints under the SVG never flashes; the
+     .cv-confirm-anim-ready class reveals it. */
+  opacity: 0;
+  transition: opacity 0.2s ease;
   pointer-events: none;
+}
+
+.cv-confirm-anim-ready {
+  opacity: 1;
 }
 
 .cv-confirm-anim-fallback {
   width: 100%;
   height: 100%;
+  background: transparent;
 }
 
 .cv-confirm-dialog .cv-dialog-actions {
-  justify-content: center;
-  gap: 28px;
+  width: 100%;
+  justify-content: space-evenly;
+  gap: 0;
 }
 
 /* Round icon buttons carrying ok.svg / cancel.svg (the .cv-dialog .btnImg rule
