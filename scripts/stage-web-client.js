@@ -21,6 +21,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist", "web");
@@ -70,6 +71,31 @@ function listWebappPaths(dir) {
   return out;
 }
 
+function patchServiceWorkerVersion(paths) {
+  const swPath = path.join(distDir, "sw.js");
+  if (!fs.existsSync(swPath)) return;
+
+  const hash = crypto.createHash("sha256");
+  for (const urlPath of paths) {
+    if (urlPath === "/webapp/sw.js") continue;
+    const rel = urlPath.slice("/webapp/".length);
+    hash.update(urlPath);
+    hash.update("\0");
+    hash.update(fs.readFileSync(path.join(distDir, rel)));
+    hash.update("\0");
+  }
+
+  const buildId = `${require("../package.json").version}-${hash.digest("hex").slice(0, 8)}`;
+  const content = fs.readFileSync(swPath, "utf8");
+  const patched = content.replace(/const CACHE_VERSION = '[^']*'/, `const CACHE_VERSION = '${buildId}'`);
+  if (patched === content) {
+    console.warn("[stage-web-client] CACHE_VERSION pattern not found in dist/web/sw.js");
+    return;
+  }
+  fs.writeFileSync(swPath, patched, "utf8");
+  console.log(`[stage-web-client] patched sw.js CACHE_VERSION → ${buildId}`);
+}
+
 function main() {
   if (!fs.existsSync(distDir)) {
     console.error(`[stage-web-client] build output not found: ${path.relative(projectRoot, distDir)}`);
@@ -90,6 +116,7 @@ function main() {
     .filter((p) => !p.endsWith(".map") && p !== "/webapp/precache.json")
     .sort();
   fs.writeFileSync(precacheFile, JSON.stringify(all, null, 2), "utf8");
+  patchServiceWorkerVersion([...all, "/webapp/precache.json"].sort());
   console.log(`[stage-web-client] staged legacy assets and wrote ${all.length} precache entries → dist/web/precache.json`);
 }
 

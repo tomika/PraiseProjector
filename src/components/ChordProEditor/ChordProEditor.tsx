@@ -228,7 +228,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
   componentDidMount() {
     const baseUrl = import.meta.env.BASE_URL || "/";
-    const soundfontUrl = `${baseUrl}app/soundfont/`;
+    const soundfontUrl = `${baseUrl}soundfont/`;
     setMidiSoundfontUrl(soundfontUrl);
 
     this.loadSong();
