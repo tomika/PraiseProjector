@@ -39,6 +39,7 @@ const assets = [
   "/app/images/found_title.svg",
   "/app/images/found_title_words.svg",
   "/app/images/fullscreen.svg",
+  "/app/images/full-ui.svg",
   "/app/images/gear.svg",
   "/app/images/guitarchord.svg",
   "/app/images/hand.svg",

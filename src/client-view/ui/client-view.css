@@ -244,6 +244,7 @@ body,
 .cv-page.cv-scroll {
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable; /* Safari doesn't support this yet, so we use a ::-webkit-scrollbar instead. */
 }
 
 #swipe-handler .cv-empty-state {
@@ -529,7 +530,6 @@ body,
   top: calc(100% + 4px);
   right: 0;
   z-index: 200;
-  min-width: 160px;
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -1509,7 +1509,7 @@ body,
   justify-content: center;
   width: 54px;
   height: 54px;
-  padding: 6px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--cv-panel-border);
   background: rgba(255, 255, 255, 0.06);
@@ -1517,8 +1517,8 @@ body,
 }
 
 .cv-confirm-btn .btnImg {
-  width: 34px;
-  height: 34px;
+  width: 100%;
+  height: 100%;
 }
 
 .cv-confirm-ok {

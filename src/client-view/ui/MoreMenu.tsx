@@ -48,7 +48,6 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   // Save acts on the live working playlist; greyed out while it is empty.
   // Clear list lives in the playlist search row.
   const emptyList = state.playlist.length === 0;
-  const watching = state.network.status === "watching";
   const items: MenuItem[] = [
     {
       id: "sync",
@@ -59,25 +58,13 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     },
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).
-    { id: "signin", label: "Sign in", image: "user.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },
+    { id: "signin", label: "Sign in", image: "enter.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },
     {
       id: "signout",
       label: state.leader ? `Sign out (${state.leader.name})` : "Sign out",
       image: "exit.svg",
       show: caps.canLogin && state.authed,
       run: () => void store.logout(),
-    },
-    // Host a session (start/stop) — direct quick actions, mirroring the legacy
-    // more-panel play / play-online / stop icons. Online (play-online) is offered when
-    // online hosting is enabled (Settings.externalWebDisplayEnabled in the embed);
-    // otherwise a local PPD session (play.svg) — mutually exclusive, like the legacy
-    // iconStartSession vs iconStartOnlineSession.
-    {
-      id: "stopFollowing",
-      label: "Stop following",
-      image: "stop.svg",
-      show: watching && state.mode !== "Client",
-      run: () => void store.stopWatching(),
     },
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
@@ -92,8 +79,8 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     },
     {
       id: "home",
-      label: "Home",
-      image: "home.svg",
+      label: "Switch UI",
+      image: "full-ui.svg",
       show: Boolean(onHome) || caps.canOpenFullEditor,
       run: () => {
         if (onHome) onHome();
@@ -127,9 +114,16 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       {open && (
         <div className="cv-more-menu" role="menu">
           {visible.map((item) => (
-            <button key={item.id} type="button" role="menuitem" className="cv-more-item" disabled={item.disabled} onClick={() => choose(item)}>
+            <button
+              key={item.id}
+              type="button"
+              role="menuitem"
+              className="cv-more-item"
+              disabled={item.disabled}
+              onClick={() => choose(item)}
+              title={item.label}
+            >
               <img className="btnImg cv-opt-icon" src={icon(item.image)} alt="" />
-              <span>{item.label}</span>
             </button>
           ))}
         </div>

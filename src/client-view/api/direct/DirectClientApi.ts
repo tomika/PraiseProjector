@@ -45,6 +45,7 @@ import type {
   ClientMode,
   DeviceApi,
   DisplayApi,
+  LeaderIdentity,
   NetworkState,
   OnlineSessionEntry,
   PlaylistApi,
@@ -60,6 +61,13 @@ import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
+}
+
+export interface DirectAuthBridge {
+  isAuthed(): boolean;
+  login(user: string, password: string, keepLoggedIn: boolean): Promise<void>;
+  logout(): Promise<void>;
+  restoreSession(): Promise<void>;
 }
 
 export class DirectClientApi implements ClientApi {
@@ -95,6 +103,8 @@ export class DirectClientApi implements ClientApi {
 
   private capabilities: ClientCapabilities = this.computeCapabilities();
 
+  constructor(private readonly authBridge?: DirectAuthBridge) {}
+
   // The embedded desktop view drives the host's live display directly, so control
   // + working-playlist editing are inherently granted. Login / leader selection
   // are not its concern (it IS the host), and it is the Electron renderer, not a
@@ -109,7 +119,7 @@ export class DirectClientApi implements ClientApi {
       leaderModeAvailable: false,
       canControlDisplay: true,
       canEditWorkingPlaylist: true,
-      canLogin: false,
+      canLogin: !!this.authBridge,
       canChangeLeader: false,
       canPersistPlaylist: !!this.getSelectedLeader(),
       // Local PPD hosting needs the native host bridge; online (cloud) hosting is
@@ -160,11 +170,15 @@ export class DirectClientApi implements ClientApi {
   private refreshHostState = (): void => {
     this.capabilities = this.computeCapabilities();
     for (const cb of this.capabilityListeners) cb(this.capabilities);
+    this.refreshAuthState();
+  };
+
+  refreshAuthState(): void {
     // The selected leader is this embed's effective identity; re-emit it so the
     // store's leader (save-dialog title + scheduled-date lookup) tracks changes.
-    const authed = cloudApi.isAuthed();
+    const authed = this.isAuthed();
     for (const cb of this.authListeners) cb(authed);
-  };
+  }
 
   async init(): Promise<void> {
     await Database.waitForReady();
@@ -536,22 +550,40 @@ export class DirectClientApi implements ClientApi {
 
   private createAuthApi(): AuthApi {
     return {
-      isAuthed: () => cloudApi.isAuthed(),
+      isAuthed: () => this.isAuthed(),
       // The embed's "identity" is the host's selected leader (used for the save
       // dialog's title + scheduled-date lookup), not a cloud login.
-      currentLeader: () => {
-        const leader = this.getSelectedLeader();
-        return leader ? { id: leader.id, name: leader.name } : null;
+      currentLeader: () => this.currentLeaderIdentity(),
+      login: async (user, password, keepLoggedIn) => {
+        if (!this.authBridge) return;
+        await this.authBridge.login(user, password, keepLoggedIn);
+        this.refreshAuthState();
       },
-      login: async () => undefined,
-      logout: async () => undefined,
-      restoreSession: async () => undefined,
+      logout: async () => {
+        if (!this.authBridge) return;
+        await this.authBridge.logout();
+        this.refreshAuthState();
+      },
+      restoreSession: async () => {
+        if (!this.authBridge) return;
+        await this.authBridge.restoreSession();
+        this.refreshAuthState();
+      },
       requestHighlightPermission: async () => false,
       subscribeAuth: (callback) => {
         this.authListeners.add(callback);
-        callback(cloudApi.isAuthed());
+        callback(this.isAuthed());
         return () => this.authListeners.delete(callback);
       },
     };
+  }
+
+  private isAuthed(): boolean {
+    return this.authBridge?.isAuthed() ?? cloudApi.isAuthed();
+  }
+
+  private currentLeaderIdentity(): LeaderIdentity | null {
+    const leader = this.getSelectedLeader();
+    return leader ? { id: leader.id, name: leader.name } : null;
   }
 }

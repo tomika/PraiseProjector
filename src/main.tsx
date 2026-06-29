@@ -15,6 +15,7 @@ import "./App.css";
 import { cloudApi } from "../common/cloudApi";
 import { useCallback, useEffect, useState } from "react";
 import { ClientViewApp } from "./client-view/boot/ClientViewApp";
+import { AuthProvider } from "./contexts/AuthContext";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
@@ -112,7 +113,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         </LocalizationProvider>
       </ThemeProvider>
     ) : (
-      <RootView />
+      <AuthProvider>
+        <RootView />
+      </AuthProvider>
     )}
   </React.StrictMode>
 );

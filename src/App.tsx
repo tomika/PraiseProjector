@@ -28,7 +28,7 @@ import { Playlist } from "../db-common/Playlist";
 import { Leader } from "../db-common/Leader";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { LeaderProvider, useLeader } from "./contexts/LeaderContext";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MessageBoxProvider, MessageBoxConfig, useMessageBox } from "./contexts/MessageBoxContext";
 import { UpdateProvider } from "./contexts/UpdateContext";
@@ -2734,29 +2734,27 @@ const App: React.FC = () => {
       <ThemeProvider>
         <SettingsProvider>
           <TooltipProvider>
-            <AuthProvider>
-              <LeaderProvider>
-                <UpdateProvider>
-                  <MessageBoxProvider onMessageBoxChange={setMessageBox}>
-                    <ToastProvider>
-                      <AppContent />
-                    </ToastProvider>
-                    {messageBox && (
-                      <MessageBox
-                        title={messageBox.title}
-                        message={messageBox.message}
-                        onConfirm={messageBox.onConfirm}
-                        onNo={messageBox.onNo}
-                        onCancel={messageBox.showCancel ? messageBox.onCancel || (() => setMessageBox(null)) : undefined}
-                        showCancel={messageBox.showCancel ?? true}
-                        confirmText={messageBox.confirmText}
-                        confirmDanger={messageBox.confirmDanger}
-                      />
-                    )}
-                  </MessageBoxProvider>
-                </UpdateProvider>
-              </LeaderProvider>
-            </AuthProvider>
+            <LeaderProvider>
+              <UpdateProvider>
+                <MessageBoxProvider onMessageBoxChange={setMessageBox}>
+                  <ToastProvider>
+                    <AppContent />
+                  </ToastProvider>
+                  {messageBox && (
+                    <MessageBox
+                      title={messageBox.title}
+                      message={messageBox.message}
+                      onConfirm={messageBox.onConfirm}
+                      onNo={messageBox.onNo}
+                      onCancel={messageBox.showCancel ? messageBox.onCancel || (() => setMessageBox(null)) : undefined}
+                      showCancel={messageBox.showCancel ?? true}
+                      confirmText={messageBox.confirmText}
+                      confirmDanger={messageBox.confirmDanger}
+                    />
+                  )}
+                </MessageBoxProvider>
+              </UpdateProvider>
+            </LeaderProvider>
           </TooltipProvider>
         </SettingsProvider>
       </ThemeProvider>
