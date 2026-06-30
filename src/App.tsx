@@ -373,6 +373,11 @@ const AppContent: React.FC = () => {
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [importWizardInitialFiles, setImportWizardInitialFiles] = useState<File[] | null>(null);
   const [showDBSync, setShowDBSync] = useState(false);
+  // Options for a client-view-initiated DBSync (headless/deferAll silent pull);
+  // null for the full view's own sync. The ref marks client-view origin so we
+  // report the outcome back via pp-cv-db-sync-result (the pull-to-refresh awaits).
+  const [dbSyncOptions, setDbSyncOptions] = useState<{ headless?: boolean; deferAll?: boolean } | null>(null);
+  const dbSyncClientViewRef = useRef(false);
   const [remoteChangeCount, setRemoteChangeCount] = useState(0);
   // CompareDialog state for similarity check when saving new songs
   const [compareDialogState, setCompareDialogState] = useState<{
@@ -2304,9 +2309,34 @@ const AppContent: React.FC = () => {
   // portals keep the dialog's context ancestry (auth / messagebox / localization),
   // so it behaves exactly as when opened from the full view.
   useEffect(() => {
-    const onOpenDbSync = () => setShowDBSync(true);
+    const onOpenDbSync = (e: Event) => {
+      const opts = (e as CustomEvent<{ headless?: boolean; deferAll?: boolean; replace?: boolean }>).detail ?? {};
+      dbSyncClientViewRef.current = true;
+      if (opts.replace) {
+        // Pull-down "replace local DB" — already confirmed in the client view, so
+        // clear the local DB here and re-download via a normal (visible) sync.
+        const db = Database.getInstance();
+        db.clear();
+        void db.forceSaveAsync();
+        setDbSyncOptions({});
+      } else {
+        setDbSyncOptions({ headless: opts.headless, deferAll: opts.deferAll });
+      }
+      setShowDBSync(true);
+    };
     window.addEventListener("pp-cv-open-db-sync", onOpenDbSync);
     return () => window.removeEventListener("pp-cv-open-db-sync", onOpenDbSync);
+  }, []);
+
+  // Close the DBSync dialog and, when it was opened by the embedded client view,
+  // report the outcome back so the client-view pull-to-refresh knows to reload.
+  const finishClientViewSync = useCallback((outcome: "done" | "error") => {
+    setShowDBSync(false);
+    setDbSyncOptions(null);
+    if (dbSyncClientViewRef.current) {
+      dbSyncClientViewRef.current = false;
+      window.dispatchEvent(new CustomEvent("pp-cv-db-sync-result", { detail: { outcome } }));
+    }
   }, []);
 
   // Recheck and reload songs after sync if they were changed (matching C# RecheckLoadedSong)
@@ -2631,7 +2661,11 @@ const AppContent: React.FC = () => {
               }
             >
               <DBSyncDialog
-                onClose={() => setShowDBSync(false)}
+                onClose={() => finishClientViewSync("done")}
+                headless={dbSyncOptions?.headless}
+                deferAll={dbSyncOptions?.deferAll}
+                onSilentComplete={() => finishClientViewSync("done")}
+                onSilentError={() => finishClientViewSync("error")}
                 onComplete={async () => {
                   // Update lastSyncDate when sync completes (matching C# DBSyncForm.SyncComplete)
                   updateSettingWithAutoSave("lastSyncDate", new Date().toISOString());

@@ -47,6 +47,16 @@ interface DBSyncDialogProps {
   autoStart?: boolean;
   cloudHostBasePath: string;
   clientId: string;
+  /** Run without showing the modal: sync silently and only reveal the dialog when
+   *  a conflict needs the user. Used by the client-view pull-to-refresh. */
+  headless?: boolean;
+  /** Defer (skip the upload of) every locally-modified item — a download-only sync
+   *  that keeps all local edits unsent. Pairs with {@link headless}. */
+  deferAll?: boolean;
+  /** Headless only: the silent sync finished with nothing to resolve. */
+  onSilentComplete?: () => void;
+  /** Headless only: the silent sync failed (no modal was shown). */
+  onSilentError?: () => void;
 }
 
 enum SyncState {
@@ -65,12 +75,18 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   autoStart = false,
   cloudHostBasePath,
   clientId,
+  headless = false,
+  deferAll = false,
+  onSilentComplete,
+  onSilentError,
 }) => {
   const { token, updateToken, markSessionExpired } = useAuth();
   const { showMessage, showConfirmAsync } = useMessageBox();
   const { t } = useLocalization();
   const { tt } = useTooltips();
   const [state, setState] = useState<SyncState>(SyncState.Idle);
+  // Headless mode stays invisible until a conflict forces the modal to reveal.
+  const [headlessRevealed, setHeadlessRevealed] = useState(false);
   const [items, setItems] = useState<SyncListItem[]>([]);
   const [progress, setProgress] = useState({ current: 0, max: 100 });
   const [progressStyle, setProgressStyle] = useState<"marquee" | "blocks">("marquee");
@@ -205,7 +221,8 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     if (isGuestMode) {
       // In guest mode (unauthenticated), just close the dialog
       setTimeout(() => {
-        onComplete?.();
+        if (headless) onSilentComplete?.();
+        else onComplete?.();
         onClose();
       }, 100);
     } else {
@@ -281,8 +298,13 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
           });
         }
 
+        if (headless) setHeadlessRevealed(true);
         setItems(conflictItems);
         setState(SyncState.Processing);
+      } else if (headless) {
+        // Silent pull with nothing to resolve — finish without showing a dialog.
+        onSilentComplete?.();
+        onClose();
       } else if (total > 0) {
         const message = t("FetchedPublicSongs").replace("{songs}", String(result.songsUpdated)).replace("{leaders}", String(result.leadersUpdated));
         showMessage(t("SyncComplete"), message);
@@ -295,6 +317,11 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       }
     } catch (error) {
       console.error("Sync", "Failed to fetch public songs", error);
+      if (headless) {
+        onSilentError?.();
+        onClose();
+        return;
+      }
       if (isCloudApiErrorKind(error, "network")) {
         suppressCloudNetworkToast();
         showSyncFailureAndClose(t("SyncError"), t("CloudNetworkErrorMessage"));
@@ -321,7 +348,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     // Check for locally updated songs with backups and let user decide
     const updatedSongs = database.getUpdatedSongs();
     const updatedLeadersLocal = database.getUpdatedLeaders();
-    if ((updatedSongs.length > 0 || updatedLeadersLocal.length > 0) && !decisionsReadyToApplyRef.current) {
+    if (!deferAll && (updatedSongs.length > 0 || updatedLeadersLocal.length > 0) && !decisionsReadyToApplyRef.current) {
       const songsWithBackups = database.getUpdatedSongsWithBackups();
       const leadersWithBackups = database.getUpdatedLeadersWithBackups();
 
@@ -402,6 +429,12 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       let uploadedSongs = database.getUpdatedSongs();
       let uploadedLeaders = database.getUpdatedLeaders();
 
+      // Deferred-all (silent pull): keep every local edit unsent — download only.
+      if (deferAll) {
+        uploadedSongs = [];
+        uploadedLeaders = [];
+      }
+
       // Filter out songs that user chose to skip
       if (skippedSongIdsRef.current.size > 0) {
         uploadedSongs = uploadedSongs.filter((song) => !skippedSongIdsRef.current.has(song.Id));
@@ -438,6 +471,13 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
       if (isCloudApiErrorKind(error, "aborted")) {
         setState(SyncState.Idle);
+        return false;
+      }
+
+      if (headless) {
+        // Silent pull: fail without a dialog (the user can retry via the menu).
+        onSilentError?.();
+        onClose();
         return false;
       }
 
@@ -800,6 +840,21 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   const openDetails = (newItems: SyncListItem[]) => {
     setProgressStyle("blocks");
     setProgress({ current: 100, max: 100 });
+
+    // Headless (silent pull): only surface the dialog when a conflict needs the
+    // user; otherwise finish silently (pulled/pushed/denied are not shown).
+    if (headless) {
+      const needsUser = newItems.some((item) => item.group === SyncItemGroup.Conflict || item.group === SyncItemGroup.Checking);
+      if (needsUser) {
+        setHeadlessRevealed(true);
+        setState(SyncState.Complete);
+      } else {
+        setState(SyncState.Complete);
+        onSilentComplete?.();
+        onClose();
+      }
+      return;
+    }
 
     // Check if there are any items to show (excluding denied items which are just informational)
     const hasTodo = newItems.some((item) => item.group !== SyncItemGroup.Denied);
@@ -1375,6 +1430,10 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
   const compareDialogProps = getCompareDialogProps();
   const leaderMergeProps = getLeaderMergeDialogProps();
+
+  // Headless until a conflict forces a reveal: render nothing (the sync still runs
+  // via effects); the client-view pull spinner is the only visible feedback.
+  if (headless && !headlessRevealed) return null;
 
   // Rendered through a portal so the dialog can float over the embedded client
   // view without un-hiding the full app UI behind it (the client view delegates

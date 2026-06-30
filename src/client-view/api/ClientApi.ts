@@ -455,6 +455,10 @@ export interface DatabaseSyncOptions {
   replace?: boolean;
 }
 
+/** Result of a {@link ClientApi.requestDatabaseSync} run: completed silently,
+ *  escalated to the visible dialog for conflict resolution, or failed. */
+export type DatabaseSyncOutcome = "done" | "escalated" | "error";
+
 /**
  * The complete backend surface required by the client view. Implemented by the
  * Rest adapter (canonical) and, optionally, the Direct in-process adapter.
@@ -491,7 +495,14 @@ export interface ClientApi {
    * refresh. The host shows its DBSync dialog and switches back to the client view
    * when it is closed. See {@link DatabaseSyncOptions} for the pull-down variants.
    */
-  requestDatabaseSync?(options?: DatabaseSyncOptions): void;
+  requestDatabaseSync?(options?: DatabaseSyncOptions): Promise<DatabaseSyncOutcome>;
+
+  /**
+   * Wipe all local application data (the song Database + persisted preferences) —
+   * the pull-down "long pull" reset. Direct embed only; undefined where there is
+   * no local store (served/cloud Rest). The caller reloads afterwards.
+   */
+  clearAppData?(): Promise<void>;
 
   readonly song: SongApi;
   readonly playlist: PlaylistApi;

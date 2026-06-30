@@ -10,7 +10,7 @@
  * `@media (orientation: landscape) #mainView:not(.options-open)` CSS rule).
  */
 
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { isViewingRemoteDisplay, showsNetworkIndicator } from "../controller/ClientViewStore";
 import type { NetworkStatus } from "../api/ClientApi";
@@ -56,7 +56,16 @@ const NET_STATUS_ICON: Record<NetworkStatus, string> = {
 // netstatus map iteration typed without an `Object.keys` cast.
 const NET_STATUSES: NetworkStatus[] = ["startup", "watching", "online", "leading", "offline", "error"];
 
-export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: () => void }) {
+export function MainToolbar({
+  onPrev,
+  onNext,
+  pullRef,
+}: {
+  onPrev?: () => void;
+  onNext?: () => void;
+  /** Attaches the pull-to-refresh gesture (see usePullToRefresh) to the toolbar. */
+  pullRef?: RefObject<HTMLDivElement>;
+}) {
   const store = useClientViewStore();
   const state = useClientViewState();
   // View-only: a Client follower, OR App mode while watching a session (legacy
@@ -286,7 +295,7 @@ export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: 
   };
 
   return (
-    <div className="widthProtect" id="mainToolbar">
+    <div className="widthProtect" id="mainToolbar" ref={pullRef}>
       {order.map((key) => {
         const node = controls[key];
         return node ? <Fragment key={key}>{node}</Fragment> : null;

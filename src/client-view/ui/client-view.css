@@ -157,6 +157,10 @@ body,
   padding: 0 10px;
   background: var(--cv-toolbar-bg);
   border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  /* The pull-to-refresh gesture is anchored here; without this a downward drag
+     text-selects the toolbar's icons/labels (legacy set user-select:none on body). */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #mainToolbar .btnDiv {
@@ -1887,4 +1891,65 @@ body,
 .cv-opacity-label {
   font-size: 13px;
   opacity: 0.8;
+}
+
+/* ── pull-to-refresh indicator (see PullRefreshSpinner / usePullToRefresh) ──── */
+.mainTable {
+  /* Anchor the pull spinner, which is absolutely positioned from the top. */
+  position: relative;
+}
+.cv-pull-wrap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  justify-content: center;
+  /* Follow the pull: the ring rides down from above the top edge. */
+  transform: translate(-50%, calc(var(--cv-pull-offset, 0px) - 2.8em));
+  z-index: 60;
+  pointer-events: none;
+}
+/* Filled white DISC with a dark-blue reload arc inside (legacy #loading-circle),
+   NOT an outline ring. The disc background escalates with the armed level. */
+.cv-pull-disc {
+  width: 2em;
+  height: 2em;
+  border-radius: 50%;
+  padding: 4px;
+  box-sizing: border-box;
+  background: var(--cv-pull-bg, #fff);
+  box-shadow: 0 2px 2px 2px rgba(0, 0, 0, 0.15);
+  transition: background-color 0.4s ease;
+}
+/* The arc winds with the pull (strokeDashoffset set inline from `progress`) and
+   the whole disc spins once armed. Rotated -90° so the arc starts at the top. */
+.cv-pull-disc svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.cv-pull-arc {
+  fill: none;
+  stroke: var(--cv-pull-stroke, #000066);
+  stroke-width: 4;
+  stroke-linecap: butt;
+}
+/* Disc background escalates: refresh (white) → replace (yellow) → clear (orangered);
+   the arc turns white on the top level for contrast. */
+.cv-pull-level-2 {
+  --cv-pull-bg: #ff0;
+}
+.cv-pull-level-3 {
+  --cv-pull-bg: orangered;
+  --cv-pull-stroke: #fff;
+}
+/* Spin the disc itself; the inner <svg> keeps its -90° start-at-top rotation. */
+.cv-pull-spinning {
+  animation: cv-pull-spin 1s linear infinite;
+}
+@keyframes cv-pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

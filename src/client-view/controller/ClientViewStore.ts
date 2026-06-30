@@ -715,7 +715,43 @@ export class ClientViewStore {
   /** Open the host app's full database-sync flow (Direct embed only). The host
    *  shows its DBSync dialog and returns to the client view when it closes. */
   startFullSync(): void {
-    this.api.requestDatabaseSync?.();
+    void this.api.requestDatabaseSync?.();
+  }
+
+  /** Highest pull-to-refresh level the backend offers: 3 for the Direct embed
+   *  (sync / replace-db / clear-data), 1 for a Rest client (reload only — no local
+   *  DB to reconcile). Drives how far the pull gesture can escalate. */
+  maxPullLevel(): number {
+    return this.canFullSync() ? 3 : 1;
+  }
+
+  /** Run the released pull-to-refresh level. 1 = silent download-only sync (defer
+   *  every local edit, escalating to the dialog only on conflict), 2 = replace the
+   *  local DB from the server, 3 = clear all app data; 2 and 3 confirm first. The
+   *  page reloads on success so the refreshed local data is shown (legacy parity).
+   *  On a Rest client (no local DB) any pull just reloads to re-fetch. */
+  async pullRefresh(level: number): Promise<void> {
+    if (level <= 0) return;
+    if (!this.canFullSync()) {
+      this.reloadPage();
+      return;
+    }
+    if (level === 1) {
+      const outcome = await this.api.requestDatabaseSync?.({ headless: true, deferAll: true });
+      if (outcome !== "error") this.reloadPage();
+    } else if (level === 2) {
+      if (!(await this.confirm("replacedb"))) return;
+      const outcome = await this.api.requestDatabaseSync?.({ replace: true });
+      if (outcome !== "error") this.reloadPage();
+    } else {
+      if (!(await this.confirm("clear-app"))) return;
+      await this.api.clearAppData?.();
+      this.reloadPage();
+    }
+  }
+
+  private reloadPage(): void {
+    if (typeof window !== "undefined") window.location.reload();
   }
 
   // ── search ───────────────────────────────────────────────────────────────────
