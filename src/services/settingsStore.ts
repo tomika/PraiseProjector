@@ -45,3 +45,19 @@ export function writePersistedSettings(patch: Partial<Settings>): Partial<Settin
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-settings-changed"));
   return next;
 }
+
+/** The light/dark theme preference, stored under `theme` in the `pp-settings`
+ *  blob. It is shared by BOTH frontends — the full view (`ThemeContext`) and the
+ *  client view — so the choice never diverges between them. */
+export type ThemeSetting = Settings["theme"];
+
+/** Read the shared theme preference, defaulting to "auto" when unset or invalid. */
+export function readThemeSetting(): ThemeSetting {
+  const { theme } = readPersistedSettings();
+  return theme === "light" || theme === "dark" || theme === "auto" ? theme : "auto";
+}
+
+/** Write the shared theme preference (notifies listeners via `pp-settings-changed`). */
+export function writeThemeSetting(theme: ThemeSetting): void {
+  writePersistedSettings({ theme });
+}

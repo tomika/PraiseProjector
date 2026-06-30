@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { readThemeSetting, writeThemeSetting } from "../services/settingsStore";
 
 // Type for theme modes
 export type Theme = "light" | "dark";
@@ -12,36 +13,13 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// Settings key - theme is stored inside pp-settings
+// Settings key - theme is stored inside pp-settings (owned by settingsStore.ts)
 const SETTINGS_KEY = "pp-settings";
 
-// Helper to get theme from pp-settings
-function getThemeFromSettings(): ThemeSetting {
-  try {
-    const settings = localStorage.getItem(SETTINGS_KEY);
-    if (settings) {
-      const parsed = JSON.parse(settings);
-      if (parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "auto") {
-        return parsed.theme;
-      }
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return "auto";
-}
-
-// Helper to save theme to pp-settings
-function saveThemeToSettings(theme: ThemeSetting): void {
-  try {
-    const settings = localStorage.getItem(SETTINGS_KEY);
-    const parsed = settings ? JSON.parse(settings) : {};
-    parsed.theme = theme;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(parsed));
-  } catch {
-    // Ignore errors
-  }
-}
+// Theme read/write delegate to the shared low-level store so the full view and
+// the client view stay in lockstep on one preference (see settingsStore.ts).
+const getThemeFromSettings = readThemeSetting;
+const saveThemeToSettings = writeThemeSetting;
 
 // Detect system preference
 function getSystemTheme(): Theme {

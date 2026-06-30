@@ -15,6 +15,7 @@
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { formatLocalDateLabel, parseScheduleDate } from "../../../common/date-only";
+import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import type {
   ClientApi,
@@ -77,6 +78,12 @@ export interface NavEntry {
 
 const systemPrefersDark = (): boolean => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
 
+/** Effective dark flag for a theme preference: "auto" follows the OS. The light/
+ *  dark preference itself is the SHARED `pp-settings.theme` key, read/written via
+ *  {@link readThemeSetting}/{@link writeThemeSetting} (the same store the full
+ *  view's ThemeContext uses), so the two views never diverge. */
+const computeIsDark = (theme: DarkMode): boolean => theme === "dark" || (theme === "auto" && systemPrefersDark());
+
 /** Project a database/search row down to the wire {@link PlaylistEntry} shape,
  *  dropping search-only (`found`) and bulk (`songdata`) fields — mirrors the
  *  legacy `strip()` before pushing a playlist update. */
@@ -109,8 +116,6 @@ export interface DisplaySettings {
   useCapo: boolean;
   /** Maximise text: hide title/meta, abbreviate tags, fit more per page. */
   maxText: boolean;
-  /** Dark-mode preference (auto/light/dark) for the song view + chrome. */
-  darkMode: DarkMode;
   /** maxText (zoom) sub-settings — applied only while maxText is on (the
    *  original zoomPreset). zoomScrollable = full-width SCROLL vs full-page FIT. */
   zoomHideTitle: boolean;
@@ -129,7 +134,6 @@ const defaultDisplaySettings: DisplaySettings = {
   chordBoxType: "",
   useCapo: true,
   maxText: false,
-  darkMode: "auto",
   zoomHideTitle: true,
   zoomHideMeta: true,
   zoomTagMode: "ABBREV",
@@ -252,7 +256,11 @@ export interface ClientViewState {
    *  body IS the animated SVG (e.g. "erase", "overwrite"). */
   confirmAnim: string | null;
   displaySettings: DisplaySettings;
-  /** Effective dark flag derived from displaySettings.darkMode + the OS pref. */
+  /** The shared light/dark preference (auto/light/dark), mirrored from the
+   *  `pp-settings.theme` key the full view also owns. Not persisted in the
+   *  client-view snapshot — it is re-read from the shared store on every init. */
+  themeSetting: DarkMode;
+  /** Effective dark flag derived from {@link themeSetting} + the OS pref. */
   isDark: boolean;
   /** Whether the app is currently in fullscreen (drives the toolbar icon swap). */
   isFullScreen: boolean;
@@ -314,6 +322,7 @@ export function canUseHighlightLamp(state: ClientViewState): boolean {
 const SEARCH_DEBOUNCE_MS = 250;
 
 function initialState(): ClientViewState {
+  const initialTheme = readThemeSetting();
   return {
     mode: "App",
     ready: false,
@@ -353,7 +362,8 @@ function initialState(): ClientViewState {
     aboutOpen: false,
     confirmAnim: null,
     displaySettings: { ...defaultDisplaySettings },
-    isDark: systemPrefersDark(),
+    themeSetting: initialTheme,
+    isDark: computeIsDark(initialTheme),
     isFullScreen: false,
     canExit: false,
     transpose: 0,
@@ -479,12 +489,27 @@ export class ClientViewStore {
       }
     }
 
-    // "auto" dark-mode follows the OS preference; recompute when it flips.
+    // "auto" theme follows the OS preference; recompute when it flips.
     const mql = typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined;
     if (mql) {
-      const onChange = () => this.refreshIsDark();
+      const onChange = () => this.syncTheme();
       mql.addEventListener("change", onChange);
       this.unsubscribes.push(() => mql.removeEventListener("change", onChange));
+    }
+    // The light/dark preference is SHARED with the full view via the
+    // `pp-settings.theme` key: re-read it when the full view changes the theme
+    // (same tab → `pp-settings-changed` / `pp-theme-changed`) or another tab does
+    // (`storage`), so the two views never diverge.
+    if (typeof window !== "undefined") {
+      const onThemeChange = () => this.syncTheme();
+      window.addEventListener("pp-settings-changed", onThemeChange);
+      window.addEventListener("pp-theme-changed", onThemeChange);
+      window.addEventListener("storage", onThemeChange);
+      this.unsubscribes.push(() => {
+        window.removeEventListener("pp-settings-changed", onThemeChange);
+        window.removeEventListener("pp-theme-changed", onThemeChange);
+        window.removeEventListener("storage", onThemeChange);
+      });
     }
     // Track orientation so selection closes only the portrait overlay and first
     // load can auto-open the landscape split panel.
@@ -509,7 +534,7 @@ export class ClientViewStore {
       document.addEventListener("fullscreenchange", onFsChange);
       this.unsubscribes.push(() => document.removeEventListener("fullscreenchange", onFsChange));
     }
-    this.refreshIsDark();
+    this.syncTheme();
 
     // The restore/seed is complete: start persisting from here so no startup
     // `set()` writes over the restored snapshot. Seed lastPersistedJson with the
@@ -1334,20 +1359,25 @@ export class ClientViewStore {
     this.setDisplaySetting("chordBoxType", order[(order.indexOf(current) + 1) % order.length]);
   }
 
-  /** Cycle the dark-mode preference auto → light → dark (the original's
-   *  switchDarkMode order) and recompute the effective dark flag. */
+  /** Cycle the SHARED light/dark preference auto → light → dark (the original's
+   *  switchDarkMode order). Writes the `pp-settings.theme` key the full view also
+   *  owns, so the choice stays in lockstep across both views. */
   cycleDarkMode(): void {
     const order: DarkMode[] = ["auto", "light", "dark"];
-    const current = this.state.displaySettings.darkMode;
-    const next = order[(order.indexOf(current) + 1) % order.length];
-    this.set({ displaySettings: { ...this.state.displaySettings, darkMode: next } });
-    this.refreshIsDark();
+    const next = order[(order.indexOf(this.state.themeSetting) + 1) % order.length];
+    writeThemeSetting(next);
+    this.syncTheme();
   }
 
-  private refreshIsDark(): void {
-    const { darkMode } = this.state.displaySettings;
-    const isDark = darkMode === "dark" || (darkMode === "auto" && systemPrefersDark());
-    if (isDark !== this.state.isDark) this.set({ isDark });
+  /** Re-read the shared `pp-settings.theme` preference and recompute the effective
+   *  dark flag. Called on init, on OS-preference flips, and whenever the full view
+   *  (or another tab) changes the theme. */
+  private syncTheme(): void {
+    const themeSetting = readThemeSetting();
+    const isDark = computeIsDark(themeSetting);
+    if (themeSetting !== this.state.themeSetting || isDark !== this.state.isDark) {
+      this.set({ themeSetting, isDark });
+    }
   }
 
   // ── auth ─────────────────────────────────────────────────────────────────────

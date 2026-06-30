@@ -205,7 +205,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
         </div>
 
         <button type="button" className="cv-iconbtn" title="Dark mode (auto / light / dark)" onClick={() => store.cycleDarkMode()}>
-          <img className="btnImg cv-opt-icon" src={icon(DARK_ICON[s.darkMode])} alt="Dark mode" />
+          <img className="btnImg cv-opt-icon" src={icon(DARK_ICON[state.themeSetting])} alt="Dark mode" />
         </button>
 
         {/* Leader-mode switch (legacy chkAdmin): only offered where the backend
