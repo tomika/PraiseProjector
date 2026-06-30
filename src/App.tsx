@@ -2296,6 +2296,19 @@ const AppContent: React.FC = () => {
     );
   }, [showConfirm, t]);
 
+  // The embedded client view has no local database of its own — it shares this
+  // app's in-process Database, so it delegates the real sync to our DBSyncDialog.
+  // It dispatches pp-cv-open-db-sync; we just open the dialog WITHOUT un-hiding the
+  // full UI. DBSyncDialog renders through a portal (createPortal → document.body),
+  // so it floats over the client view while App stays hidden behind it; React
+  // portals keep the dialog's context ancestry (auth / messagebox / localization),
+  // so it behaves exactly as when opened from the full view.
+  useEffect(() => {
+    const onOpenDbSync = () => setShowDBSync(true);
+    window.addEventListener("pp-cv-open-db-sync", onOpenDbSync);
+    return () => window.removeEventListener("pp-cv-open-db-sync", onOpenDbSync);
+  }, []);
+
   // Recheck and reload songs after sync if they were changed (matching C# RecheckLoadedSong)
   const recheckLoadedSongs = useCallback(() => {
     const db = Database.getInstance();

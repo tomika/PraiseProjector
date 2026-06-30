@@ -55,7 +55,9 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       label: "Sync",
       image: "sync.svg",
       show: true,
-      run: () => void store.syncNow(),
+      // The Direct embed delegates a real database sync to the host app's DBSync
+      // dialog; the served/cloud Rest client has no local DB, so it only refreshes.
+      run: () => (store.canFullSync() ? store.startFullSync() : void store.syncNow()),
     },
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).

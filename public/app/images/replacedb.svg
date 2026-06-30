@@ -14,63 +14,42 @@
         paint-order="stroke fill markers" fill="none" stroke="#000" stroke-linecap="round"
         stroke-linejoin="round" stroke-dasharray="10" />
     <g id="eB2M0eXEowJ3" transform="translate(0 0.000001)">
-        <g>
-            <g transform="translate(0 0.000001)">
-                <polygon
-                    points="37.618255,-64.171256 62.734652,-43.872631 62.734652,51.777088 -37.618256,51.777088 -37.618253,-64.171256 37.618255,-64.171256"
-                    transform="matrix(2.144859 0 0 2.6042 293.064436 248.009154)"
-                    paint-order="stroke fill markers" fill="#fff" stroke="#000" stroke-width="10"
-                    stroke-linecap="round" stroke-linejoin="round" />
+        <g id="euS8LdTR24t3">
+            <g id="euS8LdTR24t4" transform="matrix(0.726794 0 0 0.958684 183.814072 53.534244)">
+                <rect width="307.581" height="219.341" rx="0" ry="0"
+                    transform="translate(32.478 72.903)" fill="#d8d8d8" stroke-width="15" />
+                <ellipse rx="156.102" ry="51.683" transform="translate(186.584 287.412)" fill="#d8d8d8"
+                    stroke="#000" stroke-width="15" />
+                <ellipse rx="156.102" ry="51.683" transform="translate(185.743 214.719)" fill="#d8d8d8"
+                    stroke="#000" stroke-width="15" />
+                <ellipse rx="156.102" ry="51.683" transform="translate(186.794 146.647)" fill="#d8d8d8"
+                    stroke="#000" stroke-width="15" />
+                <ellipse rx="156.312" ry="51.683" transform="translate(185.953 74.374)" fill="#d8d8d8"
+                    stroke="#000" stroke-width="15" />
+                <line x1="29.413" y1="73.954" x2="30.254" y2="289.093" transform="translate(0 1.324288)"
+                    stroke="#000" stroke-width="15" />
+                <line x1="342.458" y1="73.954" x2="342.878" y2="289.513" stroke="#000" stroke-width="15" />
             </g>
-            <line x1="0" y1="-34.039713" x2="0" y2="34.039713"
-                transform="matrix(-1 0 0 0.788238 374.864008 102.11914)" fill="none" stroke="#000"
-                stroke-width="10" stroke-linecap="round" />
-            <line x1="0" y1="-34.039713" x2="0" y2="34.039713"
-                transform="matrix(-.013367-.999911 0.788012-.010534 401.687696 128.591949)"
-                fill="none" stroke="#000" stroke-width="10" stroke-linecap="round" />
-            <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                transform="translate(320 150.976139)" fill="none" stroke="#000" stroke-width="10"
-                stroke-linecap="round" />
-            <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                transform="translate(320 191.02286)" fill="none" stroke="#000" stroke-width="10"
-                stroke-linecap="round" />
-            <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                transform="translate(320 231.47024)" fill="none" stroke="#000" stroke-width="10"
-                stroke-linecap="round" />
-            <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                transform="translate(320 273.11883)" fill="none" stroke="#000" stroke-width="10"
-                stroke-linecap="round" />
         </g>
     </g>
     <g id="eB2M0eXEowJ13" transform="translate(-1052.624562 0.93261)">
         <g transform="translate(301.760232-.000002)">
-            <g transform="translate(0 0.000001)">
-                <polygon
-                    points="37.618255,-64.171256 62.734652,-43.872631 62.734652,51.777088 -37.618256,51.777088 -37.618253,-64.171256 37.618255,-64.171256"
-                    transform="matrix(2.144859 0 0 2.6042 293.064436 248.009154)"
-                    paint-order="stroke fill markers" fill="#fff" stroke="#000" stroke-width="10"
-                    stroke-linecap="round" stroke-linejoin="round" />
-                <line x1="0" y1="-34.039713" x2="0" y2="34.039713"
-                    transform="matrix(-1 0 0 0.788238 374.864008 102.11914)" fill="none"
-                    stroke="#000" stroke-width="10" stroke-linecap="round" />
-                <line x1="0" y1="-34.039713" x2="0" y2="34.039713"
-                    transform="matrix(-.013367-.999911 0.788012-.010534 401.687696 128.591949)"
-                    fill="none" stroke="#000" stroke-width="10" stroke-linecap="round" />
-                <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                    transform="translate(320 150.976139)" fill="none" stroke="#000"
-                    stroke-width="10" stroke-linecap="round" />
-                <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                    transform="translate(320 191.02286)" fill="none" stroke="#000" stroke-width="10"
-                    stroke-linecap="round" />
-                <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                    transform="translate(320 231.47024)" fill="none" stroke="#000" stroke-width="10"
-                    stroke-linecap="round" />
-                <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                    transform="translate(320 273.11883)" fill="none" stroke="#000" stroke-width="10"
-                    stroke-linecap="round" />
-                <line x1="-79.488934" y1="0.400468" x2="79.488934" y2="-0.400467"
-                    transform="translate(320 314.673611)" fill="none" stroke="#000"
-                    stroke-width="10" stroke-linecap="round" />
+            <g id="euS8LdTR24t3" transform="translate(0 0.000001)">
+                <g id="euS8LdTR24t4" transform="matrix(0.726794 0 0 0.958684 183.814072 53.534244)">
+                    <rect width="307.581" height="219.341" rx="0" ry="0"
+                        transform="translate(32.478 72.903)" fill="#d8d8d8" stroke-width="15" />
+                    <ellipse rx="156.102" ry="51.683" transform="translate(186.584 287.412)" fill="#d8d8d8"
+                        stroke="#000" stroke-width="15" />
+                    <ellipse rx="156.102" ry="51.683" transform="translate(185.743 214.719)" fill="#d8d8d8"
+                        stroke="#000" stroke-width="15" />
+                    <ellipse rx="156.102" ry="51.683" transform="translate(186.794 146.647)" fill="#d8d8d8"
+                        stroke="#000" stroke-width="15" />
+                    <ellipse rx="156.312" ry="51.683" transform="translate(185.953 74.374)" fill="#d8d8d8"
+                        stroke="#000" stroke-width="15" />
+                    <line x1="29.413" y1="73.954" x2="30.254" y2="289.093" transform="translate(0 1.324288)"
+                        stroke="#000" stroke-width="15" />
+                    <line x1="342.458" y1="73.954" x2="342.878" y2="289.513" stroke="#000" stroke-width="15" />
+                </g>
             </g>
         </g>
     </g>

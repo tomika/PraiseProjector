@@ -44,6 +44,7 @@ import type {
   AuthApi,
   ClientCapabilities,
   ClientMode,
+  DatabaseSyncOptions,
   DeviceApi,
   DisplayApi,
   LeaderIdentity,
@@ -213,6 +214,15 @@ export class DirectClientApi implements ClientApi {
 
   // The desktop embed is always in control; the leader/follower toggle is N/A.
   setLeaderMode(): void {}
+
+  // Open the host app's full DBSync flow. The embed shares the host's in-process
+  // Database, so the real reconciliation belongs to the main UI's DBSyncDialog;
+  // we just ask the host (via the same pp-cv-* channel the display path uses) to
+  // reveal it. The host switches back to the client view when the dialog closes.
+  requestDatabaseSync(options?: DatabaseSyncOptions): void {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("pp-cv-open-db-sync", { detail: options ?? {} }));
+  }
 
   // Drive the host app via the SAME event the webserver clients use, so the main
   // UI's selection/preview/playlist AND the projector all follow along — not just

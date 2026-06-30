@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { useLocalization } from "../localization/LocalizationContext";
 import "./MessageBox.css";
 
@@ -36,7 +37,10 @@ const MessageBox: React.FC<MessageBoxProps> = ({
   const displayNoText = noText || t("No");
   const displayCancelText = cancelText || t("Cancel");
 
-  return (
+  // Portalled to document.body so confirms/alerts stay visible even when the host
+  // tree is hidden (e.g. while the embedded client view is shown and a delegated
+  // DBSync confirm fires). Fixed-position overlay, so the body mount is safe.
+  return createPortal(
     <div className="messagebox-overlay">
       <div className="messagebox-container" onClick={(e) => e.stopPropagation()}>
         <div className="messagebox-header">
@@ -61,7 +65,8 @@ const MessageBox: React.FC<MessageBoxProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

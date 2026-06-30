@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Leader } from "../../db-common/Leader";
 import { SongPreference } from "../../db-common/SongPreference";
 import { Playlist } from "../../db-common/Playlist";
@@ -725,7 +726,9 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
     );
   };
 
-  return (
+  // Portalled to document.body so a leader-conflict merge stays visible when the
+  // host tree is hidden (delegated DBSync from the embedded client view).
+  return createPortal(
     <div className="modal-backdrop show leader-merge-dialog-backdrop">
       <div className="modal d-block">
         <div ref={dialogRef} className={`leader-merge-modal-dialog${isMaximized ? " maximized" : ""}`} onClick={(e) => e.stopPropagation()}>
@@ -935,7 +938,8 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
       </div>
       {/* Hover popup for playlist differences */}
       {renderHoverPopup()}
-    </div>
+    </div>,
+    document.body
   );
 };
 

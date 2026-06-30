@@ -703,6 +703,21 @@ export class ClientViewStore {
     ]);
   }
 
+  /** Whether the active backend can run a real database synchronization (upload
+   *  local edits + reconcile with the server). True only for the in-process Direct
+   *  embed, which shares the host's local Database; the served/cloud Rest adapter
+   *  has no local store to reconcile, so the Sync affordance falls back to the
+   *  lightweight {@link syncNow} refresh. */
+  canFullSync(): boolean {
+    return typeof this.api.requestDatabaseSync === "function";
+  }
+
+  /** Open the host app's full database-sync flow (Direct embed only). The host
+   *  shows its DBSync dialog and returns to the client view when it closes. */
+  startFullSync(): void {
+    this.api.requestDatabaseSync?.();
+  }
+
   // ── search ───────────────────────────────────────────────────────────────────
 
   setSearchText(text: string): void {

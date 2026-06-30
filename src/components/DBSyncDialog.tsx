@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Song } from "../../db-common/Song";
 import { Leader } from "../../db-common/Leader";
 import { Database } from "../../db-common/Database";
@@ -1375,7 +1376,11 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   const compareDialogProps = getCompareDialogProps();
   const leaderMergeProps = getLeaderMergeDialogProps();
 
-  return (
+  // Rendered through a portal so the dialog can float over the embedded client
+  // view without un-hiding the full app UI behind it (the client view delegates
+  // its sync here — see App's pp-cv-open-db-sync listener). React portals keep the
+  // context ancestry, so auth/messagebox/localization still resolve from App.
+  return createPortal(
     <>
       <div className="modal-backdrop show dbsync-dialog-backdrop">
         <div className="modal d-block">
@@ -1602,7 +1607,8 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
           onCancel={() => handleUpdatedLeaderCompareClose()}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 };
 
