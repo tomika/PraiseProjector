@@ -34,6 +34,14 @@
   display: none; /* Chromium/Electron, WebKit */
 }
 
+/* Chromium can clip zoomed editor content against the rotating page's original
+   2D overflow rect while the page is rotateY()-transformed. Unclip only for the
+   active flip; normal page scrolling/clipping is restored when the class is
+   removed. */
+.pp-flip-unclip-page {
+  overflow: visible !important;
+}
+
 /* Active drags are tracked on window so the pointer may leave the song pane.
    While that drag is in flight, suppress browser text selection outside the
    original swipe area. */

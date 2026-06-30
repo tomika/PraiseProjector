@@ -351,8 +351,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private applyDarkModeToEditor() {
     const forcedMode = this.props.forceThemeMode;
     const isDark = forcedMode ? forcedMode === "dark" : document.documentElement.getAttribute("data-theme") === "dark";
-    const api = this.getBoundChordProAPI();
-    if (api && api.darkMode) {
+    const applyToApi = (api: ChordProAPIBound | undefined) => {
+      if (!api?.darkMode) return;
       api.darkMode(isDark);
       // On mobile, the editor may need an additional call after a microtask
       // to ensure the dark mode is applied after all pending DOM updates
@@ -363,7 +363,13 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
           api.darkMode(stillDark);
         }
       });
-    }
+    };
+    applyToApi(this.getBoundChordProAPI());
+    applyToApi(this.prevHost ? this.getBoundChordProAPI(this.prevHost) : undefined);
+    applyToApi(this.nextHost ? this.getBoundChordProAPI(this.nextHost) : undefined);
+    // Restore the current page as the active editor — invoking a bound method on
+    // prev/next makes that neighbour active inside the shared chordProAPI bridge.
+    if (this.chordProHost) this.getBoundChordProAPI(this.chordProHost)?.isReadOnly();
   }
 
   private applyStylesToEditor() {

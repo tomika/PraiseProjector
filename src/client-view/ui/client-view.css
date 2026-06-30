@@ -269,7 +269,7 @@ body,
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden !important;
+  overflow: hidden;
   background: var(--cv-song-bg);
   touch-action: none;
   /* 3D perspective for the page-turn comes from .pp-flip-perspective (shared,
@@ -292,13 +292,10 @@ body,
      (which left the song title highlighted after a page turn). */
   -webkit-user-select: none;
   user-select: none;
-
-  overflow: visible !important;
 }
 
 .cv-page-current {
   z-index: 0;
-  overflow: visible !important;
 }
 
 .cv-page-prev,
@@ -898,6 +895,16 @@ body,
 #mainView.dark .cv-page,
 #mainView.dark .editor {
   background: #000;
+}
+
+.cv-page.pp-flip-lifted-dark,
+.cv-page.pp-flip-lifted-dark .editor {
+  background: #000 !important;
+  color: #e9e9e9 !important;
+}
+
+.cv-page.pp-flip-lifted-dark > .editor {
+  min-height: 100%;
 }
 
 #mainView.dark #mainToolbar {

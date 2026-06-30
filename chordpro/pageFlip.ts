@@ -66,6 +66,10 @@ export interface PageFlipConfig {
   handleChordBoxTouch?(e: PointerEvent | MouseEvent, down: boolean): boolean;
   /** Optional: host UI can fade/disable controls while a page is turning. */
   onFlipActiveChange?(active: boolean): void;
+  /** Optional: lift only the turning page out of a clipped pane during the flip.
+   *  The revealed neighbour stays clipped in the pane, while the current page and
+   *  its shadow can overlap adjacent chrome. */
+  liftCurrentPageDuringFlip?(): boolean;
 }
 
 export class PageFlip {
@@ -73,6 +77,8 @@ export class PageFlip {
    *  hide that page's (and its descendants') scrollbar for the flip. The rule
    *  lives once in the shared `chordpro/pageFlip.css`, imported by both hosts. */
   static readonly HIDE_SCROLLBAR_CLASS = "pp-flip-hide-scrollbar";
+  static readonly UNCLIP_PAGE_CLASS = "pp-flip-unclip-page";
+  static readonly LIFTED_DARK_CLASS = "pp-flip-lifted-dark";
   static readonly SELECTION_GUARD_CLASS = "pp-flip-selection-guard";
 
   // ── page-turn shadow tunables ──────────────────────────────────────────────
@@ -101,6 +107,24 @@ export class PageFlip {
    *  on the page). Hidden in endFlip, removed in dispose. */
   private shadowEl: HTMLDivElement | null = null;
   private flipOverflowTargets: { el: HTMLElement; overflow: string }[] = [];
+  private liftedPage: {
+    page: HTMLElement;
+    parent: Node;
+    nextSibling: ChildNode | null;
+    rect: DOMRect;
+    style: {
+      position: string;
+      inset: string;
+      left: string;
+      top: string;
+      width: string;
+      height: string;
+      zIndex: string;
+      boxSizing: string;
+      backgroundColor: string;
+      color: string;
+    };
+  } | null = null;
   /** The current (rotating) page whose scrollbar is suppressed for the duration of
    *  a flip (via the {@link PageFlip.HIDE_SCROLLBAR_CLASS} marker), tracked so the
    *  exact element is un-marked in endFlip even if the current page has changed. */
@@ -133,6 +157,11 @@ export class PageFlip {
       this.shadowEl.remove();
       this.shadowEl = null;
     }
+    if (this.scrollbarHidden) {
+      this.scrollbarHidden.classList.remove(PageFlip.HIDE_SCROLLBAR_CLASS, PageFlip.UNCLIP_PAGE_CLASS);
+      this.scrollbarHidden = null;
+    }
+    this.restoreLiftedPage();
   }
 
   /** Forced animated turn for the host's Prev/Next controls. */
@@ -265,7 +294,7 @@ export class PageFlip {
     const direction = offset / Math.abs(offset);
     page.style.transformOrigin = (direction < 0 ? "left" : "right") + " center";
     const deg = (offset * 90) / scale;
-    page.style.transform = `rotateY(${deg}deg)`;
+    page.style.transform = this.liftedPage ? `perspective(500vw) rotateY(${deg}deg)` : `rotateY(${deg}deg)`;
     this.updateShadow(offset, scale, direction, deg);
     const hidden = Math.abs(deg) < 5;
     const prev = this.cfg.prevPage();
@@ -304,7 +333,6 @@ export class PageFlip {
       el.style.filter = "blur(4px)";
       this.shadowEl = el;
     }
-    if (el.parentElement !== container) container.appendChild(el);
 
     const w = page.clientWidth;
     const reach = Math.max(1, w * PageFlip.SHADOW_REACH * lift);
@@ -316,25 +344,50 @@ export class PageFlip {
     // than fading across its whole width.
     const solidStop = (1 - PageFlip.SHADOW_EDGE_FADE) * 100;
 
-    el.style.top = `${(100 - heightPct) / 2}%`;
-    el.style.height = `${heightPct}%`;
+    const lifted = this.liftedPage;
+    if (lifted) {
+      if (el.parentElement !== document.body) document.body.appendChild(el);
+      const rect = lifted.rect;
+      el.style.position = "fixed";
+      el.style.zIndex = "99999";
+      el.style.top = `${rect.top + (rect.height * (100 - heightPct)) / 200}px`;
+      el.style.height = `${(rect.height * heightPct) / 100}px`;
+      el.style.transform = `perspective(500vw) rotateY(${deg}deg)`;
+      if (direction < 0) {
+        el.style.left = `${rect.left + w}px`;
+        el.style.right = "auto";
+        el.style.transformOrigin = `${-w}px 50%`;
+        el.style.background = `linear-gradient(to right, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
+      } else {
+        el.style.left = `${rect.left - reach}px`;
+        el.style.right = "auto";
+        el.style.transformOrigin = `${w + reach}px 50%`;
+        el.style.background = `linear-gradient(to left, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
+      }
+    } else {
+      if (el.parentElement !== container) container.appendChild(el);
+      el.style.position = "absolute";
+      el.style.zIndex = "-1"; // behind the page (z 0), over the revealed neighbour
+      el.style.top = `${(100 - heightPct) / 2}%`;
+      el.style.height = `${heightPct}%`;
+      el.style.transform = `rotateY(${deg}deg)`;
+      if (direction < 0) {
+        // Spine on the left, lifted edge on the right → extend rightward, darkest at
+        // the page edge. Pivot about the spine (the page's left edge = -w from here).
+        el.style.left = "100%";
+        el.style.right = "auto";
+        el.style.transformOrigin = `${-w}px 50%`;
+        el.style.background = `linear-gradient(to right, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
+      } else {
+        el.style.left = "auto";
+        el.style.right = "100%";
+        el.style.transformOrigin = `${w + reach}px 50%`;
+        el.style.background = `linear-gradient(to left, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
+      }
+    }
     el.style.width = `${reach}px`;
     el.style.opacity = `${lift}`;
     el.style.display = "block";
-    el.style.transform = `rotateY(${deg}deg)`;
-    if (direction < 0) {
-      // Spine on the left, lifted edge on the right → extend rightward, darkest at
-      // the page edge. Pivot about the spine (the page's left edge = -w from here).
-      el.style.left = "100%";
-      el.style.right = "auto";
-      el.style.transformOrigin = `${-w}px 50%`;
-      el.style.background = `linear-gradient(to right, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
-    } else {
-      el.style.left = "auto";
-      el.style.right = "100%";
-      el.style.transformOrigin = `${w + reach}px 50%`;
-      el.style.background = `linear-gradient(to left, rgba(${rgb}, ${a}) ${solidStop}%, rgba(${rgb}, 0))`;
-    }
   }
 
   private clearShadow(): void {
@@ -440,11 +493,12 @@ export class PageFlip {
     // child (the desktop editor) rather than the page itself (the client view).
     const page = this.cfg.currentPage();
     if (page) {
-      page.classList.add(PageFlip.HIDE_SCROLLBAR_CLASS);
+      page.classList.add(PageFlip.HIDE_SCROLLBAR_CLASS, PageFlip.UNCLIP_PAGE_CLASS);
       this.scrollbarHidden = page;
+      if (this.cfg.liftCurrentPageDuringFlip?.()) this.liftCurrentPage(page);
     }
     this.flipOverflowTargets = [];
-    let node: HTMLElement | null = el;
+    let node: HTMLElement | null = this.liftedPage ? el.parentElement : el;
     while (node && !this.cfg.isFlipBoundary(node)) {
       if (window.getComputedStyle(node).overflow !== "visible") {
         this.flipOverflowTargets.push({ el: node, overflow: node.style.overflow });
@@ -463,12 +517,70 @@ export class PageFlip {
     this.cfg.onFlipActiveChange?.(false);
     this.clearShadow();
     if (this.scrollbarHidden) {
-      this.scrollbarHidden.classList.remove(PageFlip.HIDE_SCROLLBAR_CLASS);
+      this.scrollbarHidden.classList.remove(PageFlip.HIDE_SCROLLBAR_CLASS, PageFlip.UNCLIP_PAGE_CLASS);
       this.scrollbarHidden = null;
     }
+    this.restoreLiftedPage();
     for (const { el: node, overflow } of this.flipOverflowTargets) node.style.overflow = overflow;
     this.flipOverflowTargets = [];
     el.style.zIndex = "";
     el.style.position = "";
+  }
+
+  private liftCurrentPage(page: HTMLElement): void {
+    if (this.liftedPage || !page.parentNode) return;
+    const rect = page.getBoundingClientRect();
+    const computed = window.getComputedStyle(page);
+    const wasDark = !!page.closest("#mainView.dark");
+    this.liftedPage = {
+      page,
+      parent: page.parentNode,
+      nextSibling: page.nextSibling,
+      rect,
+      style: {
+        position: page.style.position,
+        inset: page.style.inset,
+        left: page.style.left,
+        top: page.style.top,
+        width: page.style.width,
+        height: page.style.height,
+        zIndex: page.style.zIndex,
+        boxSizing: page.style.boxSizing,
+        backgroundColor: page.style.backgroundColor,
+        color: page.style.color,
+      },
+    };
+    document.body.appendChild(page);
+    page.style.position = "fixed";
+    page.style.inset = "auto";
+    page.style.left = `${rect.left}px`;
+    page.style.top = `${rect.top}px`;
+    page.style.width = `${rect.width}px`;
+    page.style.height = `${rect.height}px`;
+    page.style.zIndex = "100000";
+    page.style.boxSizing = "border-box";
+    page.style.backgroundColor = wasDark ? "#000" : computed.backgroundColor;
+    page.style.color = wasDark ? "#e9e9e9" : computed.color;
+    page.classList.toggle(PageFlip.LIFTED_DARK_CLASS, wasDark);
+  }
+
+  private restoreLiftedPage(): void {
+    const lifted = this.liftedPage;
+    if (!lifted) return;
+    const { page, parent, nextSibling, style } = lifted;
+    const before = nextSibling && nextSibling.parentNode === parent ? nextSibling : null;
+    parent.insertBefore(page, before);
+    page.style.position = style.position;
+    page.style.inset = style.inset;
+    page.style.left = style.left;
+    page.style.top = style.top;
+    page.style.width = style.width;
+    page.style.height = style.height;
+    page.style.zIndex = style.zIndex;
+    page.style.boxSizing = style.boxSizing;
+    page.style.backgroundColor = style.backgroundColor;
+    page.style.color = style.color;
+    page.classList.remove(PageFlip.LIFTED_DARK_CLASS);
+    this.liftedPage = null;
   }
 }

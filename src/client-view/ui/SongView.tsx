@@ -193,6 +193,9 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       // Stop un-clipping at the full-view box; the page rotates within it.
       isFlipBoundary: (el) => el.id === "mainView",
+      // In split landscape the song pane must keep clipping the revealed
+      // neighbour, but the turning page itself may overlap the options panel.
+      liftCurrentPageDuringFlip: () => true,
       // No page-turn navigation in view-only mode: a plain Client follower, or App
       // mode while watching a session. Mirrors MainToolbar hiding btnPrev/btnNext
       // (legacy setLeader(false)/ppdWatchMode). Read live state so a mid-session
