@@ -676,7 +676,7 @@ export class ClientViewStore {
 
   private wire(): void {
     this.unsubscribes.push(
-      this.api.display.subscribeDisplay((display) => this.set({ display, transpose: display.transpose, capo: display.capo ?? 0 })),
+      this.api.display.subscribeDisplay((display) => this.set({ display, transpose: display.transpose ?? 0, capo: display.capo ?? 0 })),
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
       this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
       this.api.auth.subscribeAuth((authed) => this.set({ authed, leader: this.api.auth.currentLeader() })),
