@@ -227,45 +227,34 @@ export function SchedulePicker({
 
   const cvModifier = variant === "cv" ? " schedule-picker--cv" : "";
 
+  const cancelTitle = action.style === "text" ? action.cancelLabel : action.cancelTitle;
+
   return (
     <div className={`schedule-dialog-overlay${cvModifier}`} onClick={onCancel}>
       <div className={`schedule-dialog${cvModifier}`} onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
           <h3>{title}</h3>
+          <button type="button" className="schedule-close-btn" onClick={onCancel} title={cancelTitle} aria-label={cancelTitle}>
+            ×
+          </button>
         </div>
         <div className="dialog-body">{mode === "save" ? renderCalendar() : renderDateList()}</div>
         <div className="dialog-footer">
           {action.style === "text" ? (
-            <>
-              <button type="button" className="btn btn-primary schedule-ok-btn" onClick={() => void handleOK()} disabled={!selectedDate}>
-                {action.okLabel}
-              </button>
-              <button type="button" className="btn btn-secondary schedule-cancel-btn" onClick={onCancel}>
-                {action.cancelLabel}
-              </button>
-            </>
+            <button type="button" className="btn btn-primary schedule-ok-btn" onClick={() => void handleOK()} disabled={!selectedDate}>
+              {action.okLabel}
+            </button>
           ) : (
-            <>
-              <button
-                type="button"
-                className="schedule-iconbtn schedule-cancel-btn"
-                title={action.cancelTitle}
-                aria-label={action.cancelTitle}
-                onClick={onCancel}
-              >
-                <img className="btnImg" src={action.cancelIcon} alt={action.cancelTitle} />
-              </button>
-              <button
-                type="button"
-                className="schedule-iconbtn schedule-ok-btn"
-                title={action.okTitle}
-                aria-label={action.okTitle}
-                onClick={() => void handleOK()}
-                disabled={!selectedDate}
-              >
-                <img className="btnImg" src={action.okIcon} alt={action.okTitle} />
-              </button>
-            </>
+            <button
+              type="button"
+              className="schedule-iconbtn schedule-ok-btn"
+              title={action.okTitle}
+              aria-label={action.okTitle}
+              onClick={() => void handleOK()}
+              disabled={!selectedDate}
+            >
+              <img className="btnImg" src={action.okIcon} alt={action.okTitle} />
+            </button>
           )}
         </div>
       </div>

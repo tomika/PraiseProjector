@@ -23,7 +23,7 @@ export function SchedulePickerDialog() {
       variant="cv"
       mode="save"
       scheduledDates={state.saveScheduledDates}
-      title={state.leader ? `Save playlist for ${state.leader.name}` : "Save playlist"}
+      title=""
       weekdays={WEEKDAYS}
       todayLabel="Today"
       action={{
