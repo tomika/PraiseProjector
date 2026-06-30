@@ -12,7 +12,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { isFollowerView } from "../controller/ClientViewStore";
+import { isViewingRemoteDisplay, showsNetworkIndicator } from "../controller/ClientViewStore";
 import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
@@ -62,7 +62,7 @@ export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: 
   // View-only: a Client follower, OR App mode while watching a session (legacy
   // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
-  const follower = isFollowerView(state) || (state.mode === "App" && state.network.status === "watching");
+  const follower = isViewingRemoteDisplay(state);
   const capoSelectRef = useRef<HTMLSelectElement | null>(null);
 
   // The toolbar is a vertical column when landscape AND options closed.
@@ -252,24 +252,23 @@ export function MainToolbar({ onPrev, onNext }: { onPrev?: () => void; onNext?: 
     // single <img src>: rewriting src mid-load cancels the in-flight request (it
     // shows as 0 B / "(unknown)" / Initiator "Other" in devtools) and blanks the
     // indicator between frames — very visible when the status flips repeatedly.
-    netstatus:
-      state.mode !== "App" ? (
-        <div
-          id="netstatus"
-          className={`btnDiv net-${netStatus}`}
-          title={netTitle}
-          onClick={netReconnectable ? () => void store.reconnect() : undefined}
-        >
-          {NET_STATUSES.map((s) => (
-            <img
-              key={s}
-              className={`btnImg cv-net-icon${s === netStatus ? " cv-net-active" : ""}${s === "startup" ? " cv-spin" : ""}`}
-              src={icon(NET_STATUS_ICON[s])}
-              alt={NET_STATUS_LABEL[s] ?? s}
-            />
-          ))}
-        </div>
-      ) : null,
+    netstatus: showsNetworkIndicator(state) ? (
+      <div
+        id="netstatus"
+        className={`btnDiv net-${netStatus}`}
+        title={netTitle}
+        onClick={netReconnectable ? () => void store.reconnect() : undefined}
+      >
+        {NET_STATUSES.map((s) => (
+          <img
+            key={s}
+            className={`btnImg cv-net-icon${s === netStatus ? " cv-net-active" : ""}${s === "startup" ? " cv-spin" : ""}`}
+            src={icon(NET_STATUS_ICON[s])}
+            alt={NET_STATUS_LABEL[s] ?? s}
+          />
+        ))}
+      </div>
+    ) : null,
     fullscreen: (
       <div id="fsdiv" className="btnDiv" onClick={() => void store.toggleFullScreen()}>
         <img

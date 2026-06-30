@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { canUseSessions } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 
 interface MenuItem {
@@ -68,7 +69,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     },
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
-    { id: "sessions", label: "Sessions", image: "wifi.svg", show: state.mode === "App", run: () => store.openSessionsDialog() },
+    { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
     {
       id: "save",
       label: "Save list",

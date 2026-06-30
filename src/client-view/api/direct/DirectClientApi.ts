@@ -39,6 +39,7 @@ import {
 import type { Display } from "../../../../common/pp-types";
 import type { P2PSessionInfo } from "../../../types/electron";
 import { createDeviceApi } from "../rest/restPorts";
+import { deriveCapabilities } from "../capabilities";
 import type {
   AuthApi,
   ClientCapabilities,
@@ -105,34 +106,28 @@ export class DirectClientApi implements ClientApi {
 
   constructor(private readonly authBridge?: DirectAuthBridge) {}
 
-  // The embedded desktop view drives the host's live display directly, so control
-  // + working-playlist editing are inherently granted. Login / leader selection
-  // are not its concern (it IS the host), and it is the Electron renderer, not a
-  // PWA. canPersistPlaylist is the one dynamic flag: saving writes to the host's
-  // SELECTED leader's local schedule (parity with the desktop app's save), so it
-  // is offered only while a leader is selected.
+  // The embedded desktop view (role "AppDirect") drives the host's live display
+  // directly, so control + working-playlist editing are inherently granted. The
+  // capability RULES live in one place (deriveCapabilities); this only supplies
+  // the embed's context: login follows the injected auth bridge, save follows the
+  // host's SELECTED leader (parity with the desktop app's save, so it's offered
+  // only while a leader is selected), and online hosting follows the
+  // external-web-display toggle. It is the Electron renderer, not a PWA.
   private computeCapabilities(): ClientCapabilities {
-    const hasHostBridge = isHostDevicePpdAvailable();
-    const hasWebServerBackend = isWebServerRuntimeAvailable();
-    return {
-      // The desktop embed is always the leader; there is no follower/leader toggle.
-      leaderModeAvailable: false,
-      canControlDisplay: true,
-      canEditWorkingPlaylist: true,
-      canLogin: !!this.authBridge,
-      canChangeLeader: false,
-      canPersistPlaylist: !!this.getSelectedLeader(),
-      // Local PPD hosting needs the native host bridge; online (cloud) hosting is
-      // controlled by its feature setting.
-      canHostLocalSession: hasHostBridge && this.isPpdSessionEnabled(),
-      canHostOnlineSession: this.isExternalWebDisplayEnabled(),
-      // The embedded desktop view IS the editor's sibling face; switching back is
-      // the home button's job, not a navigation to index.html.
-      canOpenFullEditor: false,
+    return deriveCapabilities({
+      role: "AppDirect",
+      hasHostBridge: isHostDevicePpdAvailable(),
+      hasWebServerBackend: isWebServerRuntimeAvailable(),
       isPwa: false,
-      hasHostBridge,
-      hasWebServerBackend,
-    };
+      authed: this.isAuthed(),
+      hasAuthBridge: !!this.authBridge,
+      hasSelectedLeader: !!this.getSelectedLeader(),
+      externalWebDisplayEnabled: this.isExternalWebDisplayEnabled(),
+      ppdSessionEnabled: this.isPpdSessionEnabled(),
+      // No follower/leader toggle in an App role.
+      leaderRight: false,
+      leaderMode: false,
+    });
   }
 
   /** The host app's currently selected leader (settings.selectedLeader), resolved

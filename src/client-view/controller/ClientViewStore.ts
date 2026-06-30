@@ -274,6 +274,43 @@ export function isFollowerView(state: ClientViewState): boolean {
   return state.mode === "Client" && !state.capabilities.canControlDisplay;
 }
 
+// ── mode-derived UI selectors ────────────────────────────────────────────────
+// The UI layers gate affordances off these named intents rather than branching on
+// `state.mode` directly, so the mode → intent mapping lives in exactly one place
+// (mirroring the ClientApi contract note: "the UI branches on capabilities, not on
+// mode"). Pure functions of the snapshot, like {@link isFollowerView}.
+
+/** App mode is the only context with a sessions hub (discover / attach / host); a
+ *  Client is a fixed-source follower, so the hub is never offered there. */
+export function canUseSessions(state: ClientViewState): boolean {
+  return state.mode === "App";
+}
+
+/** An App that is currently following a remote (cloud) session — temporarily a
+ *  follower (legacy ppdWatchMode), unlike the PERMANENT Client follower. */
+export function isAppWatching(state: ClientViewState): boolean {
+  return state.mode === "App" && state.network.status === "watching";
+}
+
+/** The view is mirroring someone else's display — a permanent Client follower OR
+ *  an App that chose to watch a session. Drives the view-only toolbar / song view
+ *  (no navigation, transpose or song browser). */
+export function isViewingRemoteDisplay(state: ClientViewState): boolean {
+  return isFollowerView(state) || isAppWatching(state);
+}
+
+/** The toolbar network indicator is meaningful only for a host-served Client (a
+ *  persistent server link to report); standalone App mode has none to show. */
+export function showsNetworkIndicator(state: ClientViewState): boolean {
+  return state.mode !== "App";
+}
+
+/** Offer the highlight lamp to anyone who can control the display, plus a Client
+ *  follower (who can REQUEST highlight permission from the leader). */
+export function canUseHighlightLamp(state: ClientViewState): boolean {
+  return state.capabilities.canControlDisplay || state.mode === "Client";
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 
 function initialState(): ClientViewState {

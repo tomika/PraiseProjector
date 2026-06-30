@@ -269,7 +269,7 @@ body,
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: hidden !important;
   background: var(--cv-song-bg);
   touch-action: none;
   /* 3D perspective for the page-turn comes from .pp-flip-perspective (shared,
@@ -292,10 +292,13 @@ body,
      (which left the song title highlighted after a page turn). */
   -webkit-user-select: none;
   user-select: none;
+
+  overflow: visible !important;
 }
 
 .cv-page-current {
   z-index: 0;
+  overflow: visible !important;
 }
 
 .cv-page-prev,

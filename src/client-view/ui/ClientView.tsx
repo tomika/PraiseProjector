@@ -11,6 +11,7 @@
 
 import { useRef } from "react";
 import { useClientViewState } from "../controller/ClientViewContext";
+import { canUseSessions } from "../controller/ClientViewStore";
 import { AboutDialog } from "./AboutDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { InstructionsEditorDialog } from "./InstructionsEditorDialog";
@@ -39,7 +40,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
         <SongView ref={songViewRef} display={state.display} settings={state.displaySettings} dark={state.isDark} />
       </div>
       {state.loginDialogOpen && state.capabilities.canLogin && <LoginDialog />}
-      {state.sessionsDialogOpen && state.mode === "App" && <SessionsDialog />}
+      {state.sessionsDialogOpen && canUseSessions(state) && <SessionsDialog />}
       {state.saveDialogOpen && state.capabilities.canPersistPlaylist && <SchedulePickerDialog />}
       {state.instructionsEditorOpen && <InstructionsEditorDialog />}
       {state.aboutOpen && <AboutDialog />}

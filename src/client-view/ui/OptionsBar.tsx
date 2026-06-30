@@ -9,7 +9,7 @@
 
 import { useEffect, useRef } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import type { ChordBoxKind, DarkMode, DisplaySettings } from "../controller/ClientViewStore";
+import { canUseHighlightLamp, type ChordBoxKind, type DarkMode, type DisplaySettings } from "../controller/ClientViewStore";
 import { HighlightOpacityDialog } from "./HighlightOpacityDialog";
 import { MoreMenu } from "./MoreMenu";
 import { ZoomPanel } from "./ZoomDialog";
@@ -96,7 +96,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
 
   // Show the lamp button when the user has display control (leader/host) or
   // when following an online session where permission can be requested.
-  const showLampButton = state.capabilities.canControlDisplay || state.mode === "Client";
+  const showLampButton = canUseHighlightLamp(state);
 
   const highlightIcon = state.highlightControl ? "hand.svg" : "lamp.svg";
   const highlightTitle = state.highlightControl

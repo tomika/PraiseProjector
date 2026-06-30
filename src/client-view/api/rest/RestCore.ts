@@ -29,6 +29,7 @@ import {
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { NO_CAPABILITIES } from "../ClientApi";
 import type { ClientCapabilities, ClientConfig, ClientMode, LeaderIdentity, NetworkState, Unsubscribe } from "../ClientApi";
+import { deriveCapabilities } from "../capabilities";
 import { readSessionToggleSettings } from "../sessionFeatureSettings";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -231,68 +232,32 @@ export class RestCore {
   }
 
   private computeCapabilities(): ClientCapabilities {
-    const hasHostBridge = isHostDevicePpdAvailable();
-    const hasWebServerBackend = isWebServerRuntimeAvailable();
-    const sessionToggles = readSessionToggleSettings();
     const isPwa =
       typeof window !== "undefined" &&
       (window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
         (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
-    if (this.config.servedByHost) {
-      // Electron webserver context (#2): the host gates access by IP allowlist
-      // and injects the granted level as window.__ppAccess (→ config.hostAccess).
-      // A GUEST is a view-only follower; LEADER/LOCAL may control the display.
-      // When the level is unknown (older host that doesn't inject it) fall back
-      // to optimistic — the server still ENFORCES on /display_update, so an
-      // unauthorized push simply no-ops server-side. Reactively downgrading on a
-      // 403 remains a follow-up (needs cloudApi to surface the response status).
-      const hasRight = this.headerLeaderAvailable ?? this.config.hostAccess !== "GUEST";
-      // The legacy chkAdmin gate: a privileged client only controls when it has
-      // ALSO switched leader mode on. The right itself is surfaced separately so
-      // the UI can offer the toggle.
-      const controllable = hasRight && this.leaderMode;
-      return {
-        leaderModeAvailable: hasRight,
-        canControlDisplay: controllable,
-        canEditWorkingPlaylist: controllable,
-        canLogin: false,
-        canChangeLeader: false,
-        // Saving a named list is a host-granted leader/profile operation; keep it
-        // available even before the client switches live display control on.
-        canPersistPlaylist: hasRight,
-        // Locked to its serving host (auto-follows via config.follow); it never
-        // hosts its own session.
-        canHostLocalSession: false,
-        canHostOnlineSession: false,
-        // The full editor (index.html) is served by the same webserver, but only
-        // makes sense on a real browser/desktop, not the native host.
-        canOpenFullEditor: !hasHostBridge,
-        isPwa,
-        hasHostBridge,
-        hasWebServerBackend,
-      };
-    }
-    // App mode (App·Rest): the standalone website / Android cloud app. The client
-    // view IS the full client here, so every affordance is available and it
-    // attaches to cloud sessions itself. Always in control — no follower/leader
-    // toggle (leaderModeAvailable = false).
-    return {
-      leaderModeAvailable: false,
-      canControlDisplay: true,
-      canEditWorkingPlaylist: true,
-      canLogin: true,
-      canChangeLeader: true,
-      canPersistPlaylist: true,
-      // Hosting a local PPD session needs a native transport (Android / Electron
-      // desktop); a plain browser has none. Hosting an online session needs a
-      // leader identity (the cloud session row is keyed by it).
-      canHostLocalSession: hasHostBridge && sessionToggles.ppdSessionEnabled,
-      canHostOnlineSession: this.authed,
-      canOpenFullEditor: !hasHostBridge,
+    // The capability RULES live in one place (deriveCapabilities); RestCore only
+    // supplies its context. servedByHost ⇒ a host-served LAN follower (Client);
+    // otherwise the standalone website / Android cloud app (App·Rest), which is a
+    // full client always in control. The host access level / leader-available
+    // header are folded into the `leaderRight` input below: a GUEST (or an older
+    // host that injects nothing) gets no right; the server still ENFORCES control
+    // on /display_update regardless, so an unauthorized push no-ops server-side.
+    return deriveCapabilities({
+      role: this.config.servedByHost ? "ClientServed" : "AppRest",
+      hasHostBridge: isHostDevicePpdAvailable(),
+      hasWebServerBackend: isWebServerRuntimeAvailable(),
       isPwa,
-      hasHostBridge,
-      hasWebServerBackend,
-    };
+      authed: this.authed,
+      // The auth bridge, host-selected leader and external-display toggle drive
+      // the in-process Direct embed only; the Rest roles don't use them.
+      hasAuthBridge: false,
+      hasSelectedLeader: false,
+      externalWebDisplayEnabled: false,
+      ppdSessionEnabled: readSessionToggleSettings().ppdSessionEnabled,
+      leaderRight: this.headerLeaderAvailable ?? this.config.hostAccess !== "GUEST",
+      leaderMode: this.leaderMode,
+    });
   }
 
   /** Apply the user's leader-mode choice (legacy chkAdmin) and re-emit. The

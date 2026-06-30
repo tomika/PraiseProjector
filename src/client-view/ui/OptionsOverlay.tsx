@@ -6,7 +6,7 @@
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { isFollowerView } from "../controller/ClientViewStore";
+import { isAppWatching, isFollowerView } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 import { LeaderPlaylistPicker } from "./LeaderPlaylistPicker";
 import { OptionsBar } from "./OptionsBar";
@@ -24,7 +24,7 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
   // App mode while watching a session is also view-only (legacy ppdWatchMode): hide
   // the browser, but offer a Stop-following button instead of netdisplay (the cloud
   // App has no host /netdisplay route — that button is Client/host-served only).
-  const appWatching = state.mode === "App" && state.network.status === "watching";
+  const appWatching = isAppWatching(state);
   const viewer = follower || appWatching;
   const canEdit = state.capabilities.canEditWorkingPlaylist;
   const editingPlaylist = canEdit && state.listMode === "playlist";

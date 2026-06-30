@@ -19,7 +19,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { isFollowerView } from "../controller/ClientViewStore";
+import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
 import {
@@ -199,7 +199,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // capability/leader-mode change takes effect without rebuilding the flip.
       canFlip: () => {
         const s = store.getSnapshot();
-        return !isFollowerView(s) && !(s.mode === "App" && s.network.status === "watching");
+        return !isViewingRemoteDisplay(s);
       },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
