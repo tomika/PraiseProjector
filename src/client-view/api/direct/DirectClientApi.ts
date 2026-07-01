@@ -44,8 +44,6 @@ import type {
   AuthApi,
   ClientCapabilities,
   ClientMode,
-  DatabaseSyncOptions,
-  DatabaseSyncOutcome,
   DeviceApi,
   DisplayApi,
   LeaderIdentity,
@@ -215,42 +213,6 @@ export class DirectClientApi implements ClientApi {
 
   // The desktop embed is always in control; the leader/follower toggle is N/A.
   setLeaderMode(): void {}
-
-  // Open the host app's full DBSync flow. The embed shares the host's in-process
-  // Database, so the real reconciliation belongs to the main UI's DBSyncDialog;
-  // we just ask the host (via the same pp-cv-* channel the display path uses) to
-  // reveal it. The host switches back to the client view when the dialog closes.
-  requestDatabaseSync(options?: DatabaseSyncOptions): Promise<DatabaseSyncOutcome> {
-    if (typeof window === "undefined") return Promise.resolve("error");
-    // The host (App.tsx) runs the actual DBSyncDialog and reports back on
-    // pp-cv-db-sync-result when it closes / completes silently. Resolve on the next
-    // such event (syncs are sequential, so no correlation id is needed).
-    return new Promise<DatabaseSyncOutcome>((resolve) => {
-      const onResult = (e: Event) => {
-        window.removeEventListener("pp-cv-db-sync-result", onResult);
-        resolve((e as CustomEvent<{ outcome?: DatabaseSyncOutcome }>).detail?.outcome ?? "done");
-      };
-      window.addEventListener("pp-cv-db-sync-result", onResult);
-      window.dispatchEvent(new CustomEvent("pp-cv-open-db-sync", { detail: options ?? {} }));
-    });
-  }
-
-  // The pull-down "long pull" reset: wipe local preferences + the song database,
-  // a faithful port of the legacy client's clearStorage(). The caller reloads.
-  async clearAppData(): Promise<void> {
-    try {
-      window.localStorage?.clear();
-    } catch {
-      /* storage may be unavailable (private mode) — non-fatal */
-    }
-    try {
-      const db = Database.getInstance();
-      db.clear();
-      await db.forceSaveAsync();
-    } catch {
-      /* a not-yet-ready database is non-fatal */
-    }
-  }
 
   // Drive the host app via the SAME event the webserver clients use, so the main
   // UI's selection/preview/playlist AND the projector all follow along — not just

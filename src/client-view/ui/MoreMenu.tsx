@@ -46,19 +46,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   }, [open]);
 
   const caps = state.capabilities;
-  // Save acts on the live working playlist; greyed out while it is empty.
-  // Clear list lives in the playlist search row.
-  const emptyList = state.playlist.length === 0;
   const items: MenuItem[] = [
-    {
-      id: "sync",
-      label: "Sync",
-      image: "sync.svg",
-      show: true,
-      // The Direct embed delegates a real database sync to the host app's DBSync
-      // dialog; the served/cloud Rest client has no local DB, so it only refreshes.
-      run: () => (store.canFullSync() ? store.startFullSync() : void store.syncNow()),
-    },
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).
     { id: "signin", label: "Sign in", image: "enter.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },
@@ -72,14 +60,6 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
     { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
-    {
-      id: "save",
-      label: "Save list",
-      image: "store.svg",
-      show: caps.canPersistPlaylist,
-      disabled: emptyList,
-      run: () => void store.openSaveDialog(),
-    },
     {
       id: "home",
       label: "Switch UI",

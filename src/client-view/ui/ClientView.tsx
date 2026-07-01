@@ -18,7 +18,6 @@ import { InstructionsEditorDialog } from "./InstructionsEditorDialog";
 import { LoginDialog } from "./LoginDialog";
 import { MainToolbar } from "./MainToolbar";
 import { OptionsOverlay } from "./OptionsOverlay";
-import { SchedulePickerDialog } from "./SchedulePickerDialog";
 import { SessionsDialog } from "./SessionsDialog";
 import { SongView, type SongViewHandle } from "./SongView";
 import { PullRefreshSpinner } from "./PullRefreshSpinner";
@@ -31,9 +30,9 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
   // The toolbar Prev/Next buttons drive the same animated page-turn as a swipe,
   // which lives in SongView — reached here through an imperative handle.
   const songViewRef = useRef<SongViewHandle>(null);
-  // Pull-down-from-the-toolbar refresh (legacy parity): escalating levels run a
-  // silent download-only sync / replace-DB / clear-data, gated by what the backend
-  // offers (3 for the Direct embed, 1 = reload for a Rest client).
+  // Pull-down-from-the-toolbar refresh: a released pull just reloads the page
+  // (database synchronization is a full-view-only concern now — see ClientViewStore
+  // pullRefresh). A single level, so no escalation.
   const pull = usePullToRefresh({ maxLevel: store.maxPullLevel(), onRelease: (level) => store.pullRefresh(level) });
 
   // The bordered/flat button look is a single build-time switch (see uiConfig).
@@ -53,7 +52,6 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       </div>
       {state.loginDialogOpen && state.capabilities.canLogin && <LoginDialog />}
       {state.sessionsDialogOpen && canUseSessions(state) && <SessionsDialog />}
-      {state.saveDialogOpen && state.capabilities.canPersistPlaylist && <SchedulePickerDialog />}
       {state.instructionsEditorOpen && <InstructionsEditorDialog />}
       {state.aboutOpen && <AboutDialog />}
       {state.confirmAnim && <ConfirmDialog />}

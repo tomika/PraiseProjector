@@ -14,7 +14,6 @@
  */
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
-import { formatLocalDateLabel, parseScheduleDate } from "../../../common/date-only";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import type {
@@ -213,13 +212,6 @@ export interface ClientViewState {
   selectedLeaderId: string | null;
   /** The dated playlist label chosen in the picker (the date select), or null. */
   selectedPlaylistLabel: string | null;
-  /** The save-playlist date-picker dialog visibility (capabilities.canPersistPlaylist). */
-  saveDialogOpen: boolean;
-  /** Whether the leader's scheduled dates are being fetched for the save picker. */
-  saveDialogLoading: boolean;
-  /** Days the current leader already has a saved playlist for — "signed" in the
-   *  save picker so the user can see which dates would overwrite. */
-  saveScheduledDates: Date[];
   /** The maxText (zoom) settings dialog visibility. */
   zoomDialogOpen: boolean;
   /** The sign-in dialog visibility (cloud context only — capabilities.canLogin). */
@@ -345,9 +337,6 @@ function initialState(): ClientViewState {
     leaderProfilesLoading: false,
     selectedLeaderId: null,
     selectedPlaylistLabel: null,
-    saveDialogOpen: false,
-    saveDialogLoading: false,
-    saveScheduledDates: [],
     zoomDialogOpen: false,
     loginDialogOpen: false,
     sessionsDialogOpen: false,
@@ -703,51 +692,18 @@ export class ClientViewStore {
     ]);
   }
 
-  /** Whether the active backend can run a real database synchronization (upload
-   *  local edits + reconcile with the server). True only for the in-process Direct
-   *  embed, which shares the host's local Database; the served/cloud Rest adapter
-   *  has no local store to reconcile, so the Sync affordance falls back to the
-   *  lightweight {@link syncNow} refresh. */
-  canFullSync(): boolean {
-    return typeof this.api.requestDatabaseSync === "function";
-  }
-
-  /** Open the host app's full database-sync flow (Direct embed only). The host
-   *  shows its DBSync dialog and returns to the client view when it closes. */
-  startFullSync(): void {
-    void this.api.requestDatabaseSync?.();
-  }
-
-  /** Highest pull-to-refresh level the backend offers: 3 for the Direct embed
-   *  (sync / replace-db / clear-data), 1 for a Rest client (reload only — no local
-   *  DB to reconcile). Drives how far the pull gesture can escalate. */
+  /** The pull-to-refresh gesture is reload-only now, in every mode: a released
+   *  pull just reloads the page (re-reading the local Database / re-fetching from
+   *  the server). Database synchronization is a full-view-only concern — the client
+   *  view merely informs the user that a sync is available. So a single level. */
   maxPullLevel(): number {
-    return this.canFullSync() ? 3 : 1;
+    return 1;
   }
 
-  /** Run the released pull-to-refresh level. 1 = silent download-only sync (defer
-   *  every local edit, escalating to the dialog only on conflict), 2 = replace the
-   *  local DB from the server, 3 = clear all app data; 2 and 3 confirm first. The
-   *  page reloads on success so the refreshed local data is shown (legacy parity).
-   *  On a Rest client (no local DB) any pull just reloads to re-fetch. */
-  async pullRefresh(level: number): Promise<void> {
+  /** Reload the page on any released pull. */
+  pullRefresh(level: number): void {
     if (level <= 0) return;
-    if (!this.canFullSync()) {
-      this.reloadPage();
-      return;
-    }
-    if (level === 1) {
-      const outcome = await this.api.requestDatabaseSync?.({ headless: true, deferAll: true });
-      if (outcome !== "error") this.reloadPage();
-    } else if (level === 2) {
-      if (!(await this.confirm("replacedb"))) return;
-      const outcome = await this.api.requestDatabaseSync?.({ replace: true });
-      if (outcome !== "error") this.reloadPage();
-    } else {
-      if (!(await this.confirm("clear-app"))) return;
-      await this.api.clearAppData?.();
-      this.reloadPage();
-    }
+    this.reloadPage();
   }
 
   private reloadPage(): void {
@@ -1308,47 +1264,6 @@ export class ClientViewStore {
   }
 
   // ── more-menu actions ──────────────────────────────────────────────────────────
-
-  // ── save playlist (date picker) ──────────────────────────────────────────────
-
-  /** Open the save-playlist date picker and fetch the current leader's already-
-   *  scheduled dates so they can be "signed" in the calendar. Caller must gate on
-   *  capabilities.canPersistPlaylist. Mirrors the legacy iconStore calendar flow
-   *  (praiseprojector.ts ~L1300: load the leader's playlists, mark their dates). */
-  async openSaveDialog(): Promise<void> {
-    this.set({ saveDialogOpen: true, saveDialogLoading: true, saveScheduledDates: [] });
-    try {
-      const leaderId = this.state.leader?.id;
-      const profiles = await this.api.playlist.getLeaderPlaylists();
-      const profile = leaderId ? profiles.find((p) => p.leaderId === leaderId) : undefined;
-      // A playlist's date is its `scheduled` field, falling back to parsing the
-      // YYYY.MM.DD label (the legacy store_list label format).
-      const dates = (profile?.playlists ?? []).map((pl) => pl.scheduled ?? parseScheduleDate(pl.label)).filter((d): d is Date => d != null);
-      // Bail if the dialog was closed while the fetch was in flight.
-      if (this.state.saveDialogOpen) this.set({ saveScheduledDates: dates, saveDialogLoading: false });
-    } catch {
-      if (this.state.saveDialogOpen) this.set({ saveDialogLoading: false });
-    }
-  }
-
-  closeSaveDialog(): void {
-    this.set({ saveDialogOpen: false, saveDialogLoading: false });
-  }
-
-  /** Persist the working playlist to the backend, scheduled for `date` (cloud
-   *  leader only). On an OVERWRITE response, confirm and retry forced — the
-   *  faithful port of legacy uploadList(). Caller must gate on
-   *  capabilities.canPersistPlaylist. */
-  async confirmSave(date: Date): Promise<void> {
-    this.closeSaveDialog();
-    const label = formatLocalDateLabel(date);
-    const result = await this.api.playlist.upload({ label, scheduled: date });
-    if (result === "OVERWRITE") {
-      if (await this.confirm("overwrite")) {
-        await this.api.playlist.upload({ label, scheduled: date, forced: true });
-      }
-    }
-  }
 
   /** Show the About dialog (version + license references), mirroring the legacy
    *  client's in-app about box rather than navigating away to the website. */

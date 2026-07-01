@@ -441,25 +441,6 @@ export interface DeviceApi {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Options for {@link ClientApi.requestDatabaseSync}. All default off, giving the
- * normal interactive full-view sync (the Sync menu item). The pull-down gesture
- * supplies the variants: a silent defer-all background sync, or a replace-local
- * re-download. Only meaningful on the Direct adapter (the desktop embed).
- */
-export interface DatabaseSyncOptions {
-  /** Run silently, revealing the dialog only when a conflict needs resolving. */
-  headless?: boolean;
-  /** Auto-defer (skip the upload of) every locally-modified item. */
-  deferAll?: boolean;
-  /** Replace the local database with the server copy before syncing. */
-  replace?: boolean;
-}
-
-/** Result of a {@link ClientApi.requestDatabaseSync} run: completed silently,
- *  escalated to the visible dialog for conflict resolution, or failed. */
-export type DatabaseSyncOutcome = "done" | "escalated" | "error";
-
-/**
  * The complete backend surface required by the client view. Implemented by the
  * Rest adapter (canonical) and, optionally, the Direct in-process adapter.
  */
@@ -486,23 +467,6 @@ export interface ClientApi {
    * and re-applied on startup; the backend may still revoke the right.
    */
   setLeaderMode(enabled: boolean): void;
-
-  /**
-   * Open the host app's full database-synchronization flow. Implemented ONLY by
-   * the in-process Direct adapter (the desktop embed), which shares the host's
-   * local {@link Database} — there is nothing to reconcile in a served/cloud Rest
-   * client, so it leaves this undefined and the UI falls back to a lightweight
-   * refresh. The host shows its DBSync dialog and switches back to the client view
-   * when it is closed. See {@link DatabaseSyncOptions} for the pull-down variants.
-   */
-  requestDatabaseSync?(options?: DatabaseSyncOptions): Promise<DatabaseSyncOutcome>;
-
-  /**
-   * Wipe all local application data (the song Database + persisted preferences) —
-   * the pull-down "long pull" reset. Direct embed only; undefined where there is
-   * no local store (served/cloud Rest). The caller reloads afterwards.
-   */
-  clearAppData?(): Promise<void>;
 
   readonly song: SongApi;
   readonly playlist: PlaylistApi;
