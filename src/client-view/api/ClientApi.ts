@@ -28,6 +28,7 @@ import type {
   SongEntry,
   SongFound,
 } from "../../../common/pp-types";
+import type { SyncStatus } from "../../state/syncStatusStore";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Shared primitives
@@ -467,6 +468,16 @@ export interface ClientApi {
    * and re-applied on startup; the backend may still revoke the right.
    */
   setLeaderMode(enabled: boolean): void;
+  /**
+   * Current full-view "todo" status (unsynced changes, pending songs, update, cloud
+   * failure). Implemented ONLY by the in-process Direct adapter, which mirrors the
+   * full view's UserPanel via the shared syncStatusStore. Undefined on the Rest
+   * adapter (no local full view) — the client view then shows no attention badges.
+   */
+  getSyncStatus?(): SyncStatus;
+  /** Subscribe to {@link getSyncStatus} changes; fires with the current value on
+   *  subscribe. Direct adapter only. */
+  subscribeSyncStatus?(callback: (status: SyncStatus) => void): Unsubscribe;
 
   readonly song: SongApi;
   readonly playlist: PlaylistApi;

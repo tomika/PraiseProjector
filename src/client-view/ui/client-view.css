@@ -588,6 +588,12 @@ body,
    dropdown. */
 .cv-more {
   position: relative;
+  /* Stretch to the row's full height (matching taller siblings, e.g. capo/
+     transpose with a value label above the icon), then push the button to the
+     bottom of that space instead of centering it with the row. */
+  display: flex;
+  align-items: center;
+  align-self: stretch;
 }
 
 /* Match the close button's padding so the more-menu lines up exactly under it. */
@@ -1952,4 +1958,27 @@ body,
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── full-view "todo" attention dot (see syncStatusStore / hasFullViewTodo) ─────── */
+/* The more-button's dot anchors to .cv-more (its container, already position:relative
+   above), not to .cv-more-btn itself — so it stays pinned to the row's top-right
+   corner even as the button is bottom-aligned within that taller container. */
+#btnOptions,
+.cv-more-item {
+  position: relative;
+}
+.cv-todo-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff3b30;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 0.3em 0.05em rgba(255, 59, 48, 0.8),
+    0 0 0.6em 0.1em rgba(255, 59, 48, 0.5);
+  pointer-events: none;
 }

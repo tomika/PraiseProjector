@@ -16,7 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { canUseSessions } from "../controller/ClientViewStore";
+import { canUseSessions, hasFullViewTodo } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 
 interface MenuItem {
@@ -26,6 +26,8 @@ interface MenuItem {
   show: boolean;
   /** Greyed-out but visible (legacy makeDisabled), e.g. Clear/Save on an empty list. */
   disabled?: boolean;
+  /** Show a red attention dot on this item (full-view todo pending). */
+  dot?: boolean;
   run: () => void;
 }
 
@@ -65,6 +67,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       label: "Switch UI",
       image: "full-ui.svg",
       show: Boolean(onHome) || caps.canOpenFullEditor,
+      dot: hasFullViewTodo(state),
       run: () => {
         if (onHome) onHome();
         else store.openFullEditor();
@@ -93,6 +96,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
         onClick={() => setOpen((v) => !v)}
       >
         <img className="btnImg cv-opt-icon" src={icon("menu.svg")} alt="More" />
+        {hasFullViewTodo(state) && <span className="cv-todo-dot" aria-label="Action needed in full view" />}
       </button>
       {open && (
         <div className="cv-more-menu" role="menu">
@@ -107,6 +111,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
               title={item.label}
             >
               <img className="btnImg cv-opt-icon" src={icon(item.image)} alt="" />
+              {item.dot && <span className="cv-todo-dot" aria-hidden="true" />}
             </button>
           ))}
         </div>

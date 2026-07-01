@@ -15,6 +15,7 @@
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
+import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncStatus } from "../../state/syncStatusStore";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import type {
   ClientApi,
@@ -261,6 +262,8 @@ export interface ClientViewState {
   canExit: boolean;
   transpose: number;
   capo: number;
+  /** Full-view "todo" status mirrored from the host (Direct embed only; empty on Rest). */
+  syncStatus: SyncStatus;
 }
 
 /**
@@ -311,6 +314,12 @@ export function canUseHighlightLamp(state: ClientViewState): boolean {
   return state.capabilities.canControlDisplay || state.mode === "Client";
 }
 
+/** True when the host has any task the user can only complete in the full view
+ *  (sync, song review, or app update). Drives the client-view attention dots. */
+export function hasFullViewTodo(state: ClientViewState): boolean {
+  return statusHasFullViewTodo(state.syncStatus);
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 
 function initialState(): ClientViewState {
@@ -357,6 +366,7 @@ function initialState(): ClientViewState {
     canExit: false,
     transpose: 0,
     capo: 0,
+    syncStatus: EMPTY_SYNC_STATUS,
   };
 }
 
@@ -673,6 +683,12 @@ export class ClientViewStore {
       this.api.playlist.subscribePlaylist((playlist) => this.set({ playlist })),
       this.api.song.subscribeSongList((songs) => this.set({ songs }))
     );
+
+    // Mirror the host's full-view todo status (Direct embed only; Rest leaves the
+    // optional port methods undefined, so this simply never subscribes there).
+    if (this.api.subscribeSyncStatus) {
+      this.unsubscribes.push(this.api.subscribeSyncStatus((syncStatus) => this.set({ syncStatus })));
+    }
   }
 
   private async loadSongs(): Promise<void> {

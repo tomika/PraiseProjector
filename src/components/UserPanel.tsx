@@ -10,6 +10,8 @@ import { useSettings } from "../hooks/useSettings";
 import { Database } from "../../db-common/Database";
 import AuthDialog from "./AuthDialog";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
+import { setSyncStatus } from "../state/syncStatusStore";
+import { useUpdate } from "../contexts/UpdateContext";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
@@ -50,6 +52,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
     setOnLoginSuccess,
   } = useAuth();
   const { settings } = useSettings();
+  const { hasUpdate } = useUpdate();
   const { showMessage, showConfirmAsync } = useMessageBox();
   const { t } = useLocalization();
   const { tt } = useTooltips();
@@ -322,6 +325,19 @@ const UserPanel: React.FC<UserPanelProps> = ({
   useEffect(() => {
     onRemoteChangeCountChange?.(remoteChangeCount);
   }, [onRemoteChangeCountChange, remoteChangeCount]);
+
+  // Mirror the full-view "todo" status into the shared store so the embedded client
+  // view can show attention badges without re-polling anything (single writer).
+  useEffect(() => {
+    setSyncStatus({
+      authenticated: isAuthenticated,
+      localChangeCount,
+      remoteChangeCount,
+      pendingSongCount,
+      updateAvailable: hasUpdate,
+      cloudAccessFailed: showCloudAccessFailed,
+    });
+  }, [isAuthenticated, localChangeCount, remoteChangeCount, pendingSongCount, hasUpdate, showCloudAccessFailed]);
 
   return (
     <div>

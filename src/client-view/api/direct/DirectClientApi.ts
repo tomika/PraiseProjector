@@ -26,6 +26,8 @@ import { getEmptyDisplay } from "../../../../common/pp-utils";
 import { formatLocalDateKey, formatLocalDateLabel } from "../../../../common/date-only";
 import { getCurrentDisplay, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
 import { getSharedSongFilter, setSharedSongFilter, subscribeSharedSongFilter } from "../../../state/SongFilterStore";
+import { getSyncStatus, subscribeSyncStatus } from "../../../state/syncStatusStore";
+import type { SyncStatus } from "../../../state/syncStatusStore";
 import {
   getHostDeviceDiscoveredSessions,
   getLocalBroadcastAddresses,
@@ -213,6 +215,17 @@ export class DirectClientApi implements ClientApi {
 
   // The desktop embed is always in control; the leader/follower toggle is N/A.
   setLeaderMode(): void {}
+
+  // The desktop embed shares the host app's full view, whose UserPanel mirrors the
+  // "todo" status into syncStatusStore. Expose it so the client view can badge it —
+  // no extra polling: we just read what the full view already computed.
+  getSyncStatus(): SyncStatus {
+    return getSyncStatus();
+  }
+
+  subscribeSyncStatus(callback: (status: SyncStatus) => void): Unsubscribe {
+    return subscribeSyncStatus(callback);
+  }
 
   // Drive the host app via the SAME event the webserver clients use, so the main
   // UI's selection/preview/playlist AND the projector all follow along — not just
