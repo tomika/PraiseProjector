@@ -43,6 +43,7 @@
   --cv-checked-fg: #fff; /* "on" toggle glyph colour */
   --cv-icon-invert: invert(1); /* dark SVG icons → white on a dark panel */
   --cv-badge-invert: invert(0); /* found-marker badges are LIGHT svgs → invert on a light panel */
+  --cv-selected-fg: var(--cv-accent);
 }
 
 /* Light panel/dialog theme ------------------------------------------------- */
@@ -72,7 +73,14 @@
     --cv-checked-fg: #0b5fd6;
     --cv-icon-invert: invert(0);
     --cv-badge-invert: invert(1);
+    --cv-selected-fg: #bd5806;
   }
+}
+
+/* Dark theme: match the options panel background to #mainToolbar's solid #111
+   (see "Dark mode" block below), same as the light override matches #efefef. */
+#mainView.dark #options {
+  --cv-panel-bg: #111;
 }
 
 #mainView:not(.dark) .cv-dialog {
@@ -872,14 +880,15 @@ body,
 }
 
 #list tr.selected td {
-  color: var(--cv-accent);
+  color: var(--cv-selected-fg);
   font-weight: 600;
 }
 
 #list td {
-  padding: 5px 10px;
+  padding: 2px 10px;
   border-bottom: 1px solid var(--cv-row-border);
   font-size: 17px;
+  line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1158,10 +1167,10 @@ body,
   max-width: 0;
 }
 
-#list.cv-database .cv-song-label {
+#list .cv-song-label {
   display: block;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1192,7 +1201,7 @@ body,
    the working list and "✓" (green) when it is. */
 #list td.cv-add-col {
   width: 1%;
-  padding: 4px 4px 4px 10px;
+  padding: 1px 4px 1px 10px;
   text-align: center;
 }
 
@@ -1200,13 +1209,13 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: 1px solid var(--cv-panel-border);
   background: var(--cv-panel-btn-bg);
   color: var(--cv-panel-fg);
-  font-size: 17px;
+  font-size: 19px;
   line-height: 1;
   cursor: pointer;
 }
@@ -1221,7 +1230,9 @@ body,
    showing WHERE the match was (title / header / lyrics / words / meta). */
 #list td.cv-found-marker {
   width: 2.5rem;
-  background-size: contain;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  background-size: auto 85%;
   background-repeat: no-repeat;
   background-position: center;
   /* The badge SVG is light-on-transparent (built for the dark panel); invert it
@@ -1232,16 +1243,16 @@ body,
 /* Play (▶) — projects the song (and adds it to the working list when editable). */
 #list td.cv-play-col {
   width: 1%;
-  padding: 4px 8px 4px 4px;
+  padding: 1px 8px 1px 4px;
   text-align: center;
 }
 
 .cv-play-btn {
-  padding: 2px 4px;
+  padding: 1px 4px;
   border: none;
   background: transparent;
   color: var(--cv-accent);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
 }
@@ -1264,9 +1275,9 @@ body,
 #list.cv-playlist td.cv-drag-handle {
   width: 1.4rem;
   min-width: 1.4rem;
-  padding: 5px 2px 5px 6px;
+  padding: 1px 2px 1px 6px;
   color: #777;
-  font-size: 18px;
+  font-size: 24px;
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
@@ -1301,7 +1312,7 @@ body,
   position: relative;
   width: 1.9rem;
   min-width: 1.9rem;
-  padding: 5px 2px;
+  padding: 1px 2px;
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
@@ -1314,12 +1325,14 @@ body,
   color: var(--cv-panel-fg);
   min-width: 1rem;
   display: inline-block;
+  font-size: 19px;
+  font-weight: 600;
 }
 
 #list.cv-playlist .cv-pl-select-icon {
   margin-left: 2px;
-  width: 1em;
-  height: 1em;
+  width: 1.3em;
+  height: 1.3em;
   opacity: 0.9;
   filter: var(--cv-icon-invert);
 }

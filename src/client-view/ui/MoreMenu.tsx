@@ -51,6 +51,8 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
   const items: MenuItem[] = [
     // Account: the cloud-only affordances (canLogin is false for the host-gated
     // served client and the desktop embed).
+    // Sign in anbd out disabled for now
+    /*    
     { id: "signin", label: "Sign in", image: "enter.svg", show: caps.canLogin && !state.authed, run: () => store.openLoginDialog() },
     {
       id: "signout",
@@ -59,6 +61,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       show: caps.canLogin && state.authed,
       run: () => void store.logout(),
     },
+*/
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
     { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
