@@ -5406,7 +5406,7 @@ export class ChordProEditor extends ChordDrawer {
             ctx.fillStyle = this.displayProps.chordTextColor;
           } else if (chord.moved) {
             const original = line_obj.posCache.lyrics[chord.prevPos]?.pos ?? line_obj.posCache.lyrics[line_obj.posCache.lyrics.length - 1]?.pos ?? 0;
-            const current = line_obj.posCache.lyrics[chord.pos].pos;
+            const current = line_obj.posCache.lyrics[chord.pos]?.pos ?? line_obj.posCache.lyrics[line_obj.posCache.lyrics.length - 1]?.pos ?? 0;
             drawChordPosMarker(original, chordPos + this.displayProps.chordLineHeight - 1, left, left + w);
             ctx.fillStyle = "gray";
             drawChordPosMarker(current, chordPos + this.displayProps.chordLineHeight, left, left + w);
