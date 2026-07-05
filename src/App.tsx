@@ -2343,6 +2343,7 @@ const AppContent: React.FC = () => {
               setLeftPanelSize(sizes[0]);
               setEditorPanelSize(sizes[1]);
               setPreviewPanelSize(sizes[2]);
+              leftPanelRef.current?.refreshLayout();
             }}
           >
             <Panel defaultSize={leftPanelSize} minSize={20}>
