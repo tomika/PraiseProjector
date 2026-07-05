@@ -464,6 +464,7 @@ export interface SongListPanelMethods {
   getSelectedSongId: () => string | null;
   setSelectedSongId: (songId: string | null) => void;
   getAdjacentSong: (delta: 1 | -1) => Song | null;
+  refreshLayout: () => void;
 }
 
 interface SongListPanelProps {
@@ -490,6 +491,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   // Store reference to the scrollable container for scroll-to-top
   private scrollContainerRef: HTMLDivElement | null = null;
   private filterBarRef: HTMLDivElement | null = null;
+  private filterBarResizeObserver: ResizeObserver | null = null;
   // Store reference to current database for cleanup
   private currentDb: ReturnType<typeof Database.getInstance> | null = null;
   private keyboardSelectionDebounceTimer: number | null = null;
@@ -563,6 +565,13 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     return nextIdx >= 0 && nextIdx < visible.length ? visible[nextIdx] : null;
   }
 
+  public refreshLayout(): void {
+    requestAnimationFrame(() => {
+      this.updateInlineSearchOptionsVisibility();
+      this.syncVirtualViewport();
+    });
+  }
+
   constructor(props: SongListPanelProps) {
     super(props);
     const restoredHistory = persistedHistoryDialogState;
@@ -610,6 +619,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.updateInlineSearchOptionsVisibility = this.updateInlineSearchOptionsVisibility.bind(this);
     this.handleWindowResize = this.handleWindowResize.bind(this);
+    this.setFilterBarRef = this.setFilterBarRef.bind(this);
     this.handleTreeScroll = this.handleTreeScroll.bind(this);
     this.syncVirtualViewport = this.syncVirtualViewport.bind(this);
   }
@@ -650,6 +660,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       window.cancelAnimationFrame(this.virtualScrollRafId);
       this.virtualScrollRafId = null;
     }
+    this.filterBarResizeObserver?.disconnect();
+    this.filterBarResizeObserver = null;
     window.removeEventListener("focus", this.handleWindowFocus);
     window.removeEventListener("resize", this.handleWindowResize);
 
@@ -737,6 +749,23 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.syncVirtualViewport();
   }
 
+  private setFilterBarRef(element: HTMLDivElement | null) {
+    if (this.filterBarRef === element) return;
+
+    this.filterBarResizeObserver?.disconnect();
+    this.filterBarResizeObserver = null;
+    this.filterBarRef = element;
+
+    if (element && typeof ResizeObserver !== "undefined") {
+      this.filterBarResizeObserver = new ResizeObserver(() => {
+        this.updateInlineSearchOptionsVisibility();
+      });
+      this.filterBarResizeObserver.observe(element);
+    }
+
+    this.updateInlineSearchOptionsVisibility();
+  }
+
   private handleTreeScroll() {
     if (this.virtualScrollRafId !== null) return;
     this.virtualScrollRafId = window.requestAnimationFrame(() => {
@@ -765,7 +794,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       const parsed = parseFloat(computedStyle.fontSize);
       if (!isNaN(parsed)) fontSize = parsed;
     }
-    const showInlineSearchOptions = width >= 28 * fontSize; // ~28em
+    const showInlineSearchOptions = width >= 24 * fontSize; // ~24em
     if (showInlineSearchOptions !== this.state.showInlineSearchOptions) {
       this.setState({ showInlineSearchOptions });
     }
@@ -1916,12 +1945,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
     return (
       <div className="song-list-panel d-flex flex-column h-100" onClick={this.hideContextMenu}>
-        <div
-          className="input-group mb-2"
-          ref={(el) => {
-            this.filterBarRef = el;
-          }}
-        >
+        <div className="input-group mb-2" ref={this.setFilterBarRef}>
           {hasLeader && (
             <div className="input-group-prepend">
               <button
@@ -2065,6 +2089,7 @@ const SongListPanelWithSettings = React.forwardRef<
     getSelectedSongId: () => innerRef.current?.getSelectedSongId() ?? null,
     setSelectedSongId: (songId: string | null) => innerRef.current?.setSelectedSongId(songId),
     getAdjacentSong: (delta: 1 | -1) => innerRef.current?.getAdjacentSong(delta) ?? null,
+    refreshLayout: () => innerRef.current?.refreshLayout(),
   }));
 
   if (!settings) {
