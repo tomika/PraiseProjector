@@ -439,9 +439,9 @@ export class ClientViewStore {
       isFullScreen: this.api.device.isFullScreen(),
       canExit: typeof this.api.device.exit === "function",
     });
-    if (config.initialSongId) await this.selectSong(config.initialSongId).catch(() => undefined);
-    // Overlay the persisted UI snapshot on top of the backend seed (after the
-    // initialSongId projection, so a URL-provided song still wins over a saved one).
+    // Overlay the persisted UI snapshot on top of the backend seed. Explicit
+    // entry targets (URL song/list, embedded playlist mode) are applied below so
+    // they win over whatever the previous client-view session persisted.
     this.applyPersisted(persisted, config);
     // App mode (desktop embed): bind the filter box to the host's LeftPanel filter.
     // Seed from the host's current value (which switches to database when set), then
@@ -458,12 +458,23 @@ export class ClientViewStore {
       );
     }
 
-    if (this.api.mode === "Client") this.setNavigationMode("playlist");
+    const hasInitialTarget = !!config.initialPlaylistId || !!config.initialSongId;
+    if (config.entryMode === "embedded" && !hasInitialTarget) {
+      this.setListMode("playlist");
+    } else if (this.api.mode === "Client" && !hasInitialTarget) {
+      this.setNavigationMode("playlist");
+    }
 
     // Re-apply the restored leader-mode choice to the backend so the effective
     // capabilities reflect it (the API gates it on the still-granted right, and
     // re-emits — picked up by the subscribeCapabilities wiring above).
     this.api.setLeaderMode(this.state.leaderMode);
+    if (config.initialPlaylistId) {
+      await this.openInitialPlaylist(config).catch(() => undefined);
+    } else if (config.initialSongId) {
+      await this.selectDatabaseSong(config.initialSongId).catch(() => undefined);
+    }
+
     void this.loadSongs();
     // A restored leaderlists mode needs its profiles fetched (applyPersisted sets
     // the mode directly, bypassing setListMode's lazy load).
@@ -648,7 +659,15 @@ export class ClientViewStore {
     // one: a URL-provided initialSongId wins, a follower's display is driven by
     // the backend, and an already-seeded display (e.g. the desktop host's current
     // projection) must not be clobbered.
-    if (persisted.songId && !config.initialSongId && !config.follow && this.state.capabilities.canControlDisplay && !this.state.display.songId) {
+    if (
+      persisted.songId &&
+      !config.initialSongId &&
+      !config.initialPlaylistId &&
+      !config.follow &&
+      config.entryMode !== "embedded" &&
+      this.state.capabilities.canControlDisplay &&
+      !this.state.display.songId
+    ) {
       void this.loadLocalEntry({ songId: persisted.songId, transpose: persisted.transpose ?? 0, capo: persisted.capo }).catch(() => undefined);
     }
   }
@@ -1189,6 +1208,64 @@ export class ClientViewStore {
   private leaderProfilesFor(leaderId: string): string[] {
     const playlists = this.state.leaderProfiles.find((p) => p.leaderId === leaderId)?.playlists ?? [];
     return [...playlists].sort((a, b) => -a.label.localeCompare(b.label)).map((pl) => pl.label);
+  }
+
+  private findLeaderPlaylistRef(
+    rawId: string,
+    profiles = this.state.leaderProfiles
+  ): { leaderId: string; label: string; entries: PlaylistEntry[] } | undefined {
+    const id = rawId.trim();
+    if (!id) return undefined;
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(id);
+      } catch {
+        return id;
+      }
+    })();
+    const candidates = [decoded];
+    if (decoded !== id) candidates.push(id);
+
+    const matches = (profile: LeaderDBProfile, label: string, value: string) =>
+      value === label ||
+      value === `${profile.leaderId}/${label}` ||
+      value === `${profile.leaderName}/${label}` ||
+      value === `${profile.leaderId}:${label}`;
+
+    for (const value of candidates) {
+      for (const profile of profiles) {
+        const playlist = profile.playlists.find((pl) => matches(profile, pl.label, value));
+        if (playlist) return { leaderId: profile.leaderId, label: playlist.label, entries: playlist.songs };
+      }
+    }
+    return undefined;
+  }
+
+  private async openInitialPlaylist(config: ClientConfig): Promise<void> {
+    const listId = config.initialPlaylistId?.trim();
+    if (!listId) return;
+    await this.loadLeaderPlaylists();
+    const ref = this.findLeaderPlaylistRef(listId);
+    if (!ref) {
+      if (config.initialSongId) await this.selectDatabaseSong(config.initialSongId);
+      return;
+    }
+
+    this.set({
+      listMode: "leaderlists",
+      navigationMode: "archive",
+      selectedLeaderId: ref.leaderId,
+      selectedPlaylistLabel: ref.label,
+      optionsOpen: true,
+    });
+
+    const byIndex =
+      typeof config.initialPlaylistIndex === "number" && config.initialPlaylistIndex >= 0 && config.initialPlaylistIndex < ref.entries.length
+        ? ref.entries[config.initialPlaylistIndex]
+        : undefined;
+    const bySong = config.initialSongId ? ref.entries.find((entry) => entry.songId === config.initialSongId) : undefined;
+    const entry = bySong ?? byIndex ?? ref.entries[0];
+    if (entry) await this.selectArchiveEntry(entry);
   }
 
   /** Replace the working playlist wholesale with the selected leader playlist

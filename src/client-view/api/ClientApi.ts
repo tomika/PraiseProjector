@@ -167,6 +167,14 @@ export interface ClientConfig {
   initialSongId?: string;
   /** Playlist to open on launch (parsed from the entry URL), if any. */
   initialPlaylistId?: string;
+  /** Optional zero-based row index inside the initial playlist. */
+  initialPlaylistIndex?: number;
+  /**
+   * How the client view was entered. The embedded full-view switch uses this to
+   * prefer the working playlist, while a direct client-view.html entry keeps the
+   * standalone database default unless URL parameters say otherwise.
+   */
+  entryMode?: "embedded" | "standalone";
   /**
    * Auto-follow the backend's current display on startup — the served-follower
    * use case. The adapter begins long-polling /display_query immediately so the

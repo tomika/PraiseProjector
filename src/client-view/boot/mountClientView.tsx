@@ -15,6 +15,23 @@ import { ClientView } from "../ui/ClientView";
 import { cloudApiBaseUrl } from "../../config";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
+function readLaunchConfigFromUrl(): Pick<ClientConfig, "initialSongId" | "initialPlaylistId" | "initialPlaylistIndex"> {
+  if (typeof window === "undefined") return {};
+  const params = new URLSearchParams(window.location.search);
+  const initialSongId = (params.get("songId") || params.get("s") || "").trim() || undefined;
+  const rawPlaylistId = (params.get("listId") || params.get("l") || "").trim();
+  if (!rawPlaylistId) return { initialSongId };
+
+  const match = /^(.*)@([0-9]+)$/.exec(rawPlaylistId);
+  if (!match) return { initialSongId, initialPlaylistId: rawPlaylistId };
+
+  return {
+    initialSongId,
+    initialPlaylistId: match[1],
+    initialPlaylistIndex: Number.parseInt(match[2], 10),
+  };
+}
+
 export async function mountClientView(rootEl: HTMLElement, config: ClientConfig = {}): Promise<ClientViewStore> {
   const api = new RestClientApi();
   const store = new ClientViewStore(api);
@@ -41,6 +58,8 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
     servedByHost: served,
     hostAccess: window.__ppAccess,
     fullEditorUrl: window.__ppEditorUrl,
+    entryMode: "standalone",
+    ...readLaunchConfigFromUrl(),
     ...config,
   });
 

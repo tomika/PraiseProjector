@@ -52,7 +52,7 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
 
   useEffect(() => {
     let active = true;
-    void store.init(config ?? {}).finally(() => {
+    void store.init({ entryMode: "embedded", ...config }).finally(() => {
       if (active) setReady(true);
     });
     return () => {

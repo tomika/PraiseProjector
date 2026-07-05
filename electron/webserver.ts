@@ -304,15 +304,20 @@ export class WebServer {
     );
 
     // Back-compat: the old served client lived at /client-view/.
-    this.app.get(/^\/client-view\/?$/, (_req, res) => {
+    const clientViewRedirectTarget = (req: express.Request) => {
+      const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+      return this.settings.webServerPath + "webapp/client-view.html" + query;
+    };
+
+    this.app.get(/^\/client-view\/?$/, (req, res) => {
       this.setCommonHeaders(res);
-      res.redirect(302, this.settings.webServerPath + "webapp/client-view.html");
+      res.redirect(302, clientViewRedirectTarget(req));
     });
 
     // Redirect root and /index.html to the client-view entry point.
-    this.app.get(/\/(index\.html?)?$/, (_req, res) => {
+    this.app.get(/\/(index\.html?)?$/, (req, res) => {
       this.setCommonHeaders(res);
-      res.redirect(302, this.settings.webServerPath + "webapp/client-view.html");
+      res.redirect(302, clientViewRedirectTarget(req));
     });
 
     // Serve static files with aggressive caching — cache-busting query params in HTML
