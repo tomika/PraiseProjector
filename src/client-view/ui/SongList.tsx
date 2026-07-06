@@ -24,7 +24,7 @@ const foundOf = (entry: SongEntry | SongFound): Found | undefined => ("found" in
 
 /** Background for the found-type marker cell: found_<type>[_words].svg, where the
  *  `_words` variant marks a non-phrase (per-word) match. Mirrors praiseprojector.ts. */
-function markerStyle(found: Found | undefined): React.CSSProperties | undefined {
+export function markerStyle(found: Found | undefined): React.CSSProperties | undefined {
   if (!found || found.cost < 0 || found.type === "NONE") return undefined;
   const words = found.cost >= notPhraseFoundAdditionalCost ? "_words" : "";
   return { backgroundImage: `url("${icon(`found_${found.type.toLowerCase()}${words}.svg`)}")` };
@@ -36,7 +36,7 @@ function markerStyle(found: Found | undefined): React.CSSProperties | undefined 
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, "");
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
-function TitleCell({ entry }: { entry: SongEntry | SongFound }) {
+export function TitleCell({ entry }: { entry: SongEntry | SongFound }) {
   const found = foundOf(entry);
   const snippet = found?.snippet;
   // Render the (highlighted) snippet AS the title when it is a title match — OR

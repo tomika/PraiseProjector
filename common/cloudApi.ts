@@ -878,9 +878,10 @@ export class CloudApiService {
   }
 
   /** Search for songs by text query */
-  async searchSongs(text: string, limit?: number): Promise<SongFound[]> {
+  async searchSongs(text: string, limit?: number, songIds?: string[]): Promise<SongFound[]> {
     let endpoint = `/search?text=${encodeURIComponent(text)}`;
     if (limit !== undefined) endpoint += `&limit=${limit}`;
+    if (songIds?.length) endpoint += `&songId=${songIds.map((id) => encodeURIComponent(id)).join(",")}`;
     return this.apiCall<SongFound[]>(endpoint);
   }
 

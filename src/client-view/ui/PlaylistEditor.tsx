@@ -16,8 +16,10 @@
  */
 
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent } from "react";
+import type { SongFound } from "../api/ClientApi";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { icon } from "./assets";
+import { markerStyle, TitleCell } from "./SongList";
 
 const SHARP = "♯";
 const FLAT = "♭";
@@ -36,11 +38,15 @@ const capoLabel = (v: number | undefined) => {
   const value = v;
   return value >= 0 ? String(value) : "";
 };
-
 export function PlaylistEditor() {
   const store = useClientViewStore();
   const state = useClientViewState();
   const playlist = state.playlist;
+  const playlistFilter = state.playlistFilterText.trim();
+  const playlistSearchById = new Map(state.playlistSearchResults.map((entry) => [entry.songId, entry]));
+  const visibleRows = playlist
+    .map((entry, index) => ({ entry, index, found: playlistSearchById.get(entry.songId) }))
+    .filter(({ found }) => !playlistFilter || found);
 
   // Native-DnD scratch state. dragIndex is the row being dragged; overIndex
   // drives the insertion indicator; overTrash flags the trash drop target.
@@ -150,6 +156,17 @@ export function PlaylistEditor() {
     );
   }
 
+  if (visibleRows.length === 0) {
+    return (
+      <div className="cv-playlist-empty">
+        <p className="cv-playlist-empty-title">{state.playlistSearching ? "Searching..." : "No matching songs"}</p>
+        <p className="cv-playlist-empty-hint">
+          {state.playlistSearching ? "Searching the current playlist." : "Clear the filter to show the full playlist."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <>
       <table
@@ -161,18 +178,19 @@ export function PlaylistEditor() {
         onDragOver={(e) => {
           if (dragging) {
             e.preventDefault();
-            setOverIndex(playlist.length - 1);
+            setOverIndex(visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
             setOverTrash(false);
           }
         }}
         onDrop={(e) => {
           e.preventDefault();
-          finishDrop(false, playlist.length - 1);
+          finishDrop(false, visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
         }}
       >
         <tbody>
-          {playlist.map((entry, index) => {
+          {visibleRows.map(({ entry, index, found }) => {
             const transposeValue = entry.transpose ?? 0;
+            const titleEntry: SongFound | typeof entry = found ? { ...entry, title: found.title || entry.title, found: found.found } : entry;
             const rowClass = [
               state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
               index === dragIndex ? "cv-dragging" : "",
@@ -255,55 +273,61 @@ export function PlaylistEditor() {
                       }}
                     />
                   ) : (
-                    entry.title
+                    <TitleCell entry={titleEntry} />
                   )}
                 </td>
-                <td className="transposeColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                  <span>{transposeLabel(entry.transpose)}</span>
-                  {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
-                  <select
-                    title="Transpose"
-                    value={transposeValue}
-                    onFocus={onSelectorFocus}
-                    onBlur={onSelectorBlur}
-                    onMouseDown={onSelectorPointerDown}
-                    onClick={onSelectorClick}
-                    onChange={(e) => {
-                      selectorChangedRef.current = true;
-                      suppressNextRowClickRef.current = false;
-                      void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
-                    }}
-                  >
-                    {TRANSPOSE_RANGE.map((value) => (
-                      <option key={value} value={value}>
-                        {transposeOption(value)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="capoColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                  <span>{capoLabel(entry.capo)}</span>
-                  <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
-                  <select
-                    title="Capo"
-                    value={entry.capo ?? 0}
-                    onFocus={onSelectorFocus}
-                    onBlur={onSelectorBlur}
-                    onMouseDown={onSelectorPointerDown}
-                    onClick={onSelectorClick}
-                    onChange={(e) => {
-                      selectorChangedRef.current = true;
-                      suppressNextRowClickRef.current = false;
-                      void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
-                    }}
-                  >
-                    {CAPO_RANGE.map((value) => (
-                      <option key={value} value={value}>
-                        {capoOption(value)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
+                {playlistFilter ? (
+                  <td className="cv-found-marker" style={markerStyle(found?.found)} title={found?.found.type} />
+                ) : (
+                  <>
+                    <td className="transposeColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
+                      <span>{transposeLabel(entry.transpose)}</span>
+                      {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
+                      <select
+                        title="Transpose"
+                        value={transposeValue}
+                        onFocus={onSelectorFocus}
+                        onBlur={onSelectorBlur}
+                        onMouseDown={onSelectorPointerDown}
+                        onClick={onSelectorClick}
+                        onChange={(e) => {
+                          selectorChangedRef.current = true;
+                          suppressNextRowClickRef.current = false;
+                          void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
+                        }}
+                      >
+                        {TRANSPOSE_RANGE.map((value) => (
+                          <option key={value} value={value}>
+                            {transposeOption(value)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="capoColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
+                      <span>{capoLabel(entry.capo)}</span>
+                      <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
+                      <select
+                        title="Capo"
+                        value={entry.capo ?? 0}
+                        onFocus={onSelectorFocus}
+                        onBlur={onSelectorBlur}
+                        onMouseDown={onSelectorPointerDown}
+                        onClick={onSelectorClick}
+                        onChange={(e) => {
+                          selectorChangedRef.current = true;
+                          suppressNextRowClickRef.current = false;
+                          void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
+                        }}
+                      >
+                        {CAPO_RANGE.map((value) => (
+                          <option key={value} value={value}>
+                            {capoOption(value)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}

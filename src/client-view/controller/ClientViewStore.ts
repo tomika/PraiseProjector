@@ -182,8 +182,11 @@ export interface ClientViewState {
   display: Display;
   songs: SongEntry[];
   searchText: string;
+  playlistFilterText: string;
   searchResults: SongFound[];
   searching: boolean;
+  playlistSearchResults: SongFound[];
+  playlistSearching: boolean;
   playlist: PlaylistEntry[];
   network: NetworkState;
   authed: boolean;
@@ -335,8 +338,11 @@ function initialState(): ClientViewState {
     display: getEmptyDisplay(),
     songs: [],
     searchText: "",
+    playlistFilterText: "",
     searchResults: [],
     searching: false,
+    playlistSearchResults: [],
+    playlistSearching: false,
     playlist: [],
     network: { status: "startup" },
     authed: false,
@@ -382,6 +388,8 @@ export class ClientViewStore {
   private readonly unsubscribes: Unsubscribe[] = [];
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private searchSeq = 0;
+  private playlistSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  private playlistSearchSeq = 0;
   private disposed = false;
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
@@ -450,10 +458,8 @@ export class ClientViewStore {
     // entry targets (URL song/list, embedded playlist mode) are applied below so
     // they win over whatever the previous client-view session persisted.
     this.applyPersisted(persisted, config);
-    // App mode (desktop embed): bind the filter box to the host's LeftPanel filter.
-    // Seed from the host's current value (which switches to database when set), then
-    // mirror future host changes — setSearchText pushes our edits back, so the two
-    // filter boxes stay in lockstep. The shared store dedupes, so this never loops.
+    // App mode (desktop embed): bind the database filter box to the host's
+    // LeftPanel filter. The playlist filter stays local and starts empty.
     const hostFilter = this.api.song.hostFilter;
     if (hostFilter) {
       const seed = hostFilter.get();
@@ -581,6 +587,7 @@ export class ClientViewStore {
     this.persistNow(); // flush any pending change before tearing down
     this.disposed = true;
     if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (this.playlistSearchTimer) clearTimeout(this.playlistSearchTimer);
     for (const unsubscribe of this.unsubscribes) unsubscribe();
     this.unsubscribes.length = 0;
     this.api.dispose();
@@ -706,7 +713,10 @@ export class ClientViewStore {
       this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
       this.api.auth.subscribeAuth((authed) => this.set({ authed, leader: this.api.auth.currentLeader() })),
       this.api.subscribeCapabilities((capabilities) => this.set({ capabilities })),
-      this.api.playlist.subscribePlaylist((playlist) => this.set({ playlist })),
+      this.api.playlist.subscribePlaylist((playlist) => {
+        this.set({ playlist });
+        if (this.state.playlistFilterText.trim()) this.schedulePlaylistSearch(this.state.playlistFilterText, playlist);
+      }),
       this.api.song.subscribeSongList((songs) => this.set({ songs }))
     );
 
@@ -756,11 +766,6 @@ export class ClientViewStore {
 
   setSearchText(text: string): void {
     const patch: Partial<ClientViewState> = { searchText: text };
-    // Searching returns the list to the searchable database: the working-playlist
-    // editor and the leader-playlists picker have no search of their own, so a
-    // query must show the database results (the legacy filter box lived only in
-    // database mode). Empty text leaves the current mode alone.
-    if (text.trim() && this.state.listMode !== "database") patch.listMode = "database";
     if (!text.trim() && this.state.navigationMode === "filter") patch.navigationMode = "database";
     this.set(patch);
     // Keep the host app's LeftPanel filter in lockstep (desktop embed / App mode
@@ -768,6 +773,56 @@ export class ClientViewStore {
     this.api.song.hostFilter?.set(text);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => void this.runSearch(text), SEARCH_DEBOUNCE_MS);
+  }
+
+  setPlaylistFilterText(text: string): void {
+    this.set({ playlistFilterText: text });
+    this.schedulePlaylistSearch(text);
+  }
+
+  private schedulePlaylistSearch(text: string, playlist = this.state.playlist): void {
+    if (this.playlistSearchTimer) clearTimeout(this.playlistSearchTimer);
+    if (!text.trim()) {
+      this.playlistSearchSeq++;
+      this.set({ playlistSearchResults: [], playlistSearching: false });
+      return;
+    }
+    this.set({ playlistSearchResults: [], playlistSearching: true });
+    this.playlistSearchTimer = setTimeout(() => void this.runPlaylistSearch(text, playlist), SEARCH_DEBOUNCE_MS);
+  }
+
+  async runPlaylistSearch(text: string, playlist = this.state.playlist): Promise<void> {
+    const query = text.trim();
+    const songIds = Array.from(new Set(playlist.map((entry) => entry.songId).filter(Boolean)));
+    const seq = ++this.playlistSearchSeq;
+    if (!query || songIds.length === 0) {
+      this.set({ playlistSearchResults: [], playlistSearching: false });
+      return;
+    }
+    this.set({ playlistSearching: true });
+    try {
+      const results = await this.api.song.searchSongs(query, { songIds });
+      if (seq === this.playlistSearchSeq) this.set({ playlistSearchResults: results, playlistSearching: false });
+    } catch {
+      if (seq === this.playlistSearchSeq) this.set({ playlistSearchResults: [], playlistSearching: false });
+    }
+  }
+
+  submitSearch(text = this.state.searchText): void {
+    if (this.playlistSearchTimer) clearTimeout(this.playlistSearchTimer);
+    this.playlistSearchSeq++;
+    const patch: Partial<ClientViewState> = {
+      searchText: text,
+      playlistFilterText: "",
+      playlistSearchResults: [],
+      playlistSearching: false,
+      listMode: "database",
+    };
+    if (!text.trim() && this.state.navigationMode === "filter") patch.navigationMode = "database";
+    this.set(patch);
+    this.api.song.hostFilter?.set(text);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    void this.runSearch(text);
   }
 
   async runSearch(text: string): Promise<void> {

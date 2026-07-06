@@ -92,7 +92,7 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<
 
 export function createSongApi(core: RestCore): SongApi {
   return {
-    searchSongs: (text, options) => cloudApi.searchSongs(text, options?.limit),
+    searchSongs: (text, options) => cloudApi.searchSongs(text, options?.limit, options?.songIds),
     listAllSongs: async () => {
       const songs = await cloudApi.fetchAllSongs();
       core.songListEvents.emit(songs);

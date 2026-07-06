@@ -1,12 +1,14 @@
 /**
  * SearchBar — the filter row inside the options overlay (#filterRow).
- * Typing debounces a search through the controller; Enter runs it immediately.
+ * Database typing debounces a search through the controller; Enter runs it
+ * immediately. Playlist typing filters the working list locally.
  *
  * When the working playlist is editable, the leading icon becomes a list-mode
  * toggle (the legacy iconDatabase ↔ iconPlaylist switch): the visible icon is
  * the mode you can switch TO. The filter field shows in every mode EXCEPT
- * leaderlists (which swaps in the leader/date pickers); typing a query returns
- * the list to the searchable database (see ClientViewStore.setSearchText).
+ * leaderlists (which swaps in the leader/date pickers). In playlist mode the
+ * field filters the working list locally; Enter or the search button runs the
+ * same text against the database.
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
@@ -26,12 +28,21 @@ export function SearchBar() {
 
   const canEdit = state.capabilities.canEditWorkingPlaylist;
   // While editing, the toggle cycles database → playlist → leaderlists. The
-  // filter field shows in database AND playlist (typing in playlist switches
-  // back to the database); only leaderlists swaps in its own pickers.
+  // filter field shows in database AND playlist; only leaderlists swaps in its
+  // own pickers.
   const showSearch = !canEdit || state.listMode !== "leaderlists";
+  const playlistMode = canEdit && state.listMode === "playlist";
+  const filterText = playlistMode ? state.playlistFilterText : state.searchText;
   const nextMode = LIST_MODES[(LIST_MODES.indexOf(state.listMode) + 1) % LIST_MODES.length];
   const current = LIST_MODE_META[state.listMode];
   const next = LIST_MODE_META[nextMode];
+  const setFilterText = (text: string) => {
+    if (playlistMode) store.setPlaylistFilterText(text);
+    else store.setSearchText(text);
+  };
+  const submitSearch = () => {
+    store.submitSearch(filterText);
+  };
 
   return (
     <form
@@ -39,7 +50,7 @@ export function SearchBar() {
       className="widthProtect"
       onSubmit={(e) => {
         e.preventDefault();
-        void store.runSearch(state.searchText);
+        submitSearch();
       }}
     >
       {canEdit ? (
@@ -59,28 +70,33 @@ export function SearchBar() {
 
       {showSearch ? (
         <>
-          <input id="filter" type="text" aria-label="Search songs" value={state.searchText} onChange={(e) => store.setSearchText(e.target.value)} />
+          <input
+            id="filter"
+            type="text"
+            aria-label={playlistMode ? "Filter playlist" : "Search songs"}
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                setFilterText("");
+              }
+            }}
+          />
           <button
             type="button"
             id="clear-filter"
             className="cv-search-icon-btn"
             title="Clear filter"
             aria-label="Clear filter"
-            onClick={() => store.setSearchText("")}
+            onClick={() => setFilterText("")}
           >
             <img className="btnImg" src={icon("cancel.svg")} alt="" />
           </button>
-          {canEdit && state.listMode === "playlist" && (
-            <button
-              type="button"
-              id="clear-playlist"
-              className="cv-search-icon-btn"
-              title="Clear list"
-              aria-label="Clear list"
-              disabled={state.playlist.length === 0}
-              onClick={() => void store.clearPlaylist()}
-            >
-              <img className="btnImg" src={icon("clear.svg")} alt="" />
+          {playlistMode && (
+            <button type="submit" id="playlist-search" className="cv-search-icon-btn" title="Search database" aria-label="Search database">
+              <img className="btnImg" src={icon("magnifier.svg")} alt="" />
             </button>
           )}
         </>

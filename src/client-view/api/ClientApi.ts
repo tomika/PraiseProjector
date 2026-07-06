@@ -227,6 +227,8 @@ export interface ClientConfig {
 export interface SearchOptions {
   /** Maximum number of results to return. */
   limit?: number;
+  /** Restrict the search to these song IDs. Used by playlist-local search. */
+  songIds?: string[];
   /**
    * Force a local-database filter instead of a server search. Defaults to true
    * in App mode and false in Client mode; set explicitly to override the mode
@@ -240,8 +242,8 @@ export interface SearchOptions {
  * main-UI LeftPanel search box. Present ONLY on the in-process Direct adapter
  * (App mode in the Electron renderer); the Rest adapter omits it, since a
  * served/cloud client has no host LeftPanel to mirror. It lets the embedded
- * client view's filter box and the desktop song tree share one filter value
- * (see {@link SongApi.hostFilter} and ClientViewStore.setSearchText).
+ * client view's database filter box and the desktop song tree share one filter
+ * value (see {@link SongApi.hostFilter} and ClientViewStore.setSearchText).
  */
 export interface HostFilterApi {
   /** The host's current filter text. */

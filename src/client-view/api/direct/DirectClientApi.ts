@@ -271,19 +271,23 @@ export class DirectClientApi implements ClientApi {
   private createSongApi(): SongApi {
     const allEntries = () => Database.getInstance().getSongs().map(toEntry);
     return {
-      searchSongs: async (text) => {
+      searchSongs: async (text, options) => {
         const query = text.trim();
         if (!query) return [];
         // Use the SAME Database search the desktop song tree (LeftPanel) uses, so
         // the client gets relevancy ordering (LessCostMatch) AND real per-field
         // match snippets (lyrics/meta excerpts with highlights) — not a naive
         // title-only substring scan that returned the title as the "snippet".
+        const allowedIds = options?.songIds?.length ? new Set(options.songIds) : undefined;
         const results = await Database.getInstance().filter(query, null, true, true, true, SongOrder.LessCostMatch);
-        return results.slice(0, 100).map((found) => ({
-          songId: found.song.Id,
-          title: found.song.Title,
-          found: { type: FormatFoundReason(found.reason), cost: found.cost, snippet: found.snippet },
-        }));
+        return results
+          .filter((found) => !allowedIds || allowedIds.has(found.song.Id))
+          .slice(0, options?.limit ?? options?.songIds?.length ?? 100)
+          .map((found) => ({
+            songId: found.song.Id,
+            title: found.song.Title,
+            found: { type: FormatFoundReason(found.reason), cost: found.cost, snippet: found.snippet },
+          }));
       },
       listAllSongs: async () => allEntries(),
       getSongData: async (songId) => {

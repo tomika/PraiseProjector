@@ -144,7 +144,8 @@ export class TypesenseClient {
     }
   }
 
-  async search(query: string, limit?: number): Promise<(SongFoundInfo & { version: number })[]> {
+  async search(query: string, limit?: number, songIds?: string[]): Promise<(SongFoundInfo & { version: number })[]> {
+    const escapeFilterValue = (value: string) => "`" + value.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`";
     const searchParameters = {
       q: query,
       query_by: "title,lyrics" + this.metaFieldList,
@@ -153,6 +154,7 @@ export class TypesenseClient {
       per_page: limit,
       query_by_weights: this.queryWeights,
       order_by: "_text_match:desc",
+      ...(songIds?.length ? { filter_by: `songId:=[${songIds.map(escapeFilterValue).join(",")}]` } : {}),
     };
     const res = await this.client.collections<DocumentType>(schema.name).documents().search(searchParameters);
     const decodeType = (document: DocumentType, fieldName: string, matches: string[] | string[][]): SongFoundType => {
@@ -197,7 +199,6 @@ export class TypesenseClient {
         }
       }
       if (bestHighlight && bestHighlightType) {
-        found.cost += bestHighlightCost;
         found.type = bestHighlightType;
         found.snippet = bestHighlight.snippet;
         if (found.snippet) {

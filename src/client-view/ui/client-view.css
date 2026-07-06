@@ -386,6 +386,7 @@ body,
   padding: 0;
   cursor: pointer;
   transition: opacity 250ms ease;
+  right: 12px;
 }
 
 .cv-navigation-mode img {
@@ -1233,9 +1234,9 @@ body,
   width: 2.5rem;
   padding-top: 1px;
   padding-bottom: 1px;
-  background-size: auto 85%;
-  background-repeat: no-repeat;
-  background-position: center;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
   /* The badge SVG is light-on-transparent (built for the dark panel); invert it
      on a light panel so it stays visible. */
   filter: var(--cv-badge-invert);
@@ -1273,6 +1274,21 @@ body,
 
 /* Working-list rows: whole-row dragging/insertion feedback, title editing, and
   legacy-like transpose/capo selector cells. */
+
+/* Playlist rows only hold plain text/icons (no circular add/play buttons), so
+   without a floor they render shorter than database rows. `min-height` has no
+   effect on table cells (spec only grows/shrinks a cell via `height`, treated
+   as a floor since a cell's actual height is max(row, cell height, content)),
+   so use `height` here. 1.848em matches the database add/play button column's
+   content height (1.65em button @ 1.12em font), and the 1px padding matches
+   that column's own padding, so playlist and database rows come out the same
+   height. */
+#list.cv-playlist td {
+  height: 1.848em;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
 #list.cv-playlist tr.cv-dragging {
   opacity: 0.4;
 }
@@ -1288,6 +1304,11 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#list.cv-playlist td.cv-found-marker {
+  width: 2.3em;
+  min-width: 2.3em;
 }
 
 #list.cv-playlist .cv-pl-title-edit {

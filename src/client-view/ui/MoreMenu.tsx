@@ -6,6 +6,7 @@
  *
  *   - Sync             → always (refresh backend-derived collections / follow)
  *   - Open full editor → capabilities.canOpenFullEditor (browser/desktop only)
+ *   - Clear list       → playlist editor mode (confirm, disabled when empty)
  *   - Save list        → capabilities.canPersistPlaylist (leader/profile target)
  *   - About            → always
  *   - Exit             → state.canExit (native host shells only)
@@ -65,6 +66,14 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
     { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
+    {
+      id: "clear-list",
+      label: "Clear list",
+      image: "clear.svg",
+      show: caps.canEditWorkingPlaylist,
+      disabled: state.playlist.length === 0,
+      run: () => void store.clearPlaylist(),
+    },
     {
       id: "home",
       label: "Switch UI",
