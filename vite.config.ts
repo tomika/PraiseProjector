@@ -53,6 +53,17 @@ export default defineConfig(({ command, mode }) => {
   const webOutDir = "dist/web";
   const legacyWebappAssetSourceDir = path.join(__dirname, "public", "app");
   const soundfontSourceDir = path.join(__dirname, "public", "app", "soundfont");
+  // fs.createReadStream(...).pipe(res) never sets Content-Type on its own. Browsers happily
+  // sniff PNG/JPEG without one, but Chrome refuses to render SVG via <img> without the correct
+  // image/svg+xml header — it silently shows the broken-image glyph instead (200 response,
+  // right bytes, wrong render). Every extension served by the middleware below needs an entry.
+  const legacyAssetMimeTypes: Record<string, string> = {
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".css": "text/css; charset=utf-8",
+  };
 
   return {
     plugins: [
@@ -83,6 +94,8 @@ export default defineConfig(({ command, mode }) => {
                 next();
                 return;
               }
+              const mimeType = legacyAssetMimeTypes[path.extname(filePath).toLowerCase()];
+              if (mimeType) res.setHeader("Content-Type", mimeType);
               fs.createReadStream(filePath).pipe(res);
             });
           });
