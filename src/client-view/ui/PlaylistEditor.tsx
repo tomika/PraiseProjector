@@ -50,6 +50,8 @@ export function PlaylistEditor() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextRowClickRef = useRef(false);
+  const selectorChangedRef = useRef(false);
   const dragging = dragIndex !== null;
 
   const clearClickTimer = () => {
@@ -94,6 +96,35 @@ export function PlaylistEditor() {
   };
 
   const stopRowClick = (e: ReactMouseEvent | ReactTouchEvent) => {
+    e.stopPropagation();
+  };
+
+  const suppressRowClickOnce = () => {
+    suppressNextRowClickRef.current = true;
+    window.setTimeout(() => {
+      suppressNextRowClickRef.current = false;
+    }, 400);
+  };
+
+  const onSelectorFocus = () => {
+    selectorChangedRef.current = false;
+  };
+
+  const onSelectorBlur = () => {
+    if (selectorChangedRef.current) {
+      suppressNextRowClickRef.current = false;
+      return;
+    }
+    suppressRowClickOnce();
+  };
+
+  const onSelectorPointerDown = (e: ReactMouseEvent<HTMLSelectElement>) => {
+    clearClickTimer();
+    e.stopPropagation();
+  };
+
+  const onSelectorClick = (e: ReactMouseEvent<HTMLSelectElement>) => {
+    clearClickTimer();
     e.stopPropagation();
   };
 
@@ -156,6 +187,11 @@ export function PlaylistEditor() {
                 className={rowClass}
                 onClick={() => {
                   if (editingIndex != null) return;
+                  if (suppressNextRowClickRef.current) {
+                    suppressNextRowClickRef.current = false;
+                    clearClickTimer();
+                    return;
+                  }
                   clearClickTimer();
                   clickTimerRef.current = setTimeout(() => {
                     void store.selectPlaylistEntry(entry);
@@ -186,9 +222,6 @@ export function PlaylistEditor() {
                 }}
                 onDragEnd={reset}
               >
-                <td className="cv-drag-handle" aria-hidden="true">
-                  ⠿
-                </td>
                 <td
                   className="cv-song-title"
                   onDoubleClick={(e) => {
@@ -231,8 +264,15 @@ export function PlaylistEditor() {
                   <select
                     title="Transpose"
                     value={transposeValue}
-                    onChange={(e) => void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) })}
-                    onClick={stopRowClick}
+                    onFocus={onSelectorFocus}
+                    onBlur={onSelectorBlur}
+                    onMouseDown={onSelectorPointerDown}
+                    onClick={onSelectorClick}
+                    onChange={(e) => {
+                      selectorChangedRef.current = true;
+                      suppressNextRowClickRef.current = false;
+                      void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
+                    }}
                   >
                     {TRANSPOSE_RANGE.map((value) => (
                       <option key={value} value={value}>
@@ -247,8 +287,15 @@ export function PlaylistEditor() {
                   <select
                     title="Capo"
                     value={entry.capo ?? 0}
-                    onChange={(e) => void store.updatePlaylistEntry(index, { capo: Number(e.target.value) })}
-                    onClick={stopRowClick}
+                    onFocus={onSelectorFocus}
+                    onBlur={onSelectorBlur}
+                    onMouseDown={onSelectorPointerDown}
+                    onClick={onSelectorClick}
+                    onChange={(e) => {
+                      selectorChangedRef.current = true;
+                      suppressNextRowClickRef.current = false;
+                      void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
+                    }}
                   >
                     {CAPO_RANGE.map((value) => (
                       <option key={value} value={value}>

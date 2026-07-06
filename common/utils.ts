@@ -655,12 +655,23 @@ function onPinchTouchEnd(ev: TouchEvent) {
  * the beginning of each gesture (with `steps === 0`) so the caller can
  * capture a baseline value.
  */
-export function installPinchZoomHandler(targetElement: HTMLElement, onPinch: (steps: number, gestureStart: boolean) => void, pixelsPerStep = 30) {
+export function installPinchZoomHandler(
+  targetElement: HTMLElement,
+  onPinch: (steps: number, gestureStart: boolean) => void,
+  pixelsPerStep = 30
+): () => void {
   pinchContexts.set(targetElement, { onPinch, pixelsPerStep });
   targetElement.addEventListener("touchstart", onPinchTouchStart, true);
   targetElement.addEventListener("touchmove", onPinchTouchMove, { capture: true, passive: false });
   targetElement.addEventListener("touchend", onPinchTouchEnd, true);
   targetElement.addEventListener("touchcancel", onPinchTouchEnd, true);
+  return () => {
+    pinchContexts.delete(targetElement);
+    targetElement.removeEventListener("touchstart", onPinchTouchStart, true);
+    targetElement.removeEventListener("touchmove", onPinchTouchMove, { capture: true });
+    targetElement.removeEventListener("touchend", onPinchTouchEnd, true);
+    targetElement.removeEventListener("touchcancel", onPinchTouchEnd, true);
+  };
 }
 
 export class MultiMap<K, V> {

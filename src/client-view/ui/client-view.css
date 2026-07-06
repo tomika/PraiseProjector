@@ -125,6 +125,7 @@ body,
     system-ui,
     -apple-system,
     sans-serif;
+  --cv-list-row-font-size: 17px;
   font-size: 16px;
 }
 
@@ -809,11 +810,12 @@ body,
   padding: 6px 8px;
   flex: none;
   border-bottom: 1px solid var(--cv-panel-border);
+  font-size: calc(var(--cv-list-row-font-size) * 0.88);
 }
 
 #filterRow #filter {
   flex: 1 1 auto;
-  font-size: 15px;
+  font-size: inherit;
   padding: 4px 6px;
   background: var(--cv-field-bg);
   color: var(--cv-field-fg);
@@ -887,11 +889,10 @@ body,
 #list td {
   padding: 2px 10px;
   border-bottom: 1px solid var(--cv-row-border);
-  font-size: 17px;
+  font-size: var(--cv-list-row-font-size);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 #list mark {
@@ -1111,7 +1112,7 @@ body,
 
 .cv-leader-select,
 .cv-date-select {
-  font-size: 15px;
+  font-size: inherit;
   padding: 4px 6px;
   background: var(--cv-select-bg);
   color: var(--cv-select-fg);
@@ -1142,7 +1143,7 @@ body,
   /* Vertical padding is 0: height is driven by the stretched row (matching the
      selects); horizontal padding keeps the label off the edges. */
   padding: 0 12px;
-  font-size: 16px;
+  font-size: inherit;
   font-weight: 600;
   line-height: 1;
   border: 1px solid var(--cv-panel-border);
@@ -1176,18 +1177,18 @@ body,
 }
 
 #list.cv-database td.cv-add-col {
-  width: 2.3rem;
-  min-width: 2.3rem;
+  width: 2.3em;
+  min-width: 2.3em;
 }
 
 #list.cv-database td.cv-found-marker {
-  width: 2.3rem;
-  min-width: 2.3rem;
+  width: 2.3em;
+  min-width: 2.3em;
 }
 
 #list.cv-database td.cv-play-col {
-  width: 2.1rem;
-  min-width: 2.1rem;
+  width: 2.1em;
+  min-width: 2.1em;
 }
 
 /* The matching excerpt shown after the title for non-title hits (lyrics/meta/…). */
@@ -1209,13 +1210,13 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.65em;
+  height: 1.65em;
   border-radius: 50%;
   border: 1px solid var(--cv-panel-border);
   background: var(--cv-panel-btn-bg);
   color: var(--cv-panel-fg);
-  font-size: 19px;
+  font-size: 1.12em;
   line-height: 1;
   cursor: pointer;
 }
@@ -1252,7 +1253,7 @@ body,
   border: none;
   background: transparent;
   color: var(--cv-accent);
-  font-size: 20px;
+  font-size: 1.18em;
   line-height: 1;
   cursor: pointer;
 }
@@ -1270,19 +1271,8 @@ body,
   background: rgba(0, 0, 0, 0.62);
 }
 
-/* Working-list rows: drag handle, dragging/insertion feedback, title editing,
-  and legacy-like transpose/capo selector cells. */
-#list.cv-playlist td.cv-drag-handle {
-  width: 1.4rem;
-  min-width: 1.4rem;
-  padding: 1px 2px 1px 6px;
-  color: #777;
-  font-size: 24px;
-  cursor: grab;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
+/* Working-list rows: whole-row dragging/insertion feedback, title editing, and
+  legacy-like transpose/capo selector cells. */
 #list.cv-playlist tr.cv-dragging {
   opacity: 0.4;
 }
@@ -1292,9 +1282,12 @@ body,
 }
 
 #list.cv-playlist td.cv-song-title {
-  width: 100%;
-  min-width: 8rem;
+  width: auto;
+  min-width: 0;
   padding-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #list.cv-playlist .cv-pl-title-edit {
@@ -1310,8 +1303,8 @@ body,
 #list.cv-playlist td.transposeColumn,
 #list.cv-playlist td.capoColumn {
   position: relative;
-  width: 1.9rem;
-  min-width: 1.9rem;
+  width: 3em;
+  min-width: 3em;
   padding: 1px 2px;
   text-align: right;
   white-space: nowrap;
@@ -1325,7 +1318,7 @@ body,
   color: var(--cv-panel-fg);
   min-width: 1rem;
   display: inline-block;
-  font-size: 19px;
+  font-size: 1.12em;
   font-weight: 600;
 }
 
@@ -1341,6 +1334,7 @@ body,
 #list.cv-playlist td.capoColumn > select {
   position: absolute;
   inset: 0;
+  z-index: 3;
   width: 100%;
   height: 100%;
   border: 0;
@@ -1358,6 +1352,12 @@ body,
 }
 
 #list.cv-playlist {
+  table-layout: fixed;
+}
+
+#list.cv-playlist tbody {
+  display: table;
+  width: 100%;
   table-layout: fixed;
 }
 
