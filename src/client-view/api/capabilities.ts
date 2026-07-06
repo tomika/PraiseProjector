@@ -99,8 +99,8 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
   if (input.role === "ClientServed") {
     // Host-served LAN follower: control is host-granted (leaderRight) and only
     // becomes effective once the user switches leader mode ON. No cloud login, no
-    // session hosting, no named-playlist save. The full editor is served by the
-    // same webserver but only makes sense on a real browser, not the native host.
+    // session hosting, no named-playlist save, and no full-editor switch: the
+    // internal webserver intentionally serves only the follower client.
     const controllable = input.leaderRight && input.leaderMode;
     return {
       ...env,
@@ -112,7 +112,7 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
       canPersistPlaylist: false,
       canHostLocalSession: false,
       canHostOnlineSession: false,
-      canOpenFullEditor: !input.lockedToSession && !hasHostBridge,
+      canOpenFullEditor: false,
     };
   }
 

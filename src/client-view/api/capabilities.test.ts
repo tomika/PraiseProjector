@@ -83,13 +83,13 @@ test("ClientServed: control requires both the granted right and leader mode on",
   }
 });
 
-test("ClientServed: no login / change-leader / hosting; full editor only outside locked native session", () => {
+test("ClientServed: no login / change-leader / hosting / full editor", () => {
   const caps = deriveCapabilities(inputs("ClientServed", { leaderRight: true, leaderMode: true }));
   assert.equal(caps.canLogin, false);
   assert.equal(caps.canChangeLeader, false);
   assert.equal(caps.canHostLocalSession, false);
   assert.equal(caps.canHostOnlineSession, false);
-  assert.equal(deriveCapabilities(inputs("ClientServed", { hasHostBridge: false })).canOpenFullEditor, true);
+  assert.equal(deriveCapabilities(inputs("ClientServed", { hasHostBridge: false })).canOpenFullEditor, false);
   assert.equal(deriveCapabilities(inputs("ClientServed", { hasHostBridge: true })).canOpenFullEditor, false);
   assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, hasHostBridge: false })).canOpenFullEditor, false);
 });

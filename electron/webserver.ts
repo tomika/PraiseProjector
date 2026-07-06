@@ -270,7 +270,6 @@ export class WebServer {
       const inject =
         `<script>window.__ppApiBase=${JSON.stringify(apiBase)};` +
         `window.__ppAssetBase="/webapp";` +
-        `window.__ppEditorUrl="/webapp/index.html";` +
         `window.__ppAccess=${JSON.stringify(clientType)};</script>`;
       const html = data.replace(/<head>/i, (head) => head + inject);
       this.setCommonHeaders(res, clientType);
@@ -279,6 +278,14 @@ export class WebServer {
 
     // Entry route (must precede the static mount so the HTML is injected).
     this.app.get(/^\/webapp\/client-view\.html$/, serveClientView);
+
+    // The internal webserver serves the follower client, not the full editor.
+    // Keep the root /webapp/ usable by redirecting below, but do not expose the
+    // editor shell under its direct build path.
+    this.app.use(/^\/webapp\/index\.html$/, (_req, res) => {
+      this.setCommonHeaders(res);
+      res.status(404).send("Not found");
+    });
 
     // Serve the rest of the /webapp build (hashed bundles, images, soundfont, CSS).
     // Cache policy mirrors the cloud (Apache): content-hashed bundles under
@@ -292,6 +299,7 @@ export class WebServer {
       "/webapp",
       express.static(this.webClientDir, {
         etag: true,
+        index: false,
         lastModified: true,
         setHeaders: (res, filePath) => {
           const rel = path.relative(this.webClientDir, filePath).replace(/\\/g, "/");
