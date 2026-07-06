@@ -20,8 +20,10 @@ function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): Capabil
   return {
     role,
     hasHostBridge: false,
+    hasHostHome: false,
     hasWebServerBackend: false,
     isPwa: false,
+    onlineSession: false,
     authed: false,
     hasAuthBridge: false,
     hasSelectedLeader: false,
@@ -29,6 +31,7 @@ function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): Capabil
     ppdSessionEnabled: false,
     leaderRight: false,
     leaderMode: false,
+    lockedToSession: false,
     ...over,
   };
 }
@@ -37,9 +40,10 @@ function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): Capabil
 
 test("environment flags are echoed verbatim for every role", () => {
   for (const role of ["AppDirect", "AppRest", "ClientServed"] as const) {
-    const caps = deriveCapabilities(inputs(role, { isPwa: true, hasHostBridge: true, hasWebServerBackend: true }));
+    const caps = deriveCapabilities(inputs(role, { isPwa: true, hasHostBridge: true, hasHostHome: true, hasWebServerBackend: true }));
     assert.equal(caps.isPwa, true, `${role} isPwa`);
     assert.equal(caps.hasHostBridge, true, `${role} hasHostBridge`);
+    assert.equal(caps.hasHostHome, true, `${role} hasHostHome`);
     assert.equal(caps.hasWebServerBackend, true, `${role} hasWebServerBackend`);
   }
 });
@@ -79,7 +83,7 @@ test("ClientServed: control requires both the granted right and leader mode on",
   }
 });
 
-test("ClientServed: no login / change-leader / hosting; full editor only without a host bridge", () => {
+test("ClientServed: no login / change-leader / hosting; full editor only outside locked native session", () => {
   const caps = deriveCapabilities(inputs("ClientServed", { leaderRight: true, leaderMode: true }));
   assert.equal(caps.canLogin, false);
   assert.equal(caps.canChangeLeader, false);
@@ -87,6 +91,14 @@ test("ClientServed: no login / change-leader / hosting; full editor only without
   assert.equal(caps.canHostOnlineSession, false);
   assert.equal(deriveCapabilities(inputs("ClientServed", { hasHostBridge: false })).canOpenFullEditor, true);
   assert.equal(deriveCapabilities(inputs("ClientServed", { hasHostBridge: true })).canOpenFullEditor, false);
+  assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, hasHostBridge: false })).canOpenFullEditor, false);
+});
+
+test("ClientServed: locked-session home only for online sessions or host goHome", () => {
+  assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true })).canReturnHome, false);
+  assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, onlineSession: true })).canReturnHome, true);
+  assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, hasHostHome: true })).canReturnHome, true);
+  assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: false, onlineSession: true, hasHostHome: true })).canReturnHome, false);
 });
 
 // ── App roles: always in control, no leader toggle ───────────────────────────
@@ -109,22 +121,24 @@ test("AppRest: login + change-leader always on; online hosting follows authed", 
   assert.equal(deriveCapabilities(inputs("AppRest", { authed: true })).canHostOnlineSession, true);
 });
 
-test("AppRest: local hosting needs a host bridge AND the ppd toggle; full editor only without a bridge", () => {
+test("AppRest: local hosting needs a host bridge AND the ppd toggle; full editor only outside locked native session", () => {
   assert.equal(deriveCapabilities(inputs("AppRest", { hasHostBridge: true, ppdSessionEnabled: true })).canHostLocalSession, true);
   assert.equal(deriveCapabilities(inputs("AppRest", { hasHostBridge: false, ppdSessionEnabled: true })).canHostLocalSession, false);
   assert.equal(deriveCapabilities(inputs("AppRest", { hasHostBridge: true, ppdSessionEnabled: false })).canHostLocalSession, false);
   assert.equal(deriveCapabilities(inputs("AppRest", { hasHostBridge: false })).canOpenFullEditor, true);
   assert.equal(deriveCapabilities(inputs("AppRest", { hasHostBridge: true })).canOpenFullEditor, false);
+  assert.equal(deriveCapabilities(inputs("AppRest", { lockedToSession: true, hasHostBridge: false })).canOpenFullEditor, false);
 });
 
 // ── AppDirect specifics ──────────────────────────────────────────────────────
 
-test("AppDirect: login follows the auth bridge; no change-leader; never opens the full editor", () => {
+test("AppDirect: login follows the auth bridge; no change-leader; full editor only outside locked native session", () => {
   assert.equal(deriveCapabilities(inputs("AppDirect", { hasAuthBridge: false })).canLogin, false);
   assert.equal(deriveCapabilities(inputs("AppDirect", { hasAuthBridge: true })).canLogin, true);
   assert.equal(deriveCapabilities(inputs("AppDirect")).canChangeLeader, false);
-  assert.equal(deriveCapabilities(inputs("AppDirect", { hasHostBridge: false })).canOpenFullEditor, false);
+  assert.equal(deriveCapabilities(inputs("AppDirect", { hasHostBridge: false })).canOpenFullEditor, true);
   assert.equal(deriveCapabilities(inputs("AppDirect", { hasHostBridge: true })).canOpenFullEditor, false);
+  assert.equal(deriveCapabilities(inputs("AppDirect", { lockedToSession: true, hasHostBridge: false })).canOpenFullEditor, false);
 });
 
 test("AppDirect: online hosting follows the external-web-display toggle (not authed)", () => {

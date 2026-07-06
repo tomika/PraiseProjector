@@ -1,14 +1,12 @@
 /**
- * Toolbar/button icons, reused from the legacy client asset folder.
+ * Toolbar/button icons served by the webapp static asset root.
  *
- * Those images live in Vite's publicDir (public/app/images) and are served as
- * static files, so we reference them by URL rather than bundling them (importing
- * publicDir files into the graph is unsupported and yields broken paths).
+ * These images are referenced by URL rather than imported into the bundle.
  *
- * The base differs per mount point: the Vite dev server and the standalone web
- * build expose publicDir under "/app", while the Electron webserver serves
- * public/app at the root. The host page may override the base by assigning
- * `window.__ppAssetBase` before this bundle loads (e.g. "" for the webserver).
+ * The webapp build serves these files under "/webapp". Electron loads them from
+ * the renderer asset tree: relative "app" in packaged file builds, "/app" on the
+ * Vite dev server. A host page may override the base by assigning
+ * `window.__ppAssetBase` before this bundle loads.
  */
 
 declare global {
@@ -25,12 +23,17 @@ declare global {
   }
 }
 
-const override = typeof window !== "undefined" ? window.__ppAssetBase : undefined;
-const assetBase = override ?? "/app";
+function assetBase(): string {
+  if (typeof window === "undefined") return "/webapp";
+  if (window.__ppAssetBase !== undefined) return window.__ppAssetBase;
+  if (window.location.protocol === "file:") return "app";
+  if (window.electronAPI) return "/app";
+  return "/webapp";
+}
 
 /** Resolve a legacy icon by file name, e.g. icon("left.svg"). */
 export function icon(name: string): string {
-  return `${assetBase}/images/${name}`;
+  return `${assetBase()}/images/${name}`;
 }
 
 /** SVGator animations are embedded as their OWN document (via <object>) so their

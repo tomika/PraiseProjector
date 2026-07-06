@@ -15,31 +15,38 @@ import { ClientView } from "../ui/ClientView";
 import { cloudApiBaseUrl } from "../../config";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
-function readLaunchConfigFromUrl(): Pick<ClientConfig, "initialSongId" | "initialPlaylistId" | "initialPlaylistIndex"> {
+function readLaunchConfigFromUrl(): Pick<
+  ClientConfig,
+  "initialSongId" | "initialPlaylistId" | "initialPlaylistIndex" | "leaderId" | "follow" | "lockedToSession" | "entryMode"
+> {
   if (typeof window === "undefined") return {};
   const params = new URLSearchParams(window.location.search);
   const initialSongId = (params.get("songId") || params.get("s") || "").trim() || undefined;
+  const followLeaderId = (params.get("follow") || "").trim() || undefined;
+  const followConfig: Pick<ClientConfig, "leaderId" | "follow" | "lockedToSession" | "entryMode"> = followLeaderId
+    ? { leaderId: followLeaderId, follow: true, lockedToSession: true, entryMode: "session" }
+    : {};
   const rawPlaylistId = (params.get("listId") || params.get("l") || "").trim();
-  if (!rawPlaylistId) return { initialSongId };
+  if (!rawPlaylistId) return { initialSongId, ...followConfig };
 
   const match = /^(.*)@([0-9]+)$/.exec(rawPlaylistId);
-  if (!match) return { initialSongId, initialPlaylistId: rawPlaylistId };
+  if (!match) return { initialSongId, initialPlaylistId: rawPlaylistId, ...followConfig };
 
   return {
     initialSongId,
     initialPlaylistId: match[1],
     initialPlaylistIndex: Number.parseInt(match[2], 10),
+    ...followConfig,
   };
 }
 
 export async function mountClientView(rootEl: HTMLElement, config: ClientConfig = {}): Promise<ClientViewStore> {
   const api = new RestClientApi();
   const store = new ClientViewStore(api);
-  // Resolve MIDI soundfonts through the same legacy asset base as icon() (assets.ts):
-  // the soundfont files live at <assetBase>/soundfont/ (upstream /app/soundfont/), NOT under
-  // the hashed client-view bundle. When served by a host webserver (__ppAssetBase="") this
-  // becomes /soundfont/, which the host maps back to /app/soundfont/ for offline playback.
-  const assetBase = (typeof window !== "undefined" ? window.__ppAssetBase : undefined) ?? "/app";
+  // Resolve MIDI soundfonts through the same webapp asset base as icon() (assets.ts).
+  const assetBase =
+    (typeof window !== "undefined" ? window.__ppAssetBase : undefined) ??
+    (typeof window !== "undefined" && window.location.protocol === "file:" ? "app" : "/webapp");
   setMidiSoundfontUrl(`${assetBase}/soundfont/`);
   // When served by the Electron webserver the entry HTML sets __ppApiBase to the
   // serving origin (root). Otherwise use the base resolved in src/config.ts (the
@@ -55,6 +62,7 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
   await store.init({
     baseUrl,
     follow: served,
+    lockedToSession: served,
     servedByHost: served,
     hostAccess: window.__ppAccess,
     fullEditorUrl: window.__ppEditorUrl,

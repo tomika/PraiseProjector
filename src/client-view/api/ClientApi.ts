@@ -122,17 +122,23 @@ export interface ClientCapabilities {
   canHostOnlineSession: boolean;
   /**
    * May navigate to the full multi-panel editor (index.html). True in a real
-   * browser/desktop where that editor is usable and reachable; false on the
-   * native host (Android) and in the desktop embed (which IS the editor and
-   * offers a home button instead).
+   * browser/desktop where that editor is usable and reachable; false on native
+   * hosts and when this entry is locked to a concrete projection session.
    */
   canOpenFullEditor: boolean;
   /** Running as an installed PWA (standalone display-mode). */
   isPwa: boolean;
   /** A native host bridge (`window.hostDevice` / Android) is present. */
   hasHostBridge: boolean;
+  /** The native host bridge can navigate to its launcher/home screen. */
+  hasHostHome: boolean;
   /** A local webserver backend is reachable for iWeb-style browser clients. */
   hasWebServerBackend: boolean;
+  /**
+   * A locked session has a meaningful home target. True for online/cloud session
+   * viewers, and for native hosts that expose `hostDevice.goHome`.
+   */
+  canReturnHome: boolean;
 }
 
 /** Locked-down capability set — the safe default before {@link ClientApi.init}
@@ -149,7 +155,9 @@ export const NO_CAPABILITIES: ClientCapabilities = {
   canOpenFullEditor: false,
   isPwa: false,
   hasHostBridge: false,
+  hasHostHome: false,
   hasWebServerBackend: false,
+  canReturnHome: false,
 };
 
 /** One-time configuration passed to {@link ClientApi.init}. */
@@ -174,7 +182,7 @@ export interface ClientConfig {
    * prefer the working playlist, while a direct client-view.html entry keeps the
    * standalone database default unless URL parameters say otherwise.
    */
-  entryMode?: "embedded" | "standalone";
+  entryMode?: "embedded" | "standalone" | "session";
   /**
    * Auto-follow the backend's current display on startup — the served-follower
    * use case. The adapter begins long-polling /display_query immediately so the
@@ -182,6 +190,12 @@ export interface ClientConfig {
    * session.
    */
   follow?: boolean;
+  /**
+   * This entry is bound to one concrete projection session. The view may still
+   * follow via the normal REST long-poll, but UI affordances that leave or manage
+   * sessions are hidden; a dedicated toolbar home button is shown instead.
+   */
+  lockedToSession?: boolean;
   /**
    * The bundle is served by a host that gates access itself (the Electron
    * embedded webserver, by IP allowlist). Drives the capability model: control

@@ -270,6 +270,7 @@ export class WebServer {
       const inject =
         `<script>window.__ppApiBase=${JSON.stringify(apiBase)};` +
         `window.__ppAssetBase="/webapp";` +
+        `window.__ppEditorUrl="/webapp/index.html";` +
         `window.__ppAccess=${JSON.stringify(clientType)};</script>`;
       const html = data.replace(/<head>/i, (head) => head + inject);
       this.setCommonHeaders(res, clientType);

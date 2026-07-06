@@ -239,15 +239,20 @@ export class RestCore {
     // The capability RULES live in one place (deriveCapabilities); RestCore only
     // supplies its context. servedByHost ⇒ a host-served LAN follower (Client);
     // otherwise the standalone website / Android cloud app (App·Rest), which is a
-    // full client always in control. The host access level / leader-available
+    // full client unless the entry is locked to a followed session. The host
+    // access level / leader-available
     // header are folded into the `leaderRight` input below: a GUEST (or an older
     // host that injects nothing) gets no right; the server still ENFORCES control
     // on /display_update regardless, so an unauthorized push no-ops server-side.
+    const lockedCloudFollower = !!this.config.lockedToSession && !this.config.servedByHost;
+    const hasHostHome = typeof window !== "undefined" && typeof window.hostDevice?.goHome === "function";
     return deriveCapabilities({
-      role: this.config.servedByHost ? "ClientServed" : "AppRest",
+      role: this.config.servedByHost || lockedCloudFollower ? "ClientServed" : "AppRest",
       hasHostBridge: isHostDevicePpdAvailable(),
+      hasHostHome,
       hasWebServerBackend: isWebServerRuntimeAvailable(),
       isPwa,
+      onlineSession: lockedCloudFollower,
       authed: this.authed,
       // The auth bridge, host-selected leader and external-display toggle drive
       // the in-process Direct embed only; the Rest roles don't use them.
@@ -255,8 +260,9 @@ export class RestCore {
       hasSelectedLeader: false,
       externalWebDisplayEnabled: false,
       ppdSessionEnabled: readSessionToggleSettings().ppdSessionEnabled,
-      leaderRight: this.headerLeaderAvailable ?? this.config.hostAccess !== "GUEST",
+      leaderRight: this.headerLeaderAvailable ?? (!lockedCloudFollower && this.config.hostAccess !== "GUEST"),
       leaderMode: this.leaderMode,
+      lockedToSession: !!this.config.lockedToSession,
     });
   }
 

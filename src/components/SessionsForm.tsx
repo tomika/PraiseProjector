@@ -15,6 +15,7 @@ import {
 import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type SessionKind, type SessionRow } from "../shared/SessionsForm";
 import { icon } from "../client-view/ui/assets";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
+import { getAssetPath } from "../utils/assetPath";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -310,7 +311,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 id: "cloud-session",
                 title: t("SessionsCloudToggleTitle"),
                 description: t("SessionsCloudToggleDescription"),
-                icon: "/assets/cloud-session.png",
+                icon: getAssetPath("assets/cloud-session.png"),
                 isFeatureEnabled: settings.externalWebDisplayEnabled,
                 onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("externalWebDisplayEnabled", nextFeatureEnabled),
               },
@@ -318,7 +319,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 id: "iweb-session",
                 title: t("SessionsIWebToggleTitle"),
                 description: t("SessionsIWebToggleDescription"),
-                icon: "/assets/iweb-session.png",
+                icon: getAssetPath("assets/iweb-session.png"),
                 isFeatureEnabled: hasWebServerBackend && settings.iWebEnabled,
                 isControlDisabled: !hasWebServerBackend,
                 onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("iWebEnabled", nextFeatureEnabled),
@@ -327,7 +328,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 id: "ppd-session",
                 title: t("SessionsPpdToggleTitle"),
                 description: t("SessionsPpdToggleDescription"),
-                icon: "/assets/ppd-session.png",
+                icon: getAssetPath("assets/ppd-session.png"),
                 isFeatureEnabled: hasHostDevicePpd && settings.ppdSessionEnabled,
                 isControlDisabled: !hasHostDevicePpd,
                 onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("ppdSessionEnabled", nextFeatureEnabled),

@@ -119,8 +119,10 @@ export class DirectClientApi implements ClientApi {
     return deriveCapabilities({
       role: "AppDirect",
       hasHostBridge: isHostDevicePpdAvailable(),
+      hasHostHome: typeof window !== "undefined" && typeof window.hostDevice?.goHome === "function",
       hasWebServerBackend: isWebServerRuntimeAvailable(),
       isPwa: false,
+      onlineSession: false,
       authed: this.isAuthed(),
       hasAuthBridge: !!this.authBridge,
       hasSelectedLeader: !!this.getSelectedLeader(),
@@ -129,6 +131,7 @@ export class DirectClientApi implements ClientApi {
       // No follower/leader toggle in an App role.
       leaderRight: false,
       leaderMode: false,
+      lockedToSession: false,
     });
   }
 

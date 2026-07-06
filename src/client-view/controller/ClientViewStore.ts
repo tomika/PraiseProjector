@@ -264,6 +264,8 @@ export interface ClientViewState {
   capo: number;
   /** Full-view "todo" status mirrored from the host (Direct embed only; empty on Rest). */
   syncStatus: SyncStatus;
+  /** True when this entry is bound to one concrete projection session. */
+  lockedToSession: boolean;
 }
 
 /**
@@ -286,7 +288,7 @@ export function isFollowerView(state: ClientViewState): boolean {
 /** App mode is the only context with a sessions hub (discover / attach / host); a
  *  Client is a fixed-source follower, so the hub is never offered there. */
 export function canUseSessions(state: ClientViewState): boolean {
-  return state.mode === "App";
+  return state.mode === "App" && !state.lockedToSession;
 }
 
 /** An App that is currently following a remote (cloud) session — temporarily a
@@ -295,17 +297,20 @@ export function isAppWatching(state: ClientViewState): boolean {
   return state.mode === "App" && state.network.status === "watching";
 }
 
-/** The view is mirroring someone else's display — a permanent Client follower OR
- *  an App that chose to watch a session. Drives the view-only toolbar / song view
- *  (no navigation, transpose or song browser). */
+/** The view is mirroring someone else's display — a Client follower/locked
+ *  session without control, OR an App that chose to watch a session. Drives the
+ *  view-only toolbar / song view (no navigation, transpose or song browser).
+ *  A host-served Client may still be locked to one session while leader mode
+ *  grants display control; in that case the session stays fixed, but display and
+ *  playlist handling are enabled through the capability model. */
 export function isViewingRemoteDisplay(state: ClientViewState): boolean {
-  return isFollowerView(state) || isAppWatching(state);
+  return isFollowerView(state) || isAppWatching(state) || (state.lockedToSession && !state.capabilities.canControlDisplay);
 }
 
 /** The toolbar network indicator is meaningful only for a host-served Client (a
  *  persistent server link to report); standalone App mode has none to show. */
 export function showsNetworkIndicator(state: ClientViewState): boolean {
-  return state.mode !== "App";
+  return state.lockedToSession || state.mode !== "App";
 }
 
 /** Offer the highlight lamp to anyone who can control the display, plus a Client
@@ -367,6 +372,7 @@ function initialState(): ClientViewState {
     transpose: 0,
     capo: 0,
     syncStatus: EMPTY_SYNC_STATUS,
+    lockedToSession: false,
   };
 }
 
@@ -438,6 +444,7 @@ export class ClientViewStore {
       playlist: this.api.playlist.getPlaylist(),
       isFullScreen: this.api.device.isFullScreen(),
       canExit: typeof this.api.device.exit === "function",
+      lockedToSession: !!config.lockedToSession,
     });
     // Overlay the persisted UI snapshot on top of the backend seed. Explicit
     // entry targets (URL song/list, embedded playlist mode) are applied below so
@@ -1399,7 +1406,22 @@ export class ClientViewStore {
   /** Navigate from the focused client view to the full multi-panel editor. */
   openFullEditor(): void {
     if (typeof window === "undefined") return;
+    try {
+      window.localStorage?.setItem("pp-show-client-view", "0");
+    } catch {
+      /* storage may be unavailable — navigation still works */
+    }
     window.location.assign(this.fullEditorUrl);
+  }
+
+  /** Leave a locked client session via the native host home when available, or
+   *  fall back to the web full-editor/start route for online sessions. */
+  returnHome(): void {
+    if (this.state.capabilities.hasHostHome) {
+      this.api.device.goHome();
+      return;
+    }
+    if (this.state.capabilities.canReturnHome) this.openFullEditor();
   }
 
   /** Terminate the app on hosts that support it (gated by state.canExit). */

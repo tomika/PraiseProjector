@@ -51,6 +51,7 @@ export default defineConfig(({ command, mode }) => {
   // and the public /webapp deploy) gets its own outDir so it never collides with the
   // Electron *renderer* build (base "./", loaded via file://) which keeps dist/webapp.
   const webOutDir = "dist/web";
+  const legacyWebappAssetSourceDir = path.join(__dirname, "public", "app");
   const soundfontSourceDir = path.join(__dirname, "public", "app", "soundfont");
 
   return {
@@ -60,6 +61,31 @@ export default defineConfig(({ command, mode }) => {
       {
         name: "root-soundfont-assets",
         configureServer(server) {
+          server.middlewares.use("/webapp", (req, res, next) => {
+            const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
+            const cleanPath = requestPath.replace(/^\/+/, "");
+            const allowed =
+              cleanPath === "chordpro.css" ||
+              cleanPath === "chordselector.css" ||
+              cleanPath.startsWith("images/") ||
+              cleanPath.startsWith("soundfont/");
+            if (!allowed) {
+              next();
+              return;
+            }
+            const filePath = path.normalize(path.join(legacyWebappAssetSourceDir, cleanPath));
+            if (!filePath.startsWith(legacyWebappAssetSourceDir + path.sep)) {
+              next();
+              return;
+            }
+            fs.stat(filePath, (statError, stat) => {
+              if (statError || !stat.isFile()) {
+                next();
+                return;
+              }
+              fs.createReadStream(filePath).pipe(res);
+            });
+          });
           server.middlewares.use("/soundfont", (req, res, next) => {
             const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
             const filePath = path.normalize(path.join(soundfontSourceDir, requestPath));
@@ -79,7 +105,7 @@ export default defineConfig(({ command, mode }) => {
         },
         closeBundle() {
           // The desktop renderer is loaded from dist/webapp with base "./"; keep
-          // the React app's soundfont URL independent from the legacy /app tree.
+          // the React app's soundfont URL independent from the historical asset tree.
           if (command !== "build" || isWeb) return;
           const soundfontOutDir = path.join(__dirname, "dist", "webapp", "soundfont");
           fs.rmSync(soundfontOutDir, { recursive: true, force: true });

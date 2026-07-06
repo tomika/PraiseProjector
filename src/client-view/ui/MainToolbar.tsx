@@ -169,6 +169,11 @@ export function MainToolbar({
         {hasFullViewTodo(state) && <span className="cv-todo-dot" aria-label="Action needed in full view" />}
       </div>
     ),
+    home: state.capabilities.canReturnHome ? (
+      <div id="btnHome" className="btnDiv" title="Home" onClick={() => store.returnHome()}>
+        <img className="btnImg" src={icon("home.svg")} alt="Home" />
+      </div>
+    ) : null,
     // Instructions (wand): short press toggles the instructions overlay; long
     // press opens the instructions text editor (when the user can control
     // display — mirrors legacy chkInstructions + editInstructions).

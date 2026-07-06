@@ -48,10 +48,14 @@ export interface CapabilityInputs {
   // ── environment (detected by the caller; passed in to keep this pure) ──
   /** A native host bridge (`window.hostDevice` / Android) is present. */
   hasHostBridge: boolean;
+  /** The native host bridge can navigate to its launcher/home screen. */
+  hasHostHome: boolean;
   /** A local webserver backend is reachable for iWeb-style browser clients. */
   hasWebServerBackend: boolean;
   /** Running as an installed PWA (standalone display-mode). */
   isPwa: boolean;
+  /** This locked session is followed through the internet/cloud backend. */
+  onlineSession: boolean;
 
   // ── App·Rest (standalone website / Android cloud app) ──
   /** Cloud auth state — gates online-session hosting in App·Rest. */
@@ -76,12 +80,21 @@ export interface CapabilityInputs {
   /** The user's leader-mode choice (legacy chkAdmin); only a granted client that
    *  has ALSO switched this on actually controls the display. */
   leaderMode: boolean;
+  /** This UI was opened as a concrete session viewer, so it must not expose the
+   *  normal full-editor switch in the overflow menu. */
+  lockedToSession: boolean;
 }
 
 /** Derive the capability snapshot for the given role + context. Pure. */
 export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities {
-  const { hasHostBridge, hasWebServerBackend, isPwa } = input;
-  const env = { isPwa, hasHostBridge, hasWebServerBackend };
+  const { hasHostBridge, hasHostHome, hasWebServerBackend, isPwa } = input;
+  const env = {
+    isPwa,
+    hasHostBridge,
+    hasHostHome,
+    hasWebServerBackend,
+    canReturnHome: input.lockedToSession && (input.onlineSession || hasHostHome),
+  };
 
   if (input.role === "ClientServed") {
     // Host-served LAN follower: control is host-granted (leaderRight) and only
@@ -99,13 +112,13 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
       canPersistPlaylist: false,
       canHostLocalSession: false,
       canHostOnlineSession: false,
-      canOpenFullEditor: !hasHostBridge,
+      canOpenFullEditor: !input.lockedToSession && !hasHostBridge,
     };
   }
 
   // App roles: a full client — always in control, with no follower/leader toggle.
   // The desktop embed (AppDirect) and the web/cloud app (AppRest) differ only in
-  // cloud-identity affordances and the full-editor route.
+  // cloud-identity affordances. Full-editor navigation is runtime/session gated.
   const direct = input.role === "AppDirect";
   return {
     ...env,
@@ -124,6 +137,6 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
     // is toggle-gated in the embed and auth-gated in the cloud app.
     canHostLocalSession: hasHostBridge && input.ppdSessionEnabled,
     canHostOnlineSession: direct ? input.externalWebDisplayEnabled : input.authed,
-    canOpenFullEditor: direct,
+    canOpenFullEditor: !input.lockedToSession && !hasHostBridge,
   };
 }

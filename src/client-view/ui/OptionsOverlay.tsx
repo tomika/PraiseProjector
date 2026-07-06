@@ -6,7 +6,7 @@
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { isAppWatching, isFollowerView } from "../controller/ClientViewStore";
+import { isAppWatching, isFollowerView, isViewingRemoteDisplay } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 import { LeaderPlaylistPicker } from "./LeaderPlaylistPicker";
 import { OptionsBar } from "./OptionsBar";
@@ -25,7 +25,7 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
   // the browser, but offer a Stop-following button instead of netdisplay (the cloud
   // App has no host /netdisplay route — that button is Client/host-served only).
   const appWatching = isAppWatching(state);
-  const viewer = follower || appWatching;
+  const viewer = isViewingRemoteDisplay(state);
   const canEdit = state.capabilities.canEditWorkingPlaylist;
   const editingPlaylist = canEdit && state.listMode === "playlist";
   const leaderLists = canEdit && state.listMode === "leaderlists";
@@ -48,14 +48,14 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
               <span>Net display</span>
             </button>
           </div>
-        ) : appWatching ? (
+        ) : appWatching && !state.lockedToSession ? (
           <div className="cv-netdisplay-wrap">
             <button type="button" className="cv-netdisplay-btn" title="Stop following" onClick={() => void store.stopWatching()}>
               <img className="cv-netdisplay-icon" src={icon("stop.svg")} alt="" />
               <span>Stop following</span>
             </button>
           </div>
-        ) : editingPlaylist ? (
+        ) : viewer ? null : editingPlaylist ? (
           <PlaylistEditor />
         ) : leaderLists ? (
           <LeaderPlaylistPicker />

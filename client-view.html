@@ -89,14 +89,14 @@
       //     and the client runs in follower mode (RestCore.computeCapabilities).
       //   - Cloud PWA (public /webapp): no injection ⇒ __ppApiBase stays "" and
       //     config.ts derives the cloud host from window.location.origin.
-      // Assets (icons, soundfonts, chordpro CSS) always live under /webapp here;
-      // the Vite dev server (base "/") exposes publicDir under /app instead.
+      // Assets (icons, soundfonts, chordpro CSS) always live under /webapp here.
       (function () {
         // Preserve any host-injected globals; default to the cloud configuration.
         window.__ppApiBase = window.__ppApiBase || "";
         var served = !!window.__ppApiBase;
         var underWebapp = location.pathname.indexOf("/webapp") === 0;
-        window.__ppAssetBase = window.__ppAssetBase || (underWebapp ? "/webapp" : "/app");
+        window.__ppAssetBase =
+          window.__ppAssetBase || (location.protocol === "file:" ? "app" : window.electronAPI ? "/app" : "/webapp");
         ["chordpro.css", "chordselector.css"].forEach(function (file) {
           var link = document.createElement("link");
           link.rel = "stylesheet";

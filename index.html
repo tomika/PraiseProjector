@@ -13,6 +13,13 @@
     <link rel="apple-touch-icon" href="/webapp/assets/pp-192.png" />
     <title>PraiseProjector</title>
     <script>
+      // Webapp static assets are served under /webapp in the standalone build.
+      // Electron uses the renderer asset tree instead: relative in packaged
+      // file:// builds, absolute /app on the Vite dev server.
+      window.__ppAssetBase =
+        window.__ppAssetBase || (location.protocol === "file:" ? "app" : window.electronAPI ? "/app" : "/webapp");
+    </script>
+    <script>
       // Apply the stored theme before first paint to avoid light flash in dark mode.
       (function () {
         try {
