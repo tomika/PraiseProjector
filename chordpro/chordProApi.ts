@@ -9,6 +9,7 @@ import {
   HighlightingParams,
   InstructionsRenderMode,
 } from "./chordpro_editor";
+import type { SectionRepeatCount } from "./chordpro_editor";
 import { getChordSystem, ChordSystem, ChordProDocument } from "./chordpro_base";
 import { ChordSelector } from "./chord_selector";
 import { getAllKnownChordModifier as collectKnownChordModifiers, getChordFindAndSplitPattern as collectChordPattern } from "./praiseprojector";
@@ -249,10 +250,15 @@ function bindEditor(editorDiv: HTMLDivElement) {
       if (!instance) return;
       instance.makeSelectionTitle();
     },
-    highlight: (from: number, to: number) => {
+    setSectionRepeatCounts: (sectionRepeatCounts: SectionRepeatCount[] | undefined, draw = true) => {
       const instance = getBoundEditor();
       if (!instance) return;
-      instance.highlight(from, to);
+      instance.setSectionRepeatCounts(sectionRepeatCounts, draw);
+    },
+    highlight: (from: number, to: number, section?: number, repeatNonce?: number, draw = true) => {
+      const instance = getBoundEditor();
+      if (!instance) return;
+      instance.highlight(from, to, section, repeatNonce, draw);
     },
     /** Set the song's display-instructions TEXT on the editor (legacy
      *  applyInstructions). Whether/how it is drawn is controlled separately by

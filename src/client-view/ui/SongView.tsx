@@ -413,7 +413,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       loadedTextRef.current = "";
       appliedTransposeRef.current = 0;
       host.style.removeProperty("zoom");
-      api.highlight(0, 0);
+      api.setSectionRepeatCounts(undefined, false);
+      api.highlight(0, 0, undefined, undefined, false);
       api.setLyricsHitHandler(null);
       return;
     }
@@ -464,11 +465,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
     // Scale the editor as a unit to fit the pane (full page) or fit width + scroll.
     fitAndZoom(host, api, scrollMode);
+    api.setSectionRepeatCounts(display.sectionRepeatCounts, false);
     // Show the display's highlighted range only when highlight is on (legacy chkHighlight).
     if (highlightOn) {
-      api.highlight(display.from ?? 0, display.to ?? 0);
+      api.highlight(display.from ?? 0, display.to ?? 0, display.section, display.sectionRepeatNonce);
     } else {
-      api.highlight(0, 0);
+      api.highlight(0, 0, undefined, undefined);
     }
     // Leader highlight control: while on, a tap on a lyrics section pushes its
     // {from,to,section} as the display highlight. Re-installed after each load.

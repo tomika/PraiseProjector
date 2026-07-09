@@ -102,6 +102,7 @@ export type WebServerEvent =
   | {
       kind: "highlightChanged";
       line: number;
+      section?: number;
     }
   | {
       kind: "highlightControllerChanged";
