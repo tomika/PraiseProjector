@@ -33,6 +33,7 @@ import {
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
+import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
 
@@ -54,6 +55,8 @@ const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string
   filter: { icon: "magnifier.svg", label: "Filtered database navigation" },
   archive: { icon: "calendar.svg", label: "Archived playlist navigation" },
 };
+
+const isWidePaneViewport = (): boolean => typeof window !== "undefined" && !shouldUsePagingLayout(window.innerWidth, window.innerHeight);
 
 /** Imperative handle the toolbar uses so its Prev/Next buttons trigger the same
  *  animated turn as a swipe (instead of an instant, un-animated song change). */
@@ -205,7 +208,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       // Stop un-clipping at the full-view box; the page rotates within it.
       isFlipBoundary: (el) => el.id === "mainView",
-      // In split landscape the song pane must keep clipping the revealed
+      // In split pane layout the song pane must keep clipping the revealed
       // neighbour, but the turning page itself may overlap the options panel.
       liftCurrentPageDuringFlip: () => true,
       // No page-turn navigation in view-only mode: a plain Client follower, or App
@@ -229,23 +232,25 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
 
   useImperativeHandle(ref, () => ({ navigate: (next: boolean) => flipRef.current?.turn(next) }), []);
 
-  // Track landscape orientation. In closed-landscape the main toolbar sits as a
+  // Track the shared paging/pane breakpoint. In closed wide-pane layout the main toolbar sits as a
   // vertical bar on the RIGHT (see client-view.css) and the song pane is
   // wide-and-short, where fit-page would shrink the song to nothing — so that
   // layout forces full-width SCROLL mode (see the display effect below).
-  const [landscape, setLandscape] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(orientation: landscape)").matches);
+  const [widePane, setWidePane] = useState(isWidePaneViewport);
   useEffect(() => {
-    const mql = window.matchMedia?.("(orientation: landscape)");
-    if (!mql) return;
-    const onChange = () => setLandscape(mql.matches);
-    onChange();
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
+    if (typeof window === "undefined") return;
+    const onViewportChange = () => setWidePane(isWidePaneViewport());
+    onViewportChange();
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportChange);
+    };
   }, []);
-  // "Toolbar on the right" ⟺ landscape AND options closed (matches the
-  // `@media (orientation: landscape) #mainView:not(.options-open)` CSS rule).
-  const toolbarOnRight = landscape && !optionsOpen;
-  // Closed-landscape (toolbar on the right) forces full-width SCROLL geometry
+  // "Toolbar on the right" means wide-pane layout AND options closed.
+  const toolbarOnRight = widePane && !optionsOpen;
+  // Closed wide-pane layout (toolbar on the right) forces full-width SCROLL geometry
   // regardless of the user's zoom preset; otherwise honour the zoom setting.
   const scrollMode = toolbarOnRight || (settings.maxText && settings.zoomScrollable);
   // Mirror into a ref the once-bound ResizeObserver can read.

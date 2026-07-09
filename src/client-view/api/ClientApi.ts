@@ -184,6 +184,13 @@ export interface ClientConfig {
    */
   entryMode?: "embedded" | "standalone" | "session";
   /**
+   * One-shot embedded-entry hint: when the full view explicitly switches into the
+   * client view on a wide viewport, open the options split even if the persisted
+   * client-view state had it closed. Standalone launches and in-client rotation
+   * do not set this.
+   */
+  openOptionsOnWideEmbeddedEntry?: boolean;
+  /**
    * Auto-follow the backend's current display on startup — the served-follower
    * use case. The adapter begins long-polling /display_query immediately so the
    * view mirrors whatever the leader is projecting, without the user choosing a

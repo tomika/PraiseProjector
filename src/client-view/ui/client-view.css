@@ -26,10 +26,10 @@
   --cv-toolbar-bg: #efefef;
   --cv-field-bg: #1c1c1c;
   /* Panel/dialog tokens — DARK defaults. These are overridden with light values
-     for (a) the landscape options panel and (b) the cv-dialog shells when the view
+     for (a) the wide landscape options panel and (b) the cv-dialog shells when the view
      is NOT in dark mode (see "Light panel/dialog theme" block lower down). The
-     portrait options overlay deliberately stays dark, so its light override is
-     scoped to landscape only. */
+     paging options overlay deliberately stays dark, so its light override is
+     scoped to wide landscape only. */
   --cv-field-fg: #eee;
   --cv-panel-solid: #1d1d1d; /* opaque dialog / popover background */
   --cv-panel-btn-bg: rgba(255, 255, 255, 0.08);
@@ -48,13 +48,13 @@
 
 /* Light panel/dialog theme ------------------------------------------------- */
 /* Applied when #mainView is NOT in dark mode. Two scopes:
-   - the options panel, but ONLY in landscape (portrait keeps the dark overlay);
+   - the options panel, but ONLY in wide landscape (paging keeps the dark overlay);
    - every cv-dialog shell (Login / About / Confirm), in any orientation.
    Each scope just re-points the panel tokens above to light values; the rules
    that consume those tokens are unchanged. Popovers anchored inside the options
    panel (more-menu, zoom panel) inherit the panel's tokens, so they follow it:
-   light in landscape light mode, dark in portrait / dark mode. */
-@media (orientation: landscape) {
+   light in wide landscape light mode, dark in paging / dark mode. */
+@media (min-aspect-ratio: 1/1) and (min-width: 768px) {
   #mainView:not(.dark) #options {
     --cv-panel-bg: #efefef;
     --cv-panel-fg: #1f1f1f;
@@ -111,9 +111,9 @@ body,
 
 /* Layout model mirrors the original: #mainView is a fixed full-viewport box;
    .mainTable and #options are both position:fixed (not flex children). The
-   responsive behaviour is ORIENTATION-based, not width-based:
-     - portrait  → song fills the screen; options slides down as an overlay.
-     - landscape → split: song left 50%, options pinned right 50% (always shown). */
+   responsive behaviour mirrors the full-view tab/pane breakpoint:
+     - paging layout → song fills the screen; options slides down as an overlay.
+     - wide landscape → split: song left 50%, options pinned right 50% (always shown). */
 #mainView.split {
   position: fixed;
   inset: 0;
@@ -446,14 +446,14 @@ body,
   height: 100%;
 }
 
-/* Landscape (measured from the original):
+/* Wide landscape (measured from the original):
    - CLOSED: full-width song + a VERTICAL toolbar on the RIGHT. .mainTable is
      row-reverse so #mainToolbar (its first child) sits on the right, and the
      toolbar itself becomes a narrow vertical column.
    - OPEN: two-pane split (song left 50%, options right 50%) with the toolbar
      back horizontal on top of the left pane. Closing drops .options-open and
      collapses the split to full-width. */
-@media (orientation: landscape) {
+@media (min-aspect-ratio: 1/1) and (min-width: 768px) {
   #mainView:not(.options-open) .mainTable {
     flex-direction: row-reverse;
   }
@@ -520,7 +520,7 @@ body,
 }
 
 /* Icons rendered on the panel are dark SVGs — inverted to read light on the dark
-   panel, left as-is (invert(0)) when the panel is light (landscape light mode). */
+   panel, left as-is (invert(0)) when the panel is light (wide landscape light mode). */
 #options .btnImg {
   filter: var(--cv-icon-invert);
 }

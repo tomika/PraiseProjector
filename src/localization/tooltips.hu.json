@@ -8,7 +8,8 @@
   "toolbar_import_folder": "Több dal importálása egy könyvtárból",
   "toolbar_print": "Aktuális dal kinyomtatása",
   "toolbar_settings": "Beállítások",
-  "toolbar_sessions_form": "Munkamenetek és felhasználói felület",
+  "toolbar_sessions_form": "Munkamenetek kezelése",
+  "toolbar_mobile_view": "Mobil nézetre váltás",
   "toolbar_logs": "Naplók megnyitása",
 
   "playlist_load": "Lejászási lista betöltése fájlból",

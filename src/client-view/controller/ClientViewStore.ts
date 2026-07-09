@@ -16,6 +16,7 @@
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncStatus } from "../../state/syncStatusStore";
+import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import type {
   ClientApi,
@@ -77,6 +78,7 @@ export interface NavEntry {
 }
 
 const systemPrefersDark = (): boolean => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+const isWidePaneViewport = (): boolean => typeof window !== "undefined" && !shouldUsePagingLayout(window.innerWidth, window.innerHeight);
 
 /** Effective dark flag for a theme preference: "auto" follows the OS. The light/
  *  dark preference itself is the SHARED `pp-settings.theme` key, read/written via
@@ -393,11 +395,10 @@ export class ClientViewStore {
   private disposed = false;
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
-  /** Whether the viewport is landscape. In landscape the options panel is a
-   *  side-by-side split (not an overlay covering the song), so song picks keep it
-   *  open. Tracked here (mirrors the CSS orientation media queries) so selection
-   *  can close only the portrait overlay. */
-  private landscape = typeof window !== "undefined" && !!window.matchMedia?.("(orientation: landscape)").matches;
+  /** Whether the viewport uses the wide two-pane client layout. In that layout
+   *  the options panel is a side-by-side split (not an overlay covering the
+   *  song), so song picks keep it open. */
+  private widePane = isWidePaneViewport();
   /** Debounce timer + dedupe cache + gate for UI-state persistence. Saving stays
    *  OFF until init's restore/seed completes (persistenceReady), so none of the
    *  startup `set()` churn overwrites the snapshot being restored. */
@@ -435,7 +436,7 @@ export class ClientViewStore {
     await this.api.init(config);
     await this.api.auth.restoreSession().catch(() => undefined);
     // Read any persisted UI snapshot up front so both applyPersisted (below) and
-    // the landscape auto-open (further down) can branch on it.
+    // the wide-pane auto-open (further down) can branch on it.
     const persisted = this.loadPersisted();
     // Seed from the backend's current state so an already-projected song and the
     // working playlist show immediately (subscribeDisplay only fires on changes).
@@ -534,22 +535,26 @@ export class ClientViewStore {
         window.removeEventListener("storage", onThemeChange);
       });
     }
-    // Track orientation so selection closes only the portrait overlay and first
-    // load can auto-open the landscape split panel.
-    const orientationMql = typeof window !== "undefined" ? window.matchMedia?.("(orientation: landscape)") : undefined;
-    if (orientationMql) {
-      this.landscape = orientationMql.matches;
-      const onOrientation = () => {
-        this.landscape = orientationMql.matches;
+    // Track the shared paging/pane breakpoint so selection closes only the
+    // overlay layout and first load can auto-open the split panel.
+    if (typeof window !== "undefined") {
+      this.widePane = isWidePaneViewport();
+      const onViewportChange = () => {
+        this.widePane = isWidePaneViewport();
       };
-      orientationMql.addEventListener("change", onOrientation);
-      this.unsubscribes.push(() => orientationMql.removeEventListener("change", onOrientation));
+      window.addEventListener("resize", onViewportChange);
+      window.addEventListener("orientationchange", onViewportChange);
+      this.unsubscribes.push(() => {
+        window.removeEventListener("resize", onViewportChange);
+        window.removeEventListener("orientationchange", onViewportChange);
+      });
     }
-    // On first load in landscape the options panel is a side-by-side split that
+    // On first load in wide-pane layout the options panel is a side-by-side split that
     // doesn't cover the song, so open it automatically (it stays closed in
-    // portrait, where it would overlay the song). Once the user has a persisted
+    // paging layout, where it would overlay the song). Once the user has a persisted
     // optionsOpen preference, that wins — we don't force it back open.
-    if (this.landscape && persisted?.optionsOpen === undefined) this.set({ optionsOpen: true });
+    const openOptionsForEmbeddedEntry = config.entryMode === "embedded" && config.openOptionsOnWideEmbeddedEntry;
+    if (this.widePane && (openOptionsForEmbeddedEntry || persisted?.optionsOpen === undefined)) this.set({ optionsOpen: true });
     // Keep the fullscreen flag in sync when the user exits via Esc / the browser
     // chrome (no event fires on native hosts; toggleFullScreen updates it there).
     if (typeof document !== "undefined") {
@@ -850,7 +855,7 @@ export class ClientViewStore {
   }
 
   private closePortraitOptions(): void {
-    if (!this.landscape) this.set({ optionsOpen: false });
+    if (!this.widePane) this.set({ optionsOpen: false });
   }
 
   async selectSong(songId: string): Promise<void> {

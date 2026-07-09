@@ -74,6 +74,7 @@ import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, s
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
+import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -2354,7 +2355,7 @@ const AppContent: React.FC = () => {
 
   // Use paging mode whenever the client area is portrait or width is small.
   // Always use 3-panel layout in landscape mode.
-  const usePagingMode = orientation === "portrait" || width < 768;
+  const usePagingMode = shouldUsePagingLayoutForOrientation(width, orientation);
 
   // Refresh editor display when switching to editor tab in paging mode
   // This fixes dark mode rendering issues when the editor canvas was hidden
@@ -2403,6 +2404,7 @@ const AppContent: React.FC = () => {
                     onPlaylistSelectionChange={handlePlaylistSelectionChange}
                     onSongSelected={handleSongSelected}
                     onOpenLeaderSettings={openLeaderSettings}
+                    onOpenSessions={handleLaunchViewer}
                     onSyncClick={handleSyncClick}
                     onRemoteChangeCountChange={setRemoteChangeCount}
                     onSettingsClick={openSettings}
@@ -2435,7 +2437,6 @@ const AppContent: React.FC = () => {
                       onNewSong={handleNewSong}
                       onPrint={handlePrint}
                       onImport={handleImportClick}
-                      onLaunchViewer={handleLaunchViewer}
                       onSwitchToMobileView={handleSwitchToMobileView}
                       canLoadSong={canLoadSong}
                       canSaveSong={canSaveSong}
@@ -2505,6 +2506,7 @@ const AppContent: React.FC = () => {
                       onPlaylistSelectionChange={handlePlaylistSelectionChange}
                       onSongSelected={handleSongSelected}
                       onOpenLeaderSettings={openLeaderSettings}
+                      onOpenSessions={handleLaunchViewer}
                       onSyncClick={handleSyncClick}
                       onRemoteChangeCountChange={setRemoteChangeCount}
                       onExportDatabase={handleExportDatabase}
@@ -2539,7 +2541,6 @@ const AppContent: React.FC = () => {
                     onNewSong={handleNewSong}
                     onPrint={handlePrint}
                     onImport={handleImportClick}
-                    onLaunchViewer={handleLaunchViewer}
                     onSwitchToMobileView={handleSwitchToMobileView}
                     canLoadSong={canLoadSong}
                     canSaveSong={canSaveSong}

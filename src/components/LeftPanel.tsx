@@ -45,6 +45,7 @@ interface LeftPanelProps {
   disabled?: boolean; // Disables playlist editing when in watch mode
   remotePlaylist?: Playlist | null; // Remote playlist when watching another session
   onOpenLeaderSettings?: (leaderId: string | null) => void;
+  onOpenSessions?: () => void;
   onSyncClick?: () => void;
   onRemoteChangeCountChange?: (count: number) => void;
   onSettingsClick?: () => void;
@@ -78,6 +79,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       disabled = false,
       remotePlaylist,
       onOpenLeaderSettings,
+      onOpenSessions,
       onSyncClick,
       onRemoteChangeCountChange,
       onSettingsClick,
@@ -275,6 +277,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       <div className="d-flex flex-column h-100">
         <UserPanel
           onOpenLeaderSettings={onOpenLeaderSettings}
+          onOpenSessions={onOpenSessions}
           onSyncClick={onSyncClick}
           onRemoteChangeCountChange={onRemoteChangeCountChange}
           onSettingsClick={onSettingsClick}

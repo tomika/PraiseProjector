@@ -12,12 +12,14 @@ import AuthDialog from "./AuthDialog";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
 import { setSyncStatus } from "../state/syncStatusStore";
 import { useUpdate } from "../contexts/UpdateContext";
+import { getAssetPath } from "../utils/assetPath";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
 
 interface UserPanelProps {
   onOpenLeaderSettings?: (leaderId: string | null) => void;
+  onOpenSessions?: () => void;
   onSyncClick?: () => void;
   onRemoteChangeCountChange?: (count: number) => void;
   onExportDatabase?: () => void;
@@ -29,6 +31,7 @@ interface UserPanelProps {
 
 const UserPanel: React.FC<UserPanelProps> = ({
   onOpenLeaderSettings,
+  onOpenSessions,
   onSyncClick,
   onRemoteChangeCountChange,
   onExportDatabase,
@@ -490,6 +493,17 @@ const UserPanel: React.FC<UserPanelProps> = ({
               ))}
           </select>
         </div>
+        {onOpenSessions && (
+          <button
+            type="button"
+            className="btn btn-light user-sync-main-btn user-sync-height-btn user-session-btn ml-1"
+            aria-label="Session Management"
+            title={tt("toolbar_sessions_form")}
+            onClick={onOpenSessions}
+          >
+            <img src={getAssetPath("assets/wifi.png")} alt="" className="button-icon" aria-hidden="true" />
+          </button>
+        )}
       </div>
       {showAuthDialog && (
         <AuthDialog

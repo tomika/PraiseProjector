@@ -64,6 +64,7 @@ export interface Settings {
   useFontAwesomeIcons: boolean;
   baseFontSize: number; // Base font size in pixels for UI scaling
   fontSizeMode: "manual" | "auto-resolution" | "auto-resolution-dpi";
+  automaticViewSwitch: "none" | "portraitToClient" | "orientation";
 
   iWebEnabled: boolean;
   ppdSessionEnabled: boolean;

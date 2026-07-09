@@ -123,6 +123,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       useFontAwesomeIcons: false,
       fontSizeMode: "auto-resolution-dpi", // Default to auto-resolution-dpi for better scaling on high-DPI displays
+      automaticViewSwitch: "none",
       allClientsCanUseLeaderMode: true, // C# default: True
       leaderModeClients: [],
       printingBB: false,

@@ -13,6 +13,7 @@ const CORE_ASSETS = [
   '/webapp/index.html',
   '/webapp/client-view.html',
   '/webapp/projector.html',
+  '/webapp/assets/wifi.png',
   '/webapp/manifest.json',
   '/webapp/manifest-client.json'
 ];

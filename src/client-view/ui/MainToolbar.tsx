@@ -4,10 +4,10 @@
  * Every control dispatches a controller action; none touches the backend.
  *
  * The button ORDER is data-driven and INDEPENDENT per layout (see uiConfig):
- * TOOLBAR_ORDER_HORIZONTAL drives the portrait strip (left→right) and
- * TOOLBAR_ORDER_VERTICAL the landscape column (top→bottom). The toolbar is a
- * vertical column exactly when landscape AND the options panel is closed (the
- * `@media (orientation: landscape) #mainView:not(.options-open)` CSS rule).
+ * TOOLBAR_ORDER_HORIZONTAL drives the paging strip (left-to-right) and
+ * TOOLBAR_ORDER_VERTICAL the wide-pane column (top-to-bottom). The toolbar is a
+ * vertical column exactly when wide-pane layout is active and the options panel
+ * is closed.
  */
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -17,6 +17,7 @@ import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
 import { useLongPress } from "./useLongPress";
+import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
 const LONG_PRESS_MS = 500;
 
@@ -56,6 +57,8 @@ const NET_STATUS_ICON: Record<NetworkStatus, string> = {
 // netstatus map iteration typed without an `Object.keys` cast.
 const NET_STATUSES: NetworkStatus[] = ["startup", "watching", "online", "leading", "offline", "error"];
 
+const isWidePaneViewport = (): boolean => typeof window !== "undefined" && !shouldUsePagingLayout(window.innerWidth, window.innerHeight);
+
 export function MainToolbar({
   onPrev,
   onNext,
@@ -74,17 +77,21 @@ export function MainToolbar({
   const follower = isViewingRemoteDisplay(state);
   const capoSelectRef = useRef<HTMLSelectElement | null>(null);
 
-  // The toolbar is a vertical column when landscape AND options closed.
-  const [landscape, setLandscape] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(orientation: landscape)").matches);
+  // The toolbar is a vertical column when wide-pane layout is active and options
+  // are closed. This mirrors the full-view tab/pane breakpoint.
+  const [widePane, setWidePane] = useState(isWidePaneViewport);
   useEffect(() => {
-    const mql = window.matchMedia?.("(orientation: landscape)");
-    if (!mql) return;
-    const onChange = () => setLandscape(mql.matches);
-    onChange();
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
+    if (typeof window === "undefined") return;
+    const onViewportChange = () => setWidePane(isWidePaneViewport());
+    onViewportChange();
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportChange);
+    };
   }, []);
-  const vertical = landscape && !state.optionsOpen;
+  const vertical = widePane && !state.optionsOpen;
   const order = vertical ? TOOLBAR_ORDER_VERTICAL : TOOLBAR_ORDER_HORIZONTAL;
 
   // Long-press plumbing for the wand (instructions) button. Editing is gated by

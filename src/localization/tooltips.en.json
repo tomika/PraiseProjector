@@ -8,7 +8,8 @@
   "toolbar_import_folder": "Import multiple songs from folder",
   "toolbar_print": "Print actual song",
   "toolbar_settings": "Settings",
-  "toolbar_sessions_form": "Sessions and UI settings",
+  "toolbar_sessions_form": "Manage sessions",
+  "toolbar_mobile_view": "Switch to mobile view",
   "toolbar_logs": "Open logs",
 
   "playlist_load": "Load playlist from file",

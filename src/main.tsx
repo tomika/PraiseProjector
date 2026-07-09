@@ -13,13 +13,17 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "font-awesome/css/font-awesome.min.css";
 import "./App.css";
 import { cloudApi } from "../common/cloudApi";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClientViewApp } from "./client-view/boot/ClientViewApp";
 import { AuthProvider } from "./contexts/AuthContext";
+import { readPersistedSettings } from "./services/settingsStore";
+import type { Settings } from "./types";
+import { shouldUsePagingLayout } from "./utils/viewLayout";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
 const SHOW_CLIENT_KEY = "pp-show-client-view";
+type AutomaticViewSwitch = Settings["automaticViewSwitch"];
 
 // Install console interceptor early to capture all logs
 installConsoleInterceptor();
@@ -44,6 +48,19 @@ if (window.electronAPI?.proxyGet && window.electronAPI?.proxyPost) {
   });
 }
 
+function isAutomaticViewSwitch(value: unknown): value is AutomaticViewSwitch {
+  return value === "none" || value === "portraitToClient" || value === "orientation";
+}
+
+function readAutomaticViewSwitch(): AutomaticViewSwitch {
+  const value = readPersistedSettings().automaticViewSwitch;
+  return isAutomaticViewSwitch(value) ? value : "none";
+}
+
+function isPagingViewport(): boolean {
+  return shouldUsePagingLayout(window.innerWidth, window.innerHeight);
+}
+
 /**
  * Switches the desktop renderer between the main app and the embedded new client
  * view. The toolbar dispatches `pp-show-client-view`; the client view's home
@@ -57,6 +74,10 @@ function RootView() {
       return false;
     }
   });
+  const [openOptionsOnClientEntry, setOpenOptionsOnClientEntry] = useState(false);
+  const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
+  const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
+  const previousPagingLayoutRef = useRef(isPagingLayout);
   // Single setter that also persists, so every switch path (events + the client
   // view's home button) keeps the saved UI choice in sync.
   const setShowClient = useCallback((value: boolean) => {
@@ -68,15 +89,67 @@ function RootView() {
     }
   }, []);
   useEffect(() => {
-    const toClient = () => setShowClient(true);
-    const toMain = () => setShowClient(false);
+    if (!showClient) setOpenOptionsOnClientEntry(false);
+  }, [showClient]);
+  const refreshAutomaticViewSwitch = useCallback(() => {
+    setAutomaticViewSwitch(readAutomaticViewSwitch());
+  }, []);
+  const refreshOrientation = useCallback(() => {
+    setIsPagingLayout(isPagingViewport());
+  }, []);
+  useEffect(() => {
+    const toClient = () => {
+      if (!showClient) setOpenOptionsOnClientEntry(true);
+      setShowClient(true);
+    };
+    const toMain = () => {
+      setOpenOptionsOnClientEntry(false);
+      setShowClient(false);
+    };
     window.addEventListener("pp-show-client-view", toClient);
     window.addEventListener("pp-show-main-view", toMain);
     return () => {
       window.removeEventListener("pp-show-client-view", toClient);
       window.removeEventListener("pp-show-main-view", toMain);
     };
-  }, [setShowClient]);
+  }, [setShowClient, showClient]);
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "pp-settings") refreshAutomaticViewSwitch();
+    };
+    window.addEventListener("pp-settings-changed", refreshAutomaticViewSwitch);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("pp-settings-changed", refreshAutomaticViewSwitch);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [refreshAutomaticViewSwitch]);
+  useEffect(() => {
+    window.addEventListener("resize", refreshOrientation);
+    window.addEventListener("orientationchange", refreshOrientation);
+    return () => {
+      window.removeEventListener("resize", refreshOrientation);
+      window.removeEventListener("orientationchange", refreshOrientation);
+    };
+  }, [refreshOrientation]);
+  useEffect(() => {
+    if (previousPagingLayoutRef.current === isPagingLayout) return;
+    previousPagingLayoutRef.current = isPagingLayout;
+
+    if (automaticViewSwitch === "orientation") {
+      setShowClient(isPagingLayout);
+      return;
+    }
+    if (automaticViewSwitch === "portraitToClient" && isPagingLayout) {
+      setShowClient(true);
+    }
+  }, [automaticViewSwitch, isPagingLayout, setShowClient]);
+  const embeddedClientConfig = useMemo(
+    () => ({
+      openOptionsOnWideEmbeddedEntry: openOptionsOnClientEntry,
+    }),
+    [openOptionsOnClientEntry]
+  );
   // App stays mounted (hidden) while the client view is shown, so its state —
   // selection, projection, webserver/projector wiring — is preserved and the
   // embedded view can drive it through the shared CurrentSongStore.
@@ -85,7 +158,15 @@ function RootView() {
       <div hidden={showClient}>
         <App />
       </div>
-      {showClient && <ClientViewApp onHome={() => setShowClient(false)} />}
+      {showClient && (
+        <ClientViewApp
+          config={embeddedClientConfig}
+          onHome={() => {
+            setOpenOptionsOnClientEntry(false);
+            setShowClient(false);
+          }}
+        />
+      )}
     </>
   );
 }
