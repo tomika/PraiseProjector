@@ -5,10 +5,11 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const projectRoot = path.resolve(__dirname, "..");
-const outputFile = path.join(projectRoot, "public", "app", "pp-api.js");
+const outputFile = path.join(projectRoot, "dist", "client", "app", "pp-api.js");
 const buildModeStampFile = path.join(
   projectRoot,
-  "public",
+  "dist",
+  "client",
   "app",
   "pp-api.build-mode"
 );

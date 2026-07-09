@@ -11,7 +11,7 @@ const isDebug = args.has("--debug");
 const clientRoot = __dirname;
 const publicRoot = path.resolve(clientRoot, "..");
 const rootPackageJsonPath = path.join(publicRoot, "package.json");
-const outFile = path.join(publicRoot, "public", "app", "pp-api.js");
+const outFile = path.join(publicRoot, "dist", "client", "app", "pp-api.js");
 const entryFile = path.join(clientRoot, "pp-api.ts");
 
 const rootPackageJson = JSON.parse(fs.readFileSync(rootPackageJsonPath, "utf8"));

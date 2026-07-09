@@ -121,6 +121,14 @@
         ]
       },
       {
+        "from": "dist/client/app",
+        "to": "public/app",
+        "filter": [
+          "pp-api.js",
+          "pp-api.css"
+        ]
+      },
+      {
         "from": "dist/web",
         "to": "webclient",
         "filter": [
