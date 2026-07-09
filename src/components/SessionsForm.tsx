@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useSettings } from "../contexts/SettingsContext";
+import { useSessionUrl } from "../hooks/useSessionUrl";
 import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
@@ -13,6 +14,7 @@ import {
   scanHostDeviceSessions,
 } from "../services/hostDevicePpd";
 import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type SessionKind, type SessionRow } from "../shared/SessionsForm";
+import { filterOwnSessionEntries } from "../shared/sessionList";
 import { icon } from "../client-view/ui/assets";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
 import { getAssetPath } from "../utils/assetPath";
@@ -55,6 +57,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const { t } = useLocalization();
   const { user } = useAuth();
   const { settings, updateSettingWithAutoSave } = useSettings();
+  const cloudSessionUrl = useSessionUrl("cloud");
+  const localSessionUrl = useSessionUrl("local");
   const selfId = user?.leaderId || "";
 
   const [sessions, setSessions] = useState<SessionDisplay[]>([]);
@@ -102,12 +106,10 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const updateOnlineSessionList = useCallback(
     (onlineSessions: OnlineSessionEntry[]) => {
       setSessions((prevSessions) => {
-        // Filter out self and create a map of online sessions
+        // Filter out self and create a map of online sessions.
         const onlineMap = new Map<string, OnlineSessionEntry>();
-        for (const session of onlineSessions) {
-          if (session.id !== selfId) {
-            onlineMap.set(session.id, session);
-          }
+        for (const session of filterOwnSessionEntries(onlineSessions, selfId)) {
+          onlineMap.set(session.id, session);
         }
 
         // Keep local sessions, remove outdated cloud sessions, add new cloud sessions
@@ -312,6 +314,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 title: t("SessionsCloudToggleTitle"),
                 description: t("SessionsCloudToggleDescription"),
                 icon: getAssetPath("assets/cloud-session.png"),
+                qrUrl: cloudSessionUrl,
+                qrLabel: t("SessionsCloudToggleTitle"),
                 isFeatureEnabled: settings.externalWebDisplayEnabled,
                 onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("externalWebDisplayEnabled", nextFeatureEnabled),
               },
@@ -320,6 +324,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 title: t("SessionsIWebToggleTitle"),
                 description: t("SessionsIWebToggleDescription"),
                 icon: getAssetPath("assets/iweb-session.png"),
+                qrUrl: localSessionUrl,
+                qrLabel: t("SessionsIWebToggleTitle"),
                 isFeatureEnabled: hasWebServerBackend && settings.iWebEnabled,
                 isControlDisabled: !hasWebServerBackend,
                 onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("iWebEnabled", nextFeatureEnabled),

@@ -61,6 +61,7 @@ import type {
 import type { ClientApi } from "../ClientApi";
 import { readSessionToggleSettings, saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
+import { filterOwnSessionEntries } from "../../../shared/sessionList";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -391,7 +392,7 @@ export class DirectClientApi implements ClientApi {
         const results: OnlineSessionEntry[] = [];
         if (mode === "WEB" || mode === "BOTH") {
           try {
-            results.push(...(await cloudApi.fetchOnlineSessions()));
+            results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions(), this.currentLeaderIdentity()?.id));
           } catch {
             /* cloud unreachable — surface whatever local discovery found */
           }

@@ -19,6 +19,7 @@
  * props rather than imported.
  */
 
+import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 import "./SessionsForm.css";
 
@@ -54,6 +55,10 @@ export interface SessionsFormToggle {
   title: string;
   description: string;
   icon: string;
+  /** URL encoded into the optional QR flip shown over the icon when enabled. */
+  qrUrl?: string | null;
+  /** Accessible/display label for the optional QR popup. Defaults to title. */
+  qrLabel?: string;
   showText?: boolean;
   /** Whether the represented session feature is switched on. */
   isFeatureEnabled: boolean;
@@ -127,6 +132,10 @@ export function SessionsForm({
 }: SessionsFormProps) {
   const cvModifier = variant === "cv" ? " sessions-form--cv" : "";
   const darkClass = isDark ? " dark" : "";
+  const [touchRevealedToggleId, setTouchRevealedToggleId] = useState<string | null>(null);
+  const [qrPopup, setQrPopup] = useState<{ title: string; url: string } | null>(null);
+  const [copiedQrUrl, setCopiedQrUrl] = useState<string | null>(null);
+  const suppressNextIconClickRef = useRef<string | null>(null);
 
   // Address-picker dropdown. It is position:fixed (measured from the input) so it
   // escapes the dialog's overflow clipping and can spill outside the dialog.
@@ -153,6 +162,25 @@ export function SessionsForm({
       window.removeEventListener("scroll", measure, true);
     };
   }, [pickerOpen]);
+
+  useEffect(() => {
+    if (!qrPopup) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setQrPopup(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [qrPopup]);
+
+  const copyQrUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedQrUrl(url);
+      window.setTimeout(() => setCopiedQrUrl((current) => (current === url ? null : current)), 1600);
+    } catch (error) {
+      console.warn("SessionsForm", "Failed to copy QR URL", error);
+    }
+  };
 
   return (
     <div className={`sessions-modal-backdrop sessions-form${cvModifier}${darkClass}`} onClick={onClose}>
@@ -186,7 +214,20 @@ export function SessionsForm({
                     </tr>
                   ) : (
                     sessions.map((session) => (
-                      <tr key={session.id}>
+                      <tr
+                        key={session.id}
+                        className="sessions-clickable-row"
+                        tabIndex={0}
+                        role="button"
+                        title={connectLabel}
+                        onClick={() => onConnect(session.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onConnect(session.id);
+                          }
+                        }}
+                      >
                         <td className="session-type-icon" title={session.kind}>
                           {KIND_ICON[session.kind]}
                         </td>
@@ -195,7 +236,10 @@ export function SessionsForm({
                           <button
                             type="button"
                             className="sessions-row-connect"
-                            onClick={() => onConnect(session.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onConnect(session.id);
+                            }}
                             title={connectLabel}
                             aria-label={connectLabel}
                           >
@@ -268,35 +312,115 @@ export function SessionsForm({
         {sessionToggles && sessionToggles.length > 0 ? (
           <div className="sessions-modal-footer">
             <div className="session-toggle-grid" role="group" aria-label={title}>
-              {sessionToggles.map((toggle) => (
-                <button
-                  key={toggle.id}
-                  type="button"
-                  className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}`}
-                  aria-pressed={toggle.isFeatureEnabled}
-                  disabled={toggle.isControlDisabled}
-                  onClick={() => toggle.onToggle(!toggle.isFeatureEnabled)}
-                >
-                  {toggle.showText === false ? null : (
-                    <span className="session-toggle-copy">
-                      <span className="session-toggle-title">{toggle.title}</span>
+              {sessionToggles.map((toggle) => {
+                const qrUrl = toggle.qrUrl?.trim();
+                const canShowQr = toggle.isFeatureEnabled && !toggle.isControlDisabled && !!qrUrl;
+                const qrTitle = toggle.qrLabel || toggle.title;
+                const isTouchRevealed = canShowQr && touchRevealedToggleId === toggle.id;
+                return (
+                  <button
+                    key={toggle.id}
+                    type="button"
+                    className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}`}
+                    aria-pressed={toggle.isFeatureEnabled}
+                    disabled={toggle.isControlDisabled}
+                    onClick={() => toggle.onToggle(!toggle.isFeatureEnabled)}
+                  >
+                    {toggle.showText === false ? null : (
+                      <span className="session-toggle-copy">
+                        <span className="session-toggle-title">{toggle.title}</span>
+                      </span>
+                    )}
+                    <span
+                      className={`session-toggle-image-wrap${canShowQr ? " has-qr" : ""}${isTouchRevealed ? " is-touch-revealed" : ""}`}
+                      title={canShowQr ? qrTitle : undefined}
+                      onPointerDown={
+                        canShowQr
+                          ? (event) => {
+                              if (event.pointerType === "mouse") return;
+                              event.stopPropagation();
+                              if (touchRevealedToggleId !== toggle.id) {
+                                setTouchRevealedToggleId(toggle.id);
+                                suppressNextIconClickRef.current = toggle.id;
+                              }
+                            }
+                          : undefined
+                      }
+                      onClick={
+                        canShowQr
+                          ? (event) => {
+                              event.stopPropagation();
+                              if (suppressNextIconClickRef.current === toggle.id) {
+                                suppressNextIconClickRef.current = null;
+                                return;
+                              }
+                              setQrPopup({ title: qrTitle, url: qrUrl ?? "" });
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className="session-toggle-flip-inner" aria-hidden="true">
+                        <span className="session-toggle-flip-face session-toggle-flip-front">
+                          <img src={toggle.icon} alt="" className="session-toggle-image" />
+                        </span>
+                        {canShowQr ? (
+                          <span className="session-toggle-flip-face session-toggle-flip-back">
+                            <QRCodeSVG value={qrUrl ?? ""} size={72} level="M" includeMargin={false} />
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
-                  )}
-                  <span className="session-toggle-image-wrap" aria-hidden="true">
-                    <img src={toggle.icon} alt="" className="session-toggle-image" />
-                  </span>
-                  {toggle.showText === false ? null : (
-                    <span className="session-toggle-copy">
-                      <span className="session-toggle-description">{toggle.description}</span>
-                    </span>
-                  )}
-                  <span className="session-toggle-state" aria-hidden="true" />
-                </button>
-              ))}
+                    {toggle.showText === false ? null : (
+                      <span className="session-toggle-copy">
+                        <span className="session-toggle-description">{toggle.description}</span>
+                      </span>
+                    )}
+                    <span className="session-toggle-state" aria-hidden="true" />
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : null}
       </div>
+      {qrPopup ? (
+        <div
+          className="sessions-qr-popup-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            event.stopPropagation();
+            setQrPopup(null);
+          }}
+        >
+          <div className="sessions-qr-popup" role="dialog" aria-modal="true" aria-label={qrPopup.title} onClick={(event) => event.stopPropagation()}>
+            <div className="sessions-qr-popup-head">
+              <div className="sessions-qr-popup-title">{qrPopup.title}</div>
+              <button type="button" className="sessions-qr-popup-close" aria-label={closeLabel} title={closeLabel} onClick={() => setQrPopup(null)}>
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div className="sessions-qr-popup-code">
+              <QRCodeSVG value={qrPopup.url} size={260} level="M" includeMargin />
+            </div>
+            <div className="sessions-qr-popup-link-row">
+              <a className="sessions-qr-popup-link" href={qrPopup.url} target="_blank" rel="noopener noreferrer" title={qrPopup.url}>
+                {qrPopup.url}
+              </a>
+              <button
+                type="button"
+                className="sessions-qr-popup-copy"
+                aria-label="Copy URL"
+                title="Copy URL"
+                onClick={() => {
+                  void copyQrUrl(qrPopup.url);
+                }}
+              >
+                <span aria-hidden="true">{copiedQrUrl === qrPopup.url ? "✓" : "📋"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

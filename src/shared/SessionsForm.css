@@ -132,8 +132,51 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   height: 74px;
   margin-bottom: 0.55rem;
+  perspective: 520px;
+}
+
+.session-toggle-image-wrap.has-qr {
+  cursor: zoom-in;
+}
+
+.session-toggle-flip-inner {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+  transform-style: preserve-3d;
+  transition: transform 420ms ease;
+}
+
+.session-toggle-image-wrap.has-qr:hover .session-toggle-flip-inner,
+.session-toggle-image-wrap.has-qr.is-touch-revealed .session-toggle-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.session-toggle-flip-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+
+.session-toggle-flip-back {
+  transform: rotateY(180deg);
+}
+
+.session-toggle-flip-back svg {
+  display: block;
+  width: 72px;
+  height: 72px;
+  padding: 4px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 .session-toggle-image {
@@ -178,6 +221,115 @@
   border-color: #24825f;
   background: #28a36f;
   box-shadow: 0 0 0 3px rgba(40, 163, 111, 0.16);
+}
+
+.sessions-qr-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.sessions-qr-popup {
+  width: min(92vw, 390px);
+  max-height: min(88vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  background: #fff;
+  color: #212529;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.sessions-qr-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sessions-qr-popup-title {
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sessions-qr-popup-close {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: #555;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  cursor: pointer;
+}
+
+.sessions-qr-popup-close:hover {
+  color: #000;
+}
+
+.sessions-qr-popup-code {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sessions-qr-popup-code svg {
+  display: block;
+  width: min(260px, 74vw);
+  height: min(260px, 74vw);
+  background: #fff;
+  border-radius: 6px;
+}
+
+.sessions-qr-popup-link-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.sessions-qr-popup-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #0d6efd;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}
+
+.sessions-qr-popup-link:hover {
+  color: #0a58ca;
+}
+
+.sessions-qr-popup-copy {
+  flex: none;
+  width: 2.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #fff;
+  color: #495057;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sessions-qr-popup-copy:hover {
+  background: #f1f3f5;
+  color: #212529;
 }
 
 .sessions-list-row {
@@ -235,6 +387,15 @@
 
 .sessions-table tbody tr:hover {
   background-color: #f8f9fa;
+}
+
+.sessions-clickable-row {
+  cursor: pointer;
+}
+
+.sessions-clickable-row:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
 }
 
 /* Flat icon button carrying the 🔌 connect glyph. */
@@ -403,6 +564,40 @@
   background: linear-gradient(180deg, rgba(68, 184, 131, 0.14) 0%, rgba(68, 184, 131, 0.08) 100%);
 }
 
+[data-theme="dark"] .sessions-qr-popup {
+  background: var(--pp-modal-bg);
+  color: var(--pp-text-color);
+  border-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .sessions-qr-popup-close {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .sessions-qr-popup-close:hover {
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-qr-popup-link {
+  background: var(--pp-bg-secondary);
+  border-color: var(--pp-border-color);
+  color: #8ab4ff;
+}
+
+[data-theme="dark"] .sessions-qr-popup-link:hover {
+  color: #b7d0ff;
+}
+
+[data-theme="dark"] .sessions-qr-popup-copy {
+  background: var(--pp-bg-secondary);
+  border-color: var(--pp-border-color);
+  color: var(--pp-text-color);
+}
+
+[data-theme="dark"] .sessions-qr-popup-copy:hover {
+  background: var(--pp-bg-tertiary, rgba(255, 255, 255, 0.08));
+}
+
 [data-theme="dark"] .session-toggle-description {
   color: var(--pp-text-muted);
 }
@@ -496,6 +691,16 @@
   max-height: 70px;
 }
 
+.sessions-form--cv .session-toggle-flip-inner {
+  width: 70px;
+  height: 70px;
+}
+
+.sessions-form--cv .session-toggle-flip-back svg {
+  width: 70px;
+  height: 70px;
+}
+
 .sessions-form--cv .session-toggle-state {
   top: 0.45rem;
   right: 0.45rem;
@@ -542,6 +747,44 @@
 
 .sessions-form--cv.dark .session-toggle-image {
   filter: invert(1);
+}
+
+.sessions-form--cv.dark .session-toggle-flip-back svg {
+  filter: none;
+}
+
+.sessions-form--cv.dark .sessions-qr-popup {
+  background: #1d1d1d;
+  color: var(--cv-panel-fg, #e9e9e9);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-close {
+  color: #bbb;
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-close:hover {
+  color: #fff;
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-link {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #8ab4ff;
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-link:hover {
+  color: #b7d0ff;
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-copy {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--cv-panel-fg, #e9e9e9);
+}
+
+.sessions-form--cv.dark .sessions-qr-popup-copy:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .sessions-form--cv.dark .sessions-close {
@@ -625,8 +868,19 @@
     flex: none;
   }
 
+  .session-toggle-flip-inner {
+    width: 54px;
+    height: 54px;
+  }
+
   .session-toggle-image {
     max-width: 54px;
     max-height: 54px;
+  }
+
+  .session-toggle-flip-back svg {
+    width: 54px;
+    height: 54px;
+    padding: 3px;
   }
 }

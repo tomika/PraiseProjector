@@ -15,6 +15,7 @@ import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../com
 import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
 import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
+import { filterOwnSessionEntries } from "../../../shared/sessionList";
 
 const TOKEN_KEY = "sessionId";
 
@@ -230,7 +231,7 @@ export function createSessionApi(core: RestCore): SessionApi {
       const results: OnlineSessionEntry[] = [];
       if (mode === "WEB" || mode === "BOTH") {
         try {
-          results.push(...(await cloudApi.fetchOnlineSessions()));
+          results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions(), core.leader?.id));
         } catch {
           /* cloud unreachable — surface whatever local discovery found */
         }
