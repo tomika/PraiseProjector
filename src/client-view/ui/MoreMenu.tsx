@@ -63,9 +63,6 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       run: () => void store.logout(),
     },
 */
-    // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
-    // App-mode only: Client mode is a fixed-source follower with no sessions hub.
-    { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
     {
       id: "clear-list",
       label: "Clear list",
@@ -74,6 +71,9 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       disabled: state.playlist.length === 0,
       run: () => void store.clearPlaylist(),
     },
+    // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
+    // App-mode only: Client mode is a fixed-source follower with no sessions hub.
+    { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
     {
       id: "home",
       label: "Switch UI",
