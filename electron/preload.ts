@@ -111,8 +111,8 @@ ipcRenderer.on("highlight-access-request", (_event, data: { clientId: string }) 
   emitWebServerEvent({ kind: "highlightAccessRequest", clientId: data?.clientId || "" });
 });
 
-ipcRenderer.on("highlight-changed", (_event, data: { line: number }) => {
-  emitWebServerEvent({ kind: "highlightChanged", line: data?.line ?? -1 });
+ipcRenderer.on("highlight-changed", (_event, data: { line: number; section?: number }) => {
+  emitWebServerEvent({ kind: "highlightChanged", line: data?.line ?? -1, section: data?.section });
 });
 
 ipcRenderer.on("remote-highlight-controller-changed", (_event, data: { clientId: string }) => {
@@ -280,7 +280,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   onHighlightChanged: (callback: (data: { line: number }) => void) => {
-    const subscription = (_event: IpcRendererEvent, data: { line: number }) => callback(data);
+    const subscription = (_event: IpcRendererEvent, data: { line: number; section?: number }) => callback(data);
     ipcRenderer.on("highlight-changed", subscription);
     return () => {
       ipcRenderer.removeListener("highlight-changed", subscription);

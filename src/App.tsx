@@ -1326,7 +1326,7 @@ const AppContent: React.FC = () => {
 
       if (event.kind === "highlightChanged") {
         // Call selectSectionByLine on PreviewPanel - matching C# ChangeHighlightByLine
-        previewPanelRef.current?.selectSectionByLine(event.line);
+        previewPanelRef.current?.selectSectionByLine(event.line, event.section);
         return;
       }
 

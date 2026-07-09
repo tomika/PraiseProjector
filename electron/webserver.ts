@@ -872,6 +872,7 @@ export class WebServer {
       const permission = req.query.permission as string;
       const clientId = (req.query.deviceId as string) || "";
       const lineStr = req.query.line as string;
+      const sectionStr = req.query.section as string;
 
       // Resolve the requesting client's access level. LEADER/LOCAL clients are
       // admins (loopback, allClientsCanUseLeaderMode, or in the IP/MAC allowlist):
@@ -928,11 +929,12 @@ export class WebServer {
       if (lineStr && (isAdmin || clientId === this.remoteHighlightController)) {
         if (isAdmin) this.remoteHighlightController = clientId;
         const lineNumber = parseInt(lineStr, 10);
+        const section = sectionStr ? parseInt(sectionStr, 10) : undefined;
         if (!isNaN(lineNumber)) {
           // Notify frontend about highlight line change
           const mainWindow = getMainWindow();
           if (mainWindow) {
-            mainWindow.webContents.send("highlight-changed", { line: lineNumber });
+            mainWindow.webContents.send("highlight-changed", { line: lineNumber, section });
           }
         }
       }
