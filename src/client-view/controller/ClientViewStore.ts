@@ -792,7 +792,7 @@ export class ClientViewStore {
       this.set({ playlistSearchResults: [], playlistSearching: false });
       return;
     }
-    this.set({ playlistSearchResults: [], playlistSearching: true });
+    this.set({ playlistSearching: true });
     this.playlistSearchTimer = setTimeout(() => void this.runPlaylistSearch(text, playlist), SEARCH_DEBOUNCE_MS);
   }
 

@@ -67,60 +67,77 @@ export function SongList() {
   const state = useClientViewState();
 
   const usingSearch = state.searchText.trim().length > 0;
-  const rows: Array<SongEntry | SongFound> = usingSearch ? state.searchResults : state.songs;
+  const rows: Array<SongEntry | SongFound> = usingSearch
+    ? state.searching && state.searchResults.length === 0
+      ? state.songs
+      : state.searchResults
+    : state.songs;
   const canEdit = state.capabilities.canEditWorkingPlaylist;
   const inPlaylist = new Set(state.playlist.map((entry) => entry.songId));
+  const columnCount = 2 + (canEdit ? 1 : 0) + (usingSearch ? 1 : 0);
 
   return (
-    <table className="cv-database" id="list" cellSpacing={0} cellPadding={0}>
-      <tbody>
-        {rows.map((entry) => {
-          const added = inPlaylist.has(entry.songId);
-          const selectedMode = usingSearch ? "filter" : "database";
-          return (
-            <tr
-              key={entry.songId}
-              className={state.navigationMode === selectedMode && entry.songId === state.display.songId ? "selected" : ""}
-              onClick={() => void (usingSearch ? store.selectFilteredSong(entry.songId) : store.selectDatabaseSong(entry.songId))}
-            >
-              {canEdit && (
-                <td className="cv-add-col">
+    <div className="cv-list-wrap">
+      <table className="cv-database" id="list" cellSpacing={0} cellPadding={0}>
+        <tbody>
+          {usingSearch && !state.searching && rows.length === 0 && (
+            <tr className="cv-list-status-row">
+              <td colSpan={columnCount}>No matching songs</td>
+            </tr>
+          )}
+          {rows.map((entry) => {
+            const added = inPlaylist.has(entry.songId);
+            const selectedMode = usingSearch ? "filter" : "database";
+            return (
+              <tr
+                key={entry.songId}
+                className={state.navigationMode === selectedMode && entry.songId === state.display.songId ? "selected" : ""}
+                onClick={() => void (usingSearch ? store.selectFilteredSong(entry.songId) : store.selectDatabaseSong(entry.songId))}
+              >
+                {canEdit && (
+                  <td className="cv-add-col">
+                    <button
+                      type="button"
+                      className={`cv-add-btn${added ? " in" : ""}`}
+                      title={added ? "Remove from current playlist" : "Add to current playlist"}
+                      aria-label={added ? "Remove from current playlist" : "Add to current playlist"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void store.togglePlaylistEntry(entry);
+                      }}
+                    >
+                      {added ? "✓" : "+"}
+                    </button>
+                  </td>
+                )}
+                <td className="cv-song-title">
+                  <TitleCell entry={entry} />
+                </td>
+                {usingSearch && <td className="cv-found-marker" style={markerStyle(foundOf(entry))} title={foundOf(entry)?.type} />}
+                <td className="cv-play-col">
                   <button
                     type="button"
-                    className={`cv-add-btn${added ? " in" : ""}`}
-                    title={added ? "Remove from current playlist" : "Add to current playlist"}
-                    aria-label={added ? "Remove from current playlist" : "Add to current playlist"}
+                    className="cv-play-btn"
+                    title="Project this song"
+                    aria-label="Project this song"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void store.togglePlaylistEntry(entry);
+                      void store.playSong(entry);
                     }}
                   >
-                    {added ? "✓" : "+"}
+                    ▶
                   </button>
                 </td>
-              )}
-              <td className="cv-song-title">
-                <TitleCell entry={entry} />
-              </td>
-              {usingSearch && <td className="cv-found-marker" style={markerStyle(foundOf(entry))} title={foundOf(entry)?.type} />}
-              <td className="cv-play-col">
-                <button
-                  type="button"
-                  className="cv-play-btn"
-                  title="Project this song"
-                  aria-label="Project this song"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void store.playSong(entry);
-                  }}
-                >
-                  ▶
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {usingSearch && state.searching && (
+        <div className="cv-list-search-overlay" role="status" aria-label="Searching">
+          <span className="cv-list-search-spinner" aria-hidden="true" />
+        </div>
+      )}
+    </div>
   );
 }

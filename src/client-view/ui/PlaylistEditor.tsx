@@ -44,9 +44,10 @@ export function PlaylistEditor() {
   const playlist = state.playlist;
   const playlistFilter = state.playlistFilterText.trim();
   const playlistSearchById = new Map(state.playlistSearchResults.map((entry) => [entry.songId, entry]));
+  const showFilteredRows = !!playlistFilter && (!state.playlistSearching || state.playlistSearchResults.length > 0);
   const visibleRows = playlist
     .map((entry, index) => ({ entry, index, found: playlistSearchById.get(entry.songId) }))
-    .filter(({ found }) => !playlistFilter || found);
+    .filter(({ found }) => !showFilteredRows || found);
 
   // Native-DnD scratch state. dragIndex is the row being dragged; overIndex
   // drives the insertion indicator; overTrash flags the trash drop target.
@@ -159,180 +160,185 @@ export function PlaylistEditor() {
   if (visibleRows.length === 0) {
     return (
       <div className="cv-playlist-empty">
-        <p className="cv-playlist-empty-title">{state.playlistSearching ? "Searching..." : "No matching songs"}</p>
-        <p className="cv-playlist-empty-hint">
-          {state.playlistSearching ? "Searching the current playlist." : "Clear the filter to show the full playlist."}
-        </p>
+        <p className="cv-playlist-empty-title">No matching songs</p>
+        <p className="cv-playlist-empty-hint">Clear the filter to show the full playlist.</p>
       </div>
     );
   }
 
   return (
     <>
-      <table
-        className="flexy cv-playlist"
-        id="list"
-        cellSpacing={0}
-        cellPadding={0}
-        // Dragging over the empty area below the rows drops at the end.
-        onDragOver={(e) => {
-          if (dragging) {
+      <div className="cv-list-wrap">
+        <table
+          className="flexy cv-playlist"
+          id="list"
+          cellSpacing={0}
+          cellPadding={0}
+          // Dragging over the empty area below the rows drops at the end.
+          onDragOver={(e) => {
+            if (dragging) {
+              e.preventDefault();
+              setOverIndex(visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
+              setOverTrash(false);
+            }
+          }}
+          onDrop={(e) => {
             e.preventDefault();
-            setOverIndex(visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
-            setOverTrash(false);
-          }
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          finishDrop(false, visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
-        }}
-      >
-        <tbody>
-          {visibleRows.map(({ entry, index, found }) => {
-            const transposeValue = entry.transpose ?? 0;
-            const titleEntry: SongFound | typeof entry = found ? { ...entry, title: found.title || entry.title, found: found.found } : entry;
-            const rowClass = [
-              state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
-              index === dragIndex ? "cv-dragging" : "",
-              dragging && index === overIndex && index !== dragIndex ? "cv-drag-over" : "",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <tr
-                key={`${entry.songId}-${index}`}
-                draggable={editingIndex == null}
-                className={rowClass}
-                onClick={() => {
-                  if (editingIndex != null) return;
-                  if (suppressNextRowClickRef.current) {
-                    suppressNextRowClickRef.current = false;
+            finishDrop(false, visibleRows[visibleRows.length - 1]?.index ?? playlist.length - 1);
+          }}
+        >
+          <tbody>
+            {visibleRows.map(({ entry, index, found }) => {
+              const transposeValue = entry.transpose ?? 0;
+              const titleEntry: SongFound | typeof entry = found ? { ...entry, title: found.title || entry.title, found: found.found } : entry;
+              const rowClass = [
+                state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
+                index === dragIndex ? "cv-dragging" : "",
+                dragging && index === overIndex && index !== dragIndex ? "cv-drag-over" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <tr
+                  key={`${entry.songId}-${index}`}
+                  draggable={editingIndex == null}
+                  className={rowClass}
+                  onClick={() => {
+                    if (editingIndex != null) return;
+                    if (suppressNextRowClickRef.current) {
+                      suppressNextRowClickRef.current = false;
+                      clearClickTimer();
+                      return;
+                    }
                     clearClickTimer();
-                    return;
-                  }
-                  clearClickTimer();
-                  clickTimerRef.current = setTimeout(() => {
-                    void store.selectPlaylistEntry(entry);
-                    clickTimerRef.current = null;
-                  }, SINGLE_CLICK_DELAY_MS);
-                }}
-                onDragStart={(e) => {
-                  if (editingIndex != null) {
-                    e.preventDefault();
-                    return;
-                  }
-                  setDragIndex(index);
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", String(index));
-                }}
-                onDragOver={(e) => {
-                  if (dragging) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setOverIndex(index);
-                    setOverTrash(false);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  finishDrop(false, index);
-                }}
-                onDragEnd={reset}
-              >
-                <td
-                  className="cv-song-title"
-                  onDoubleClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    clearClickTimer();
-                    startTitleEdit(index);
+                    clickTimerRef.current = setTimeout(() => {
+                      void store.selectPlaylistEntry(entry);
+                      clickTimerRef.current = null;
+                    }, SINGLE_CLICK_DELAY_MS);
                   }}
+                  onDragStart={(e) => {
+                    if (editingIndex != null) {
+                      e.preventDefault();
+                      return;
+                    }
+                    setDragIndex(index);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(index));
+                  }}
+                  onDragOver={(e) => {
+                    if (dragging) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setOverIndex(index);
+                      setOverTrash(false);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    finishDrop(false, index);
+                  }}
+                  onDragEnd={reset}
                 >
-                  {editingIndex === index ? (
-                    <input
-                      className="cv-pl-title-edit"
-                      autoFocus
-                      aria-label="Edit song title"
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onClick={stopRowClick}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onBlur={commitTitleEdit}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                  <td
+                    className="cv-song-title"
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearClickTimer();
+                      startTitleEdit(index);
+                    }}
+                  >
+                    {editingIndex === index ? (
+                      <input
+                        className="cv-pl-title-edit"
+                        autoFocus
+                        aria-label="Edit song title"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onClick={stopRowClick}
+                        onDoubleClick={(e) => {
                           e.preventDefault();
-                          commitTitleEdit();
-                        } else if (e.key === "Escape") {
-                          e.preventDefault();
-                          cancelTitleEdit();
-                        }
-                      }}
-                    />
+                          e.stopPropagation();
+                        }}
+                        onBlur={commitTitleEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitTitleEdit();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelTitleEdit();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <TitleCell entry={titleEntry} />
+                    )}
+                  </td>
+                  {playlistFilter ? (
+                    <td className="cv-found-marker" style={markerStyle(found?.found)} title={found?.found.type} />
                   ) : (
-                    <TitleCell entry={titleEntry} />
+                    <>
+                      <td className="transposeColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
+                        <span>{transposeLabel(entry.transpose)}</span>
+                        {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
+                        <select
+                          title="Transpose"
+                          value={transposeValue}
+                          onFocus={onSelectorFocus}
+                          onBlur={onSelectorBlur}
+                          onMouseDown={onSelectorPointerDown}
+                          onClick={onSelectorClick}
+                          onChange={(e) => {
+                            selectorChangedRef.current = true;
+                            suppressNextRowClickRef.current = false;
+                            void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
+                          }}
+                        >
+                          {TRANSPOSE_RANGE.map((value) => (
+                            <option key={value} value={value}>
+                              {transposeOption(value)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="capoColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
+                        <span>{capoLabel(entry.capo)}</span>
+                        <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
+                        <select
+                          title="Capo"
+                          value={entry.capo ?? 0}
+                          onFocus={onSelectorFocus}
+                          onBlur={onSelectorBlur}
+                          onMouseDown={onSelectorPointerDown}
+                          onClick={onSelectorClick}
+                          onChange={(e) => {
+                            selectorChangedRef.current = true;
+                            suppressNextRowClickRef.current = false;
+                            void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
+                          }}
+                        >
+                          {CAPO_RANGE.map((value) => (
+                            <option key={value} value={value}>
+                              {capoOption(value)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </>
                   )}
-                </td>
-                {playlistFilter ? (
-                  <td className="cv-found-marker" style={markerStyle(found?.found)} title={found?.found.type} />
-                ) : (
-                  <>
-                    <td className="transposeColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                      <span>{transposeLabel(entry.transpose)}</span>
-                      {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
-                      <select
-                        title="Transpose"
-                        value={transposeValue}
-                        onFocus={onSelectorFocus}
-                        onBlur={onSelectorBlur}
-                        onMouseDown={onSelectorPointerDown}
-                        onClick={onSelectorClick}
-                        onChange={(e) => {
-                          selectorChangedRef.current = true;
-                          suppressNextRowClickRef.current = false;
-                          void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
-                        }}
-                      >
-                        {TRANSPOSE_RANGE.map((value) => (
-                          <option key={value} value={value}>
-                            {transposeOption(value)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="capoColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                      <span>{capoLabel(entry.capo)}</span>
-                      <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
-                      <select
-                        title="Capo"
-                        value={entry.capo ?? 0}
-                        onFocus={onSelectorFocus}
-                        onBlur={onSelectorBlur}
-                        onMouseDown={onSelectorPointerDown}
-                        onClick={onSelectorClick}
-                        onChange={(e) => {
-                          selectorChangedRef.current = true;
-                          suppressNextRowClickRef.current = false;
-                          void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
-                        }}
-                      >
-                        {CAPO_RANGE.map((value) => (
-                          <option key={value} value={value}>
-                            {capoOption(value)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {playlistFilter && state.playlistSearching && (
+          <div className="cv-list-search-overlay" role="status" aria-label="Searching">
+            <span className="cv-list-search-spinner" aria-hidden="true" />
+          </div>
+        )}
+      </div>
 
       <div
         id="trashCan"

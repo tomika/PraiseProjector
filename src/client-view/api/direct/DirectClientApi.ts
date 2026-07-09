@@ -280,7 +280,7 @@ export class DirectClientApi implements ClientApi {
         // match snippets (lyrics/meta excerpts with highlights) — not a naive
         // title-only substring scan that returned the title as the "snippet".
         const allowedIds = options?.songIds?.length ? new Set(options.songIds) : undefined;
-        const results = await Database.getInstance().filter(query, null, true, true, true, SongOrder.LessCostMatch);
+        const results = await Database.getInstance().filter(query, null, true, true, true, SongOrder.LessCostMatch, undefined, allowedIds);
         return results
           .filter((found) => !allowedIds || allowedIds.has(found.song.Id))
           .slice(0, options?.limit ?? options?.songIds?.length ?? 100)

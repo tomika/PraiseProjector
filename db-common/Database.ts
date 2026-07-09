@@ -176,6 +176,8 @@ export enum SongOrder {
   LessCostMatch,
 }
 
+type SongIdFilter = readonly string[] | ReadonlySet<string>;
+
 interface IComparable<T> {
   compareTo(other: T): number;
 }
@@ -1206,7 +1208,8 @@ class Database {
     includeItemsWithoutChords = true,
     includeItemsWithNotes = true,
     order: SongOrder = SongOrder.Alphabetical,
-    settings?: DatabaseSettings | null
+    settings?: DatabaseSettings | null,
+    songIds?: SongIdFilter | null
   ): Promise<SongFoundList> {
     if (this.typesenseEngineEnabled && settings?.searchMethod === "typesense" && expr.trim()) {
       try {
@@ -1217,7 +1220,8 @@ class Database {
           includeItemsWithoutChords,
           includeItemsWithNotes,
           order,
-          settings
+          settings,
+          songIds
         );
         this.typesenseFallbackFired = false;
         return result;
@@ -1226,10 +1230,10 @@ class Database {
           this.typesenseFallbackFired = true;
           if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-typesense-fallback"));
         }
-        return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
+        return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings, songIds);
       }
     }
-    return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings);
+    return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings, songIds);
   }
 
   private typesenseInitHash = "";
@@ -1266,19 +1270,22 @@ class Database {
     includeItemsWithoutChords: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
-    settings: DatabaseSettings
+    settings: DatabaseSettings,
+    songIds?: SongIdFilter | null
   ): Promise<SongFoundList> {
     const res = new SongFoundList();
     const bestBySongId = new Map<string, SongFound>();
     const maxResults = settings.searchMaxResults ?? 0;
     const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
+    const allowedSongIds = Database.toSongIdSet(songIds);
 
     this.ensureTypesenseInit(settings);
 
-    const hits = await this.typesense!.search(expr, maxResults || undefined);
+    const hits = await this.typesense!.search(expr, maxResults || undefined, allowedSongIds ? [...allowedSongIds] : undefined);
 
     for (const hit of hits) {
+      if (allowedSongIds && !allowedSongIds.has(hit.songId)) continue;
       const song = this.songs.get(hit.songId);
       if (!song) continue;
 
@@ -1344,10 +1351,15 @@ class Database {
     includeItemsWithoutChords: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
-    settings?: DatabaseSettings | null
+    settings?: DatabaseSettings | null,
+    songIds?: SongIdFilter | null
   ): SongFoundList {
     const res = new SongFoundList();
     const maxResults = settings?.searchMaxResults ?? 0; // 0 = unlimited
+    const allowedSongIds = Database.toSongIdSet(songIds);
+    const candidates = allowedSongIds
+      ? Array.from(allowedSongIds, (songId) => this.songs.get(songId)).filter((song): song is Song => !!song)
+      : this.songs.values();
     {
       const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
       const caseSensitive = settings?.traditionalSearchCaseSensitive ?? false;
@@ -1370,7 +1382,7 @@ class Database {
         let minCost = Infinity;
         const filters = filterData.matchesTo(this.words);
 
-        for (const song of this.songs.values()) {
+        for (const song of candidates) {
           if (
             (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
             (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
@@ -1393,7 +1405,7 @@ class Database {
           }
         }
       } else {
-        for (const song of this.songs.values()) {
+        for (const song of candidates) {
           if (
             (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
             (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
@@ -1435,6 +1447,16 @@ class Database {
     }
 
     return res;
+  }
+
+  private static toSongIdSet(songIds?: SongIdFilter | null): ReadonlySet<string> | null {
+    if (!songIds) return null;
+    if (typeof (songIds as ReadonlySet<string>).has === "function") {
+      const set = songIds as ReadonlySet<string>;
+      return set.size ? set : null;
+    }
+    const filtered = (songIds as readonly string[]).filter((id: string) => !!id);
+    return filtered.length ? new Set(filtered) : null;
   }
 
   /**
