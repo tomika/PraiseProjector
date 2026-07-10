@@ -1098,8 +1098,10 @@ export class ChordProEditor extends ChordDrawer {
       if (isFormElement(e)) return;
       this.suppressNextClickTs = true;
       dispatchMouse("mousedown", e.changedTouches[0]);
-      // After onMouseDown ran, check if an interactive element was hit
-      this.touchActive = this.lastMouseDownHadHit;
+      // After onMouseDown ran, check if an interactive element was hit. In
+      // read-only display mode, also claim blank canvas/page touches so the
+      // outer page-flip controller receives the full synthetic mouse gesture.
+      this.touchActive = this.readOnly || this.lastMouseDownHadHit;
       if (this.touchActive) {
         e.preventDefault();
         e.stopPropagation();
