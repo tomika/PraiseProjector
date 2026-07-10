@@ -109,7 +109,12 @@ export class DirectClientApi implements ClientApi {
 
   private capabilities: ClientCapabilities = this.computeCapabilities();
 
-  constructor(private readonly authBridge?: DirectAuthBridge) {}
+  constructor(private authBridge?: DirectAuthBridge) {}
+
+  setAuthBridge(authBridge: DirectAuthBridge): void {
+    this.authBridge = authBridge;
+    this.refreshAuthState();
+  }
 
   // The embedded desktop view (role "AppDirect") drives the host's live display
   // directly, so control + working-playlist editing are inherently granted. The

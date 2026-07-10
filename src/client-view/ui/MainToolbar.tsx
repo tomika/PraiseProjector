@@ -140,10 +140,6 @@ export function MainToolbar({
   const netLabel = NET_STATUS_LABEL[netStatus] ?? netStatus;
   const netDetail = netStatus === "error" && state.network.error ? `: ${state.network.error}` : "";
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
-  // In App mode the indicator is normally hidden, but a hosted/followed session is a
-  // live link worth showing (legacy divNetStatus shown while ppdWatchers != null).
-  const netActiveInApp = netStatus === "leading" || netStatus === "watching";
-
   const openCapoPicker = () => {
     if (!state.displaySettings.useCapo) return;
     const select = capoSelectRef.current;

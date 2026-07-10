@@ -112,9 +112,15 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
   const levelRef = useRef(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
   const onReleaseRef = useRef(onRelease);
-  onReleaseRef.current = onRelease;
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+    onReleaseRef.current = onRelease;
+  }, [onRelease]);
 
   useEffect(() => {
     const el = containerRef.current;

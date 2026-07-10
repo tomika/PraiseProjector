@@ -1230,7 +1230,16 @@ class Database {
           this.typesenseFallbackFired = true;
           if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-typesense-fallback"));
         }
-        return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings, songIds);
+        return this.traditionalFilter(
+          expr,
+          leader,
+          includeItemsWithChords,
+          includeItemsWithoutChords,
+          includeItemsWithNotes,
+          order,
+          settings,
+          songIds
+        );
       }
     }
     return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings, songIds);

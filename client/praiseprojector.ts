@@ -1139,7 +1139,7 @@ export class App extends AppBase {
     if (this.highlightIconHolderDiv) {
       let lastClick = 0;
       let clickCount = 0;
-      this.highlightIconHolderDiv.onclick = (e) => {
+      this.highlightIconHolderDiv.onclick = (_e) => {
         const now = Date.now();
         if (now - lastClick > 500) clickCount = 1;
         else if (++clickCount >= 10) {
@@ -1905,7 +1905,7 @@ export class App extends AppBase {
   private installPullToRefreshInputHandlers(
     element: HTMLElement,
     handler: (type: "down" | "up" | "move", e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">) => void,
-    source: string
+    _source: string
   ) {
     const relay = (type: "down" | "up" | "move", e: Pick<MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">) => {
       handler(type, e);
@@ -2302,7 +2302,6 @@ export class App extends AppBase {
         case "move":
           if (this.swipeState) {
             const offsetX = x - this.swipeState.dragX;
-            const offsetY = y - this.swipeState.dragY;
             const direction = offsetX / Math.abs(offsetX);
             const left = page.offsetLeft,
               width = page.offsetWidth,

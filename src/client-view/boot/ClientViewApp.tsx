@@ -17,39 +17,37 @@ import "../ui/client-view.css";
 
 export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHome?: () => void }) {
   const auth = useAuth();
-  const authRef = useRef(auth);
-  authRef.current = auth;
-  const [api] = useState(() => {
+  const { isAuthenticated, login, commitSession, logout, restoreStoredSession } = auth;
+  const [api] = useState(() => new DirectClientApi());
+  const [store] = useState(() => new ClientViewStore(api));
+  const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
+
+  useEffect(() => {
     const bridge: DirectAuthBridge = {
-      isAuthed: () => authRef.current.isAuthenticated,
+      isAuthed: () => isAuthenticated,
       login: async (user, password, keepLoggedIn) => {
-        const success = await authRef.current.login(user, password);
+        const success = await login(user, password);
         if (!success) throw new Error("Sign in failed");
         if (keepLoggedIn) {
-          authRef.current.commitSession();
+          commitSession();
           await window.electronAPI?.persistCookies?.();
         } else {
           await window.electronAPI?.clearPersistedCookies?.();
         }
       },
       logout: async () => {
-        await authRef.current.logout();
+        await logout();
       },
       restoreSession: async () => {
-        await authRef.current.restoreStoredSession();
+        await restoreStoredSession();
       },
     };
-    return new DirectClientApi(bridge);
-  });
+    api.setAuthBridge(bridge);
+  }, [api, isAuthenticated, login, commitSession, logout, restoreStoredSession]);
+
   // In-process adapter: the embedded view shares the host app's live state
   // (CurrentSongStore + Database) rather than talking to the cloud.
-  const [store] = useState(() => new ClientViewStore(api));
-  const [ready, setReady] = useState(false);
-  const readyRef = useRef(false);
-
-  useEffect(() => {
-    api.refreshAuthState();
-  }, [api, auth.isAuthenticated, auth.user?.login, auth.username]);
 
   useEffect(() => {
     let active = true;
