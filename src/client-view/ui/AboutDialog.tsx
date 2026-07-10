@@ -1,14 +1,15 @@
 /**
  * AboutDialog — in-app About box for the client view.
  *
- * Mirrors the legacy praiseprojector.ts about box (app version + open-source
+ * Mirrors the legacy praiseprojector.ts about box (app version + third-party
  * license references + a link to the project website) shown as a dismissible
  * modal, rather than navigating the user away to the website. Links are opened
  * through the host (device.openExternal) so native shells use the system browser.
  */
 
+import { useEffect, useMemo, useState } from "react";
 import { useClientViewStore } from "../controller/ClientViewContext";
-import { getClientWebAppLicenseSections } from "../../../client/about-licenses";
+import { getClientViewAboutLicenseSections, type LicenseSection } from "../../about-licenses";
 
 declare const __APP_VERSION__: string;
 declare const __APP_COMMIT__: string;
@@ -23,9 +24,20 @@ export function AboutDialog() {
   const commit = typeof __APP_COMMIT__ !== "undefined" ? __APP_COMMIT__ : "";
   const showCommit = typeof __APP_SHOW_COMMIT__ !== "undefined" ? __APP_SHOW_COMMIT__ : false;
   const versionDisplay = showCommit && commit ? `${version} (${commit})` : version;
-  const sections = getClientWebAppLicenseSections();
+  const [hostSections, setHostSections] = useState<LicenseSection[]>([]);
+  const sections = useMemo(() => [...getClientViewAboutLicenseSections(), ...hostSections], [hostSections]);
 
   const openUrl = (url: string) => store.openExternalUrl(url);
+
+  useEffect(() => {
+    let cancelled = false;
+    void store.getThirdPartyLicenseSections().then((sections) => {
+      if (!cancelled) setHostSections(sections);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
 
   return (
     <div className="cv-modal-backdrop" onClick={() => store.closeAbout()}>
@@ -35,9 +47,9 @@ export function AboutDialog() {
         </div>
 
         <div className="cv-about-body">
-          <p className="cv-about-version">Client app version: {versionDisplay}</p>
+          <p className="cv-about-version">App version: {versionDisplay}</p>
 
-          <p className="cv-about-section-title">Open source license references:</p>
+          <p className="cv-about-section-title">Third-party license references:</p>
           {sections.map((section) => (
             <div key={section.id} className="cv-about-section">
               <p className="cv-about-section-name">{section.title}:</p>

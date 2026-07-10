@@ -16,6 +16,7 @@
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncStatus } from "../../state/syncStatusStore";
+import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import type {
@@ -1526,6 +1527,10 @@ export class ClientViewStore {
   /** Open an external URL through the host (external browser on native shells). */
   openExternalUrl(url: string): void {
     this.api.device.openExternal(url);
+  }
+
+  getThirdPartyLicenseSections(): Promise<LicenseSection[]> {
+    return this.api.device.getThirdPartyLicenseSections();
   }
 
   /** Navigate from the focused client view to the full multi-panel editor. */

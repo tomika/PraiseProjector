@@ -12,6 +12,7 @@ import { cloudApi } from "../../../../common/cloudApi";
 import { getLocalBroadcastAddresses } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
+import type { LicenseSection } from "../../../about-licenses";
 import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
 import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
@@ -331,6 +332,15 @@ export function createAuthApi(core: RestCore): AuthApi {
 
 export function createDeviceApi(): DeviceApi {
   const prefKey = (key: string) => "pp-pref-" + key;
+  const parseLicenseSections = (raw: string): LicenseSection[] => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? (parsed as LicenseSection[]) : [];
+    } catch {
+      return [];
+    }
+  };
   const device: DeviceApi = {
     isFullScreen: () => !!document.fullscreenElement,
     toggleFullScreen: async () => {
@@ -383,6 +393,10 @@ export function createDeviceApi(): DeviceApi {
         return;
       }
       window.open(url, "_blank", "noopener");
+    },
+    getThirdPartyLicenseSections: async () => {
+      const raw = await Promise.resolve(window.hostDevice?.getThirdPartyLicenseSections?.() ?? "");
+      return typeof raw === "string" ? parseLicenseSections(raw) : [];
     },
     goHome: () => {
       void window.hostDevice?.goHome?.();

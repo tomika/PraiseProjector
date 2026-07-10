@@ -3,7 +3,7 @@
 This file is generated from the repository's third-party license source files.
 Do not edit it manually.
 
-## Client web app libraries
+## Shared app libraries
 
 - color-calendar
   - Project: https://github.com/niccokunzmann/color-calendar
@@ -42,7 +42,7 @@ Do not edit it manually.
   - License: MIT License
   - License URL: https://github.com/zloirock/core-js/blob/master/LICENSE
 
-## Client web app build/dev tools
+## Shared app build/dev tools
 
 - Visual Studio Code
   - Project: https://github.com/microsoft/vscode
@@ -57,7 +57,7 @@ Do not edit it manually.
   - License: MIT License
   - License URL: https://github.com/evanw/esbuild/blob/main/LICENSE.md
 
-## Electron frontend/web app (public/src)
+## PraiseProjector app frontend (public/src)
 
 - React
   - Project: https://github.com/facebook/react

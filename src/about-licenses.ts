@@ -97,16 +97,21 @@ const electronFrontendWebApp: ThirdPartyEntry[] = [
   },
 ];
 
+function getAppFrontendLicenseSection(): LicenseSection {
+  return {
+    id: "electron-frontend-webapp",
+    titleKey: "AboutSectionElectronFrontend",
+    title: "PraiseProjector app frontend (public/src)",
+    entries: electronFrontendWebApp,
+  };
+}
+
+export function getClientViewAboutLicenseSections(): LicenseSection[] {
+  return [...getClientWebAppLicenseSections(), getAppFrontendLicenseSection()];
+}
+
 export function getSettingsAboutLicenseSections(mode: AboutRuntimeMode): LicenseSection[] {
-  const sections: LicenseSection[] = [
-    ...getClientWebAppLicenseSections(),
-    {
-      id: "electron-frontend-webapp",
-      titleKey: "AboutSectionElectronFrontend",
-      title: "Electron frontend/web app (public/src)",
-      entries: electronFrontendWebApp,
-    },
-  ];
+  const sections: LicenseSection[] = getClientViewAboutLicenseSections();
 
   if (mode === "full-electron") {
     for (const section of getElectronBackendLicenseSections()) {

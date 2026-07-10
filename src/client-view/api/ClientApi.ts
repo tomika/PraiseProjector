@@ -28,6 +28,7 @@ import type {
   SongEntry,
   SongFound,
 } from "../../../common/pp-types";
+import type { LicenseSection } from "../../about-licenses";
 import type { SyncStatus } from "../../state/syncStatusStore";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -473,6 +474,8 @@ export interface DeviceApi {
   /** Returns false when sharing is unsupported on the host. */
   share(url: string, title?: string, text?: string): boolean;
   openExternal(url: string): void;
+  /** Third-party license sections supplied by a native host shell, if present. */
+  getThirdPartyLicenseSections(): Promise<LicenseSection[]>;
   /** Present when the host can terminate the app (native shells only). */
   exit?(): void;
   /** Navigate back to the host home/launcher. */

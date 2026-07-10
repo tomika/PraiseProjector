@@ -41,13 +41,13 @@ export function getAboutBoxHtml(info?: { login?: string }) {
         <td>&nbsp;</td>
     </tr>
     <tr>
-      <td>Client app version: ${versionDisplay}</td>
+      <td>App version: ${versionDisplay}</td>
     </tr>
     <tr>
       <td>&nbsp;</td>
     </tr>
     <tr>
-        <td><strong>Open source license references:</strong></td>
+        <td><strong>Third-party license references:</strong></td>
     </tr>
     ${sectionHtml}
     <tr>

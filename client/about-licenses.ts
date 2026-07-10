@@ -95,13 +95,13 @@ export function getClientWebAppLicenseSections(): LicenseSection[] {
     {
       id: "client-webapp-libraries",
       titleKey: "AboutSectionClientWebAppLibraries",
-      title: "Client web app libraries",
+      title: "Shared app libraries",
       entries: clientWebAppLibraries,
     },
     {
       id: "client-webapp-tools",
       titleKey: "AboutSectionClientWebAppTools",
-      title: "Client web app build/dev tools",
+      title: "Shared app build/dev tools",
       entries: clientWebAppTools,
     },
   ];
