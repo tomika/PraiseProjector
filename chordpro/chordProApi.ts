@@ -36,10 +36,10 @@ function setActiveEditor(editorDiv: HTMLDivElement | null) {
   return activeEditor;
 }
 
-function getEditorInstance(editorDiv?: HTMLDivElement | null) {
+function getEditorInstance(editorDiv?: HTMLDivElement | null, activate = true) {
   if (editorDiv) {
     const instance = editors.get(editorDiv) ?? null;
-    if (instance) setActiveEditor(editorDiv);
+    if (instance && activate) setActiveEditor(editorDiv);
     return instance;
   }
   if (activeEditorDiv) {
@@ -133,7 +133,8 @@ function createEditor(
   editable?: boolean,
   compareBase?: string,
   eventHandlers?: ChordProEditorEventHandlers,
-  suppressDraw?: boolean
+  suppressDraw?: boolean,
+  activate = true
 ) {
   const system = getChordSystem(NOTE_SYSTEM_CODE);
   const selector = ensureChordSelector(system, editorDiv);
@@ -153,7 +154,7 @@ function createEditor(
     };
   }
   editors.set(editorDiv, editor);
-  setActiveEditor(editorDiv);
+  if (activate || !activeEditorDiv || activeEditorDiv === editorDiv) setActiveEditor(editorDiv);
   editor.darkMode(document.documentElement.getAttribute("data-theme") === "dark");
   if (currentLocaleHandler) {
     editor.installLocaleHandler(currentLocaleHandler);
@@ -205,11 +206,11 @@ function applyDisplaySettings(
 }
 
 function bindEditor(editorDiv: HTMLDivElement) {
-  const getBoundEditor = () => getEditorInstance(editorDiv);
+  const getBoundEditor = (activate = false) => getEditorInstance(editorDiv, activate);
 
   return {
     load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers, suppressDraw?: boolean) =>
-      chordProAPI.load(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw),
+      createEditor(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw, !activeEditorDiv || activeEditorDiv === editorDiv),
     getText: () => getBoundEditor()?.chordProCode ?? "",
     setDisplay: (
       title: boolean,
@@ -244,7 +245,7 @@ function bindEditor(editorDiv: HTMLDivElement) {
       instance.transpose(shift);
     },
     enableEdit: (enable: boolean, multiChordChangeEnabled = true) => {
-      const instance = getBoundEditor();
+      const instance = getBoundEditor(true);
       if (!instance) return;
       instance.setReadOnly(!enable, multiChordChangeEnabled);
       if (enable) instance.focus();
@@ -351,10 +352,10 @@ function bindEditor(editorDiv: HTMLDivElement) {
       if (instance) instance.setStyles(styles);
     },
     handleExternalChordBoxTouch: (event: MouseEvent, down: boolean, showChordDialog?: boolean) =>
-      getBoundEditor()?.handleExternalChordBoxTouch(event, down, showChordDialog) ?? false,
-    isReadOnly: () => getBoundEditor()?.readOnly ?? true,
-    isInMarkingState: () => getBoundEditor()?.inMarkingState ?? false,
-    hasChordSelectorOpen: () => getBoundEditor()?.hasChordSelectorOpen() ?? false,
+      getBoundEditor(true)?.handleExternalChordBoxTouch(event, down, showChordDialog) ?? false,
+    isReadOnly: () => getBoundEditor(true)?.readOnly ?? true,
+    isInMarkingState: () => getBoundEditor(true)?.inMarkingState ?? false,
+    hasChordSelectorOpen: () => getBoundEditor(true)?.hasChordSelectorOpen() ?? false,
     getSelectedText: () => getBoundEditor()?.getSelectedText() ?? "",
   };
 }
@@ -371,7 +372,7 @@ export const chordProAPI = {
     eventHandlers?: ChordProEditorEventHandlers,
     suppressDraw?: boolean
   ) {
-    createEditor(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw);
+    createEditor(editorDiv, chp, editable, compareBase, eventHandlers, suppressDraw, true);
   },
   getText() {
     return getEditorInstance()?.chordProCode ?? "";
