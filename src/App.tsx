@@ -1466,8 +1466,6 @@ const AppContent: React.FC = () => {
           setEditedSong(cloned);
           updateCurrentSongText(cloned.Text);
           setSelectedSongId(song.Id);
-          // Clear playlist selection when manually selecting a song from tree
-          setPlaylistSelection(null);
         },
         undefined,
         { confirmText: t("DiscardAndLoad"), confirmDanger: true }
@@ -1479,8 +1477,6 @@ const AppContent: React.FC = () => {
     setEditedSong(cloned);
     updateCurrentSongText(cloned.Text);
     setSelectedSongId(song.Id);
-    // Clear playlist selection when manually selecting a song from tree
-    setPlaylistSelection(null);
   };
 
   const handleEditModeChange = useCallback((editing: boolean) => {
