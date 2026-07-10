@@ -58,6 +58,10 @@ const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string
 
 const isWidePaneViewport = (): boolean => typeof window !== "undefined" && !shouldUsePagingLayout(window.innerWidth, window.innerHeight);
 
+function isInsideChordSelector(target: EventTarget | null, root: HTMLElement): boolean {
+  return target instanceof Element && !!target.closest(".chordSelector") && root.contains(target);
+}
+
 /** Imperative handle the toolbar uses so its Prev/Next buttons trigger the same
  *  animated turn as a swipe (instead of an instant, un-animated song change). */
 export interface SongViewHandle {
@@ -221,6 +225,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
+      handleChordBoxTouch: (e, down) => apiRef.current?.handleExternalChordBoxTouch(e, down, true) ?? false,
       onFlipActiveChange: setNavigationActionsHidden,
     });
     flipRef.current = flip;
@@ -313,6 +318,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
     const down = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (isInsideChordSelector(e.target, el)) return;
       if (apiRef.current?.handleExternalChordBoxTouch(e, true)) {
         flipRef.current?.cancel();
         return;

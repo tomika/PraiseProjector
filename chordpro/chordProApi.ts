@@ -72,8 +72,18 @@ function disposeEditor(editorDiv?: HTMLDivElement | null) {
   }
 }
 
-function ensureChordSelector(system: ChordSystem): ChordSelector | undefined {
-  const host = document.getElementById("chordsel") as HTMLDivElement | null;
+function findChordSelectorHost(editorDiv?: HTMLDivElement | null): HTMLDivElement | null {
+  const localHost = editorDiv?.querySelector("#chordsel");
+  if (localHost instanceof HTMLDivElement) return localHost;
+
+  const scopedHost = editorDiv?.closest("#swipe-handler, .editor-iframe-container")?.querySelector("#chordsel");
+  if (scopedHost instanceof HTMLDivElement) return scopedHost;
+
+  return document.getElementById("chordsel") as HTMLDivElement | null;
+}
+
+function ensureChordSelector(system: ChordSystem, editorDiv?: HTMLDivElement | null): ChordSelector | undefined {
+  const host = findChordSelectorHost(editorDiv);
   if (!host) {
     chordSelector = null;
     chordSelectorHost = null;
@@ -126,7 +136,7 @@ function createEditor(
   suppressDraw?: boolean
 ) {
   const system = getChordSystem(NOTE_SYSTEM_CODE);
-  const selector = ensureChordSelector(system);
+  const selector = ensureChordSelector(system, editorDiv);
 
   disposeEditor(editorDiv);
 

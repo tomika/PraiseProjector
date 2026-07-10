@@ -45,7 +45,7 @@ export class ChordSelector {
   private customSpan: HTMLElement | null = null;
   private guitarChordBox: HTMLCanvasElement | null = null;
   private pianoChordBox: HTMLCanvasElement | null = null;
-  private musicChordBox: HTMLCanvasElement | null = null;
+  private musicChordBox: HTMLElement | null = null;
   private selectedChordHitBox: HTMLCanvasElement | null = null;
   private swipeStartPos = 0;
   private guitarVariant = 0;
@@ -83,7 +83,6 @@ export class ChordSelector {
   }
 
   private syncCanvasSizes() {
-    this.syncCanvasSize(this.musicChordBox);
     this.syncCanvasSize(this.guitarChordBox);
     this.syncCanvasSize(this.pianoChordBox);
   }
@@ -104,7 +103,7 @@ export class ChordSelector {
   }
 
   private static findOrCreateElement(name: string | null | undefined, type: string, parent: HTMLElement) {
-    let element = name ? document.getElementById(name) : null;
+    let element = name ? ChordSelector.findElementById(parent, name) : null;
     if (!element) {
       element = document.createElement(type);
       parent.appendChild(element);
@@ -114,6 +113,14 @@ export class ChordSelector {
       }
     }
     return element;
+  }
+
+  private static findElementById(parent: HTMLElement, id: string): HTMLElement | null {
+    if (parent.id === id) return parent;
+    for (const element of Array.from(parent.querySelectorAll<HTMLElement>("[id]"))) {
+      if (element.id === id) return element;
+    }
+    return document.getElementById(id);
   }
 
   private static findOrCreateSelectElement(name: string | null | undefined, parent: HTMLElement, readonly?: boolean) {
@@ -198,7 +205,7 @@ export class ChordSelector {
     };
 
     if (options.subscript) {
-      const e = document.getElementById(options.subscript);
+      const e = ChordSelector.findElementById(parent, options.subscript);
       if (e && e instanceof HTMLInputElement)
         (this.subscript = e).onchange = () => {
           if (this.subscript) this.updateFrom(this.subscript);
@@ -206,7 +213,7 @@ export class ChordSelector {
       if (this.subscript) this.subscript.onkeydown = handleKeyDown;
     }
     if (options.steps) {
-      const e = document.getElementById(options.steps);
+      const e = ChordSelector.findElementById(parent, options.steps);
       if (e && e instanceof HTMLInputElement)
         (this.steps = e).onchange = () => {
           if (this.steps) this.updateFrom(this.steps);
@@ -214,7 +221,7 @@ export class ChordSelector {
       if (this.steps) this.steps.onkeydown = handleKeyDown;
     }
     if (options.notes) {
-      const e = document.getElementById(options.notes);
+      const e = ChordSelector.findElementById(parent, options.notes);
       if (e && e instanceof HTMLInputElement)
         (this.notes = e).onchange = () => {
           if (this.notes) this.updateFrom(this.notes);
@@ -222,14 +229,14 @@ export class ChordSelector {
       if (this.notes) this.notes.onkeydown = handleKeyDown;
     }
     if (options.guitarChordBox) {
-      this.guitarChordBox = document.getElementById(options.guitarChordBox) as HTMLCanvasElement;
+      this.guitarChordBox = ChordSelector.findElementById(parent, options.guitarChordBox) as HTMLCanvasElement;
       //if (this.guitarChordBox) this.guitarChordBox.onclick = (e) => this.clickHandler(this.guitarHitBoxes, e);
     }
     if (options.pianoChordBox) {
-      this.pianoChordBox = document.getElementById(options.pianoChordBox) as HTMLCanvasElement;
+      this.pianoChordBox = ChordSelector.findElementById(parent, options.pianoChordBox) as HTMLCanvasElement;
       //if (this.pianoChordBox) this.pianoChordBox.onclick = (e) => this.clickHandler(this.pianoHitBoxes, e);
     }
-    if (options.musicChordBox) this.musicChordBox = document.getElementById(options.musicChordBox) as HTMLCanvasElement;
+    if (options.musicChordBox) this.musicChordBox = ChordSelector.findElementById(parent, options.musicChordBox);
 
     /*
         this.selVariation = ChordSelector.findOrCreateSelectElement(options.variationSelector, parent_div, options.mode === "SHOW");
@@ -241,9 +248,9 @@ export class ChordSelector {
         parent_div.appendChild(this.tblNeck);
         */
 
-    if (options.baseNoteSpan) this.baseNoteSpan = document.getElementById(options.baseNoteSpan);
+    if (options.baseNoteSpan) this.baseNoteSpan = ChordSelector.findElementById(parent, options.baseNoteSpan);
 
-    if (options.customSpan) this.customSpan = document.getElementById(options.customSpan);
+    if (options.customSpan) this.customSpan = ChordSelector.findElementById(parent, options.customSpan);
 
     if (this.chordBoxDrawer && (this.guitarChordBox || this.pianoChordBox)) {
       const onresize = () => this.drawChord(this.updateFrom(), true);
@@ -253,12 +260,12 @@ export class ChordSelector {
     if (options.onClose) this.onCloseCallback = options.onClose;
 
     if (options.closeSelector) {
-      const elem = document.getElementById(options.closeSelector);
+      const elem = ChordSelector.findElementById(parent, options.closeSelector);
       if (elem) elem.onclick = () => this.closeDialog(false, true);
     }
 
     if (options.applySelector) {
-      this.applyButton = document.getElementById(options.applySelector) as HTMLInputElement;
+      this.applyButton = ChordSelector.findElementById(parent, options.applySelector) as HTMLInputElement;
       if (this.applyButton) this.applyButton.onclick = () => this.closeDialog(true);
     } else this.applyButton = null;
 
@@ -518,9 +525,6 @@ export class ChordSelector {
     if (!chord) return;
 
     if (!resize_only && this.musicChordBox) {
-      this.musicChordBox.width = this.musicChordBox.offsetWidth;
-      this.musicChordBox.height = this.musicChordBox.offsetHeight;
-
       let hasLowRegNote = false;
       const universalNoteCode = (n: number) => {
         const m = n % 12;
@@ -541,7 +545,7 @@ export class ChordSelector {
         keys.push(abcformat(universalNoteCode(chord.bassNote)).toUpperCase() + suffix);
       }
       const drawMusicBox = () => {
-        abcjs().renderAbc(this.musicChordBoxDivName, "[" + keys.join("") + "]2");
+        abcjs().renderAbc(this.musicChordBox ?? this.musicChordBoxDivName, "[" + keys.join("") + "]2");
         this.applyTheme();
       };
       if (isAbcjsLoaded()) drawMusicBox();
