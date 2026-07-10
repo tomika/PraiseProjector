@@ -22,6 +22,7 @@ import { useClientViewState, useClientViewStore } from "../controller/ClientView
 import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
+import { installPinchZoomHandler } from "../../../common/utils";
 import {
   CHORDFORMAT_BB,
   CHORDFORMAT_INKEY,
@@ -48,6 +49,7 @@ const TRANSPOSE_SWIPE_AXIS_RATIO = 1.5;
 const TRANSPOSE_GESTURE_SLOP_PX = 8;
 const TRANSPOSE_MIN = -11;
 const TRANSPOSE_MAX = 11;
+const ZOOM_PINCH_PIXELS_PER_STEP = 28;
 
 const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string }> = {
   database: { icon: "database.svg", label: "Song database navigation" },
@@ -190,6 +192,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const loadedTextRef = useRef<string | null>(null);
   const appliedTransposeRef = useRef(0);
   const scrollModeRef = useRef(false);
+  const pinchActiveRef = useRef(false);
+  const pinchSuppressPointerRef = useRef(false);
   const [navigationActionsHidden, setNavigationActionsHidden] = useState(false);
 
   // The shared page-turn controller (chordpro/pageFlip), the same one the desktop
@@ -262,6 +266,44 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   useEffect(() => {
     scrollModeRef.current = scrollMode;
   }, [scrollMode]);
+
+  useEffect(() => {
+    const el = swipeRef.current;
+    if (!el) return;
+
+    let committed = false;
+    const finishPinch = (event: TouchEvent) => {
+      if (event.touches.length >= 2) return;
+      pinchActiveRef.current = false;
+      committed = false;
+    };
+    const cleanupPinch = installPinchZoomHandler(
+      el,
+      (steps, gestureStart) => {
+        if (gestureStart) {
+          pinchActiveRef.current = true;
+          pinchSuppressPointerRef.current = true;
+          committed = false;
+          flipRef.current?.cancel();
+          return;
+        }
+        if (committed || Math.abs(steps) < 1) return;
+        committed = true;
+        store.setDisplaySetting("maxText", steps > 0);
+      },
+      ZOOM_PINCH_PIXELS_PER_STEP
+    );
+
+    el.addEventListener("touchend", finishPinch, true);
+    el.addEventListener("touchcancel", finishPinch, true);
+    return () => {
+      pinchActiveRef.current = false;
+      pinchSuppressPointerRef.current = false;
+      cleanupPinch();
+      el.removeEventListener("touchend", finishPinch, true);
+      el.removeEventListener("touchcancel", finishPinch, true);
+    };
+  }, [store]);
 
   // Pointer plumbing: forward swipe gestures to the shared controller. We do NOT
   // setPointerCapture — capturing on #swipe-handler would steal taps from the
@@ -336,6 +378,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
     const move = (e: PointerEvent) => {
       if (!e.isPrimary || pointerId !== e.pointerId) return;
+      if (pinchActiveRef.current || pinchSuppressPointerRef.current) {
+        e.preventDefault();
+        clearSelection();
+        flipRef.current?.cancel();
+        return;
+      }
       e.preventDefault();
       clearSelection();
       const dx = e.clientX - startX;
@@ -358,6 +406,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       if (pointerId !== e.pointerId) return;
       pointerId = null;
       stopTracking();
+      if (pinchActiveRef.current || pinchSuppressPointerRef.current) {
+        pinchSuppressPointerRef.current = false;
+        flipRef.current?.cancel();
+        return;
+      }
       if (axis === "transpose") {
         transposeBySwipe(e.clientX - startX, e.clientY - startY);
       } else {
@@ -369,6 +422,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     const cancel = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       pointerId = null;
+      pinchSuppressPointerRef.current = false;
       stopTracking();
       flipRef.current?.cancel();
     };
