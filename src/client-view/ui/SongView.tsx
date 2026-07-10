@@ -313,6 +313,10 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
     const down = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (apiRef.current?.handleExternalChordBoxTouch(e, true)) {
+        flipRef.current?.cancel();
+        return;
+      }
       pointerId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
