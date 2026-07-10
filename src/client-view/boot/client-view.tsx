@@ -6,7 +6,10 @@
  */
 
 import "../ui/client-view.css";
+import { disableDefaultZoom } from "../../utils/disableDefaultZoom";
 import { mountClientView } from "./mountClientView";
+
+disableDefaultZoom();
 
 // Establish a stable base font size for the UI chrome and the ChordPro renderer,
 // which reads document.documentElement.style.fontSize as its baseline (the legacy
