@@ -361,6 +361,8 @@
   "SettingsAutomaticViewSwitchPortraitToClient": "Kliens módba váltás álló elrendezésnél",
   "SettingsAutomaticViewSwitchOrientation": "Kliens mód ki-be kapcsolása tájolás szerint",
   "SettingsAutomaticViewSwitchDescription": "Meghatározza, hogy az alkalmazás tájolásváltáskor automatikusan átváltson-e kliens nézetre.",
+  "SettingsClientViewAutoScanSessions": "Munkamenetek keresése a kliens nézet megnyitásakor",
+  "SettingsClientViewAutoScanSessionsDescription": "Egy kis indítási keresésjelzőt mutat, amíg a PraiseProjector munkamenetek ellenőrzése fut.",
   "SettingsChordSystem": "Akkordrendszer (új dalokhoz)",
   "SettingsChordSystemGerman": "Német (C D E F G A H)",
   "SettingsChordSystemStandard": "Szabványos (C D E F G A B)",

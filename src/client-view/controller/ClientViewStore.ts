@@ -19,6 +19,7 @@ import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncS
 import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
+import { readClientViewAutoScanSessions } from "../api/sessionFeatureSettings";
 import type {
   ClientApi,
   ClientCapabilities,
@@ -225,6 +226,10 @@ export interface ClientViewState {
   loginDialogOpen: boolean;
   /** The sessions hub (discover/attach + host) visibility — App mode only. */
   sessionsDialogOpen: boolean;
+  /** True while the sessions hub is mounted only to run startup auto-discovery. */
+  sessionsDialogStartupHidden: boolean;
+  /** Transient page-load session scan status, shown as a small lower-left box. */
+  startupSessionScan: { address?: string } | null;
   /** Whether the song's display instructions are overlaid on the song view
    *  (legacy chkInstructions wand toggle). */
   showInstructions: boolean;
@@ -363,6 +368,8 @@ function initialState(): ClientViewState {
     zoomDialogOpen: false,
     loginDialogOpen: false,
     sessionsDialogOpen: false,
+    sessionsDialogStartupHidden: false,
+    startupSessionScan: null,
     showInstructions: false,
     highlightOn: false,
     highlightControl: false,
@@ -394,6 +401,7 @@ export class ClientViewStore {
   private playlistSearchTimer: ReturnType<typeof setTimeout> | undefined;
   private playlistSearchSeq = 0;
   private disposed = false;
+  private lifecycleToken = 0;
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
   /** Whether the viewport uses the wide two-pane client layout. In that layout
@@ -432,10 +440,16 @@ export class ClientViewStore {
   // ── lifecycle ────────────────────────────────────────────────────────────────
 
   async init(config: ClientConfig): Promise<void> {
+    const token = ++this.lifecycleToken;
+    this.disposed = false;
+    this.persistenceReady = false;
+    this.lastPersistedJson = "";
     if (config.fullEditorUrl) this.fullEditorUrl = config.fullEditorUrl;
     this.wire();
     await this.api.init(config);
+    if (!this.isLifecycleActive(token)) return;
     await this.api.auth.restoreSession().catch(() => undefined);
+    if (!this.isLifecycleActive(token)) return;
     // Read any persisted UI snapshot up front so both applyPersisted (below) and
     // the wide-pane auto-open (further down) can branch on it.
     const persisted = this.loadPersisted();
@@ -589,11 +603,13 @@ export class ClientViewStore {
         window.removeEventListener("pagehide", onUnload);
       });
     }
+    this.openStartupSessionsDialog(token);
   }
 
   dispose(): void {
     // Idempotent: the embedded ClientViewApp and the provider may both clean up.
     if (this.disposed) return;
+    this.lifecycleToken++;
     // Reject any in-flight confirmation so its awaiter doesn't hang on teardown.
     this.confirmResolver?.(false);
     this.confirmResolver = null;
@@ -605,6 +621,10 @@ export class ClientViewStore {
     for (const unsubscribe of this.unsubscribes) unsubscribe();
     this.unsubscribes.length = 0;
     this.api.dispose();
+  }
+
+  private isLifecycleActive(token: number): boolean {
+    return !this.disposed && token === this.lifecycleToken;
   }
 
   // ── UI-state persistence ───────────────────────────────────────────────────────
@@ -1614,11 +1634,36 @@ export class ClientViewStore {
   // ── sessions ─────────────────────────────────────────────────────────────────
 
   openSessionsDialog(): void {
-    this.set({ sessionsDialogOpen: true });
+    this.set({ sessionsDialogOpen: true, sessionsDialogStartupHidden: false, startupSessionScan: null });
   }
 
   closeSessionsDialog(): void {
-    this.set({ sessionsDialogOpen: false });
+    this.set({ sessionsDialogOpen: false, sessionsDialogStartupHidden: false, startupSessionScan: null });
+  }
+
+  private openStartupSessionsDialog(token: number): void {
+    if (!this.isLifecycleActive(token) || !readClientViewAutoScanSessions()) return;
+    if (!canUseSessions(this.state)) return;
+    this.set({
+      sessionsDialogOpen: true,
+      sessionsDialogStartupHidden: true,
+      startupSessionScan: {},
+    });
+  }
+
+  revealStartupSessionsDialog(): void {
+    if (!this.state.sessionsDialogStartupHidden) return;
+    this.set({ sessionsDialogStartupHidden: false, startupSessionScan: null });
+  }
+
+  closeStartupSessionsDialogIfHidden(): void {
+    if (!this.state.sessionsDialogStartupHidden) return;
+    this.closeSessionsDialog();
+  }
+
+  updateStartupSessionScanAddress(address: string | undefined): void {
+    if (!this.state.sessionsDialogStartupHidden) return;
+    this.set({ startupSessionScan: { address } });
   }
 
   async refreshSessions(mode: ExternalSearchMode = "BOTH", address?: string): Promise<void> {

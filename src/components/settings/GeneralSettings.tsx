@@ -223,6 +223,19 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               <small className="form-text text-muted">{t("SettingsDisableHardwareAccelerationOnStartupHint")}</small>
             </div>
           )}
+          <div className="form-check mt-2">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="clientViewAutoScanSessions"
+              checked={settings.clientViewAutoScanSessions}
+              onChange={(e) => updateSetting("clientViewAutoScanSessions", e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="clientViewAutoScanSessions">
+              {t("SettingsClientViewAutoScanSessions")}
+            </label>
+            <small className="form-text text-muted d-block">{t("SettingsClientViewAutoScanSessionsDescription")}</small>
+          </div>
         </div>
       </div>
     </div>

@@ -11,6 +11,8 @@ export const DEFAULT_SESSION_TOGGLE_SETTINGS: SessionToggleSettings = {
   ppdSessionEnabled: true,
 };
 
+export const DEFAULT_CLIENT_VIEW_AUTO_SCAN_SESSIONS = true;
+
 export function readSessionToggleSettings(): SessionToggleSettings {
   const parsed = readPersistedSettings();
   return {
@@ -18,6 +20,10 @@ export function readSessionToggleSettings(): SessionToggleSettings {
     iWebEnabled: parsed.iWebEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.iWebEnabled,
     ppdSessionEnabled: parsed.ppdSessionEnabled ?? DEFAULT_SESSION_TOGGLE_SETTINGS.ppdSessionEnabled,
   };
+}
+
+export function readClientViewAutoScanSessions(): boolean {
+  return readPersistedSettings().clientViewAutoScanSessions ?? DEFAULT_CLIENT_VIEW_AUTO_SCAN_SESSIONS;
 }
 
 /**

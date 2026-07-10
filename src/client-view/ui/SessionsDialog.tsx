@@ -25,6 +25,7 @@ import { icon } from "./assets";
 
 /** Re-discover sessions this often while the dialog is open (mirrors the desktop hub). */
 const SESSION_POLL_MS = 2000;
+const STARTUP_AUTO_CLOSE_MS = 10_000;
 const FALLBACK_BROADCAST = "255.255.255.255";
 
 export function SessionsDialog() {
@@ -54,6 +55,7 @@ export function SessionsDialog() {
       const addr = def || FALLBACK_BROADCAST;
       defaultAddressRef.current = addr;
       setBroadcastAddress(addr);
+      store.updateStartupSessionScanAddress(options.length > 0 ? addr : undefined);
     });
     return () => {
       active = false;
@@ -94,6 +96,18 @@ export function SessionsDialog() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    if (!state.sessionsDialogStartupHidden) return;
+    const timer = setTimeout(() => store.closeStartupSessionsDialogIfHidden(), STARTUP_AUTO_CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [state.sessionsDialogStartupHidden, store]);
+
+  useEffect(() => {
+    if (state.sessionsDialogStartupHidden && state.sessions.length > 0) {
+      store.revealStartupSessionsDialog();
+    }
+  }, [state.sessionsDialogStartupHidden, state.sessions.length, store]);
+
   const caps = state.capabilities;
 
   const handleConnect = (id: string) => {
@@ -125,6 +139,8 @@ export function SessionsDialog() {
   }));
   const hasWebServerBackend = caps.hasWebServerBackend;
   const hasPpdBackend = caps.hasHostBridge;
+
+  if (state.sessionsDialogStartupHidden) return null;
 
   return (
     <SessionsForm

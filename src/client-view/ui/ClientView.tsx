@@ -20,6 +20,7 @@ import { MainToolbar } from "./MainToolbar";
 import { OptionsOverlay } from "./OptionsOverlay";
 import { SessionsDialog } from "./SessionsDialog";
 import { SongView, type SongViewHandle } from "./SongView";
+import { StartupScanIndicator } from "./StartupScanIndicator";
 import { PullRefreshSpinner } from "./PullRefreshSpinner";
 import { usePullToRefresh } from "./usePullToRefresh";
 import { UNIFORM_BUTTON_BORDERS } from "./uiConfig";
@@ -55,6 +56,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       {state.instructionsEditorOpen && <InstructionsEditorDialog />}
       {state.aboutOpen && <AboutDialog />}
       {state.confirmAnim && <ConfirmDialog />}
+      {state.startupSessionScan && <StartupScanIndicator address={state.startupSessionScan.address} />}
     </div>
   );
 }

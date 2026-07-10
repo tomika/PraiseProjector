@@ -65,6 +65,7 @@ export interface Settings {
   baseFontSize: number; // Base font size in pixels for UI scaling
   fontSizeMode: "manual" | "auto-resolution" | "auto-resolution-dpi";
   automaticViewSwitch: "none" | "portraitToClient" | "orientation";
+  clientViewAutoScanSessions: boolean;
 
   iWebEnabled: boolean;
   ppdSessionEnabled: boolean;

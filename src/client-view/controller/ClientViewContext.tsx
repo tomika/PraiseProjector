@@ -7,14 +7,13 @@
  * store returned by {@link useClientViewStore}.
  */
 
-import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { ClientViewStore, type ClientViewState } from "./ClientViewStore";
 
 const ClientViewContext = createContext<ClientViewStore | null>(null);
 
 export function ClientViewProvider({ store, children }: { store: ClientViewStore; children: ReactNode }) {
-  useEffect(() => () => store.dispose(), [store]);
   return <ClientViewContext.Provider value={store}>{children}</ClientViewContext.Provider>;
 }
 
