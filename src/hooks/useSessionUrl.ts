@@ -31,10 +31,18 @@ export function buildLocalUrl(settings: Settings | null | undefined, forcedLocal
 }
 
 /**
+ * Pure helper — normalize an API base or host to the public web root.
+ */
+export function normalizePublicWebRoot(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "").replace(/\/praiseprojector$/i, "");
+}
+
+/**
  * Pure helper — build the cloud leader session URL.
  */
-export function buildCloudUrl(leaderId: string): string {
-  return `${cloudApiHost}/view_session?leader=${encodeURIComponent(leaderId)}`;
+export function buildCloudUrl(leaderId: string, baseUrl: string = cloudApiHost): string {
+  const webRoot = normalizePublicWebRoot(baseUrl);
+  return `${webRoot}/webapp/client-view.html?follow=${encodeURIComponent(leaderId)}`;
 }
 
 /**
@@ -57,7 +65,8 @@ export function generateQRCodeSVG(url: string, size: number = 128, level: "L" | 
  */
 export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
   const { settings } = useSettings();
-  const { guestLeaderId } = useLeader();
+  const { selectedLeader, guestLeaderId } = useLeader();
+  const sessionLeaderId = selectedLeader?.id || guestLeaderId;
 
   // INTENTIONAL: depend only on the specific settings fields used to build the URL,
   // not the whole `settings` object. Broadening would recompute (and re-render
@@ -72,14 +81,14 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
     }
 
     if (mode === "cloud") {
-      return buildCloudUrl(guestLeaderId);
+      return buildCloudUrl(sessionLeaderId);
     }
 
     // "auto": prefer local when available
     if (hasWebServerRuntime && settings?.iWebEnabled) {
       return buildLocalUrl(settings);
     }
-    return buildCloudUrl(guestLeaderId);
-  }, [mode, settings?.iWebEnabled, settings?.webServerDomainName, settings?.webServerPort, settings?.webServerPath, guestLeaderId]);
+    return buildCloudUrl(sessionLeaderId);
+  }, [mode, settings?.iWebEnabled, settings?.webServerDomainName, settings?.webServerPort, settings?.webServerPath, sessionLeaderId]);
   /* eslint-enable react-hooks/preserve-manual-memoization, react-hooks/exhaustive-deps */
 }

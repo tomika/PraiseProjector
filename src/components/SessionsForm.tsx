@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useSettings } from "../contexts/SettingsContext";
-import { useSessionUrl } from "../hooks/useSessionUrl";
+import { buildCloudUrl, useSessionUrl } from "../hooks/useSessionUrl";
 import { cloudApi } from "../../common/cloudApi";
 import { OnlineSessionEntry } from "../../common/pp-types";
 import { P2PSessionInfo } from "../types/electron.d";
@@ -129,7 +129,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
               // An http(s) localUrl is a LAN web client; an nrb://|udp:// one is a
               // nearby PPD peer; no localUrl is a cloud (online) session.
               kind: classifyOnlineSession(session.localUrl),
-              url: session.localUrl || `${cloudHostBasePath}/view_session?leader=${session.id}`,
+              url: session.localUrl || buildCloudUrl(session.id, cloudHostBasePath),
               lastUpdate: session.lastUpdate,
             });
           }
