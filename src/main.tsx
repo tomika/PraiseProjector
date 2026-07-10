@@ -102,7 +102,7 @@ function RootView() {
   }, []);
   useEffect(() => {
     const toClient = () => {
-      if (!showClient) setOpenOptionsOnClientEntry(true);
+      if (!showClient) setOpenOptionsOnClientEntry(!isPagingViewport());
       setShowClient(true);
     };
     const toMain = () => {

@@ -474,7 +474,8 @@ export class ClientViewStore {
 
     const hasInitialTarget = !!config.initialPlaylistId || !!config.initialSongId;
     if (config.entryMode === "embedded" && !hasInitialTarget) {
-      this.setListMode("playlist");
+      const restoredHostSelection = await this.applyEmbeddedHostSelection();
+      if (!restoredHostSelection) this.setListMode("playlist");
     } else if (this.api.mode === "Client" && !hasInitialTarget) {
       this.setNavigationMode("playlist");
     }
@@ -487,6 +488,9 @@ export class ClientViewStore {
       await this.openInitialPlaylist(config).catch(() => undefined);
     } else if (config.initialSongId) {
       await this.selectDatabaseSong(config.initialSongId).catch(() => undefined);
+    }
+    if (!hasInitialTarget && !config.follow) {
+      await this.selectFirstPlaylistEntryIfNothingDisplayed();
     }
 
     void this.loadSongs();
@@ -554,7 +558,11 @@ export class ClientViewStore {
     // paging layout, where it would overlay the song). Once the user has a persisted
     // optionsOpen preference, that wins — we don't force it back open.
     const openOptionsForEmbeddedEntry = config.entryMode === "embedded" && config.openOptionsOnWideEmbeddedEntry;
-    if (this.widePane && (openOptionsForEmbeddedEntry || persisted?.optionsOpen === undefined)) this.set({ optionsOpen: true });
+    if (config.entryMode === "embedded" && !this.widePane) {
+      this.set({ optionsOpen: false });
+    } else if (this.widePane && (openOptionsForEmbeddedEntry || persisted?.optionsOpen === undefined)) {
+      this.set({ optionsOpen: true });
+    }
     // Keep the fullscreen flag in sync when the user exits via Esc / the browser
     // chrome (no event fires on native hosts; toggleFullScreen updates it there).
     if (typeof document !== "undefined") {
@@ -713,7 +721,10 @@ export class ClientViewStore {
 
   private wire(): void {
     this.unsubscribes.push(
-      this.api.display.subscribeDisplay((display) => this.set({ display, transpose: display.transpose ?? 0, capo: display.capo ?? 0 })),
+      this.api.display.subscribeDisplay((display) => {
+        if (!this.shouldAcceptDisplayUpdate(display)) return;
+        this.set({ display, transpose: display.transpose ?? 0, capo: display.capo ?? 0 });
+      }),
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
       this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
       this.api.auth.subscribeAuth((authed) => this.set({ authed, leader: this.api.auth.currentLeader() })),
@@ -721,6 +732,7 @@ export class ClientViewStore {
       this.api.playlist.subscribePlaylist((playlist) => {
         this.set({ playlist });
         if (this.state.playlistFilterText.trim()) this.schedulePlaylistSearch(this.state.playlistFilterText, playlist);
+        if (this.state.navigationMode === "playlist") void this.selectFirstPlaylistEntryIfNothingDisplayed(playlist);
       }),
       this.api.song.subscribeSongList((songs) => this.set({ songs }))
     );
@@ -730,6 +742,13 @@ export class ClientViewStore {
     if (this.api.subscribeSyncStatus) {
       this.unsubscribes.push(this.api.subscribeSyncStatus((syncStatus) => this.set({ syncStatus })));
     }
+  }
+
+  private shouldAcceptDisplayUpdate(display: Display): boolean {
+    if (!this.api.hostView) return true;
+    if (this.state.navigationMode === "playlist") return true;
+    const viewedSongId = this.state.display.songId;
+    return !viewedSongId || viewedSongId === display.songId;
   }
 
   private async loadSongs(): Promise<void> {
@@ -862,6 +881,37 @@ export class ClientViewStore {
     await this.selectDatabaseSong(songId);
   }
 
+  private async applyEmbeddedHostSelection(): Promise<boolean> {
+    const hostView = this.api.hostView;
+    if (!hostView) return false;
+
+    const projectedSongId = this.api.display.getCurrent().songId || null;
+    const loadedSongId = hostView.getLoadedSongId();
+
+    if (loadedSongId && loadedSongId !== projectedSongId) {
+      this.setListMode("database");
+      await this.loadLocalEntry({ songId: loadedSongId });
+      return true;
+    }
+
+    if (projectedSongId) {
+      this.setListMode("playlist");
+      return true;
+    }
+
+    if (loadedSongId) {
+      this.setListMode("database");
+      await this.loadLocalEntry({ songId: loadedSongId });
+      return true;
+    }
+
+    return false;
+  }
+
+  syncHostSelectionToFullView(): void {
+    this.api.hostView?.syncLoadedSong(this.state.display.songId || null);
+  }
+
   async selectDatabaseSong(songId: string): Promise<void> {
     this.setNavigationMode("database");
     await this.loadLocalEntry({ songId });
@@ -955,6 +1005,10 @@ export class ClientViewStore {
   async returnCurrentSongToPlaylistNavigation(): Promise<void> {
     if (!this.state.playlist.length || !this.state.capabilities.canControlDisplay) return;
     const projected = this.api.display.getCurrent();
+    if (!this.playlistEntryFor(projected.songId)) {
+      await this.selectFirstPlaylistEntryIfNothingDisplayed(this.state.playlist, true);
+      return;
+    }
     this.setNavigationMode("playlist");
     this.set({
       display: projected,
@@ -962,6 +1016,17 @@ export class ClientViewStore {
       capo: projected.capo ?? 0,
     });
     this.closePortraitOptions();
+  }
+
+  private playlistEntryFor(songId: string | undefined | null, playlist = this.state.playlist): PlaylistEntry | undefined {
+    return songId ? playlist.find((entry) => entry.songId === songId) : undefined;
+  }
+
+  private async selectFirstPlaylistEntryIfNothingDisplayed(playlist = this.state.playlist, force = false): Promise<boolean> {
+    if (!playlist.length || !this.state.capabilities.canControlDisplay) return false;
+    if (!force && this.state.display.songId) return false;
+    await this.selectPlaylistEntry(playlist[0]);
+    return true;
   }
 
   /** Add the currently displayed song to the working playlist, project that new

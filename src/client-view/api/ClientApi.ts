@@ -261,6 +261,17 @@ export interface HostFilterApi {
   subscribe(callback: (text: string) => void): Unsubscribe;
 }
 
+/**
+ * Optional bridge to the surrounding full view. Present only on the in-process
+ * Direct adapter; REST-backed clients have no mounted host UI to synchronize.
+ */
+export interface HostViewApi {
+  /** The full-view editor/song-tree song at the moment the embedded view opens. */
+  getLoadedSongId(): string | null;
+  /** Copy the embedded view's loaded song back to the host UI. */
+  syncLoadedSong(loadedSongId: string | null): void;
+}
+
 export interface SongApi {
   /** App mode: filter the local database. Client: server-side search. */
   searchSongs(text: string, options?: SearchOptions): Promise<SongFound[]>;
@@ -510,6 +521,7 @@ export interface ClientApi {
    *  subscribe. Direct adapter only. */
   subscribeSyncStatus?(callback: (status: SyncStatus) => void): Unsubscribe;
 
+  readonly hostView?: HostViewApi;
   readonly song: SongApi;
   readonly playlist: PlaylistApi;
   readonly display: DisplayApi;

@@ -45,6 +45,7 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
   // (CurrentSongStore + Database) rather than talking to the cloud.
   const [store] = useState(() => new ClientViewStore(api));
   const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
 
   useEffect(() => {
     api.refreshAuthState();
@@ -53,10 +54,15 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
   useEffect(() => {
     let active = true;
     void store.init({ entryMode: "embedded", ...config }).finally(() => {
-      if (active) setReady(true);
+      if (active) {
+        readyRef.current = true;
+        setReady(true);
+      }
     });
     return () => {
       active = false;
+      if (readyRef.current) store.syncHostSelectionToFullView();
+      readyRef.current = false;
       store.dispose();
     };
   }, [store, config]);

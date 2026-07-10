@@ -393,6 +393,7 @@ const AppContent: React.FC = () => {
   const keyboardSelectionTimerRef = useRef<number | null>(null);
   const latestKeyboardSelectionRef = useRef<PlaylistSelectionEvent | null>(null);
   const isArrowKeyHeldRef = useRef(false);
+  const preserveLoadedSongOnPlaylistSelectionRef = useRef(false);
   const playlistLoadTargetSongIdRef = useRef<string | null>(null);
   const pendingPlaylistSelectionIndexRef = useRef<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -1124,6 +1125,45 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const syncHostSelectionFromClientView = useCallback(
+    (loadedSongId: string | null) => {
+      const db = Database.getInstance();
+      const projectedSongId = getCurrentDisplay().songId || null;
+
+      if (projectedSongId) {
+        const selection = leftPanelRef.current?.setPlaylistSelection({ songId: projectedSongId, emitChange: false }) ?? null;
+        if (selection?.item) {
+          preserveLoadedSongOnPlaylistSelectionRef.current = !!loadedSongId && loadedSongId !== projectedSongId;
+          setPlaylistSelection(selection);
+        } else {
+          leftPanelRef.current?.setPlaylistSelection(null);
+          setPlaylistSelection(null);
+        }
+
+        const projected = db.getSongById(projectedSongId);
+        if (projected) {
+          setProjectedSong(projected.clone());
+        }
+      } else {
+        leftPanelRef.current?.setPlaylistSelection(null);
+        setPlaylistSelection(null);
+        setProjectedSong(null);
+      }
+
+      if (loadedSongId) {
+        const loaded = db.getSongById(loadedSongId);
+        if (loaded) {
+          const cloned = loaded.clone();
+          setEditedSong(cloned);
+          updateCurrentSongText(cloned.Text);
+          setSelectedSongId(loaded.Id);
+          leftPanelRef.current?.setSelectedSongId(loaded.Id);
+        }
+      }
+    },
+    [updateCurrentSongText]
+  );
+
   useEffect(() => {
     void syncAndroidServedClientAssets();
   }, []);
@@ -1136,6 +1176,11 @@ const AppContent: React.FC = () => {
       if (detail) enqueue(() => remoteDisplayUpdateHandler(detail));
     };
     window.addEventListener("pp-cv-display-update", cvHandler);
+    const cvSelectionHandler = (e: Event) => {
+      const detail = (e as CustomEvent<string | null>).detail ?? null;
+      syncHostSelectionFromClientView(detail);
+    };
+    window.addEventListener("pp-cv-sync-host-selection", cvSelectionHandler);
 
     const webServer = getWebServerInterface();
     const unsubscribe = webServer?.onEvent((event) => {
@@ -1144,9 +1189,10 @@ const AppContent: React.FC = () => {
     });
     return () => {
       window.removeEventListener("pp-cv-display-update", cvHandler);
+      window.removeEventListener("pp-cv-sync-host-selection", cvSelectionHandler);
       unsubscribe?.();
     };
-  }, []);
+  }, [syncHostSelectionFromClientView]);
 
   // Set up general webserver API handler
   useEffect(() => {
@@ -1344,6 +1390,10 @@ const AppContent: React.FC = () => {
   // Handle playlist item selection - sets projectedSong and (if not editing) editedSong
   useEffect(() => {
     console.debug("App", `selectedPlaylistItem effect: item=${selectedPlaylistItem?.songId}, isEditing=${isEditing}, isAuthLoading=${isAuthLoading}`);
+    const preserveLoadedSong = preserveLoadedSongOnPlaylistSelectionRef.current;
+    if (preserveLoadedSong) {
+      preserveLoadedSongOnPlaylistSelectionRef.current = false;
+    }
     // Don't try to load song while auth is still loading (database might switch)
     if (isAuthLoading) {
       console.debug("App", "Skipping song load - auth still loading");
@@ -1368,17 +1418,21 @@ const AppContent: React.FC = () => {
 
           // Only update edited song if we're not currently editing AND not restoring
           // During restoration, we preserve the editor's song from savedState.selectedSongId
-          if (!isEditing && !isRestoringStateRef.current) {
+          if (!isEditing && !isRestoringStateRef.current && !preserveLoadedSong) {
             setEditedSong(clonedSong);
             updateCurrentSongText(clonedSong.Text);
+          } else if (preserveLoadedSong) {
+            console.debug("App", "Skipping editor song update during client-view handoff");
           } else if (isRestoringStateRef.current) {
             console.debug("App", "Skipping editor song update during restoration");
           }
 
           // Sync song tree selection - but NOT during restoration (we restore to savedState.selectedSongId instead)
-          if (!isRestoringStateRef.current) {
+          if (!isRestoringStateRef.current && !preserveLoadedSong) {
             console.debug("App", `Syncing song tree selection: ${targetSongId}`);
             leftPanelRef.current?.setSelectedSongId(targetSongId);
+          } else if (preserveLoadedSong) {
+            console.debug("App", "Skipping song tree sync during client-view handoff");
           } else {
             console.debug("App", "Skipping song tree sync during restoration");
           }

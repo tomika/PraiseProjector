@@ -24,7 +24,7 @@ import type { Leader } from "../../../../db-common/Leader";
 import { cloudApi } from "../../../../common/cloudApi";
 import { getEmptyDisplay } from "../../../../common/pp-utils";
 import { formatLocalDateKey, formatLocalDateLabel } from "../../../../common/date-only";
-import { getCurrentDisplay, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
+import { getCurrentDisplay, getEditedSong, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
 import { getSharedSongFilter, setSharedSongFilter, subscribeSharedSongFilter } from "../../../state/SongFilterStore";
 import { getSyncStatus, subscribeSyncStatus } from "../../../state/syncStatusStore";
 import type { SyncStatus } from "../../../state/syncStatusStore";
@@ -48,6 +48,7 @@ import type {
   ClientMode,
   DeviceApi,
   DisplayApi,
+  HostViewApi,
   LeaderIdentity,
   NetworkState,
   OnlineSessionEntry,
@@ -104,6 +105,7 @@ export class DirectClientApi implements ClientApi {
   readonly session: SessionApi = this.createSessionApi();
   readonly auth: AuthApi = this.createAuthApi();
   readonly device: DeviceApi = createDeviceApi();
+  readonly hostView: HostViewApi = this.createHostViewApi();
 
   private capabilities: ClientCapabilities = this.computeCapabilities();
 
@@ -236,6 +238,15 @@ export class DirectClientApi implements ClientApi {
   // the shared CurrentSongStore (App.tsx remoteDisplayUpdateHandler).
   private dispatchDisplayUpdate(detail: Record<string, unknown>): void {
     window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail }));
+  }
+
+  private createHostViewApi(): HostViewApi {
+    return {
+      getLoadedSongId: () => getEditedSong()?.Id ?? null,
+      syncLoadedSong: (loadedSongId) => {
+        window.dispatchEvent(new CustomEvent("pp-cv-sync-host-selection", { detail: loadedSongId }));
+      },
+    };
   }
 
   private createDisplayApi(): DisplayApi {

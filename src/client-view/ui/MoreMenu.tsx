@@ -81,8 +81,10 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       show: Boolean(onHome) || caps.canOpenFullEditor,
       dot: hasFullViewTodo(state),
       run: () => {
-        if (onHome) onHome();
-        else store.openFullEditor();
+        if (onHome) {
+          store.syncHostSelectionToFullView();
+          onHome();
+        } else store.openFullEditor();
       },
     },
     { id: "about", label: "About", image: "about.svg", show: true, run: () => store.openAbout() },
