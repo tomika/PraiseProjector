@@ -606,28 +606,45 @@ function pinchDistance(t1: Touch, t2: Touch): number {
   return Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
 }
 
+/** The touches from the GLOBAL TouchList that started inside `el` (touch events
+ *  keep targeting their start element for their whole lifetime). `ev.touches`
+ *  must never be counted raw: a finger resting anywhere else on the screen (the
+ *  toolbar, a holding thumb on the bezel edge) made every one-finger swipe look
+ *  like a two-finger pinch, which hijacked and cancelled the gesture it rode on
+ *  — users experienced this as the page freezing mid page-turn. */
+function insideTouches(el: HTMLElement, list: TouchList): Touch[] {
+  const rv: Touch[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i];
+    if (t.target instanceof Node && el.contains(t.target)) rv.push(t);
+  }
+  return rv;
+}
+
 function onPinchTouchStart(ev: TouchEvent) {
-  if (ev.touches.length === 2) {
-    const found = findPinchContext(ev.currentTarget);
-    if (!found) return;
-    found.ctx.startDistance = pinchDistance(ev.touches[0], ev.touches[1]);
+  const found = findPinchContext(ev.currentTarget);
+  if (!found) return;
+  const ts = insideTouches(found.el, ev.touches);
+  if (ts.length === 2) {
+    found.ctx.startDistance = pinchDistance(ts[0], ts[1]);
     found.ctx.lastSteps = 0;
     found.ctx.onPinch(0, true);
   }
 }
 
 function onPinchTouchMove(ev: TouchEvent) {
-  if (ev.touches.length === 2) {
-    const found = findPinchContext(ev.currentTarget);
-    if (!found) return;
+  const found = findPinchContext(ev.currentTarget);
+  if (!found) return;
+  const ts = insideTouches(found.el, ev.touches);
+  if (ts.length === 2) {
     if (found.ctx.startDistance === undefined) {
       // gesture started before handler was watching (e.g. first touch landed elsewhere)
-      found.ctx.startDistance = pinchDistance(ev.touches[0], ev.touches[1]);
+      found.ctx.startDistance = pinchDistance(ts[0], ts[1]);
       found.ctx.lastSteps = 0;
       found.ctx.onPinch(0, true);
       return;
     }
-    const dist = pinchDistance(ev.touches[0], ev.touches[1]);
+    const dist = pinchDistance(ts[0], ts[1]);
     const steps = Math.round((dist - found.ctx.startDistance) / found.ctx.pixelsPerStep);
     if (steps !== found.ctx.lastSteps) {
       found.ctx.lastSteps = steps;
@@ -638,12 +655,11 @@ function onPinchTouchMove(ev: TouchEvent) {
 }
 
 function onPinchTouchEnd(ev: TouchEvent) {
-  if (ev.touches.length < 2) {
-    const found = findPinchContext(ev.currentTarget);
-    if (found) {
-      found.ctx.startDistance = undefined;
-      found.ctx.lastSteps = undefined;
-    }
+  const found = findPinchContext(ev.currentTarget);
+  if (!found) return;
+  if (insideTouches(found.el, ev.touches).length < 2) {
+    found.ctx.startDistance = undefined;
+    found.ctx.lastSteps = undefined;
   }
 }
 

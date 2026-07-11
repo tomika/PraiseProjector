@@ -19,8 +19,6 @@ import { icon } from "./assets";
 import { useLongPress } from "./useLongPress";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
-const LONG_PRESS_MS = 500;
-
 // Ranges/labels mirror the original initShiftAndCapo():
 //   transpose −11..+11 → "11b … 1b 0 1♯ … 11♯" (literal "b" flat, ♯ = U+266F)
 //   capo      −1..11    → "" for −1 (no capo), else the number
@@ -95,41 +93,15 @@ export function MainToolbar({
   const order = vertical ? TOOLBAR_ORDER_VERTICAL : TOOLBAR_ORDER_HORIZONTAL;
 
   // Long-press plumbing for the wand (instructions) button. Editing is gated by
-  // display-control capability. A long press opens the editor dialog; a short
-  // press is the normal show/hide toggle.
+  // display-control capability. A long press — or the native contextmenu (touch
+  // long-press / right-click) — opens the editor dialog; a short press is the
+  // normal show/hide toggle. Shared useLongPress, same as capo/lamp/zoom: ONE
+  // long-press implementation (native contextmenu preferred, timer fallback).
   const canEditInstructions = state.capabilities.canControlDisplay;
-  const instructionsLongPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const instructionsLongFired = useRef(false);
-
-  const onInstructionsPointerDown = (e: React.PointerEvent) => {
-    if (!canEditInstructions) return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    instructionsLongFired.current = false;
-    instructionsLongPressTimer.current = setTimeout(() => {
-      instructionsLongFired.current = true;
-      store.openInstructionsEditor();
-    }, LONG_PRESS_MS);
-  };
-  const onInstructionsPointerUp = (e: React.PointerEvent) => {
-    // Guard so we don't double-fire with onClick when canEditInstructions is false.
-    if (!canEditInstructions) return;
-    if (e.button !== 0) return;
-    clearTimeout(instructionsLongPressTimer.current);
-    if (!instructionsLongFired.current) store.toggleInstructions();
-  };
-  const onInstructionsPointerCancel = () => {
-    if (!canEditInstructions) return;
-    clearTimeout(instructionsLongPressTimer.current);
-    instructionsLongFired.current = true;
-  };
-  const onInstructionsContextMenu = (e: React.MouseEvent) => {
-    if (!canEditInstructions) return;
-    e.preventDefault();
-    clearTimeout(instructionsLongPressTimer.current);
-    instructionsLongFired.current = true;
-    store.openInstructionsEditor();
-  };
+  const instructionsPress = useLongPress(
+    () => store.toggleInstructions(),
+    () => store.openInstructionsEditor()
+  );
 
   // Network indicator state (rendered by controls.netstatus below). Tapping forces
   // an immediate reconnect — the new-interface analog of the legacy
@@ -185,14 +157,10 @@ export function MainToolbar({
         id="btnInstructions"
         className={`btnDiv${state.showInstructions ? " cv-toolbtn-on" : ""}`}
         title={canEditInstructions ? "Show/hide instructions (hold to edit)" : "Show/hide instructions"}
-        onPointerDown={onInstructionsPointerDown}
-        onPointerUp={onInstructionsPointerUp}
-        onPointerLeave={onInstructionsPointerCancel}
-        onPointerCancel={onInstructionsPointerCancel}
-        onContextMenu={onInstructionsContextMenu}
+        {...(canEditInstructions ? instructionsPress : {})}
         onClick={canEditInstructions ? undefined : () => store.toggleInstructions()}
       >
-        <img className="btnImg" src={icon("wand.svg")} alt="Instructions" />
+        <img className="btnImg cv-toggle-icon" src={icon("wand.svg")} alt="Instructions" />
       </div>
     ),
     // Clear-highlight (off): visible when the user can clear the active highlight.
@@ -216,7 +184,7 @@ export function MainToolbar({
           {...capoPress}
         >
           <span id="capoValue">{state.displaySettings.useCapo && state.capo > 0 ? state.capo : ""}</span>
-          <img className="btnImg" src={icon("capo.svg")} alt="Capo" />
+          <img className="btnImg cv-toggle-icon" src={icon("capo.svg")} alt="Capo" />
         </div>
         <div
           id="capoDropdown"

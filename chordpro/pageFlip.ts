@@ -132,6 +132,12 @@ export class PageFlip {
   private pendingReset = false;
   private pendingResetTimer: number | null = null;
   private animatingTurn = false;
+  /** Generation token: bumped whenever the current gesture/animation is superseded
+   *  (cancel, dispose, finishPending, a new pageTurn). The timer-driven phase loop
+   *  captures the generation it was started under and stops itself the moment it
+   *  no longer matches — so a cancelled turn can't keep rotating the page or fire
+   *  a stale onAdvance afterwards. */
+  private gestureGen = 0;
 
   constructor(private readonly cfg: PageFlipConfig) {}
 
@@ -141,13 +147,44 @@ export class PageFlip {
     return this.animatingTurn;
   }
 
-  /** Abort any in-progress gesture (e.g. when a pinch-zoom takes over). */
+  /** Abort any in-progress gesture OR release animation (e.g. when a second finger
+   *  touches down mid-swipe and pinch-zoom takes over). Must fully unwind whatever
+   *  beginFlip()/pageTurn() already did — otherwise the page is left mid-rotation,
+   *  still lifted out of the document flow, and flipActive stays true forever,
+   *  blocking all future flips. Bumping the generation also stops an in-flight
+   *  pageTurn phase loop, which previously kept animating (and advancing the song)
+   *  after a cancel. */
   cancel(): void {
+    this.gestureGen++;
     this.swipeState = null;
+    if (this.pendingResetTimer !== null) {
+      clearTimeout(this.pendingResetTimer);
+      this.pendingResetTimer = null;
+    }
+    this.pendingReset = false;
+    if (this.flipActive) this.snapBack();
+    else this.animatingTurn = false;
+  }
+
+  /** Unwind a begun flip without navigating: reset the page's rotation, hide the
+   *  neighbours and restore the clipping/lift state. Idempotent — the single exit
+   *  used by every path that abandons a flip (release below the threshold, a
+   *  gesture that ended without ownership, cancel, blocked pageTurn). */
+  private snapBack(): void {
+    const page = this.cfg.currentPage();
+    if (page) {
+      page.style.transform = "";
+      page.style.border = "none";
+      page.style.boxShadow = "";
+    }
+    this.hideNeighbours();
+    this.endFlip();
+    this.animatingTurn = false;
   }
 
   /** Tear down timers (call from the host's unmount/dispose). */
   dispose(): void {
+    this.gestureGen++; // stop any in-flight phase loop
     if (this.pendingResetTimer !== null) {
       clearTimeout(this.pendingResetTimer);
       this.pendingResetTimer = null;
@@ -177,6 +214,17 @@ export class PageFlip {
     const isPointerMouse = typeof PointerEvent !== "undefined" && e instanceof PointerEvent && e.pointerType === "mouse";
     let shouldPreventDefault = !isPointerMouse;
 
+    // While a release animation runs — or a completed turn waits for the host's
+    // reload (pendingReset) — new input is ignored wholesale. Feeding it into the
+    // gesture state used to spawn a second concurrent phase loop (double turn) or
+    // fight the animation's transform writes, both of which could leave the page
+    // stranded mid-rotation.
+    if (this.animatingTurn || this.pendingReset) {
+      if (type === "up") this.swipeState = null;
+      if (shouldPreventDefault) e.preventDefault();
+      return;
+    }
+
     const x = e.clientX;
     const y = e.clientY;
 
@@ -193,7 +241,11 @@ export class PageFlip {
       return;
     }
 
-    const pageFlipEnabled = this.cfg.canFlip() && this.cfg.isInteractive();
+    // The chord-selector modal also disables flipping HERE (not only in pageTurn):
+    // otherwise a drag rotates the page but the release is refused, wedging the
+    // page half-turned with no owner. With the flip disabled the gesture falls
+    // through to plain scrolling while the modal is up.
+    const pageFlipEnabled = this.cfg.canFlip() && this.cfg.isInteractive() && !this.cfg.isChordSelectorOpen();
     // The current page is the geometry source, the scroll container and the
     // element that rotates (exactly like praiseprojector.ts).
     const el = this.cfg.currentPage();
@@ -236,14 +288,17 @@ export class PageFlip {
                 const step = s.lastScroll;
                 setTimeout(() => rollOut(step), 20);
               } else {
-                el.style.transform = "";
-                el.style.border = "none";
-                el.style.boxShadow = "";
-                this.hideNeighbours();
-                this.endFlip();
+                this.snapBack();
               }
             }
             this.swipeState = null;
+            // Safety net: if a flip had begun in this gesture but no branch above
+            // took ownership of it (pageTurn was blocked or skipped — e.g. the
+            // release landed at the exact start X, or the gesture ended in the
+            // scroll branch after a flip had started), unwind it NOW. This is the
+            // path that used to leave the page stranded mid-rotation and lifted
+            // out of the pane, with its area dead to all further input.
+            if (this.flipActive && !this.animatingTurn && !this.pendingReset) this.snapBack();
           }
           break;
         }
@@ -395,9 +450,20 @@ export class PageFlip {
   }
 
   private pageTurn(from: number, scale: number, time: number, forced?: boolean): void {
-    if (this.cfg.isChordSelectorOpen()) return;
+    if (this.animatingTurn) return;
+    // A refused turn must still unwind whatever the drag already rotated/lifted —
+    // returning silently here used to strand the page half-turned (and, when
+    // lifted, re-parented under <body> where its area no longer received the
+    // host's gesture events at all).
+    if (this.cfg.isChordSelectorOpen()) {
+      this.snapBack();
+      return;
+    }
     const page = this.cfg.currentPage();
-    if (!page || from === 0) return;
+    if (!page || from === 0) {
+      this.snapBack();
+      return;
+    }
 
     const direction = from / Math.abs(from);
     // direction < 0 → forward to next; > 0 → back to previous. Only actually turn
@@ -412,7 +478,12 @@ export class PageFlip {
     const total = turn ? scale - from : -from;
     const start = Date.now();
 
+    // The loop runs under this generation; cancel()/dispose()/finishPending()
+    // bump it, which stops the loop dead instead of letting it keep rotating a
+    // page that has already been reset (or fire a stale onAdvance).
+    const gen = ++this.gestureGen;
     const phase = (last: number) => {
+      if (gen !== this.gestureGen) return;
       const now = Date.now();
       const elapsed = now - start;
       const fwd = Math.min(elapsed / time, 1);
@@ -427,12 +498,7 @@ export class PageFlip {
           this.pendingResetTimer = window.setTimeout(() => this.finishPending(), 600);
           this.cfg.onAdvance(direction < 0);
         } else {
-          page.style.transform = "";
-          page.style.border = "none";
-          page.style.boxShadow = "";
-          this.hideNeighbours();
-          this.endFlip();
-          this.animatingTurn = false;
+          this.snapBack();
         }
       } else {
         setTimeout(() => phase(now), Math.max(now - last, 20));
@@ -446,20 +512,13 @@ export class PageFlip {
    *  lands without a blank frame. */
   finishPending(): void {
     if (!this.pendingReset) return;
+    this.gestureGen++; // a stray phase tick must not re-rotate the freshly reset page
     this.pendingReset = false;
     if (this.pendingResetTimer !== null) {
       clearTimeout(this.pendingResetTimer);
       this.pendingResetTimer = null;
     }
-    const page = this.cfg.currentPage();
-    if (page) {
-      page.style.transform = "";
-      page.style.border = "none";
-      page.style.boxShadow = "";
-    }
-    this.hideNeighbours();
-    this.endFlip();
-    this.animatingTurn = false;
+    this.snapBack();
   }
 
   private hideNeighbours(): void {

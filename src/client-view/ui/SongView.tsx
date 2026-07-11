@@ -272,8 +272,21 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     if (!el) return;
 
     let committed = false;
+    // Count only touches that STARTED inside the pane (touch events keep firing at
+    // their start target). event.touches is the global list — a finger resting on
+    // the toolbar or bezel area must not keep the pinch "active" forever after the
+    // real pinch fingers have lifted (which suppressed and cancelled every
+    // subsequent swipe: another "frozen page" state).
+    const insidePaneTouches = (event: TouchEvent) => {
+      let count = 0;
+      for (let i = 0; i < event.touches.length; i++) {
+        const target = event.touches[i].target;
+        if (target instanceof Node && el.contains(target)) count++;
+      }
+      return count;
+    };
     const finishPinch = (event: TouchEvent) => {
-      if (event.touches.length >= 2) return;
+      if (insidePaneTouches(event) >= 2) return;
       pinchActiveRef.current = false;
       committed = false;
     };
@@ -359,8 +372,34 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       if (next !== current) void store.setTranspose(next);
     };
     const down = (e: PointerEvent) => {
-      if (!e.isPrimary) return;
+      // Track by pointerId, NOT by isPrimary: with isPrimary-gating a second
+      // finger (or a palm edge) resting anywhere on the screen made every new
+      // touch non-primary, so the song pane ignored ALL input — the single most
+      // common "the app froze" report. When idle, the first pointer to land on
+      // the pane is tracked, whichever it is.
+      if (pointerId !== null) {
+        // A pointer is already tracked. A genuine extra finger is simply ignored
+        // (it must not restart or corrupt the gesture in progress). But a PRIMARY
+        // down can only occur when no other touch is active — i.e. our tracked
+        // stream died without a pointerup/pointercancel (WebView app-switch,
+        // native gesture swallowing the end event). Recover instead of staying
+        // deaf forever.
+        if (!e.isPrimary) return;
+        stopTracking();
+        pointerId = null;
+        flipRef.current?.cancel();
+      }
+      // Gestures cannot start while a page-turn animation / completed-turn reload
+      // is in flight — the controller ignores them anyway; not tracking them
+      // keeps the transpose/chord-box side effects from firing mid-turn.
+      if (flipRef.current?.animating) {
+        e.preventDefault();
+        return;
+      }
       if (isInsideChordSelector(e.target, el)) return;
+      // A finished pinch leaves its one-shot pointer suppression armed; a fresh
+      // single-finger gesture must not inherit it (it would eat this whole swipe).
+      if (!pinchActiveRef.current) pinchSuppressPointerRef.current = false;
       if (apiRef.current?.handleExternalChordBoxTouch(e, true)) {
         flipRef.current?.cancel();
         return;
@@ -377,7 +416,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       window.addEventListener("pointercancel", cancel);
     };
     const move = (e: PointerEvent) => {
-      if (!e.isPrimary || pointerId !== e.pointerId) return;
+      if (pointerId !== e.pointerId) return;
       if (pinchActiveRef.current || pinchSuppressPointerRef.current) {
         e.preventDefault();
         clearSelection();
@@ -426,9 +465,27 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       stopTracking();
       flipRef.current?.cancel();
     };
+    // Safety net: if the app is backgrounded / the window loses focus mid-gesture
+    // (Android app switch, notification shade, screenshot gesture), the pointer
+    // stream can end without pointerup OR pointercancel. Unwind everything so no
+    // half-turned page or armed selection guard survives the interruption.
+    const abortGesture = () => {
+      if (pointerId === null && !flipRef.current?.animating) return;
+      pointerId = null;
+      pinchSuppressPointerRef.current = false;
+      stopTracking();
+      flipRef.current?.cancel();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") abortGesture();
+    };
     el.addEventListener("pointerdown", down);
+    window.addEventListener("blur", abortGesture);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       el.removeEventListener("pointerdown", down);
+      window.removeEventListener("blur", abortGesture);
+      document.removeEventListener("visibilitychange", onVisibility);
       stopTracking();
     };
   }, [store]);

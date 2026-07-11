@@ -160,10 +160,10 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           <div ref={lampWrapRef} className="cv-lamp-wrap">
             <button type="button" className="cv-iconbtn" title={highlightTitle} {...lampPress}>
               {state.highlightPending ? (
-                <img className="cv-opt-icon cv-highlight-loader" src={icon("gear.svg")} alt="Waiting for permission" />
+                <img className="cv-opt-icon cv-toggle-icon cv-highlight-loader" src={icon("gear.svg")} alt="Waiting for permission" />
               ) : (
                 <img
-                  className={`btnImg cv-opt-icon ${state.highlightOn ? "cv-color-icon" : "cv-mono-icon"}`}
+                  className={`btnImg cv-opt-icon cv-toggle-icon ${state.highlightOn ? "cv-color-icon" : "cv-mono-icon"}`}
                   src={icon(highlightIcon)}
                   alt="Highlight"
                 />
@@ -199,7 +199,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
             aria-pressed={s.maxText}
             {...zoomPress}
           >
-            <img className="btnImg cv-opt-icon" src={icon("zoom.svg")} alt="Zoom" />
+            <img className="btnImg cv-opt-icon cv-toggle-icon" src={icon("zoom.svg")} alt="Zoom" />
           </button>
           {state.zoomDialogOpen && <ZoomPanel />}
         </div>
@@ -219,7 +219,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
             aria-pressed={state.leaderMode}
             onClick={() => store.toggleLeaderMode()}
           >
-            <img className="btnImg cv-opt-icon" src={icon("leader.svg")} alt="Leader mode" />
+            <img className="btnImg cv-opt-icon cv-toggle-icon" src={icon("leader.svg")} alt="Leader mode" />
           </button>
         )}
 

@@ -213,7 +213,13 @@ body,
   align-items: center;
   /* Spread the buttons evenly across the bar, exactly like the original. */
   justify-content: space-between;
-  height: 40px;
+  /* Legacy sizing model: the original set html{font-size:15pt} (=20px) and drew
+     every toolbar icon at 2em = 40px, so buttons nearly touched on a phone. Size
+     the bar's chrome in em off this base and let the height follow the icons
+     instead of clamping them. */
+  font-size: 20px;
+  height: auto;
+  min-height: 40px;
   flex: none;
   padding: 0 10px;
   background: var(--cv-toolbar-bg);
@@ -237,6 +243,27 @@ body,
   transition:
     opacity 140ms ease,
     filter 140ms ease;
+}
+
+/* Toolbar icons at the legacy size: 2em of the bar's 20px base = 40px (the
+   original .btnImg was 2em @ html 15pt). Dialog/list icons keep the 32px base. */
+#mainToolbar .btnImg {
+  width: 2em;
+  height: 2em;
+}
+
+/* UI-chrome images must expose NO native image behaviours: the iOS long-press
+   callout ("save/copy image") and the Chromium image drag-ghost would hijack a
+   press-and-hold on an icon button (our long-press timer is the only source on
+   iOS, where contextmenu never fires for touch). Dialogs are portaled to <body>,
+   so cover them separately from #mainView. */
+#mainView img,
+.cv-modal-backdrop img,
+.cv-dialog img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Capo / transpose: only the icon (and the value once set) are visible; the
@@ -269,13 +296,16 @@ body,
 }
 
 #capo .cv-capo-caret {
-  font-size: 11px;
+  font-size: 0.55em;
   line-height: 1;
 }
 
+/* 2em like the legacy `.mainTable span` — the value reads as large as the icons.
+   line-height 1 keeps the value's box at icon height so the bar doesn't grow. */
 #capoValue,
 #shiftValue {
-  font-size: 20px;
+  font-size: 2em;
+  line-height: 1;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -764,8 +794,20 @@ body,
   padding: 2px;
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 18px;
+  /* Legacy base (html 15pt = 20px): checkbox glyphs at 1.5em land on the original
+     30px, and the bar's icon buttons at 2em land on the original 40px. */
+  font-size: 20px;
   container-type: inline-size;
+}
+
+/* The bar's own icon buttons at the legacy 2em (= 40px @ the 20px base above).
+   Scoped to .cv-iconbtn so the popups anchored inside the bar (more-menu items,
+   zoom panel, opacity popup) keep their own smaller icon sizes. The #options
+   prefix outweighs later class-only rules (e.g. .cv-zoom-btn .btnImg). */
+#options .cv-options-row .cv-iconbtn .btnImg,
+#options .cv-options-row .cv-iconbtn .cv-opt-icon {
+  width: 2em;
+  height: 2em;
 }
 
 /* Two FIXED rows (not a wrapping single row) so the controls can be as large as
@@ -904,9 +946,27 @@ body,
   border-radius: 3px;
 }
 
+/* Legacy `select { font-size: 1.4em }` (= 28px @ the bar's 20px base) — the
+   chord-mode picker was as prominent as the toggles around it. */
+.cv-options-bar .cv-select {
+  font-size: 1.4em;
+  padding: 0 4px;
+}
+
 .cv-opt-icon {
   width: 32px;
   height: 32px;
+}
+
+/* Checkbox-driven toggle icons (instructions/wand, capo, highlight, zoom, leader
+   mode): in the legacy UI these were wrapped in a <label>, whose 1.5em font-size
+   cascaded into the icon's own em-based sizing and rendered it at 48x36 rather
+   than the base 32x32 — noticeably larger/denser than the plain (non-toggle)
+   toolbar buttons. Restore that size explicitly since the new buttons no longer
+   inherit it from a label. */
+.cv-toggle-icon {
+  width: 48px;
+  height: 36px;
 }
 
 /* Search row -------------------------------------------------------------- */
@@ -1231,7 +1291,7 @@ body,
   gap: 8px;
 }
 
-.cv-zoom-btn .btnImg {
+.cv-zoom-panel .cv-zoom-btn .btnImg {
   width: 1.7em;
   height: 1.7em;
 }

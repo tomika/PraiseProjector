@@ -107,6 +107,7 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
   const startYRef = useRef<number | null>(null);
   const startXRef = useRef(0);
   const draggingRef = useRef(false);
+  const touchIdRef = useRef<number | null>(null); // identifier of the single tracked touch
   const armRef = useRef(armDistance ?? DEFAULT_ARM_DISTANCE); // arm distance for the live gesture
   const armedAtRef = useRef<number | null>(null); // timestamp the pull armed, or null
   const levelRef = useRef(0);
@@ -220,24 +221,61 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
         return;
       }
       // Hold the spinner in "syncing" (still rotating) until the action settles
-      // (then reset — unless the action reloads the page first).
+      // (then reset — unless the action reloads the page first). The watchdog
+      // frees the gesture if the action's promise never settles (hung network):
+      // otherwise `begin` refuses every later pull and the gesture is dead for
+      // the rest of the session.
       setPhase("syncing");
       setOffset(armRef.current);
       setProgress(1);
       setLevel(lvl);
       levelRef.current = 0;
-      Promise.resolve(onReleaseRef.current(lvl)).finally(reset);
+      const settle = () => {
+        if (phaseRef.current === "syncing") reset();
+      };
+      const watchdog = setTimeout(settle, 30000);
+      Promise.resolve(onReleaseRef.current(lvl)).finally(() => {
+        clearTimeout(watchdog);
+        settle();
+      });
     };
 
+    // Track ONE touch by identifier. e.touches[0] is the oldest GLOBAL touch —
+    // with a second finger resting elsewhere the pull would jump to that finger's
+    // coordinates (or an extra toolbar touch would restart/derail the pull, in the
+    // worst case releasing a level the user never armed).
+    const findTouch = (list: TouchList, id: number): Touch | null => {
+      for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i];
+      return null;
+    };
     const onTouchStart = (e: TouchEvent) => {
+      // Recover from a tracked stream that ended without touchend/touchcancel
+      // (app switch mid-pull): if the tracked identifier is no longer among the
+      // live touches, it is gone for good — release it so the gesture can't stay
+      // wedged for the rest of the session.
+      if (touchIdRef.current !== null && !findTouch(e.touches, touchIdRef.current)) {
+        touchIdRef.current = null;
+        if (phaseRef.current !== "syncing") reset();
+        else startYRef.current = null;
+      }
+      if (touchIdRef.current !== null || startYRef.current != null) return; // already tracking a pull
       const t = e.changedTouches[0];
-      if (t) begin(t.pageX, t.pageY);
+      if (!t) return;
+      touchIdRef.current = t.identifier;
+      begin(t.pageX, t.pageY);
     };
     const onTouchMove = (e: TouchEvent) => {
-      const t = e.touches[0];
+      if (touchIdRef.current == null) return;
+      const t = findTouch(e.touches, touchIdRef.current);
       if (t) move(t.pageX, t.pageY, () => e.preventDefault());
     };
-    const onTouchEnd = () => end();
+    const onTouchEnd = (e: TouchEvent) => {
+      if (touchIdRef.current == null) return;
+      // Only the tracked finger's lift ends the pull; other fingers are ignored.
+      if (!findTouch(e.changedTouches, touchIdRef.current)) return;
+      touchIdRef.current = null;
+      end();
+    };
 
     let mouseDown = false;
     const onMouseDown = (e: MouseEvent) => {
