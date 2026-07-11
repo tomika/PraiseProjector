@@ -301,14 +301,17 @@ body,
 }
 
 /* 2em like the legacy `.mainTable span` — the value reads as large as the icons.
-   line-height 1 keeps the value's box at icon height so the bar doesn't grow. */
+   height is 1em of THIS element's own (already 2em) font-size, i.e. 1x the
+   doubled size = one icon height, so the value's box matches the icons and the
+   bar doesn't grow (height:2em here would double-apply the 2em, making the box
+   twice the icon height and stretching #mainToolbar around it). */
 #capoValue,
 #shiftValue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 1ch;
-  height: 2em;
+  height: calc(1em + 4px);
   font-size: 2em;
   line-height: 1;
   font-weight: 600;

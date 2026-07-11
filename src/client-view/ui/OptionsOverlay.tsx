@@ -80,7 +80,7 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
       const list = content.querySelector<HTMLElement>("#list");
       if (!list) return;
       const pixelsPerStep = Math.max(20, Math.min(window.innerWidth, window.innerHeight) / 20);
-      cleanupPinch = installPinchZoomHandler(
+      const cleanupTouch = installPinchZoomHandler(
         list,
         (steps, gestureStart) => {
           if (gestureStart) {
@@ -93,6 +93,23 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
         },
         pixelsPerStep
       );
+      // Ctrl+wheel mirrors the pinch gesture for desktop/mouse users (one row-size
+      // step per notch, same clamp/persist path as the touch pinch above).
+      const onWheel = (ev: WheelEvent) => {
+        if (!ev.ctrlKey) return;
+        ev.preventDefault();
+        const current = readCurrentRowFontSize();
+        const next = clampListRowFontSize(current + (ev.deltaY > 0 ? -1 : 1));
+        if (next !== current) {
+          mainView.style.setProperty("--cv-list-row-font-size", `${next}px`);
+          storeListRowFontSize(next);
+        }
+      };
+      list.addEventListener("wheel", onWheel, { passive: false });
+      cleanupPinch = () => {
+        cleanupTouch();
+        list.removeEventListener("wheel", onWheel);
+      };
     };
     const scheduleInstall = () => {
       cancelAnimationFrame(raf);
