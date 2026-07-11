@@ -7,7 +7,7 @@
  * since it is no longer only chord options.)
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { canUseHighlightLamp, type ChordBoxKind, type DarkMode, type DisplaySettings } from "../controller/ClientViewStore";
 import { HighlightOpacityDialog } from "./HighlightOpacityDialog";
@@ -22,6 +22,13 @@ const CHORD_BOX_ICON: Record<ChordBoxKind, string> = {
   PIANO: "pianochord.svg",
   NO_CHORDS: "nochordbox.svg",
 };
+
+const CHORD_BOX_OPTIONS: Array<{ value: ChordBoxKind; label: string }> = [
+  { value: "", label: "Inline chords" },
+  { value: "GUITAR", label: "Guitar chord boxes" },
+  { value: "PIANO", label: "Piano chord boxes" },
+  { value: "NO_CHORDS", label: "No chords" },
+];
 
 const DARK_ICON: Record<DarkMode, string> = {
   auto: "autolight.svg",
@@ -39,8 +46,25 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
   const store = useClientViewStore();
   const state = useClientViewState();
   const s = state.displaySettings;
+  const [chordBoxMenuOpen, setChordBoxMenuOpen] = useState(false);
+  const chordBoxWrapRef = useRef<HTMLDivElement>(null);
   const lampWrapRef = useRef<HTMLDivElement>(null);
   const zoomWrapRef = useRef<HTMLDivElement>(null);
+
+  // Close the chord-box picker when the user clicks/taps outside its wrapper.
+  useEffect(() => {
+    if (!chordBoxMenuOpen) return;
+    const onOutside = (e: PointerEvent) => {
+      if (!chordBoxWrapRef.current?.contains(e.target as Node)) {
+        setChordBoxMenuOpen(false);
+      }
+    };
+    const timerId = setTimeout(() => document.addEventListener("pointerdown", onOutside), 0);
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener("pointerdown", onOutside);
+    };
+  }, [chordBoxMenuOpen]);
 
   // Close the opacity popup when the user clicks/taps outside the lamp wrapper.
   useEffect(() => {
@@ -88,6 +112,14 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
   };
   const lampPress = useLongPress(onLampShortPress, () => store.openHighlightOpacityDialog());
 
+  const chordBoxPress = useLongPress(
+    () => {
+      setChordBoxMenuOpen(false);
+      store.cycleChordBox();
+    },
+    () => setChordBoxMenuOpen(true)
+  );
+
   // Long-press for the zoom (maxText) button: short = toggle, long = settings panel.
   const zoomPress = useLongPress(
     () => store.setDisplaySetting("maxText", !s.maxText),
@@ -108,9 +140,38 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
   return (
     <div className="cv-options-bar">
       <div className="cv-options-row">
-        <button type="button" className="cv-iconbtn" title="Chord box (none / guitar / piano / no chords)" onClick={() => store.cycleChordBox()}>
-          <img className="btnImg" src={icon(CHORD_BOX_ICON[s.chordBoxType])} alt="Chord box" />
-        </button>
+        <div ref={chordBoxWrapRef} className="cv-chordbox-wrap">
+          <button
+            type="button"
+            className={`cv-iconbtn${chordBoxMenuOpen ? " cv-toolbtn-on" : ""}`}
+            title="Chord box (tap to cycle, hold for direct options)"
+            aria-haspopup="menu"
+            aria-expanded={chordBoxMenuOpen}
+            {...chordBoxPress}
+          >
+            <img className="btnImg" src={icon(CHORD_BOX_ICON[s.chordBoxType])} alt="Chord box" />
+          </button>
+          {chordBoxMenuOpen && (
+            <div className="cv-chordbox-menu" role="menu" aria-label="Chord box options" onPointerDown={(e) => e.stopPropagation()}>
+              {CHORD_BOX_OPTIONS.map((option) => (
+                <button
+                  key={option.value || "inline"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={s.chordBoxType === option.value}
+                  className={`cv-chordbox-option${s.chordBoxType === option.value ? " active" : ""}`}
+                  title={option.label}
+                  onClick={() => {
+                    store.setDisplaySetting("chordBoxType", option.value);
+                    setChordBoxMenuOpen(false);
+                  }}
+                >
+                  <img className="btnImg" src={icon(CHORD_BOX_ICON[option.value])} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <select
           className="cv-select"
