@@ -266,9 +266,9 @@ body,
   user-select: none;
 }
 
-/* Capo / transpose: only the icon (and the value once set) are visible; the
-   native <select> is an invisible overlay that opens on click, exactly like
-   the original's `.mainTable select { opacity: 0 }`. */
+/* Capo / transpose: only the icon (and the value once set) are visible;
+   clicking opens the shared WheelPicker popup (see WheelPicker.tsx) anchored
+   to the control. */
 #capo,
 #transpose {
   position: relative;
@@ -308,26 +308,6 @@ body,
   line-height: 1;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-#transpose select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-#capo .cv-capo-picker {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
 }
 
 #netstatus {
@@ -1545,6 +1525,7 @@ body,
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
 }
 
 #list.cv-playlist td.transposeColumn > span,
@@ -1564,27 +1545,6 @@ body,
   height: 1.3em;
   opacity: 0.9;
   filter: var(--cv-icon-invert);
-}
-
-#list.cv-playlist td.transposeColumn > select,
-#list.cv-playlist td.capoColumn > select {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  appearance: none;
-  cursor: pointer;
-}
-
-#list.cv-playlist td.transposeColumn > select option,
-#list.cv-playlist td.capoColumn > select option {
-  color: #111;
-  background: #fff;
 }
 
 #list.cv-playlist {
@@ -2229,5 +2189,62 @@ body,
     0 0 0 2px rgba(0, 0, 0, 0.35),
     0 0 0.3em 0.05em rgba(255, 59, 48, 0.8),
     0 0 0.6em 0.1em rgba(255, 59, 48, 0.5);
+  pointer-events: none;
+}
+
+/* Wheel picker (transpose / capo): a vertical "radio tuner" popup anchored to
+   its toolbar button. Only ~3 neighbours are visible either side of the value;
+   the ends fade out via a mask instead of a hard clip. */
+.cv-wheel {
+  position: fixed;
+  width: 72px;
+  height: 252px;
+  overflow: hidden;
+  background: var(--cv-panel-solid);
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 1100;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grab;
+  outline: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+.cv-wheel:active {
+  cursor: grabbing;
+}
+.cv-wheel-track {
+  will-change: transform;
+}
+.cv-wheel-track.cv-wheel-snap {
+  transition: transform 150ms ease-out;
+}
+.cv-wheel-item {
+  height: 36px;
+  line-height: 36px;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cv-panel-fg);
+  opacity: 0.7;
+}
+.cv-wheel-item.cv-wheel-current {
+  color: var(--cv-accent);
+  opacity: 1;
+  font-size: 1.3rem;
+}
+.cv-wheel-highlight {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: calc(50% - 18px);
+  height: 36px;
+  border-top: 1px solid var(--cv-accent);
+  border-bottom: 1px solid var(--cv-accent);
+  opacity: 0.55;
   pointer-events: none;
 }

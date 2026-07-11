@@ -38,17 +38,11 @@ import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
 
-// A vertical swipe on the song pane steps the transpose by one semitone (the same
-// action as the toolbar's Transpose select). To commit it must clear this travel
-// and be at least this many times more vertical than horizontal so it never
-// competes with the horizontal page-turn swipe. The ±11 clamp mirrors the
-// toolbar's range. The gesture's axis (transpose vs. flip/scroll) is locked once
-// it moves past the slop, so the two never both act on a single swipe.
-const TRANSPOSE_SWIPE_MIN_PX = 48;
-const TRANSPOSE_SWIPE_AXIS_RATIO = 1.5;
-const TRANSPOSE_GESTURE_SLOP_PX = 8;
-const TRANSPOSE_MIN = -11;
-const TRANSPOSE_MAX = 11;
+// A decisively vertical drag on the song pane (past the slop, and more vertical
+// than horizontal) is claimed by the axis lock below purely so it can never also
+// turn into a page flip mid-gesture; the page then either scrolls (if it
+// overflows) or the gesture is simply inert. See the pointer-plumbing effect.
+const GESTURE_SLOP_PX = 8;
 const ZOOM_PINCH_PIXELS_PER_STEP = 28;
 
 const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string }> = {
@@ -324,13 +318,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   // Instead, once a swipe starts anywhere in the pane, track that pointer on
   // window so margins/overlays around the rendered ChordPro canvas keep swiping.
   //
-  // On top of the controller's horizontal page-turn, a decisive VERTICAL swipe
-  // steps the transpose by one semitone (up = raise, down = lower) — the same
-  // action as the toolbar's Transpose select (store.setTranspose). The gesture is
-  // arbitrated: on the first move past the slop we lock it to one axis. A vertical
-  // transpose swipe is then NEVER forwarded to the controller, so a tiny sideways
-  // wobble can't begin (and strand) a page-turn flip — the cause of the gestures
-  // freezing until the next song change.
+  // On top of the controller's horizontal page-turn, a decisively VERTICAL drag
+  // is arbitrated away from it: on the first move past the slop we lock the
+  // gesture to one axis. A vertical drag is then NEVER forwarded to the
+  // controller, so a tiny sideways wobble can't begin (and strand) a page-turn
+  // flip — the cause of the gestures freezing until the next song change.
   useEffect(() => {
     const el = swipeRef.current;
     if (!el) return;
@@ -338,8 +330,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     let startX = 0;
     let startY = 0;
     // null until the gesture passes the slop and commits to an axis; then locked
-    // so the page-turn controller and the transpose gesture never both act on it.
-    let axis: "flip" | "transpose" | null = null;
+    // so the page-turn controller and a vertical drag never both act on it.
+    let axis: "flip" | "ignore" | null = null;
     const clearSelection = () => window.getSelection()?.removeAllRanges();
     const stopTracking = () => {
       window.removeEventListener("pointermove", move);
@@ -348,28 +340,13 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       document.documentElement.classList.remove(PageFlip.SELECTION_GUARD_CLASS);
       clearSelection();
     };
-    // A vertical swipe transposes only when the page is NOT itself scrollable; when
-    // it overflows, a vertical drag is the controller's scroll (matching PageFlip's
-    // own scroll test), so we leave that gesture to the controller.
+    // A decisively vertical drag is locked to "ignore" only when the page is NOT
+    // itself scrollable; when it overflows, that same drag is the controller's
+    // scroll (matching PageFlip's own scroll test), so we leave it to the
+    // controller instead of swallowing it.
     const pageScrolls = () => {
       const page = currentPageRef.current;
       return !!page && page.scrollHeight > page.clientHeight;
-    };
-    // Commit a locked transpose gesture. Still require the full travel and a clearly
-    // vertical net delta (the swipe may have curved), and bail for view-only
-    // followers/watchers (no transpose, mirroring the hidden toolbar select). The
-    // store's transpose is undefined before the first display arrives, so coalesce
-    // to 0 — otherwise +1 would be NaN and blank the song. Reads live store state
-    // so a mid-session capability change applies at once.
-    const transposeBySwipe = (dx: number, dy: number) => {
-      const minTravel = Math.max(TRANSPOSE_SWIPE_MIN_PX, el.clientHeight * 0.12);
-      if (Math.abs(dy) < minTravel || Math.abs(dy) <= Math.abs(dx) * TRANSPOSE_SWIPE_AXIS_RATIO) return;
-      const snapshot = store.getSnapshot();
-      if (isViewingRemoteDisplay(snapshot)) return;
-      const current = snapshot.transpose ?? 0;
-      // Swipe up raises the key, swipe down lowers it (y grows downward).
-      const next = Math.max(TRANSPOSE_MIN, Math.min(TRANSPOSE_MAX, current + (dy < 0 ? 1 : -1)));
-      if (next !== current) void store.setTranspose(next);
     };
     const down = (e: PointerEvent) => {
       // Track by pointerId, NOT by isPrimary: with isPrimary-gating a second
@@ -391,7 +368,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       }
       // Gestures cannot start while a page-turn animation / completed-turn reload
       // is in flight — the controller ignores them anyway; not tracking them
-      // keeps the transpose/chord-box side effects from firing mid-turn.
+      // keeps the chord-box side effects from firing mid-turn.
       if (flipRef.current?.animating) {
         e.preventDefault();
         return;
@@ -429,11 +406,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       const dy = e.clientY - startY;
       // Decide the axis once, on the first move past the slop, then keep it. Until
       // then withhold moves from the controller so a tiny horizontal wobble at the
-      // start of a vertical swipe cannot begin a flip on the very first move.
+      // start of a vertical drag cannot begin a flip on the very first move.
       if (axis === null) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) < TRANSPOSE_GESTURE_SLOP_PX) return;
-        if (Math.abs(dy) > Math.abs(dx) * TRANSPOSE_SWIPE_AXIS_RATIO && !pageScrolls()) {
-          axis = "transpose";
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < GESTURE_SLOP_PX) return;
+        // Decisively vertical (more than 1.5x the horizontal travel) and the page
+        // isn't scrolling: lock the axis to "ignore" so it can never turn into a
+        // flip either.
+        if (Math.abs(dy) > Math.abs(dx) * 1.5 && !pageScrolls()) {
+          axis = "ignore";
           flipRef.current?.cancel(); // drop the controller's pending gesture
           return;
         }
@@ -450,13 +430,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         flipRef.current?.cancel();
         return;
       }
-      if (axis === "transpose") {
-        transposeBySwipe(e.clientX - startX, e.clientY - startY);
-      } else {
-        // 'flip' (page-turn / scroll) or an unclassified tap — let the controller
-        // finish, or harmlessly clear its gesture state for a tap.
-        flipRef.current?.handlePointer("up", e);
-      }
+      // 'ignore' (a decisively vertical drag, already dropped by the controller in
+      // move) does nothing here either. 'flip' (page-turn / scroll) or an
+      // unclassified tap lets the controller finish, or harmlessly clears its
+      // gesture state for a tap.
+      if (axis !== "ignore") flipRef.current?.handlePointer("up", e);
     };
     const cancel = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
@@ -488,7 +466,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       document.removeEventListener("visibilitychange", onVisibility);
       stopTracking();
     };
-  }, [store]);
+  }, []);
 
   // ── editors: bind the three pages once; re-fit all on pane resize ─────────────
   useEffect(() => {

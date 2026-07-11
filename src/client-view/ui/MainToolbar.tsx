@@ -17,6 +17,7 @@ import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
 import { useLongPress } from "./useLongPress";
+import { WheelPicker } from "./WheelPicker";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
 // Ranges/labels mirror the original initShiftAndCapo():
@@ -28,7 +29,6 @@ const CAPO_RANGE = Array.from({ length: 13 }, (_, i) => i - 1);
 const SHARP = "♯";
 const transposeOption = (v: number) => (v === 0 ? "0" : v < 0 ? `${Math.abs(v)}b` : `${v}${SHARP}`);
 const transposeValue = (v: number) => (v === 0 ? "" : v < 0 ? `${Math.abs(v)}b` : `${v}${SHARP}`);
-const capoOption = (v: number) => (v >= 0 ? String(v) : "");
 
 // Human-readable labels for the network indicator's tooltip (state.network.status
 // from the active ClientApi adapter). Unknown values fall back to the raw status.
@@ -73,7 +73,9 @@ export function MainToolbar({
   // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
   const follower = isViewingRemoteDisplay(state);
-  const capoSelectRef = useRef<HTMLSelectElement | null>(null);
+  const [wheel, setWheel] = useState<null | "transpose" | "capo">(null);
+  const transposeBtnRef = useRef<HTMLDivElement | null>(null);
+  const capoBtnRef = useRef<HTMLDivElement | null>(null);
 
   // The toolbar is a vertical column when wide-pane layout is active and options
   // are closed. This mirrors the full-view tab/pane breakpoint.
@@ -114,15 +116,7 @@ export function MainToolbar({
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
   const openCapoPicker = () => {
     if (!state.displaySettings.useCapo) return;
-    const select = capoSelectRef.current;
-    if (!select) return;
-    const withPicker = select as HTMLSelectElement & { showPicker?: () => void };
-    if (typeof withPicker.showPicker === "function") {
-      withPicker.showPicker();
-      return;
-    }
-    select.focus();
-    select.click();
+    setWheel("capo");
   };
 
   // Capo toggle: short press enables/disables; long press opens the value list.
@@ -130,6 +124,14 @@ export function MainToolbar({
     () => store.setDisplaySetting("useCapo", !state.displaySettings.useCapo),
     () => openCapoPicker()
   );
+
+  // A layout change that hides/disables a wheel's own control must close it:
+  // becoming a follower hides transpose entirely, and disabling capo revokes
+  // the capo wheel's own precondition (openCapoPicker's early return).
+  useEffect(() => {
+    if (follower) setWheel(null);
+    else if (wheel === "capo" && !state.displaySettings.useCapo) setWheel(null);
+  }, [follower, wheel, state.displaySettings.useCapo]);
 
   // One renderer per control key; the order arrays decide which appear and where.
   const controls: Record<ToolbarButtonKey, ReactNode> = {
@@ -176,7 +178,7 @@ export function MainToolbar({
     // - capo icon toggles useCapo on/off,
     // - small dropdown button opens the capo value list.
     capo: (
-      <div id="capo">
+      <div id="capo" ref={capoBtnRef}>
         <div
           id="capoToggle"
           className={`btnDiv${state.displaySettings.useCapo ? " cv-toolbtn-on" : ""}`}
@@ -194,38 +196,22 @@ export function MainToolbar({
         >
           <span className="cv-capo-caret">▼</span>
         </div>
-        <select
-          ref={capoSelectRef}
-          id="selCapo"
-          className="cv-capo-picker"
-          title="Capo"
-          value={state.capo}
-          disabled={!state.displaySettings.useCapo}
-          onChange={(e) => void store.setCapo(Number(e.target.value))}
-        >
-          {CAPO_RANGE.map((value) => (
-            <option key={value} value={value}>
-              {capoOption(value)}
-            </option>
-          ))}
-        </select>
       </div>
     ),
     transpose: follower ? null : (
-      <div id="transpose">
+      <div
+        id="transpose"
+        ref={transposeBtnRef}
+        className={`btnDiv${wheel === "transpose" ? " cv-toolbtn-on" : ""}`}
+        title="Transpose"
+        onClick={() => setWheel((w) => (w === "transpose" ? null : "transpose"))}
+      >
         {/* Like the original, the value replaces the icon once a transpose is set. */}
         {state.transpose !== 0 ? (
           <span id="shiftValue">{transposeValue(state.transpose)}</span>
         ) : (
           <img className="btnImg" src={icon("transpose.svg")} alt="Transpose" />
         )}
-        <select id="selShift" title="Transpose" value={state.transpose} onChange={(e) => void store.setTranspose(Number(e.target.value))}>
-          {TRANSPOSE_RANGE.map((value) => (
-            <option key={value} value={value}>
-              {transposeOption(value)}
-            </option>
-          ))}
-        </select>
       </div>
     ),
     // Network status: only shown when the client is following an online session
@@ -272,11 +258,36 @@ export function MainToolbar({
   };
 
   return (
-    <div className="widthProtect" id="mainToolbar" ref={pullRef}>
-      {order.map((key) => {
-        const node = controls[key];
-        return node ? <Fragment key={key}>{node}</Fragment> : null;
-      })}
-    </div>
+    <>
+      <div className="widthProtect" id="mainToolbar" ref={pullRef}>
+        {order.map((key) => {
+          const node = controls[key];
+          return node ? <Fragment key={key}>{node}</Fragment> : null;
+        })}
+      </div>
+      {wheel === "transpose" && transposeBtnRef.current && (
+        <WheelPicker
+          values={TRANSPOSE_RANGE}
+          value={state.transpose}
+          format={transposeOption}
+          onChange={(v) => void store.setTranspose(v)}
+          onClose={() => setWheel(null)}
+          anchor={transposeBtnRef.current}
+          ariaLabel="Transpose"
+        />
+      )}
+      {wheel === "capo" && capoBtnRef.current && (
+        <WheelPicker
+          values={CAPO_RANGE}
+          value={state.capo}
+          format={(v) => (v >= 0 ? String(v) : "—")}
+          valueText={(v) => (v >= 0 ? String(v) : "no capo")}
+          onChange={(v) => void store.setCapo(v)}
+          onClose={() => setWheel(null)}
+          anchor={capoBtnRef.current}
+          ariaLabel="Capo"
+        />
+      )}
+    </>
   );
 }

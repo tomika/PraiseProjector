@@ -7,7 +7,9 @@
  *   - drag a row onto the trash bar to REMOVE it (legacy #trashCan droptarget);
  *   - tap a row to project that song;
  *   - double-click the title to edit it inline;
- *   - edit row transpose/capo with legacy-style select cells.
+ *   - edit row transpose/capo via the shared WheelPicker popup (see MainToolbar),
+ *     committed once (a single updatePlaylistEntry) when the wheel closes rather
+ *     than per detent, since these edits don't need a live song-view preview.
  *
  * Songs are ADDED from the database (SongList's add toggle); this component is
  * the reorder/remove half of the same working playlist. Native DnD matches the
@@ -20,6 +22,7 @@ import type { SongFound } from "../api/ClientApi";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { icon } from "./assets";
 import { markerStyle, TitleCell } from "./SongList";
+import { WheelPicker } from "./WheelPicker";
 
 const SHARP = "♯";
 const FLAT = "♭";
@@ -32,7 +35,6 @@ const transposeLabel = (v: number | undefined) => {
   const value = v ?? 0;
   return value === 0 ? "" : value < 0 ? `${Math.abs(value)}${FLAT}` : `${value}${SHARP}`;
 };
-const capoOption = (v: number) => (v >= 0 ? String(v) : "");
 const capoLabel = (v: number | undefined) => {
   if (v == null) return "";
   const value = v;
@@ -57,9 +59,17 @@ export function PlaylistEditor() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const suppressNextRowClickRef = useRef(false);
-  const selectorChangedRef = useRef(false);
   const dragging = dragIndex !== null;
+
+  // Which row's transpose/capo wheel is open, its live (uncommitted) value,
+  // and the DOM anchor it's popped over. wheelAnchor is state (not a ref) so
+  // that attaching it as the ref callback on the newly-active cell — which
+  // happens during the SAME commit that opens the wheel — schedules the
+  // extra render WheelPicker needs to actually appear (a plain ref mutation
+  // wouldn't trigger one).
+  const [wheel, setWheel] = useState<null | { index: number; kind: "transpose" | "capo" }>(null);
+  const [pendingValue, setPendingValue] = useState(0);
+  const [wheelAnchor, setWheelAnchor] = useState<HTMLElement | null>(null);
 
   const clearClickTimer = () => {
     if (clickTimerRef.current) {
@@ -106,46 +116,23 @@ export function PlaylistEditor() {
     e.stopPropagation();
   };
 
-  const suppressRowClickOnce = () => {
-    suppressNextRowClickRef.current = true;
-    window.setTimeout(() => {
-      suppressNextRowClickRef.current = false;
-    }, 400);
+  // Commits the open wheel's pending value (a single updatePlaylistEntry, not
+  // one per detent) and closes it. Shared by WheelPicker's own onClose (outside
+  // click / Escape) and by re-tapping an already-open trigger.
+  const closeWheel = () => {
+    if (!wheel) return;
+    const { index, kind } = wheel;
+    setWheel(null);
+    void store.updatePlaylistEntry(index, kind === "transpose" ? { transpose: pendingValue } : { capo: pendingValue });
   };
 
-  const onSelectorFocus = () => {
-    selectorChangedRef.current = false;
-  };
-
-  const onSelectorBlur = () => {
-    if (selectorChangedRef.current) {
-      suppressNextRowClickRef.current = false;
+  const toggleWheel = (index: number, kind: "transpose" | "capo", currentValue: number) => {
+    if (wheel && wheel.index === index && wheel.kind === kind) {
+      closeWheel();
       return;
     }
-    suppressRowClickOnce();
-  };
-
-  const onSelectorPointerDown = (e: ReactMouseEvent<HTMLSelectElement>) => {
-    clearClickTimer();
-    e.stopPropagation();
-  };
-
-  const onSelectorClick = (e: ReactMouseEvent<HTMLSelectElement>) => {
-    clearClickTimer();
-    e.stopPropagation();
-  };
-
-  const onSelectorTouchEnd = (e: ReactTouchEvent<HTMLElement>) => {
-    const path = e.nativeEvent.composedPath?.() || [];
-    const usesNativeSelect =
-      e.target instanceof HTMLSelectElement ||
-      e.target instanceof HTMLOptionElement ||
-      path.some((el) => el instanceof HTMLElement && (el.tagName === "SELECT" || el.tagName === "OPTION"));
-    if (!usesNativeSelect) {
-      // Keep row/cell touch behavior while never blocking native select opening.
-      e.preventDefault();
-      e.stopPropagation();
-    }
+    setWheel({ index, kind });
+    setPendingValue(currentValue);
   };
 
   if (playlist.length === 0) {
@@ -189,7 +176,11 @@ export function PlaylistEditor() {
         >
           <tbody>
             {visibleRows.map(({ entry, index, found }) => {
-              const transposeValue = entry.transpose ?? 0;
+              // While this row's own wheel is open, show its live (uncommitted)
+              // value; otherwise the entry's actual committed value.
+              const wheelOpenHere = (kind: "transpose" | "capo") => wheel?.index === index && wheel.kind === kind;
+              const transposeValue = wheelOpenHere("transpose") ? pendingValue : (entry.transpose ?? 0);
+              const capoValue = wheelOpenHere("capo") ? pendingValue : (entry.capo ?? 0);
               const titleEntry: SongFound | typeof entry = found ? { ...entry, title: found.title || entry.title, found: found.found } : entry;
               const rowClass = [
                 state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
@@ -205,11 +196,6 @@ export function PlaylistEditor() {
                   className={rowClass}
                   onClick={() => {
                     if (editingIndex != null) return;
-                    if (suppressNextRowClickRef.current) {
-                      suppressNextRowClickRef.current = false;
-                      clearClickTimer();
-                      return;
-                    }
                     clearClickTimer();
                     clickTimerRef.current = setTimeout(() => {
                       void store.selectPlaylistEntry(entry);
@@ -280,51 +266,27 @@ export function PlaylistEditor() {
                     <td className="cv-found-marker" style={markerStyle(found?.found)} title={found?.found.type} />
                   ) : (
                     <>
-                      <td className="transposeColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                        <span>{transposeLabel(entry.transpose)}</span>
+                      <td
+                        className="transposeColumn"
+                        ref={wheelOpenHere("transpose") ? setWheelAnchor : undefined}
+                        onClick={(e) => {
+                          stopRowClick(e);
+                          toggleWheel(index, "transpose", entry.transpose ?? 0);
+                        }}
+                      >
+                        <span>{transposeLabel(transposeValue)}</span>
                         {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
-                        <select
-                          title="Transpose"
-                          value={transposeValue}
-                          onFocus={onSelectorFocus}
-                          onBlur={onSelectorBlur}
-                          onMouseDown={onSelectorPointerDown}
-                          onClick={onSelectorClick}
-                          onChange={(e) => {
-                            selectorChangedRef.current = true;
-                            suppressNextRowClickRef.current = false;
-                            void store.updatePlaylistEntry(index, { transpose: Number(e.target.value) });
-                          }}
-                        >
-                          {TRANSPOSE_RANGE.map((value) => (
-                            <option key={value} value={value}>
-                              {transposeOption(value)}
-                            </option>
-                          ))}
-                        </select>
                       </td>
-                      <td className="capoColumn" onTouchEnd={onSelectorTouchEnd} onClick={stopRowClick}>
-                        <span>{capoLabel(entry.capo)}</span>
+                      <td
+                        className="capoColumn"
+                        ref={wheelOpenHere("capo") ? setWheelAnchor : undefined}
+                        onClick={(e) => {
+                          stopRowClick(e);
+                          toggleWheel(index, "capo", entry.capo ?? 0);
+                        }}
+                      >
+                        <span>{capoLabel(capoValue)}</span>
                         <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
-                        <select
-                          title="Capo"
-                          value={entry.capo ?? 0}
-                          onFocus={onSelectorFocus}
-                          onBlur={onSelectorBlur}
-                          onMouseDown={onSelectorPointerDown}
-                          onClick={onSelectorClick}
-                          onChange={(e) => {
-                            selectorChangedRef.current = true;
-                            suppressNextRowClickRef.current = false;
-                            void store.updatePlaylistEntry(index, { capo: Number(e.target.value) });
-                          }}
-                        >
-                          {CAPO_RANGE.map((value) => (
-                            <option key={value} value={value}>
-                              {capoOption(value)}
-                            </option>
-                          ))}
-                        </select>
                       </td>
                     </>
                   )}
@@ -360,6 +322,19 @@ export function PlaylistEditor() {
       >
         <img src={icon("trashcan.svg")} alt="Remove from list" />
       </div>
+
+      {wheel && wheelAnchor && (
+        <WheelPicker
+          values={wheel.kind === "transpose" ? TRANSPOSE_RANGE : CAPO_RANGE}
+          value={pendingValue}
+          format={wheel.kind === "transpose" ? transposeOption : (v) => (v >= 0 ? String(v) : "—")}
+          valueText={wheel.kind === "capo" ? (v) => (v >= 0 ? String(v) : "no capo") : undefined}
+          onChange={setPendingValue}
+          onClose={closeWheel}
+          anchor={wheelAnchor}
+          ariaLabel={wheel.kind === "transpose" ? "Transpose" : "Capo"}
+        />
+      )}
     </>
   );
 }
