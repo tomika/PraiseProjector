@@ -69,7 +69,9 @@ export function PlaylistEditor() {
   // wouldn't trigger one).
   const [wheel, setWheel] = useState<null | { index: number; kind: "transpose" | "capo" }>(null);
   const [pendingValue, setPendingValue] = useState(0);
+  const pendingValueRef = useRef(0);
   const [wheelAnchor, setWheelAnchor] = useState<HTMLElement | null>(null);
+  const [wheelSelectionAnchor, setWheelSelectionAnchor] = useState<HTMLElement | null>(null);
 
   const clearClickTimer = () => {
     if (clickTimerRef.current) {
@@ -123,7 +125,7 @@ export function PlaylistEditor() {
     if (!wheel) return;
     const { index, kind } = wheel;
     setWheel(null);
-    void store.updatePlaylistEntry(index, kind === "transpose" ? { transpose: pendingValue } : { capo: pendingValue });
+    void store.updatePlaylistEntry(index, kind === "transpose" ? { transpose: pendingValueRef.current } : { capo: pendingValueRef.current });
   };
 
   const toggleWheel = (index: number, kind: "transpose" | "capo", currentValue: number) => {
@@ -132,6 +134,7 @@ export function PlaylistEditor() {
       return;
     }
     setWheel({ index, kind });
+    pendingValueRef.current = currentValue;
     setPendingValue(currentValue);
   };
 
@@ -274,7 +277,7 @@ export function PlaylistEditor() {
                           toggleWheel(index, "transpose", entry.transpose ?? 0);
                         }}
                       >
-                        <span>{transposeLabel(transposeValue)}</span>
+                        <span ref={wheelOpenHere("transpose") ? setWheelSelectionAnchor : undefined}>{transposeLabel(transposeValue)}</span>
                         {transposeValue === 0 ? <img className="cv-pl-select-icon btnImg" src={icon("transpose.svg")} alt="Transpose" /> : null}
                       </td>
                       <td
@@ -285,7 +288,7 @@ export function PlaylistEditor() {
                           toggleWheel(index, "capo", entry.capo ?? 0);
                         }}
                       >
-                        <span>{capoLabel(capoValue)}</span>
+                        <span ref={wheelOpenHere("capo") ? setWheelSelectionAnchor : undefined}>{capoLabel(capoValue)}</span>
                         <img className="cv-pl-select-icon btnImg" src={icon("capo.svg")} alt="Capo" />
                       </td>
                     </>
@@ -323,15 +326,19 @@ export function PlaylistEditor() {
         <img src={icon("trashcan.svg")} alt="Remove from list" />
       </div>
 
-      {wheel && wheelAnchor && (
+      {wheel && wheelAnchor && wheelSelectionAnchor && (
         <WheelPicker
           values={wheel.kind === "transpose" ? TRANSPOSE_RANGE : CAPO_RANGE}
           value={pendingValue}
           format={wheel.kind === "transpose" ? transposeOption : (v) => (v >= 0 ? String(v) : "—")}
           valueText={wheel.kind === "capo" ? (v) => (v >= 0 ? String(v) : "no capo") : undefined}
-          onChange={setPendingValue}
+          onChange={(value) => {
+            pendingValueRef.current = value;
+            setPendingValue(value);
+          }}
           onClose={closeWheel}
           anchor={wheelAnchor}
+          selectionAnchor={wheelSelectionAnchor}
           ariaLabel={wheel.kind === "transpose" ? "Transpose" : "Capo"}
         />
       )}

@@ -76,6 +76,8 @@ export function MainToolbar({
   const [wheel, setWheel] = useState<null | "transpose" | "capo">(null);
   const transposeBtnRef = useRef<HTMLDivElement | null>(null);
   const capoBtnRef = useRef<HTMLDivElement | null>(null);
+  const transposeValueRef = useRef<HTMLSpanElement | null>(null);
+  const capoValueRef = useRef<HTMLSpanElement | null>(null);
 
   // The toolbar is a vertical column when wide-pane layout is active and options
   // are closed. This mirrors the full-view tab/pane breakpoint.
@@ -185,7 +187,9 @@ export function MainToolbar({
           title={state.displaySettings.useCapo ? "Disable capo (hold to pick value)" : "Enable capo (hold to pick value)"}
           {...capoPress}
         >
-          <span id="capoValue">{state.displaySettings.useCapo && state.capo > 0 ? state.capo : ""}</span>
+          <span id="capoValue" ref={capoValueRef}>
+            {state.displaySettings.useCapo && state.capo > 0 ? state.capo : ""}
+          </span>
           <img className="btnImg cv-toggle-icon" src={icon("capo.svg")} alt="Capo" />
         </div>
         <div
@@ -206,12 +210,11 @@ export function MainToolbar({
         title="Transpose"
         onClick={() => setWheel((w) => (w === "transpose" ? null : "transpose"))}
       >
-        {/* Like the original, the value replaces the icon once a transpose is set. */}
-        {state.transpose !== 0 ? (
-          <span id="shiftValue">{transposeValue(state.transpose)}</span>
-        ) : (
-          <img className="btnImg" src={icon("transpose.svg")} alt="Transpose" />
-        )}
+        {/* The value target is always present, including at zero, so the horizontal
+            picker can precisely cover the element whose value it changes. */}
+        <span id="shiftValue" ref={transposeValueRef}>
+          {state.transpose !== 0 ? transposeValue(state.transpose) : <img className="btnImg" src={icon("transpose.svg")} alt="Transpose" />}
+        </span>
       </div>
     ),
     // Network status: only shown when the client is following an online session
@@ -265,7 +268,7 @@ export function MainToolbar({
           return node ? <Fragment key={key}>{node}</Fragment> : null;
         })}
       </div>
-      {wheel === "transpose" && transposeBtnRef.current && (
+      {wheel === "transpose" && transposeBtnRef.current && transposeValueRef.current && (
         <WheelPicker
           values={TRANSPOSE_RANGE}
           value={state.transpose}
@@ -273,10 +276,12 @@ export function MainToolbar({
           onChange={(v) => void store.setTranspose(v)}
           onClose={() => setWheel(null)}
           anchor={transposeBtnRef.current}
+          orientation="horizontal"
+          selectionAnchor={transposeValueRef.current}
           ariaLabel="Transpose"
         />
       )}
-      {wheel === "capo" && capoBtnRef.current && (
+      {wheel === "capo" && capoBtnRef.current && capoValueRef.current && (
         <WheelPicker
           values={CAPO_RANGE}
           value={state.capo}
@@ -285,6 +290,8 @@ export function MainToolbar({
           onChange={(v) => void store.setCapo(v)}
           onClose={() => setWheel(null)}
           anchor={capoBtnRef.current}
+          orientation="horizontal"
+          selectionAnchor={capoValueRef.current}
           ariaLabel="Capo"
         />
       )}

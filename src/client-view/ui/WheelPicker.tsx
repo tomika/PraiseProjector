@@ -7,11 +7,11 @@
  * document.body so it floats above the client view, like the modal dialogs.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 export interface WheelPickerProps {
-  /** Ordered values, rendered top→bottom in array order (ascending for both callers). */
+  /** Ordered values, rendered top→bottom or left→right in array order. */
   values: number[];
   /** Currently selected value (controlled). */
   value: number;
@@ -25,42 +25,121 @@ export interface WheelPickerProps {
   onClose: () => void;
   /** Toolbar button the popup is anchored to (also excluded from outside-click). */
   anchor: HTMLElement;
+  /** Wheel direction. The original vertical picker remains the default. */
+  orientation?: "vertical" | "horizontal";
+  /** The centered detent is positioned over this element. In horizontal mode it
+   * also matches the element's dimensions exactly. */
+  selectionAnchor?: HTMLElement;
   ariaLabel: string;
 }
 
 const ITEM_H = 36;
 const VISIBLE = 7;
-const HEIGHT = VISIBLE * ITEM_H;
-const WIDTH = 72;
-const CENTER_TOP = (HEIGHT - ITEM_H) / 2;
+const VERTICAL_HEIGHT = VISIBLE * ITEM_H;
+const VERTICAL_WIDTH = 72;
+const CENTER_ITEM = Math.floor(VISIBLE / 2);
 /** Below this much total pointer travel, a release is a tap, not a drag. */
 const TAP_SLOP_PX = 6;
+const BLOCKED_OUTSIDE_EVENTS = [
+  "pointerdown",
+  "pointermove",
+  "pointerup",
+  "pointercancel",
+  "mousedown",
+  "mousemove",
+  "mouseup",
+  "touchstart",
+  "touchmove",
+  "touchend",
+  "touchcancel",
+  "wheel",
+  "click",
+  "dblclick",
+  "contextmenu",
+] as const;
+const POST_CLOSE_EVENT_FENCE_MS = 500;
 
-const offsetFor = (indexFloat: number) => CENTER_TOP - indexFloat * ITEM_H;
+type WheelOrientation = "vertical" | "horizontal";
+type WheelMetrics = { itemWidth: number; itemHeight: number; width: number; height: number };
+
+function blockEvent(event: Event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+// A pointer tap's `click` (and compatibility mouse/touch events) are delivered
+// after the picker has unmounted. Keep a short document-level fence alive so the
+// closing gesture cannot activate an element that has just been exposed below it.
+function armPostCloseEventFence() {
+  const swallow = (event: Event) => blockEvent(event);
+  const remove = () => BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.removeEventListener(type, swallow, true));
+  BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.addEventListener(type, swallow, { capture: true, passive: false }));
+  window.setTimeout(remove, POST_CLOSE_EVENT_FENCE_MS);
+}
+
+function getMetrics(orientation: WheelOrientation, selectionAnchor?: HTMLElement): WheelMetrics {
+  if (orientation === "horizontal") {
+    const rect = selectionAnchor?.getBoundingClientRect();
+    const itemWidth = Math.max(1, rect?.width ?? ITEM_H);
+    const itemHeight = Math.max(1, rect?.height ?? ITEM_H);
+    return { itemWidth, itemHeight, width: VISIBLE * itemWidth, height: itemHeight };
+  }
+  return { itemWidth: VERTICAL_WIDTH, itemHeight: ITEM_H, width: VERTICAL_WIDTH, height: VERTICAL_HEIGHT };
+}
 
 // Preferred below the anchor; flipped above if that would overflow the
 // viewport bottom; centered as a last resort on a viewport too short for
 // either. Horizontally centered on the anchor, then clamped to the viewport —
 // the toolbar is a vertical side column in wide-pane layout, so the popup can
 // need to shift sideways too.
-function computePosition(anchor: HTMLElement): { top: number; left: number } {
+function computePosition(
+  anchor: HTMLElement,
+  orientation: WheelOrientation,
+  metrics: WheelMetrics,
+  selectionAnchor?: HTMLElement
+): { top: number; left: number } {
+  if (selectionAnchor) {
+    const rect = selectionAnchor.getBoundingClientRect();
+    if (orientation === "vertical") {
+      return {
+        top: rect.top + rect.height / 2 - (CENTER_ITEM + 0.5) * metrics.itemHeight,
+        left: rect.left + rect.width / 2 - metrics.width / 2,
+      };
+    }
+    // Do not clamp this position: keeping the center detent directly over the
+    // value being edited is more important than showing every neighbour at a
+    // viewport edge. The picker itself is clipped naturally by the viewport.
+    return { top: rect.top, left: rect.left - CENTER_ITEM * metrics.itemWidth };
+  }
+
   const rect = anchor.getBoundingClientRect();
   const preferredTop = rect.bottom + 6;
-  const aboveTop = rect.top - 6 - HEIGHT;
+  const aboveTop = rect.top - 6 - metrics.height;
   let top: number;
-  if (preferredTop + HEIGHT <= window.innerHeight) {
+  if (preferredTop + metrics.height <= window.innerHeight) {
     top = preferredTop;
   } else if (aboveTop >= 0) {
     top = aboveTop;
   } else {
-    top = Math.max(8, (window.innerHeight - HEIGHT) / 2);
+    top = Math.max(8, (window.innerHeight - metrics.height) / 2);
   }
-  const centeredLeft = rect.left + rect.width / 2 - WIDTH / 2;
-  const left = Math.max(8, Math.min(centeredLeft, window.innerWidth - WIDTH - 8));
+  const centeredLeft = rect.left + rect.width / 2 - metrics.width / 2;
+  const left = Math.max(8, Math.min(centeredLeft, window.innerWidth - metrics.width - 8));
   return { top, left };
 }
 
-export function WheelPicker({ values, value, format, valueText, onChange, onClose, anchor, ariaLabel }: WheelPickerProps) {
+export function WheelPicker({
+  values,
+  value,
+  format,
+  valueText,
+  onChange,
+  onClose,
+  anchor,
+  orientation = "vertical",
+  selectionAnchor,
+  ariaLabel,
+}: WheelPickerProps) {
   const clampIndex = (i: number) => Math.max(0, Math.min(values.length - 1, i));
   const indexOfValue = (v: number) => {
     const i = values.indexOf(v);
@@ -70,6 +149,7 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
   const wheelRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const currentIndexRef = useRef(clampIndex(indexOfValue(value)));
+  const openingValueRef = useRef(value);
   const [currentIndex, setCurrentIndex] = useState(currentIndexRef.current);
 
   // Float index driving the track's live on-screen position. Written only
@@ -82,11 +162,24 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
   const startYRef = useRef(0);
   const startPosRef = useRef(0);
   const travelRef = useRef(0);
+  const tappedItemIndexRef = useRef<number | null>(null);
 
-  const [place, setPlace] = useState(() => computePosition(anchor));
+  // Geometry is intentionally captured once, at open. Moving a visible picker
+  // during layout, resize or value changes makes a drag feel detached from the
+  // user's pointer, so it remains fixed until this instance closes.
+  const [metrics] = useState(() => getMetrics(orientation, selectionAnchor));
+  const [place] = useState(() => computePosition(anchor, orientation, metrics, selectionAnchor));
+
+  const offsetFor = (indexFloat: number) =>
+    orientation === "horizontal"
+      ? CENTER_ITEM * metrics.itemWidth - indexFloat * metrics.itemWidth
+      : CENTER_ITEM * metrics.itemHeight - indexFloat * metrics.itemHeight;
 
   const writeTransform = (posFloat: number) => {
-    if (trackRef.current) trackRef.current.style.transform = `translateY(${offsetFor(posFloat)}px)`;
+    if (trackRef.current) {
+      const offset = offsetFor(posFloat);
+      trackRef.current.style.transform = orientation === "horizontal" ? `translateX(${offset}px)` : `translateY(${offset}px)`;
+    }
   };
 
   // Updates the committed value (aria + the current-item class) and notifies
@@ -110,13 +203,16 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
     writeTransform(clamped);
   };
 
-  // Recompute the fixed position on open and on viewport resize.
-  useEffect(() => {
-    const recompute = () => setPlace(computePosition(anchor));
-    recompute();
-    window.addEventListener("resize", recompute);
-    return () => window.removeEventListener("resize", recompute);
-  }, [anchor]);
+  // Outside dismissal is a cancel operation: restore the value that was active
+  // when this picker instance opened before letting the caller close it.
+  const revertToOpeningValue = () => {
+    const openingIndex = clampIndex(indexOfValue(openingValueRef.current));
+    if (openingIndex === currentIndexRef.current) return;
+    currentIndexRef.current = openingIndex;
+    posRef.current = openingIndex;
+    setCurrentIndex(openingIndex);
+    onChange(values[openingIndex]);
+  };
 
   // Take focus on open.
   useEffect(() => {
@@ -128,36 +224,27 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
     return () => anchor.focus();
   }, [anchor]);
 
-  // Outside pointerdown closes the popup — except on the anchor itself (its
-  // own onClick toggles the popup instead of close-then-reopen; see
-  // MainToolbar) or inside the wheel (selecting a value must never close it).
-  // Base pattern copied from MoreMenu's dismissal effect, but captured (not
-  // bubbled) and stopped so the SAME tap can never also reach whatever's
-  // underneath (a song row, another toolbar button, ...) — dismissing the
-  // wheel must be the only effect of that interaction. Stopping this
-  // pointerdown doesn't stop the browser's separate, later `click` for the
-  // same gesture, so that's swallowed too, via a listener kept independent of
-  // this component's own lifecycle (it must outlive the unmount onClose()
-  // triggers) that removes itself once it fires, or after a short timeout if
-  // the gesture never completes as a click (e.g. it turned into a drag).
+  // This is a modal interaction surface, even though it is not a dialog: while
+  // open, pointer, mouse and touch events outside it must never reach the page.
+  // An outside press dismisses it, but that same press (and its later events)
+  // remains consumed by the post-close fence above.
   useEffect(() => {
-    const onDocPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (wheelRef.current?.contains(target)) return;
-      if (anchor.contains(target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const swallowClick = (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      document.addEventListener("click", swallowClick, { capture: true, once: true });
-      window.setTimeout(() => document.removeEventListener("click", swallowClick, true), 500);
-      onClose();
+    let closing = false;
+    const onDocumentEvent = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && wheelRef.current?.contains(target)) return;
+      blockEvent(event);
+      const beginsInteraction = event.type === "pointerdown" || event.type === "mousedown" || event.type === "touchstart";
+      if (beginsInteraction && !closing) {
+        closing = true;
+        revertToOpeningValue();
+        armPostCloseEventFence();
+        onClose();
+      }
     };
-    document.addEventListener("pointerdown", onDocPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
-  }, [anchor, onClose]);
+    BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.addEventListener(type, onDocumentEvent, { capture: true, passive: false }));
+    return () => BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.removeEventListener(type, onDocumentEvent, true));
+  }, [onClose, revertToOpeningValue]);
 
   // If the controlled value changes from outside while no drag is active,
   // snap the track to it (the snap transition stays enabled outside a drag).
@@ -175,6 +262,9 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
   }, [value]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const item = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-wheel-index]") : null;
+    const itemIndex = item ? Number(item.dataset.wheelIndex) : Number.NaN;
+    tappedItemIndexRef.current = Number.isInteger(itemIndex) ? itemIndex : null;
     wheelRef.current?.setPointerCapture(e.pointerId);
     pointerIdRef.current = e.pointerId;
     startXRef.current = e.clientX;
@@ -187,7 +277,9 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== e.pointerId) return;
     travelRef.current = Math.max(travelRef.current, Math.hypot(e.clientX - startXRef.current, e.clientY - startYRef.current));
-    const raw = startPosRef.current + (startYRef.current - e.clientY) / ITEM_H;
+    const axisTravel = orientation === "horizontal" ? startXRef.current - e.clientX : startYRef.current - e.clientY;
+    const itemSize = orientation === "horizontal" ? metrics.itemWidth : metrics.itemHeight;
+    const raw = startPosRef.current + axisTravel / itemSize;
     const clamped = Math.max(0, Math.min(values.length - 1, raw));
     posRef.current = clamped;
     writeTransform(clamped);
@@ -198,15 +290,25 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
     }
   };
 
-  // Shared by pointerup (checkTap: a short tap jumps to the tapped row) and
+  // Shared by pointerup (a short tap selects the tapped row and closes) and
   // pointercancel (never a tap — just settle where the drag left off).
   const endGesture = (e: React.PointerEvent<HTMLDivElement>, checkTap: boolean) => {
     if (pointerIdRef.current !== e.pointerId) return;
     pointerIdRef.current = null;
     if (checkTap && travelRef.current < TAP_SLOP_PX) {
-      const rect = wheelRef.current?.getBoundingClientRect();
-      const offsetY = rect ? e.clientY - rect.top : CENTER_TOP;
-      settleTo(posRef.current + (offsetY - CENTER_TOP) / ITEM_H);
+      const tappedItemIndex = tappedItemIndexRef.current;
+      if (tappedItemIndex !== null) {
+        settleTo(tappedItemIndex);
+      } else {
+        // A tap on the wheel's empty area (rather than a value) still settles
+        // to the closest detent, but value taps use their DOM index above.
+        const rect = wheelRef.current?.getBoundingClientRect();
+        const itemSize = orientation === "horizontal" ? metrics.itemWidth : metrics.itemHeight;
+        const offset = rect ? (orientation === "horizontal" ? e.clientX - rect.left : e.clientY - rect.top) : CENTER_ITEM * itemSize;
+        settleTo(posRef.current + (offset - CENTER_ITEM * itemSize) / itemSize);
+      }
+      armPostCloseEventFence();
+      onClose();
     } else {
       settleTo(posRef.current);
     }
@@ -237,10 +339,12 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowUp") {
+    const incrementKey = orientation === "horizontal" ? "ArrowRight" : "ArrowUp";
+    const decrementKey = orientation === "horizontal" ? "ArrowLeft" : "ArrowDown";
+    if (e.key === incrementKey) {
       e.preventDefault();
       settleTo(currentIndexRef.current + 1);
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === decrementKey) {
       e.preventDefault();
       settleTo(currentIndexRef.current - 1);
     } else if (e.key === "Escape" || e.key === "Enter") {
@@ -251,11 +355,17 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
 
   const currentValue = values[currentIndex];
   const describe = valueText ?? format;
+  const wheelStyle = {
+    top: place.top,
+    left: place.left,
+    "--cv-wheel-item-width": `${metrics.itemWidth}px`,
+    "--cv-wheel-item-height": `${metrics.itemHeight}px`,
+  } as CSSProperties;
 
   return createPortal(
     <div
       ref={wheelRef}
-      className="cv-wheel"
+      className={`cv-wheel cv-wheel-${orientation}`}
       role="slider"
       tabIndex={0}
       aria-label={ariaLabel}
@@ -263,7 +373,8 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
       aria-valuemax={values[values.length - 1]}
       aria-valuenow={currentValue}
       aria-valuetext={describe(currentValue)}
-      style={{ top: place.top, left: place.left }}
+      aria-orientation={orientation}
+      style={wheelStyle}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={(e) => endGesture(e, true)}
@@ -276,10 +387,12 @@ export function WheelPicker({ values, value, format, valueText, onChange, onClos
         // INTENTIONAL: posRef is the live drag position; reading it here (not
         // currentIndex state) keeps a mid-drag detent commit from snapping the
         // track back to an integer offset before the finger lifts.
-        style={{ transform: `translateY(${offsetFor(posRef.current)}px)` }}
+        style={{
+          transform: orientation === "horizontal" ? `translateX(${offsetFor(posRef.current)}px)` : `translateY(${offsetFor(posRef.current)}px)`,
+        }}
       >
         {values.map((v, i) => (
-          <div key={v} className={`cv-wheel-item${i === currentIndex ? " cv-wheel-current" : ""}`}>
+          <div key={v} className={`cv-wheel-item${i === currentIndex ? " cv-wheel-current" : ""}`} data-wheel-index={i}>
             {format(v)}
           </div>
         ))}

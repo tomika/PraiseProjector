@@ -304,10 +304,23 @@ body,
    line-height 1 keeps the value's box at icon height so the bar doesn't grow. */
 #capoValue,
 #shiftValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1ch;
+  height: 2em;
   font-size: 2em;
   line-height: 1;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* At zero the transpose target shows its legacy icon, but remains the same DOM
+   box that a non-zero value uses. This gives the horizontal WheelPicker a stable
+   element to cover exactly. */
+#shiftValue .btnImg {
+  width: 1em;
+  height: 1em;
 }
 
 #netstatus {
@@ -2242,9 +2255,9 @@ body,
   pointer-events: none;
 }
 
-/* Wheel picker (transpose / capo): a vertical "radio tuner" popup anchored to
-   its toolbar button. Only ~3 neighbours are visible either side of the value;
-   the ends fade out via a mask instead of a hard clip. */
+/* Wheel picker: the default is the original vertical "radio tuner". A horizontal
+   variant can size each detent from its selection target, allowing the centered
+   item to cover a toolbar value exactly. */
 .cv-wheel {
   position: fixed;
   width: 72px;
@@ -2263,6 +2276,14 @@ body,
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
 }
+.cv-wheel-horizontal {
+  width: calc(7 * var(--cv-wheel-item-width));
+  height: var(--cv-wheel-item-height);
+  border: 0;
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 22%, #000 78%, transparent);
+}
 .cv-wheel:active {
   cursor: grabbing;
 }
@@ -2271,6 +2292,10 @@ body,
 }
 .cv-wheel-track.cv-wheel-snap {
   transition: transform 150ms ease-out;
+}
+.cv-wheel-horizontal .cv-wheel-track {
+  display: flex;
+  height: 100%;
 }
 .cv-wheel-item {
   height: 36px;
@@ -2287,6 +2312,12 @@ body,
   opacity: 1;
   font-size: 1.3rem;
 }
+.cv-wheel-horizontal .cv-wheel-item {
+  flex: 0 0 var(--cv-wheel-item-width);
+  width: var(--cv-wheel-item-width);
+  height: var(--cv-wheel-item-height);
+  line-height: var(--cv-wheel-item-height);
+}
 .cv-wheel-highlight {
   position: absolute;
   left: 6px;
@@ -2297,4 +2328,13 @@ body,
   border-bottom: 1px solid var(--cv-accent);
   opacity: 0.55;
   pointer-events: none;
+}
+.cv-wheel-horizontal .cv-wheel-highlight {
+  left: calc(50% - var(--cv-wheel-item-width) / 2);
+  right: auto;
+  top: 0;
+  width: var(--cv-wheel-item-width);
+  height: var(--cv-wheel-item-height);
+  box-sizing: border-box;
+  border: 1px solid var(--cv-accent);
 }
