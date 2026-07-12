@@ -223,18 +223,35 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               <small className="form-text text-muted">{t("SettingsDisableHardwareAccelerationOnStartupHint")}</small>
             </div>
           )}
-          <div className="form-check mt-2">
-            <input
-              className="form-check-input"
-              type="checkbox"
+          <div className="form-group mt-2">
+            <label htmlFor="clientViewAutoScanSessions">{t("SettingsClientViewAutoScanSessions")}</label>
+            <select
               id="clientViewAutoScanSessions"
-              checked={settings.clientViewAutoScanSessions}
-              onChange={(e) => updateSetting("clientViewAutoScanSessions", e.target.checked)}
-            />
-            <label className="form-check-label" htmlFor="clientViewAutoScanSessions">
-              {t("SettingsClientViewAutoScanSessions")}
-            </label>
-            <small className="form-text text-muted d-block">{t("SettingsClientViewAutoScanSessionsDescription")}</small>
+              className="form-control"
+              value={settings.clientViewAutoScanSessions}
+              onChange={(e) => updateSetting("clientViewAutoScanSessions", e.target.value as Settings["clientViewAutoScanSessions"])}
+            >
+              <option value="off">{t("SettingsClientViewAutoScanSessionsOff")}</option>
+              <option value="web">{t("SettingsClientViewAutoScanSessionsWeb")}</option>
+              <option value="local">{t("SettingsClientViewAutoScanSessionsLocal")}</option>
+              <option value="both">{t("SettingsClientViewAutoScanSessionsBoth")}</option>
+            </select>
+            <small className="form-text text-muted">{t("SettingsClientViewAutoScanSessionsDescription")}</small>
+          </div>
+          <div className="form-group mt-2">
+            <label htmlFor="clientViewSessionsFoundPopup">{t("SettingsClientViewSessionsFoundPopup")}</label>
+            <select
+              id="clientViewSessionsFoundPopup"
+              className="form-control"
+              value={settings.clientViewSessionsFoundPopup}
+              onChange={(e) => updateSetting("clientViewSessionsFoundPopup", e.target.value as Settings["clientViewSessionsFoundPopup"])}
+            >
+              <option value="off">{t("SettingsClientViewAutoScanSessionsOff")}</option>
+              <option value="web">{t("SettingsClientViewAutoScanSessionsWeb")}</option>
+              <option value="local">{t("SettingsClientViewAutoScanSessionsLocal")}</option>
+              <option value="both">{t("SettingsClientViewAutoScanSessionsBoth")}</option>
+            </select>
+            <small className="form-text text-muted">{t("SettingsClientViewSessionsFoundPopupDescription")}</small>
           </div>
         </div>
       </div>

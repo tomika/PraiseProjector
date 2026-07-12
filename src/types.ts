@@ -1,5 +1,13 @@
 import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 
+/**
+ * Startup session auto-scan preference for the client view. `off` disables the
+ * startup scan; `web`/`local`/`both` choose which session sources are probed
+ * (cloud/web, nearby PPD/LAN, or both) — mapped to an `ExternalSearchMode` by
+ * `autoScanExternalMode` in the client-view `sessionFeatureSettings`.
+ */
+export type ClientViewAutoScanMode = "off" | "web" | "local" | "both";
+
 export interface Settings {
   displayBorderRect: {
     left: number;
@@ -65,7 +73,8 @@ export interface Settings {
   baseFontSize: number; // Base font size in pixels for UI scaling
   fontSizeMode: "manual" | "auto-resolution" | "auto-resolution-dpi";
   automaticViewSwitch: "none" | "portraitToClient" | "orientation";
-  clientViewAutoScanSessions: boolean;
+  clientViewAutoScanSessions: ClientViewAutoScanMode;
+  clientViewSessionsFoundPopup: ClientViewAutoScanMode;
 
   iWebEnabled: boolean;
   ppdSessionEnabled: boolean;

@@ -12,7 +12,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { isViewingRemoteDisplay, showsNetworkIndicator, hasFullViewTodo } from "../controller/ClientViewStore";
+import { isViewingRemoteDisplay, showsNetworkIndicator, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
 import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
@@ -145,7 +145,7 @@ export function MainToolbar({
     options: (
       <div id="btnOptions" className="btnDiv left-aligned" onClick={() => store.toggleOptions()}>
         <img className="btnImg" src={icon("options.svg")} alt="Options" />
-        {hasFullViewTodo(state) && <span className="cv-todo-dot" aria-label="Action needed in full view" />}
+        {(hasFullViewTodo(state) || hasBackgroundSessionsFound(state)) && <span className="cv-todo-dot" aria-label="Action needed" />}
       </div>
     ),
     home: state.capabilities.canReturnHome ? (

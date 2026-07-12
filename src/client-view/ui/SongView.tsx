@@ -300,6 +300,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       },
       ZOOM_PINCH_PIXELS_PER_STEP
     );
+    const onWheel = (ev: WheelEvent) => {
+      if (!ev.ctrlKey) return;
+      ev.preventDefault();
+      store.setDisplaySetting("maxText", ev.deltaY < 0);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
 
     el.addEventListener("touchend", finishPinch, true);
     el.addEventListener("touchcancel", finishPinch, true);

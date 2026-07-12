@@ -71,6 +71,7 @@
   line-height: 1.15;
   pointer-events: none;
   text-align: center;
+  opacity: 0.5;
 }
 
 .cv-startup-scan object {

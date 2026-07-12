@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { canUseSessions, hasFullViewTodo } from "../controller/ClientViewStore";
+import { canUseSessions, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 
 interface MenuItem {
@@ -73,7 +73,14 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     },
     // Sessions hub — discover/attach + host controls live in the shared SessionsForm dialog.
     // App-mode only: Client mode is a fixed-source follower with no sessions hub.
-    { id: "sessions", label: "Sessions", image: "wifi.svg", show: canUseSessions(state), run: () => store.openSessionsDialog() },
+    {
+      id: "sessions",
+      label: "Sessions",
+      image: "wifi.svg",
+      show: canUseSessions(state),
+      dot: hasBackgroundSessionsFound(state),
+      run: () => store.openSessionsDialog(),
+    },
     {
       id: "home",
       label: "Switch UI",
@@ -110,7 +117,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
         onClick={() => setOpen((v) => !v)}
       >
         <img className="btnImg cv-opt-icon" src={icon("menu.svg")} alt="More" />
-        {hasFullViewTodo(state) && <span className="cv-todo-dot" aria-label="Action needed in full view" />}
+        {(hasFullViewTodo(state) || hasBackgroundSessionsFound(state)) && <span className="cv-todo-dot" aria-label="Action needed" />}
       </button>
       {open && (
         <div className="cv-more-menu" role="menu">

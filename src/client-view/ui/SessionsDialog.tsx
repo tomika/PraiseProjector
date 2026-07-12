@@ -17,8 +17,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { OnlineSessionEntry, SessionFeatureKey } from "../api/ClientApi";
-import { readSessionToggleSettings, type SessionToggleSettings } from "../api/sessionFeatureSettings";
+import type { ExternalSearchMode, OnlineSessionEntry, SessionFeatureKey } from "../api/ClientApi";
+import {
+  readClientViewSessionsFoundPopup,
+  readSessionToggleSettings,
+  sessionKindMatchesMode,
+  type SessionToggleSettings,
+} from "../api/sessionFeatureSettings";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { SessionsForm, classifyOnlineSession, type SessionRow } from "../../shared/SessionsForm";
 import { icon } from "./assets";
@@ -45,6 +50,10 @@ export function SessionsDialog() {
   addressRef.current = broadcastAddress;
   const addressErrorRef = useRef(addressError);
   addressErrorRef.current = addressError;
+  // While the dialog runs hidden as the startup auto-scan, probe only the sources
+  // chosen in Settings (startupScanMode); once it's a visible/manual hub, scan BOTH.
+  const startupScanModeRef = useRef<ExternalSearchMode | null>(null);
+  startupScanModeRef.current = state.sessionsDialogStartupHidden ? state.startupScanMode : null;
 
   // Seed the scan-address picker + default from the host bridge on open.
   useEffect(() => {
@@ -76,7 +85,8 @@ export function SessionsDialog() {
 
   const refresh = useCallback(async () => {
     try {
-      await store.refreshSessions("BOTH", addressErrorRef.current ? undefined : addressRef.current);
+      const mode: ExternalSearchMode = startupScanModeRef.current ?? "BOTH";
+      await store.refreshSessions(mode, addressErrorRef.current ? undefined : addressRef.current);
     } finally {
       if (mountedRef.current) {
         setSearched(true);
@@ -102,11 +112,15 @@ export function SessionsDialog() {
     return () => clearTimeout(timer);
   }, [state.sessionsDialogStartupHidden, store]);
 
+  // While the startup scan runs hidden, only auto-reveal when a found session's
+  // type matches the popup mask; any other found session badges the button instead.
   useEffect(() => {
-    if (state.sessionsDialogStartupHidden && state.sessions.length > 0) {
-      store.revealStartupSessionsDialog();
-    }
-  }, [state.sessionsDialogStartupHidden, state.sessions.length, store]);
+    if (!state.sessionsDialogStartupHidden || state.sessions.length === 0) return;
+    const popupMode = readClientViewSessionsFoundPopup();
+    const anyPopupWorthy = state.sessions.some((s) => sessionKindMatchesMode(classifyOnlineSession(s.localUrl), popupMode));
+    if (anyPopupWorthy) store.revealStartupSessionsDialog();
+    else store.markBackgroundSessionsFound();
+  }, [state.sessionsDialogStartupHidden, state.sessions, store]);
 
   const caps = state.capabilities;
 

@@ -19,7 +19,7 @@ import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncS
 import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
-import { readClientViewAutoScanSessions } from "../api/sessionFeatureSettings";
+import { autoScanExternalMode, readClientViewAutoScanSessions } from "../api/sessionFeatureSettings";
 import type {
   ClientApi,
   ClientCapabilities,
@@ -230,6 +230,15 @@ export interface ClientViewState {
   sessionsDialogStartupHidden: boolean;
   /** Transient page-load session scan status, shown as a small lower-left box. */
   startupSessionScan: { address?: string } | null;
+  /** Which external sources the startup auto-scan probes while the hidden sessions
+   *  dialog runs, derived from the `clientViewAutoScanSessions` preference; `null`
+   *  once the dialog is a normal (manual) hub, which always scans BOTH. */
+  startupScanMode: ExternalSearchMode | null;
+  /** Set when the startup auto-scan found session(s) whose type is NOT in the
+   *  `clientViewSessionsFoundPopup` mask: instead of auto-opening we badge the
+   *  Sessions button so the user can open the hub themselves. Cleared when the
+   *  Sessions dialog becomes visible (manual open or auto-reveal). */
+  sessionsFoundBadge: boolean;
   /** Whether the song's display instructions are overlaid on the song view
    *  (legacy chkInstructions wand toggle). */
   showInstructions: boolean;
@@ -336,6 +345,13 @@ export function hasFullViewTodo(state: ClientViewState): boolean {
   return statusHasFullViewTodo(state.syncStatus);
 }
 
+/** True when the startup auto-scan found a background session that did not match
+ *  the `clientViewSessionsFoundPopup` mask, so the Sessions button (and the
+ *  options / more buttons it lives behind) carry an attention dot. */
+export function hasBackgroundSessionsFound(state: ClientViewState): boolean {
+  return state.sessionsFoundBadge;
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 
 function initialState(): ClientViewState {
@@ -370,6 +386,8 @@ function initialState(): ClientViewState {
     sessionsDialogOpen: false,
     sessionsDialogStartupHidden: false,
     startupSessionScan: null,
+    startupScanMode: null,
+    sessionsFoundBadge: false,
     showInstructions: false,
     highlightOn: false,
     highlightControl: false,
@@ -1634,26 +1652,43 @@ export class ClientViewStore {
   // ── sessions ─────────────────────────────────────────────────────────────────
 
   openSessionsDialog(): void {
-    this.set({ sessionsDialogOpen: true, sessionsDialogStartupHidden: false, startupSessionScan: null });
+    this.set({
+      sessionsDialogOpen: true,
+      sessionsDialogStartupHidden: false,
+      startupSessionScan: null,
+      startupScanMode: null,
+      sessionsFoundBadge: false,
+    });
   }
 
   closeSessionsDialog(): void {
-    this.set({ sessionsDialogOpen: false, sessionsDialogStartupHidden: false, startupSessionScan: null });
+    this.set({ sessionsDialogOpen: false, sessionsDialogStartupHidden: false, startupSessionScan: null, startupScanMode: null });
   }
 
   private openStartupSessionsDialog(token: number): void {
-    if (!this.isLifecycleActive(token) || !readClientViewAutoScanSessions()) return;
+    if (!this.isLifecycleActive(token)) return;
+    const mode = autoScanExternalMode(readClientViewAutoScanSessions());
+    if (!mode) return; // preference is "off" — no startup scan
     if (!canUseSessions(this.state)) return;
     this.set({
       sessionsDialogOpen: true,
       sessionsDialogStartupHidden: true,
       startupSessionScan: {},
+      startupScanMode: mode,
     });
   }
 
   revealStartupSessionsDialog(): void {
     if (!this.state.sessionsDialogStartupHidden) return;
-    this.set({ sessionsDialogStartupHidden: false, startupSessionScan: null });
+    this.set({ sessionsDialogStartupHidden: false, startupSessionScan: null, sessionsFoundBadge: false });
+  }
+
+  /** Flag that the startup scan found background session(s) whose type is outside
+   *  the popup mask (see {@link hasBackgroundSessionsFound}); the hidden dialog
+   *  stays hidden and later auto-closes, but the Sessions button keeps the dot. */
+  markBackgroundSessionsFound(): void {
+    if (!this.state.sessionsDialogStartupHidden) return;
+    this.set({ sessionsFoundBadge: true });
   }
 
   closeStartupSessionsDialogIfHidden(): void {
