@@ -505,7 +505,9 @@ contextBridge.exposeInMainWorld("hostDevice", {
     ipcRenderer.invoke("hostdevice-start-navigation-timeout", navigationTimeoutMs, message),
   pageLoadedSuccessfully: () => ipcRenderer.invoke("hostdevice-page-loaded-successfully"),
   keepScreenOn: (enabled: boolean) => ipcRenderer.invoke("hostdevice-keep-screen-on", enabled),
-  share: (url: string, title: string, text: string) => ipcRenderer.invoke("hostdevice-share", url, title, text),
+  // No `share`: Electron desktop has no native share sheet, so `hostDevice.share` is intentionally
+  // absent here. The renderer's shareService then degrades to the Web Share API / clipboard instead
+  // of (previously) opening the public page in the browser, which is not a share.
   openLinkExternal: (url: string) => ipcRenderer.invoke("hostdevice-open-link-external", url),
   getThirdPartyLicenseSections: () => ipcRenderer.invoke("hostdevice-get-third-party-license-sections"),
   checkNearbyPermissions: (acquire: boolean) => ipcRenderer.invoke("hostdevice-check-nearby-permissions", acquire),

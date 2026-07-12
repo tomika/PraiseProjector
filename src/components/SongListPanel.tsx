@@ -15,6 +15,7 @@ import { cloudApi } from "../../common/cloudApi";
 import { SongPreference } from "../../db-common/SongPreference";
 import { Leader } from "../../db-common/Leader";
 import CompareDialog, { convertHistoryEntriesToSongsWithHistory } from "./CompareDialog";
+import { buildSongShareUrl, sharePublicLink } from "../services/shareService";
 import "./SongListPanel.css";
 
 let addSongToPlaylistCallback: ((song: Song) => void) | null = null;
@@ -1394,6 +1395,14 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }
   }
 
+  // Share the public link of the context-menu's selected song via the platform share dialog.
+  private handleShareSong = () => {
+    const song = this.state.selectedSong;
+    this.hideContextMenu();
+    if (!song) return;
+    void sharePublicLink(buildSongShareUrl(song.Id), song.Title, this.props.t?.("ShareLinkCopied"));
+  };
+
   private handleImportFromClipboard = async () => {
     this.hideContextMenu();
     try {
@@ -1929,6 +1938,16 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             <i className="fa fa-clipboard me-2"></i>
             {this.props.t?.("SongListImportFromClipboard") || "Import from clipboard"}
           </div>
+          {/* Share song — always available for the selected song (a song always has a public link) */}
+          {selectedSong && (
+            <>
+              <div className="songlist-context-menu-divider"></div>
+              <div className="songlist-context-menu-item" onClick={this.handleShareSong}>
+                <i className="fa fa-share-alt me-2"></i>
+                {this.props.t?.("ShareSong") || "Share song"}
+              </div>
+            </>
+          )}
         </div>
       </>
     );

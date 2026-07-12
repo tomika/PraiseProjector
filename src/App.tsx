@@ -8,6 +8,7 @@ import PreviewPanel, { PreviewPanelMethods } from "./components/PreviewPanel";
 import EditorPanel from "./components/EditorPanel";
 import Toolbar from "./components/Toolbar";
 import MessageBox from "./components/MessageBox";
+import { ShareDialogHost } from "./components/ShareDialog";
 import { useWindowWidth } from "./hooks/useWindowWidth";
 import { useOrientation } from "./hooks/useOrientation";
 import ResizeHandle from "./components/ResizeHandle";
@@ -2431,6 +2432,7 @@ const AppContent: React.FC = () => {
     <>
       <ResponsiveFontSizeManager />
       <UpdateNotification />
+      <ShareDialogHost />
       <DndProvider backend={HTML5Backend}>
         <div className="container-fluid vh-100 d-flex flex-column pp-app-shell p-1">
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}

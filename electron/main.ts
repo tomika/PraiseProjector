@@ -2011,11 +2011,6 @@ ipcMain.handle("hostdevice-start-navigation-timeout", () => true);
 
 ipcMain.handle("hostdevice-page-loaded-successfully", () => true);
 
-ipcMain.handle("hostdevice-share", async (_event, url: string) => {
-  if (url) await openExternalUrlSafely(url);
-  return true;
-});
-
 // Open OS Bluetooth settings for device pairing
 ipcMain.handle("open-bluetooth-settings", async () => {
   try {

@@ -24,6 +24,8 @@ import { Settings } from "../types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
+import { formatLocalDateLabel } from "../../common/date-only";
+import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
 
 // DisplayMode enum matching C# SectionListBox.Item.Mode
 enum DisplayMode {
@@ -242,12 +244,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.updatePlaylistItemStates();
     }
 
-    // Handle selectedLeader prop changes
-    if (prevProps.selectedLeader !== this.props.selectedLeader) {
-      if (prevProps.selectedLeader && prevProps.selectedLeader !== this.props.selectedLeader) {
-        this.setState({ scheduleDate: null });
-        this.persistScheduleDate(null);
-      }
+    // Re-derive the saved-in-profile marker whenever the leader becomes available/changes
+    // or the playlist content is replaced/edited, so "Share playlist" reflects the true state
+    // (the marker restored from localStorage can otherwise be stale on startup).
+    if (prevProps.selectedLeader !== this.props.selectedLeader || prevState.currentPlaylist !== this.state.currentPlaylist) {
+      this.reconcileScheduleDate();
     }
 
     // Replace local playlist with remote playlist when watching another session
@@ -371,6 +372,33 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   getScheduleDate(): Date | null {
     return this.state.scheduleDate;
+  }
+
+  /** Find the leader-schedule date whose stored playlist content matches `playlist`, if any. */
+  private findMatchingScheduleDate(leader: Leader, playlist: Playlist): Date | null {
+    if (playlist.items.length === 0) return null;
+    for (const date of leader.getSchedule()) {
+      const saved = leader.getPlaylist(date);
+      if (saved && saved.equals(playlist)) return date;
+    }
+    return null;
+  }
+
+  /**
+   * Reconcile the saved-in-profile marker (`scheduleDate`) with reality: a playlist counts as
+   * "saved in the leader's profile" only when its content matches one of the leader's scheduled
+   * playlists. Called on leader change and on playlist load/edit so the "Share playlist" gate is
+   * correct even right after startup, when the marker restored from localStorage may be stale.
+   */
+  private reconcileScheduleDate(): void {
+    const leader = this.props.selectedLeader;
+    if (!leader) return; // Cannot verify without a leader; keep the restored marker.
+    const matched = this.findMatchingScheduleDate(leader, this.state.currentPlaylist);
+    const currentTs = this.state.scheduleDate ? this.state.scheduleDate.getTime() : null;
+    const matchedTs = matched ? matched.getTime() : null;
+    if (currentTs === matchedTs) return; // No change — avoids a redundant setState loop.
+    this.setState({ scheduleDate: matched });
+    this.persistScheduleDate(matched);
   }
 
   getCurrentPlaylist(): Playlist {
@@ -1531,6 +1559,18 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     });
   }
 
+  // Share the public link of the current playlist. Re-derives the matching profile entry at click
+  // time so the link uses the exact stored label (`playlist.name`, what the server holds) — not a
+  // label reconstructed from `scheduleDate`, which could differ in edge timezone cases.
+  private handleSharePlaylist = () => {
+    const leader = this.props.selectedLeader;
+    if (!leader) return;
+    const date = this.findMatchingScheduleDate(leader, this.state.currentPlaylist);
+    if (!date) return;
+    const label = leader.getPlaylist(date)?.name || formatLocalDateLabel(date);
+    void sharePublicLink(buildPlaylistShareUrl(leader.id, label), label, this.props.t("ShareLinkCopied"));
+  };
+
   // Save playlist - matching C# OnPlayListSave
   async handleSavePlaylist() {
     const selectedLeader = this.props.selectedLeader;
@@ -2010,6 +2050,15 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       },
     ];
 
+    // Share playlist — last item, only when the current playlist content is saved in the leader's profile.
+    const canSharePlaylist = !!this.props.selectedLeader && !!this.state.scheduleDate && currentPlaylist.items.length > 0;
+    const shareItems: ContextMenuItem[] = canSharePlaylist
+      ? [
+          { separator: true, label: "", value: "__separator_share" },
+          { label: t("SharePlaylist"), value: "share_playlist", iconClass: "fa fa-share-alt" },
+        ]
+      : [];
+
     const contextMenuItems: ContextMenuItem[] = !contextMenu
       ? []
       : contextOnItem
@@ -2093,6 +2142,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               shortcut: showShortcutHints ? "Ctrl/Cmd+A" : undefined,
             },
             ...undoRedoItems,
+            ...shareItems,
           ]
         : [
             {
@@ -2103,6 +2153,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               shortcut: showShortcutHints ? "Ctrl/Cmd+A" : undefined,
             },
             ...undoRedoItems,
+            ...shareItems,
           ];
 
     return (
@@ -2307,6 +2358,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                       break;
                     case "instructions":
                       this.handleInstructionsClick(contextMenu.targetIndex);
+                      break;
+                    case "share_playlist":
+                      this.handleSharePlaylist();
                       break;
                   }
               }}
