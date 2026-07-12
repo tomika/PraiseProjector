@@ -224,6 +224,16 @@ export function WheelPicker({
     return () => anchor.focus();
   }, [anchor]);
 
+  // Kept current every render (same ref-refresh pattern as settleToRef below) so
+  // the document listeners — registered once on mount — always call the latest
+  // onClose/revert closures without having to re-register on every render.
+  const onCloseRef = useRef(onClose);
+  const revertToOpeningValueRef = useRef(revertToOpeningValue);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+    revertToOpeningValueRef.current = revertToOpeningValue;
+  });
+
   // This is a modal interaction surface, even though it is not a dialog: while
   // open, pointer, mouse and touch events outside it must never reach the page.
   // An outside press dismisses it, but that same press (and its later events)
@@ -237,14 +247,14 @@ export function WheelPicker({
       const beginsInteraction = event.type === "pointerdown" || event.type === "mousedown" || event.type === "touchstart";
       if (beginsInteraction && !closing) {
         closing = true;
-        revertToOpeningValue();
+        revertToOpeningValueRef.current();
         armPostCloseEventFence();
-        onClose();
+        onCloseRef.current();
       }
     };
     BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.addEventListener(type, onDocumentEvent, { capture: true, passive: false }));
     return () => BLOCKED_OUTSIDE_EVENTS.forEach((type) => document.removeEventListener(type, onDocumentEvent, true));
-  }, [onClose, revertToOpeningValue]);
+  }, []);
 
   // If the controlled value changes from outside while no drag is active,
   // snap the track to it (the snap transition stays enabled outside a drag).

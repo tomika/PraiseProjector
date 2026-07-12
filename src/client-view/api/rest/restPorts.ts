@@ -73,6 +73,21 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
   });
 }
 
+/** Push a single changed transpose/capo preference as a MINIMAL id+value
+ *  /display_update (legacy preferenceUpdate). Sent only on finalize (picker
+ *  close) and only when this context may control the display — a follower keeps
+ *  its capo purely local and never pushes. Kept separate from {@link pushDisplay}
+ *  so transpose can reach 0 and capo is actually sent (sendDisplayUpdate does
+ *  neither). */
+async function pushPreference(core: RestCore, pref: { transpose?: number; capo?: number }): Promise<void> {
+  if (!core.canControlDisplay()) return;
+  await cloudApi.sendDisplayPreference({
+    id: core.getDisplay().songId,
+    ...pref,
+    leaderId: core.leader?.id ?? core.config.leaderId,
+  });
+}
+
 /** Push the working playlist as a playlist-only update (legacy
  *  sendPlaylistUpdateRequest). The current song/section fields are carried along so
  *  the cloud session keeps its highlight, but a served host treats it purely as a
@@ -185,13 +200,15 @@ export function createDisplayApi(core: RestCore): DisplayApi {
         deviceId: core.clientId,
       });
     },
-    setTranspose: async (value) => {
+    setTranspose: async (value, commit) => {
+      // Reflect it locally for a live preview on every detent; only push the
+      // finalized value (picker close) — and as a minimal id+transpose update.
       core.patchDisplay({ transpose: value });
-      await pushCurrent();
+      if (commit) await pushPreference(core, { transpose: value });
     },
-    setCapo: async (value) => {
+    setCapo: async (value, commit) => {
       core.patchDisplay({ capo: value });
-      await pushCurrent();
+      if (commit) await pushPreference(core, { capo: value });
     },
     setInstructions: async (instructions) => {
       core.patchDisplay({ instructions });

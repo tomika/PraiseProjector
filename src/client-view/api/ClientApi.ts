@@ -359,8 +359,14 @@ export interface DisplayApi {
   project(request: ProjectRequest): Promise<void>;
   /** Highlight a lyric range / section within the current song. */
   highlight(from: number, to: number, section?: number): Promise<void>;
-  setTranspose(value: number): Promise<void>;
-  setCapo(value: number): Promise<void>;
+  /** Apply a transpose value. `commit` false = local visual preview only (per
+   *  WheelPicker detent); `commit` true = finalize and push the value to the
+   *  backend (a minimal id+transpose /display_update, controllers only). */
+  setTranspose(value: number, commit: boolean): Promise<void>;
+  /** Apply a capo value. `commit` false = local visual preview only; `commit`
+   *  true = finalize and push (controllers only). Capo stays a per-client local
+   *  preference — followers preview locally and never push. */
+  setCapo(value: number, commit: boolean): Promise<void>;
   setInstructions(instructions: string | undefined): Promise<void>;
   /**
    * When LEADING: push the given display to followers (cloud session + PPD

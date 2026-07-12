@@ -277,8 +277,15 @@ export class DirectClientApi implements ClientApi {
         if (from === 0 && to === 0) updateCurrentDisplay({ from: 0, to: 0 });
         dispatch({ command: "display_update", id: songId(), from, to, section });
       },
-      setTranspose: async (value) => dispatch({ command: "song_update", id: songId(), transpose: value }),
-      setCapo: async (value) => dispatch({ command: "song_update", id: songId(), capo: value }),
+      // App/embed applies to the in-process host live on every detent; there is
+      // no separate server round-trip here, so the finalize (commit) call would
+      // only re-dispatch the same value — skip it and act on the preview calls.
+      setTranspose: async (value, commit) => {
+        if (!commit) dispatch({ command: "song_update", id: songId(), transpose: value });
+      },
+      setCapo: async (value, commit) => {
+        if (!commit) dispatch({ command: "song_update", id: songId(), capo: value });
+      },
       setInstructions: async (instructions) => dispatch({ command: "song_update", id: songId(), instructions }),
       pushToFollowers: async () => undefined,
       subscribeDisplay: (callback) => subscribeCurrentDisplayChange(callback),

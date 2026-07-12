@@ -855,6 +855,20 @@ export class CloudApiService {
     }
   }
 
+  /** Minimal preference update mirroring the legacy client's preferenceUpdate():
+   *  POSTs /display_update with ONLY the song id plus the single changed
+   *  transpose/capo value. Unlike {@link sendDisplayUpdate} this sends transpose
+   *  even when it is 0 (so a value can be reset to zero) and can send capo at all
+   *  (sendDisplayUpdate carries neither reliably). No dedup — a repeat of the same
+   *  value is harmless and legacy preference updates were never deduped either. */
+  async sendDisplayPreference(fields: { id: string; transpose?: number; capo?: number; leaderId?: string }): Promise<string> {
+    const values: Record<string, string | number> = { id: fields.id };
+    if (fields.transpose !== undefined) values.transpose = fields.transpose.toString();
+    if (fields.capo !== undefined) values.capo = fields.capo.toString();
+    if (fields.leaderId) values.leader = fields.leaderId;
+    return this.sendPost("/display_update", values, { "X-PP-Intent": "control-update" });
+  }
+
   // =========================================================================
   // Additional endpoints for client (praiseprojector.ts)
   // =========================================================================

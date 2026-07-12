@@ -762,7 +762,18 @@ export class ClientViewStore {
     this.unsubscribes.push(
       this.api.display.subscribeDisplay((display) => {
         if (!this.shouldAcceptDisplayUpdate(display)) return;
-        this.set({ display, transpose: display.transpose ?? 0, capo: display.capo ?? 0 });
+        // Capo is a per-client local preference: keep the user's chosen capo
+        // across leader / display_query updates so a follower can hold its own
+        // capo. Reset it only when the song itself changes (a new song carries
+        // its own capo). Transpose still follows the incoming value — it is a
+        // leader-shared setting and the transpose control is hidden for followers.
+        const songChanged = display.songId !== this.state.display.songId;
+        const capo = songChanged ? (display.capo ?? 0) : this.state.capo;
+        this.set({
+          display: songChanged ? display : { ...display, capo },
+          transpose: display.transpose ?? 0,
+          capo,
+        });
       }),
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
       this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
@@ -1287,14 +1298,35 @@ export class ClientViewStore {
     else await this.loadLocalEntry(entry);
   }
 
-  async setTranspose(value: number): Promise<void> {
+  /** Live-preview a transpose value while the WheelPicker is open: update the
+   *  toolbar label and re-render the song locally, but do NOT push to the
+   *  backend. The finalized value is sent once by {@link commitTranspose} when
+   *  the picker closes (mirrors the legacy select firing onchange only on the
+   *  final choice, not per intermediate value). */
+  async previewTranspose(value: number): Promise<void> {
     this.set({ transpose: value });
-    await this.api.display.setTranspose(value);
+    await this.api.display.setTranspose(value, false);
   }
 
-  async setCapo(value: number): Promise<void> {
+  /** Finalize the transpose (picker close): push the current value to the
+   *  backend. Reads live store state so it is immune to a stale closure from the
+   *  picker's last onChange. */
+  async commitTranspose(): Promise<void> {
+    await this.api.display.setTranspose(this.state.transpose, true);
+  }
+
+  /** Live-preview a capo value locally (label + song render) without pushing.
+   *  Capo is a per-client preference, so this is all a follower ever does. */
+  async previewCapo(value: number): Promise<void> {
     this.set({ capo: value });
-    await this.api.display.setCapo(value);
+    await this.api.display.setCapo(value, false);
+  }
+
+  /** Finalize the capo (picker close). The push is a no-op for non-controllers
+   *  (restPorts pushPreference gates on canControlDisplay), so a follower keeps
+   *  its capo purely local; a leader propagates it to the playlist server-side. */
+  async commitCapo(): Promise<void> {
+    await this.api.display.setCapo(this.state.capo, true);
   }
 
   // ── playlist ─────────────────────────────────────────────────────────────────

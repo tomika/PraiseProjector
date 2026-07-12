@@ -128,10 +128,12 @@ export function MainToolbar({
   );
 
   // A layout change that hides/disables a wheel's own control must close it:
-  // becoming a follower hides transpose entirely, and disabling capo revokes
-  // the capo wheel's own precondition (openCapoPicker's early return).
+  // becoming a follower hides the TRANSPOSE control entirely, and disabling capo
+  // revokes the capo wheel's own precondition (openCapoPicker's early return).
+  // The capo wheel is deliberately NOT closed for a follower — capo is a
+  // per-client local preference that followers may still set on their own client.
   useEffect(() => {
-    if (follower) setWheel(null);
+    if (wheel === "transpose" && follower) setWheel(null);
     else if (wheel === "capo" && !state.displaySettings.useCapo) setWheel(null);
   }, [follower, wheel, state.displaySettings.useCapo]);
 
@@ -273,8 +275,11 @@ export function MainToolbar({
           values={TRANSPOSE_RANGE}
           value={state.transpose}
           format={transposeOption}
-          onChange={(v) => void store.setTranspose(v)}
-          onClose={() => setWheel(null)}
+          onChange={(v) => void store.previewTranspose(v)}
+          onClose={() => {
+            setWheel(null);
+            void store.commitTranspose();
+          }}
           anchor={transposeBtnRef.current}
           orientation="horizontal"
           selectionAnchor={transposeValueRef.current}
@@ -287,8 +292,11 @@ export function MainToolbar({
           value={state.capo}
           format={(v) => (v >= 0 ? String(v) : "—")}
           valueText={(v) => (v >= 0 ? String(v) : "no capo")}
-          onChange={(v) => void store.setCapo(v)}
-          onClose={() => setWheel(null)}
+          onChange={(v) => void store.previewCapo(v)}
+          onClose={() => {
+            setWheel(null);
+            void store.commitCapo();
+          }}
           anchor={capoBtnRef.current}
           orientation="horizontal"
           selectionAnchor={capoValueRef.current}
