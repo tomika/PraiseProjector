@@ -136,7 +136,11 @@
   --cv-panel-bg: #111;
 }
 
-#mainView:not(.dark) .cv-dialog {
+#mainView:not(.dark) .cv-dialog,
+/* The chord-selector popover lives in #swipe-handler (not a .cv-dialog and not
+   #options), so it needs its own light-token re-point or it stays dark — the
+   panel tokens default to dark on :root — even while the view is in light mode. */
+#mainView:not(.dark) #swipe-handler .chordSelector {
   --cv-panel-bg: #efefef;
   --cv-panel-fg: #1f1f1f;
   --cv-panel-border: rgba(0, 0, 0, 0.18);
