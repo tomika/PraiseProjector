@@ -144,6 +144,7 @@ const buildCmd = [
   "npm install",
   ...(targetConfig.preBuildCommands || []),
   "npm run generate-icons",
+  "npm run build:web",
   "npm run build",
   `npx electron-builder ${targetConfig.electronBuilderArgs}`,
   `mkdir -p /project/${targetOutputDir}`,
