@@ -161,7 +161,7 @@ export function MainToolbar({
     instructions: (
       <div
         id="btnInstructions"
-        className={`btnDiv${state.showInstructions ? " cv-toolbtn-on" : ""}`}
+        className={`btnDiv${state.showInstructions ? " cv-toolbtn-on" : ""}${state.hotkeyActiveControl === "instructions" ? " cv-hotkey-active" : ""}`}
         title={canEditInstructions ? "Show/hide instructions (hold to edit)" : "Show/hide instructions"}
         {...(canEditInstructions ? instructionsPress : {})}
         onClick={canEditInstructions ? undefined : () => store.toggleInstructions()}
@@ -182,7 +182,7 @@ export function MainToolbar({
     // - capo icon toggles useCapo on/off,
     // - small dropdown button opens the capo value list.
     capo: (
-      <div id="capo" ref={capoBtnRef}>
+      <div id="capo" ref={capoBtnRef} className={state.hotkeyActiveControl === "capo" ? "cv-hotkey-active" : ""}>
         <div
           id="capoToggle"
           className={`btnDiv${state.displaySettings.useCapo ? " cv-toolbtn-on" : ""}`}
@@ -208,7 +208,7 @@ export function MainToolbar({
       <div
         id="transpose"
         ref={transposeBtnRef}
-        className={`btnDiv${wheel === "transpose" ? " cv-toolbtn-on" : ""}`}
+        className={`btnDiv${wheel === "transpose" ? " cv-toolbtn-on" : ""}${state.hotkeyActiveControl === "transpose" ? " cv-hotkey-active" : ""}`}
         title="Transpose"
         onClick={() => setWheel((w) => (w === "transpose" ? null : "transpose"))}
       >
@@ -232,7 +232,7 @@ export function MainToolbar({
     netstatus: showsNetworkIndicator(state) ? (
       <div
         id="netstatus"
-        className={`btnDiv net-${netStatus}`}
+        className={`btnDiv net-${netStatus}${state.hotkeyActiveControl === "network" ? " cv-hotkey-active" : ""}`}
         title={netTitle}
         onClick={netReconnectable ? () => void store.reconnect() : undefined}
       >
@@ -247,7 +247,11 @@ export function MainToolbar({
       </div>
     ) : null,
     fullscreen: (
-      <div id="fsdiv" className="btnDiv" onClick={() => void store.toggleFullScreen()}>
+      <div
+        id="fsdiv"
+        className={`btnDiv${state.hotkeyActiveControl === "fullscreen" ? " cv-hotkey-active" : ""}`}
+        onClick={() => void store.toggleFullScreen()}
+      >
         <img
           className="btnImg"
           src={icon(state.isFullScreen ? "restore.svg" : "fullscreen.svg")}

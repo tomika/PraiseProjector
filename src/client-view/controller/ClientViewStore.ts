@@ -67,6 +67,25 @@ export const LIST_MODES: readonly ListMode[] = ["database", "playlist", "leaderl
  *  options panel is showing. */
 export type NavigationMode = "database" | "playlist" | "filter" | "archive";
 
+/** Semantic focus used by configurable keyboard/MIDI controls. Unlike the legacy
+ * DOM reference, this survives React renders and only names real client actions. */
+export type ClientViewHotkeyControl =
+  | "chord-box"
+  | "chord-mode"
+  | "no-sec-chord-dup"
+  | "subscript"
+  | "auto-tone"
+  | "bb"
+  | "simplified"
+  | "max-text"
+  | "theme"
+  | "highlight"
+  | "instructions"
+  | "capo"
+  | "transpose"
+  | "network"
+  | "fullscreen";
+
 /** Minimal projection of a navigable song row (a {@link PlaylistEntry} or a
  *  database {@link SongEntry}). The page-turn neighbour preloader needs only the
  *  id plus the per-song transpose/capo to render the reveal faithfully. */
@@ -205,6 +224,10 @@ export interface ClientViewState {
   leaderMode: boolean;
   sessions: OnlineSessionEntry[];
   optionsOpen: boolean;
+  /** Pending song row selected by a hotkey while the options list is open. */
+  hotkeySongId: string | null;
+  /** Current semantic control selected by a hotkey/MIDI pedal. */
+  hotkeyActiveControl: ClientViewHotkeyControl | null;
   /** Whether the song list shows the database, the working-playlist editor, or
    *  the leader-playlists picker. Only acted on when
    *  capabilities.canEditWorkingPlaylist is true. */
@@ -375,6 +398,8 @@ function initialState(): ClientViewState {
     leaderMode: false,
     sessions: [],
     optionsOpen: false,
+    hotkeySongId: null,
+    hotkeyActiveControl: null,
     listMode: "database",
     navigationMode: "database",
     leaderProfiles: [],
@@ -924,7 +949,7 @@ export class ClientViewStore {
   }
 
   private closePortraitOptions(): void {
-    if (!this.widePane) this.set({ optionsOpen: false });
+    if (!this.widePane) this.set({ optionsOpen: false, hotkeySongId: null, hotkeyActiveControl: null });
   }
 
   async selectSong(songId: string): Promise<void> {
@@ -963,11 +988,13 @@ export class ClientViewStore {
   }
 
   async selectDatabaseSong(songId: string): Promise<void> {
+    this.set({ hotkeySongId: null });
     this.setNavigationMode("database");
     await this.loadLocalEntry({ songId });
   }
 
   async selectFilteredSong(songId: string): Promise<void> {
+    this.set({ hotkeySongId: null });
     this.setNavigationMode("filter");
     await this.loadLocalEntry({ songId });
   }
@@ -975,6 +1002,7 @@ export class ClientViewStore {
   /** Project a specific working-playlist entry, preserving its per-item
    *  transpose/capo/instructions values (legacy updateTableFromEntries row pick). */
   async selectPlaylistEntry(entry: PlaylistEntry): Promise<void> {
+    this.set({ hotkeySongId: null });
     this.setNavigationMode("playlist");
     await this.projectEntry(entry);
   }
@@ -982,6 +1010,7 @@ export class ClientViewStore {
   /** Project a row from a selected archived/leader playlist without adding it to
    *  the working playlist. Prev/next then walks that selected archive list. */
   async selectArchiveEntry(entry: PlaylistEntry): Promise<void> {
+    this.set({ hotkeySongId: null });
     this.setNavigationMode("archive");
     await this.loadLocalEntry(entry);
   }
@@ -1527,7 +1556,167 @@ export class ClientViewStore {
   // ── options panel ────────────────────────────────────────────────────────────
 
   toggleOptions(open?: boolean): void {
-    this.set({ optionsOpen: open ?? !this.state.optionsOpen });
+    this.set({ optionsOpen: open ?? !this.state.optionsOpen, hotkeySongId: null, hotkeyActiveControl: null });
+  }
+
+  /** Open/close options from the configurable input layer. Closing commits the
+   * keyboard-selected song just like the legacy Home action did. Pointer clicks
+   * keep their immediate projection behaviour through {@link toggleOptions}. */
+  async hotkeyToggleOptions(): Promise<void> {
+    if (!this.state.optionsOpen) {
+      this.set({ optionsOpen: true, hotkeySongId: this.state.display.songId || null, hotkeyActiveControl: null });
+      return;
+    }
+    const songId = this.state.hotkeySongId;
+    const row = this.hotkeyVisibleSongRows().find((entry) => entry.songId === songId);
+    const listMode = this.state.listMode;
+    const filteredDatabase = !!this.state.searchText.trim();
+    this.set({ optionsOpen: false, hotkeyActiveControl: null, hotkeySongId: null });
+    if (!songId || !row || songId === this.state.display.songId) return;
+    if (listMode === "playlist") await this.selectPlaylistEntry(row as PlaylistEntry);
+    else if (listMode === "leaderlists") await this.selectArchiveEntry(row as PlaylistEntry);
+    else if (filteredDatabase) await this.selectFilteredSong(songId);
+    else await this.selectDatabaseSong(songId);
+  }
+
+  /** The rows currently rendered by the active options-panel list mode. */
+  private hotkeyVisibleSongRows(): NavEntry[] {
+    if (this.state.listMode === "playlist") {
+      const filter = this.state.playlistFilterText.trim();
+      const showFilteredRows = !!filter && (!this.state.playlistSearching || this.state.playlistSearchResults.length > 0);
+      if (!showFilteredRows) return this.state.playlist;
+      const resultIds = new Set(this.state.playlistSearchResults.map((entry) => entry.songId));
+      return this.state.playlist.filter((entry) => resultIds.has(entry.songId));
+    }
+    if (this.state.listMode === "leaderlists") return this.selectedLeaderEntries();
+    if (!this.state.searchText.trim()) return this.state.songs;
+    return this.state.searching && this.state.searchResults.length === 0 ? this.state.songs : this.state.searchResults;
+  }
+
+  /** Move the preselected row in the list that is currently visible without
+   * projecting it until the options panel is closed. */
+  hotkeyMoveSongSelection(next: boolean): void {
+    const rows = this.hotkeyVisibleSongRows();
+    if (!rows.length) return;
+    const current = this.state.hotkeySongId ?? this.state.display.songId;
+    const currentIndex = rows.findIndex((row) => row.songId === current);
+    const index = currentIndex < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, currentIndex + (next ? 1 : -1)));
+    this.set({ hotkeySongId: rows[index].songId });
+  }
+
+  private hotkeyControls(): ClientViewHotkeyControl[] {
+    if (this.state.optionsOpen) {
+      const controls: ClientViewHotkeyControl[] = ["chord-box", "chord-mode", "no-sec-chord-dup", "subscript", "auto-tone"];
+      if (canUseHighlightLamp(this.state)) controls.push("highlight");
+      controls.push("bb", "simplified", "max-text", "theme");
+      return controls;
+    }
+    const controls: ClientViewHotkeyControl[] = this.widePane ? ["fullscreen", "instructions", "capo"] : ["instructions", "capo"];
+    if (!isFollowerView(this.state)) controls.push("transpose");
+    if (showsNetworkIndicator(this.state)) controls.push("network");
+    if (!this.widePane) controls.push("fullscreen");
+    return controls;
+  }
+
+  hotkeySelectControl(next: boolean, wrap = false): void {
+    const controls = this.hotkeyControls();
+    if (!controls.length) return;
+    const currentIndex = this.state.hotkeyActiveControl ? controls.indexOf(this.state.hotkeyActiveControl) : -1;
+    let index = currentIndex + (next ? 1 : -1);
+    if (currentIndex < 0) index = 0;
+    if (wrap) index = (index + controls.length) % controls.length;
+    else index = Math.max(0, Math.min(controls.length - 1, index));
+    this.set({ hotkeyActiveControl: controls[index] });
+  }
+
+  /** NumLock-on legacy semantics: discard the old selection, then select the
+   * first available control in whichever view is active. */
+  hotkeySelectFirstControl(): void {
+    this.set({ hotkeyActiveControl: this.hotkeyControls()[0] ?? null });
+  }
+
+  hotkeyClearControl(): void {
+    this.set({ hotkeyActiveControl: null });
+  }
+
+  /** Toggle/cycle the selected control, or adjust a selectable numeric setting.
+   * Direction 0 is the legacy "activate / cycle" operation. */
+  hotkeyChangeControl(direction: -1 | 0 | 1): void {
+    const control = this.state.hotkeyActiveControl;
+    if (!control) return;
+    const s = this.state.displaySettings;
+    switch (control) {
+      case "chord-box": {
+        const order: ChordBoxKind[] = ["", "GUITAR", "PIANO", "NO_CHORDS"];
+        const step = direction || 1;
+        this.setDisplaySetting("chordBoxType", order[(order.indexOf(s.chordBoxType) + step + order.length) % order.length]);
+        break;
+      }
+      case "chord-mode": {
+        const order: DisplaySettings["chordMode"][] = [0, 1, 3];
+        const step = direction || 1;
+        const currentIndex = Math.max(0, order.indexOf(s.chordMode));
+        const index = direction === 0 ? (currentIndex + 1) % order.length : Math.max(0, Math.min(order.length - 1, currentIndex + step));
+        this.setDisplaySetting("chordMode", order[index]);
+        break;
+      }
+      case "no-sec-chord-dup":
+        this.setDisplaySetting("noSecChordDup", !s.noSecChordDup);
+        break;
+      case "subscript":
+        this.setDisplaySetting("subscript", !s.subscript);
+        break;
+      case "auto-tone":
+        this.setDisplaySetting("autoTone", !s.autoTone);
+        break;
+      case "bb":
+        this.setDisplaySetting("bb", !s.bb);
+        break;
+      case "simplified":
+        this.setDisplaySetting("simplified", !s.simplified);
+        break;
+      case "max-text":
+        this.setDisplaySetting("maxText", !s.maxText);
+        break;
+      case "theme": {
+        const order: DarkMode[] = ["auto", "light", "dark"];
+        const step = direction || 1;
+        const index = (order.indexOf(this.state.themeSetting) + step + order.length) % order.length;
+        writeThemeSetting(order[index]);
+        this.syncTheme();
+        break;
+      }
+      case "highlight":
+        this.toggleHighlight();
+        break;
+      case "instructions":
+        this.toggleInstructions();
+        break;
+      case "capo": {
+        if (!s.useCapo) {
+          if (direction >= 0) this.setDisplaySetting("useCapo", true);
+          break;
+        }
+        if (direction < 0 && this.state.capo <= -1) {
+          this.setDisplaySetting("useCapo", false);
+          break;
+        }
+        const value = Math.max(-1, Math.min(11, this.state.capo + (direction || 1)));
+        void this.previewCapo(value).then(() => this.commitCapo());
+        break;
+      }
+      case "transpose": {
+        const value = Math.max(-11, Math.min(11, this.state.transpose + (direction || 1)));
+        void this.previewTranspose(value).then(() => this.commitTranspose());
+        break;
+      }
+      case "network":
+        void this.reconnect();
+        break;
+      case "fullscreen":
+        void this.toggleFullScreen();
+        break;
+    }
   }
 
   /** Flip leader mode (legacy chkAdmin). Persisted via the snapshot; the API

@@ -10,6 +10,7 @@ import NetDisplaySettings from "./settings/NetDisplaySettings";
 import ImagesSettings from "./settings/ImagesSettings";
 import AboutSettings from "./settings/AboutSettings";
 import ChordProStylesSettings from "./settings/ChordProStylesSettings";
+import ClientViewSettings from "./settings/ClientViewSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
@@ -33,6 +34,7 @@ interface SettingsFormProps {
 function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: boolean = isWebServerRuntimeAvailable()): string {
   const validTabs = new Set([
     "general",
+    "client-view",
     "searching",
     "projecting",
     "images",
@@ -272,6 +274,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
   const renderTabContent = () => {
     const tabs = {
       general: <GeneralSettings settings={settings} updateSetting={updateSetting} />,
+      "client-view": <ClientViewSettings settings={settings} updateSetting={updateSetting} />,
       searching: <SearchingSettings settings={settings} updateSetting={updateSetting} />,
       projecting: <ProjectingSettings settings={settings} updateSetting={updateSetting} />,
       leaders: (
@@ -360,6 +363,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "chordpro-styles" ? "active" : ""}`} href="#" onClick={() => setActiveTab("chordpro-styles")}>
                 {t("SettingsPageChordProStyles")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "client-view" ? "active" : ""}`} href="#" onClick={() => setActiveTab("client-view")}>
+                {t("SettingsPageClientView")}
               </a>
             </li>
             {hasWebServerRuntime && (

@@ -1,4 +1,5 @@
 import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
+import type { ClientViewInputProfile } from "./client-view/input/clientViewInput";
 
 /**
  * Startup session auto-scan preference for the client view. `off` disables the
@@ -75,6 +76,10 @@ export interface Settings {
   automaticViewSwitch: "none" | "portraitToClient" | "orientation";
   clientViewAutoScanSessions: ClientViewAutoScanMode;
   clientViewSessionsFoundPopup: ClientViewAutoScanMode;
+  /** Active input profile for the new client view. `factory` is built in/read-only. */
+  clientViewActiveInputProfileId: string;
+  /** User-created input profiles only; the factory profile stays in code. */
+  clientViewInputProfiles: ClientViewInputProfile[];
 
   iWebEnabled: boolean;
   ppdSessionEnabled: boolean;

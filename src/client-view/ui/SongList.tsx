@@ -91,7 +91,7 @@ export function SongList() {
             return (
               <tr
                 key={entry.songId}
-                className={state.navigationMode === selectedMode && entry.songId === state.display.songId ? "selected" : ""}
+                className={`${state.navigationMode === selectedMode && entry.songId === state.display.songId ? "selected" : ""}${state.optionsOpen && entry.songId === state.hotkeySongId ? " cv-hotkey-row" : ""}`}
                 onClick={() => void (usingSearch ? store.selectFilteredSong(entry.songId) : store.selectDatabaseSong(entry.songId))}
               >
                 {canEdit && (

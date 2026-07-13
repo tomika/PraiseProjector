@@ -1,0 +1,54 @@
+.client-view-profile-toolbar,
+.client-view-midi-status,
+.client-view-binding-list {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.client-view-profile-toolbar {
+  margin-bottom: 0.35rem;
+}
+
+.client-view-profile-toolbar select {
+  min-width: min(100%, 18rem);
+  flex: 1 1 14rem;
+}
+
+.client-view-midi-status {
+  justify-content: space-between;
+  margin: 0.85rem 0 0.5rem;
+  font-size: 0.875rem;
+}
+
+.client-view-hotkey-grid-wrap {
+  max-height: min(46vh, 32rem);
+  overflow: auto;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.25rem;
+}
+
+.client-view-hotkey-grid {
+  margin-bottom: 0;
+}
+
+.client-view-hotkey-grid thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bs-body-bg);
+  z-index: 1;
+}
+
+.client-view-hotkey-grid th:first-child {
+  min-width: 15rem;
+}
+
+.client-view-binding {
+  border: 0;
+  font-weight: normal;
+}
+
+.client-view-binding:disabled {
+  opacity: 0.85;
+}

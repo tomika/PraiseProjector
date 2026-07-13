@@ -126,6 +126,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       automaticViewSwitch: "none",
       clientViewAutoScanSessions: "both",
       clientViewSessionsFoundPopup: "local",
+      clientViewActiveInputProfileId: "factory",
+      clientViewInputProfiles: [],
       allClientsCanUseLeaderMode: true, // C# default: True
       leaderModeClients: [],
       printingBB: false,

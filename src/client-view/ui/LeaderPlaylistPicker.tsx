@@ -33,7 +33,7 @@ export function LeaderPlaylistPicker() {
               return (
                 <tr
                   key={`${entry.songId}-${index}`}
-                  className={state.navigationMode === "archive" && entry.songId === state.display.songId ? "selected" : ""}
+                  className={`${state.navigationMode === "archive" && entry.songId === state.display.songId ? "selected" : ""}${state.optionsOpen && entry.songId === state.hotkeySongId ? " cv-hotkey-row" : ""}`}
                   onClick={() => void store.selectArchiveEntry(entry)}
                 >
                   <td className="cv-add-col">

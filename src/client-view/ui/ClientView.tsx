@@ -9,7 +9,7 @@
  * upper-left home button can switch back to the main UI.
  */
 
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { canUseSessions } from "../controller/ClientViewStore";
 import { AboutDialog } from "./AboutDialog";
@@ -24,6 +24,7 @@ import { StartupScanIndicator } from "./StartupScanIndicator";
 import { PullRefreshSpinner } from "./PullRefreshSpinner";
 import { usePullToRefresh } from "./usePullToRefresh";
 import { UNIFORM_BUTTON_BORDERS } from "./uiConfig";
+import { useClientViewInput } from "../input/useClientViewInput";
 
 export function ClientView({ onHome }: { onHome?: () => void }) {
   const state = useClientViewState();
@@ -31,6 +32,8 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
   // The toolbar Prev/Next buttons drive the same animated page-turn as a swipe,
   // which lives in SongView — reached here through an imperative handle.
   const songViewRef = useRef<SongViewHandle>(null);
+  const navigateSong = useCallback((next: boolean) => songViewRef.current?.navigate(next), []);
+  useClientViewInput(store, navigateSong);
   // Pull-down-from-the-toolbar refresh: a released pull just reloads the page
   // (database synchronization is a full-view-only concern now — see ClientViewStore
   // pullRefresh). A single level, so no escalation.

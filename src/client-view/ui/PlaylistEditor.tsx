@@ -187,6 +187,7 @@ export function PlaylistEditor() {
               const titleEntry: SongFound | typeof entry = found ? { ...entry, title: found.title || entry.title, found: found.found } : entry;
               const rowClass = [
                 state.navigationMode === "playlist" && entry.songId === state.display.songId ? "selected" : "",
+                state.optionsOpen && entry.songId === state.hotkeySongId ? "cv-hotkey-row" : "",
                 index === dragIndex ? "cv-dragging" : "",
                 dragging && index === overIndex && index !== dragIndex ? "cv-drag-over" : "",
               ]

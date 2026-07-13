@@ -59,6 +59,12 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
   const leaderLists = canEdit && state.listMode === "leaderlists";
 
   useEffect(() => {
+    if (!state.optionsOpen || !state.hotkeySongId) return;
+    const frame = requestAnimationFrame(() => contentRef.current?.querySelector("#list tr.cv-hotkey-row")?.scrollIntoView({ block: "nearest" }));
+    return () => cancelAnimationFrame(frame);
+  }, [state.hotkeySongId, state.listMode, state.optionsOpen]);
+
+  useEffect(() => {
     const content = contentRef.current;
     const mainView = content?.closest<HTMLElement>("#mainView");
     if (!content || !mainView) return;
