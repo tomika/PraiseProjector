@@ -359,10 +359,16 @@ export function createDeviceApi(): DeviceApi {
     }
   };
   const device: DeviceApi = {
-    isFullScreen: () => !!document.fullscreenElement,
+    isFullScreen: () => {
+      const native = window.hostDevice?.isFullScreen?.();
+      return typeof native === "boolean" ? native : !!document.fullscreenElement;
+    },
     toggleFullScreen: async () => {
       const hostDevice = window.hostDevice;
-      if (hostDevice?.setFullScreen) return !!(await hostDevice.setFullScreen());
+      if (hostDevice?.setFullScreen) {
+        const current = hostDevice.isFullScreen ? !!(await hostDevice.isFullScreen()) : false;
+        return !!(await hostDevice.setFullScreen(!current));
+      }
       try {
         if (document.fullscreenElement) {
           await document.exitFullscreen();
