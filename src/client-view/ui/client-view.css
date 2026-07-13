@@ -811,6 +811,16 @@ body,
   container-type: inline-size;
 }
 
+/* The icon buttons are <button>s, which do NOT inherit the bar's font-size — form
+   controls reset it to a UA default (~13px). Without this re-inherit the `2em`
+   icons below resolved against that ~13px base and rendered ~27px, noticeably
+   smaller than the bar's 1.5em text labels and the main-toolbar's 40px icons (the
+   toolbar uses <div> buttons, which do inherit). Re-inherit so 2em is the intended
+   40px @ the 20px base. */
+#options .cv-options-row .cv-iconbtn {
+  font-size: inherit;
+}
+
 /* The bar's own icon buttons at the legacy 2em (= 40px @ the 20px base above).
    Scoped to .cv-iconbtn so the popups anchored inside the bar (more-menu items,
    zoom panel, opacity popup) keep their own smaller icon sizes. The #options
