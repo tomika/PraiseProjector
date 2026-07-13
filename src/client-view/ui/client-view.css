@@ -381,8 +381,18 @@ body,
   position: absolute;
   inset: 0;
   overflow: hidden;
-  /* Centre the inline-block editor horizontally; it top-aligns vertically. */
-  text-align: center;
+  /* Pin the editor's left edge to the pane's left (text-align: left); SongView.
+     fitAndZoom then scales it with `transform: scale()` and centres it with an
+     explicit, MEASURED `translateX` from that known baseline. We do NOT centre
+     with `text-align: center` + `transform-origin`, because when the song's
+     natural width exceeds the pane the engines disagree on where an over-wide
+     inline-block sits (Firefox clamps it to the start/left edge), so scaling about
+     "centre" landed it off-centre (drifting right, onto the options panel in split
+     layout). `zoom` was worse still: Firefox keeps the box unshrunk and paints the
+     scaled content in its top-left corner. `transform` is defined identically in
+     both engines, and a measured translate needs no engine agreement at all. It
+     top-aligns vertically (origin top-left). */
+  text-align: left;
   background: var(--cv-song-bg);
   /* Read-only projection: never let a swipe/flip drag start a text selection
      (which left the song title highlighted after a page turn). */

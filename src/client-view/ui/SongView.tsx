@@ -102,24 +102,50 @@ function buildChordFlags(s: DisplaySettings): number {
   return flags;
 }
 
+/** Clear any scaling this module applied to an editor host, restoring its natural
+ *  (unscaled) layout so it can be re-measured or blanked. */
+function clearFit(host: HTMLDivElement): void {
+  host.style.removeProperty("transform");
+  host.style.removeProperty("transform-origin");
+  host.style.removeProperty("margin-bottom");
+}
+
 /**
- * Scale the whole editor (song canvas + title/meta overlays) as ONE unit via
- * `zoom`, so it fits the pane and the overlays stay aligned with the song and it
- * top-aligns like the original. FIT (full page) fits both dimensions; SCROLL
- * (full width) fits the width and lets the pane scroll vertically. Zoom is
- * cleared before measuring so the editor's natural rendered size is read.
+ * Scale the whole editor (song canvas + title/meta overlays) as ONE unit so it
+ * fits the pane and the overlays stay aligned with the song and it top-aligns
+ * like the original. FIT (full page) fits both dimensions; SCROLL (full width)
+ * fits the width and lets the pane scroll vertically. Scaling is cleared before
+ * measuring so the editor's natural rendered size is read.
+ *
+ * We scale with `transform: scale()`, NOT `zoom`. `zoom` scales the layout box in
+ * Chromium but not in Firefox (which keeps the box at its unzoomed size and paints
+ * the scaled content in its top-left corner), so `zoom` mis-placed the song in
+ * Firefox. We also centre horizontally with an explicit, MEASURED `translateX`
+ * rather than `text-align`/`transform-origin`: when the song's natural width
+ * exceeds the pane the engines disagree on where an over-wide inline-block sits
+ * (Firefox clamps it to the start edge), so centring by origin scaled about the
+ * wrong point and the song drifted right. `.cv-page` pins the editor's left edge at
+ * the pane's left, so the scaled width `ew*z` is centred by translating it right by
+ * `(cw - ew*z) / 2`. Origin is top-left so the translate is in un-scaled pane
+ * pixels and the song stays top-aligned. Because `transform` never affects the
+ * layout box, we compensate the block size with a margin so the `.cv-scroll`
+ * container measures the SCALED height and scrolls a tall full-width song correctly
+ * (a no-op in clipped full-page mode).
  */
 function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean): void {
   const container = host.parentElement;
   if (container) container.classList.toggle("cv-scroll", scrollMode);
-  host.style.removeProperty("zoom");
+  clearFit(host);
   api.fitToPane(scrollMode);
   const ew = host.offsetWidth || 1;
   const eh = host.offsetHeight || 1;
   const cw = container?.clientWidth || ew;
   const ch = container?.clientHeight || eh;
   const z = scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
-  host.style.setProperty("zoom", String(z));
+  const tx = (cw - ew * z) / 2;
+  host.style.transformOrigin = "top left";
+  host.style.transform = `translateX(${tx}px) scale(${z})`;
+  host.style.marginBottom = `${eh * (z - 1)}px`;
 }
 
 /** Render a song into an editor and fit it to its pane. Used for the neighbour
@@ -522,7 +548,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       if (loadedTextRef.current !== "") api.load("", false);
       loadedTextRef.current = "";
       appliedTransposeRef.current = 0;
-      host.style.removeProperty("zoom");
+      clearFit(host);
       api.setSectionRepeatCounts(undefined, false);
       api.highlight(0, 0, undefined, undefined, false);
       api.setLyricsHitHandler(null);
@@ -597,7 +623,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       if (!api || !host) return;
       if (!entry) {
         api.load("", false);
-        host.style.removeProperty("zoom");
+        clearFit(host);
         return;
       }
       try {
