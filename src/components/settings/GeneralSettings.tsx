@@ -128,20 +128,6 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               </label>
             </div>
           )}
-          <div className="form-group">
-            <label htmlFor="automaticViewSwitch">{t("SettingsAutomaticViewSwitch")}</label>
-            <select
-              id="automaticViewSwitch"
-              className="form-control"
-              value={settings.automaticViewSwitch}
-              onChange={(e) => updateSetting("automaticViewSwitch", e.target.value as Settings["automaticViewSwitch"])}
-            >
-              <option value="none">{t("SettingsAutomaticViewSwitchNone")}</option>
-              <option value="portraitToClient">{t("SettingsAutomaticViewSwitchPortraitToClient")}</option>
-              <option value="orientation">{t("SettingsAutomaticViewSwitchOrientation")}</option>
-            </select>
-            <small className="form-text text-muted">{t("SettingsAutomaticViewSwitchDescription")}</small>
-          </div>
           <div className="form-check">
             <input
               className="form-check-input"

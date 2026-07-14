@@ -30,6 +30,12 @@ export interface WheelPickerProps {
   /** The centered detent is positioned over this element. In horizontal mode it
    * also matches the element's dimensions exactly. */
   selectionAnchor?: HTMLElement;
+  /** When the popup was summoned by a drag that STARTED on the trigger element
+   * (see useWheelDragOpen), the in-flight pointer to adopt on mount so the wheel
+   * opens already mid-rotation — no separate press is needed to begin turning it.
+   * The coordinates are the ORIGINAL touch-down point, which keeps the rotation
+   * continuous (no jump) from the moment the finger first pressed the trigger. */
+  initialDrag?: { pointerId: number; startClientX: number; startClientY: number };
   ariaLabel: string;
 }
 
@@ -138,6 +144,7 @@ export function WheelPicker({
   anchor,
   orientation = "vertical",
   selectionAnchor,
+  initialDrag,
   ariaLabel,
 }: WheelPickerProps) {
   const clampIndex = (i: number) => Math.max(0, Math.min(values.length - 1, i));
@@ -217,6 +224,33 @@ export function WheelPicker({
   // Take focus on open.
   useEffect(() => {
     wheelRef.current?.focus();
+  }, []);
+
+  // Adopt an in-flight drag (opened via useWheelDragOpen). Runs in a layout
+  // effect — before paint — so pointer capture moves from the trigger element to
+  // the wheel as early as possible, and the very next pointermove already rotates
+  // the wheel. The refs are seeded exactly as handlePointerDown would, but from
+  // the ORIGINAL touch-down point, so there is no jump when rotation begins.
+  // travelRef starts past the tap slop so the release settles (and the wheel
+  // stays open) instead of being read as a tap that would close it.
+  useLayoutEffect(() => {
+    if (!initialDrag) return;
+    const el = wheelRef.current;
+    if (!el) return;
+    try {
+      el.setPointerCapture(initialDrag.pointerId);
+    } catch {
+      // The pointer may already be up (a flick shorter than one frame); the
+      // wheel then just stays open at its current value.
+      return;
+    }
+    pointerIdRef.current = initialDrag.pointerId;
+    startXRef.current = initialDrag.startClientX;
+    startYRef.current = initialDrag.startClientY;
+    startPosRef.current = posRef.current;
+    travelRef.current = TAP_SLOP_PX + 1;
+    trackRef.current?.classList.remove("cv-wheel-snap");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- adopt the pointer exactly once, at mount
   }, []);
 
   // Hand focus back to the trigger button whenever the popup closes.

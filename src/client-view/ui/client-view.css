@@ -290,6 +290,14 @@ body,
   gap: 3px;
 }
 
+/* Drag-to-open (useWheelDragOpen) needs the raw pointer stream on these triggers:
+   touch-action:none stops the browser claiming the horizontal drag as a scroll/pan
+   and cancelling it mid-gesture. user-select is already none via #mainToolbar. */
+#transpose,
+#capoToggle {
+  touch-action: none;
+}
+
 #capoDropdown {
   min-width: 16px;
   justify-content: center;
@@ -1627,6 +1635,12 @@ body,
   white-space: nowrap;
   overflow: hidden;
   cursor: pointer;
+  /* Drag-to-open (useWheelDragOpen): the wheel is vertical here, so the vertical
+     drag must reach us as pointer events rather than being consumed as a list
+     scroll; user-select:none keeps the value text from selecting during the drag. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #list.cv-playlist td.transposeColumn > span,

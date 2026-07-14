@@ -17,6 +17,7 @@ import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
 import { useLongPress } from "./useLongPress";
+import { useWheelDragOpen, type WheelDragOpenPayload } from "./useWheelDragOpen";
 import { WheelPicker } from "./WheelPicker";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
@@ -74,6 +75,9 @@ export function MainToolbar({
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
   const follower = isViewingRemoteDisplay(state);
   const [wheel, setWheel] = useState<null | "transpose" | "capo">(null);
+  // When the open wheel was summoned by a drag off its trigger, the in-flight
+  // pointer to hand to it so it opens already turning (see useWheelDragOpen).
+  const [wheelDrag, setWheelDrag] = useState<WheelDragOpenPayload | null>(null);
   const transposeBtnRef = useRef<HTMLDivElement | null>(null);
   const capoBtnRef = useRef<HTMLDivElement | null>(null);
   const transposeValueRef = useRef<HTMLSpanElement | null>(null);
@@ -118,6 +122,7 @@ export function MainToolbar({
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
   const openCapoPicker = () => {
     if (!state.displaySettings.useCapo) return;
+    setWheelDrag(null);
     setWheel("capo");
   };
 
@@ -126,6 +131,50 @@ export function MainToolbar({
     () => store.setDisplaySetting("useCapo", !state.displaySettings.useCapo),
     () => openCapoPicker()
   );
+
+  // Drag-to-open: dragging horizontally off Transpose or Capo (both wheels are
+  // horizontal) opens the wheel already turning under the finger — see
+  // useWheelDragOpen + WheelPicker's initialDrag. Purely additive to the tap /
+  // long-press triggers above. Capo's drag is gated on useCapo, mirroring
+  // openCapoPicker's own precondition.
+  const transposeDrag = useWheelDragOpen({
+    orientation: "horizontal",
+    onOpen: (drag) => {
+      setWheelDrag(drag);
+      setWheel("transpose");
+    },
+  });
+  const capoDrag = useWheelDragOpen({
+    orientation: "horizontal",
+    enabled: state.displaySettings.useCapo,
+    onOpen: (drag) => {
+      setWheelDrag(drag);
+      setWheel("capo");
+    },
+  });
+  // #capoToggle keeps its long-press / short-press (useLongPress) AND gains the
+  // drag-open gesture: both run for every pointer event. The same >slop move that
+  // voids the press (useLongPress) is the one that opens the wheel — no conflict.
+  const capoToggleHandlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      capoPress.onPointerDown(e);
+      capoDrag.handlers.onPointerDown(e);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      capoPress.onPointerMove(e);
+      capoDrag.handlers.onPointerMove(e);
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      capoPress.onPointerUp(e);
+      capoDrag.handlers.onPointerUp(e);
+    },
+    onPointerCancel: (e: React.PointerEvent) => {
+      capoPress.onPointerCancel();
+      capoDrag.handlers.onPointerCancel(e);
+    },
+    onPointerLeave: capoPress.onPointerLeave,
+    onContextMenu: capoPress.onContextMenu,
+  };
 
   // A layout change that hides/disables a wheel's own control must close it:
   // becoming a follower hides the TRANSPOSE control entirely, and disabling capo
@@ -187,7 +236,7 @@ export function MainToolbar({
           id="capoToggle"
           className={`btnDiv${state.displaySettings.useCapo ? " cv-toolbtn-on" : ""}`}
           title={state.displaySettings.useCapo ? "Disable capo (hold to pick value)" : "Enable capo (hold to pick value)"}
-          {...capoPress}
+          {...capoToggleHandlers}
         >
           <span id="capoValue" ref={capoValueRef}>
             {state.displaySettings.useCapo && state.capo > 0 ? state.capo : ""}
@@ -210,7 +259,14 @@ export function MainToolbar({
         ref={transposeBtnRef}
         className={`btnDiv${wheel === "transpose" ? " cv-toolbtn-on" : ""}${state.hotkeyActiveControl === "transpose" ? " cv-hotkey-active" : ""}`}
         title="Transpose"
-        onClick={() => setWheel((w) => (w === "transpose" ? null : "transpose"))}
+        {...transposeDrag.handlers}
+        onClick={() => {
+          // A drag that just opened the wheel also fires a trailing click; ignore
+          // it so it does not immediately toggle the freshly-opened wheel shut.
+          if (transposeDrag.consumeDragOpenClick()) return;
+          setWheelDrag(null);
+          setWheel((w) => (w === "transpose" ? null : "transpose"));
+        }}
       >
         {/* The value target is always present, including at zero, so the horizontal
             picker can precisely cover the element whose value it changes. */}
@@ -282,11 +338,13 @@ export function MainToolbar({
           onChange={(v) => void store.previewTranspose(v)}
           onClose={() => {
             setWheel(null);
+            setWheelDrag(null);
             void store.commitTranspose();
           }}
           anchor={transposeBtnRef.current}
           orientation="horizontal"
           selectionAnchor={transposeValueRef.current}
+          initialDrag={wheelDrag ?? undefined}
           ariaLabel="Transpose"
         />
       )}
@@ -299,11 +357,13 @@ export function MainToolbar({
           onChange={(v) => void store.previewCapo(v)}
           onClose={() => {
             setWheel(null);
+            setWheelDrag(null);
             void store.commitCapo();
           }}
           anchor={capoBtnRef.current}
           orientation="horizontal"
           selectionAnchor={capoValueRef.current}
+          initialDrag={wheelDrag ?? undefined}
           ariaLabel="Capo"
         />
       )}

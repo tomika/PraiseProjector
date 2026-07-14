@@ -22,6 +22,7 @@ import type { SongFound } from "../api/ClientApi";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { icon } from "./assets";
 import { markerStyle, TitleCell } from "./SongList";
+import { useWheelDragOpen, type WheelDragOpenPayload } from "./useWheelDragOpen";
 import { WheelPicker } from "./WheelPicker";
 
 const SHARP = "♯";
@@ -72,6 +73,43 @@ export function PlaylistEditor() {
   const pendingValueRef = useRef(0);
   const [wheelAnchor, setWheelAnchor] = useState<HTMLElement | null>(null);
   const [wheelSelectionAnchor, setWheelSelectionAnchor] = useState<HTMLElement | null>(null);
+
+  // Drag-to-open (see useWheelDragOpen): a vertical drag off a row's transpose/
+  // capo cell (those wheels are vertical) opens the wheel already turning under
+  // the finger. Only one pointer is active at a time, so a single origin ref
+  // records which cell the gesture began on for the shared handlers below.
+  const [wheelDrag, setWheelDrag] = useState<WheelDragOpenPayload | null>(null);
+  const dragOriginRef = useRef<{ index: number; kind: "transpose" | "capo"; value: number } | null>(null);
+  const cellDrag = useWheelDragOpen({
+    orientation: "vertical",
+    onOpen: (drag) => {
+      const origin = dragOriginRef.current;
+      dragOriginRef.current = null;
+      if (!origin) return;
+      setWheelDrag(drag);
+      setWheel({ index: origin.index, kind: origin.kind });
+      pendingValueRef.current = origin.value;
+      setPendingValue(origin.value);
+    },
+  });
+  // Per-cell trigger props: record the origin cell on pointerdown and clear it on
+  // release. Native row reorder is suppressed for gestures that begin on these
+  // cells — the row's onDragStart checks dragOriginRef (see below).
+  const wheelCellHandlers = (index: number, kind: "transpose" | "capo", value: number) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      dragOriginRef.current = { index, kind, value };
+      cellDrag.handlers.onPointerDown(e);
+    },
+    onPointerMove: cellDrag.handlers.onPointerMove,
+    onPointerUp: (e: React.PointerEvent) => {
+      dragOriginRef.current = null;
+      cellDrag.handlers.onPointerUp(e);
+    },
+    onPointerCancel: (e: React.PointerEvent) => {
+      dragOriginRef.current = null;
+      cellDrag.handlers.onPointerCancel(e);
+    },
+  });
 
   const clearClickTimer = () => {
     if (clickTimerRef.current) {
@@ -125,6 +163,7 @@ export function PlaylistEditor() {
     if (!wheel) return;
     const { index, kind } = wheel;
     setWheel(null);
+    setWheelDrag(null);
     void store.updatePlaylistEntry(index, kind === "transpose" ? { transpose: pendingValueRef.current } : { capo: pendingValueRef.current });
   };
 
@@ -133,6 +172,7 @@ export function PlaylistEditor() {
       closeWheel();
       return;
     }
+    setWheelDrag(null);
     setWheel({ index, kind });
     pendingValueRef.current = currentValue;
     setPendingValue(currentValue);
@@ -211,6 +251,12 @@ export function PlaylistEditor() {
                       e.preventDefault();
                       return;
                     }
+                    // A gesture that began on a transpose/capo cell drives that
+                    // cell's wheel, not a row reorder — suppress the native drag.
+                    if (dragOriginRef.current) {
+                      e.preventDefault();
+                      return;
+                    }
                     setDragIndex(index);
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData("text/plain", String(index));
@@ -273,8 +319,12 @@ export function PlaylistEditor() {
                       <td
                         className="transposeColumn"
                         ref={wheelOpenHere("transpose") ? setWheelAnchor : undefined}
+                        {...wheelCellHandlers(index, "transpose", entry.transpose ?? 0)}
                         onClick={(e) => {
                           stopRowClick(e);
+                          // Swallow the click that trails a drag-open so it does
+                          // not immediately toggle the freshly-opened wheel shut.
+                          if (cellDrag.consumeDragOpenClick()) return;
                           toggleWheel(index, "transpose", entry.transpose ?? 0);
                         }}
                       >
@@ -284,8 +334,10 @@ export function PlaylistEditor() {
                       <td
                         className="capoColumn"
                         ref={wheelOpenHere("capo") ? setWheelAnchor : undefined}
+                        {...wheelCellHandlers(index, "capo", entry.capo ?? 0)}
                         onClick={(e) => {
                           stopRowClick(e);
+                          if (cellDrag.consumeDragOpenClick()) return;
                           toggleWheel(index, "capo", entry.capo ?? 0);
                         }}
                       >
@@ -340,6 +392,7 @@ export function PlaylistEditor() {
           onClose={closeWheel}
           anchor={wheelAnchor}
           selectionAnchor={wheelSelectionAnchor}
+          initialDrag={wheelDrag ?? undefined}
           ariaLabel={wheel.kind === "transpose" ? "Transpose" : "Capo"}
         />
       )}

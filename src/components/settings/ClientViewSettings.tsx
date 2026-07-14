@@ -195,6 +195,22 @@ export default function ClientViewSettings({ settings, updateSetting }: Props) {
 
   return (
     <div className="client-view-settings">
+      <div className="form-group">
+        <label htmlFor="automaticViewSwitch">{t("SettingsAutomaticViewSwitch")}</label>
+        <select
+          id="automaticViewSwitch"
+          className="form-control"
+          value={settings.automaticViewSwitch}
+          onChange={(e) => updateSetting("automaticViewSwitch", e.target.value as Settings["automaticViewSwitch"])}
+        >
+          <option value="none">{t("SettingsAutomaticViewSwitchNone")}</option>
+          <option value="portraitToClient">{t("SettingsAutomaticViewSwitchPortraitToClient")}</option>
+          <option value="orientation">{t("SettingsAutomaticViewSwitchOrientation")}</option>
+        </select>
+        <small className="form-text text-muted">{t("SettingsAutomaticViewSwitchDescription")}</small>
+      </div>
+
+      <hr />
       <h6>{t("ClientViewSessionSettings")}</h6>
       <div className="form-group mt-2">
         <label htmlFor="clientViewAutoScanSessions">{t("SettingsClientViewAutoScanSessions")}</label>
