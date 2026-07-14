@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useCallback } from "react";
+import React, { createContext, useContext, ReactNode, useCallback, useRef } from "react";
 
 export interface ConfirmOptions {
   confirmText?: string;
@@ -44,36 +44,67 @@ interface MessageBoxProviderProps {
 }
 
 export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children, onMessageBoxChange }) => {
+  // FIFO queue of pending dialogs. Only the head is displayed. A new request
+  // while a dialog is visible is queued, never replaces the visible one —
+  // otherwise the replaced dialog's question (and pending promise) is lost.
+  const queueRef = useRef<MessageBoxConfig[]>([]);
+  const activeRef = useRef(false);
+
+  const showNext = useCallback(() => {
+    const next = queueRef.current.shift();
+    if (next) {
+      activeRef.current = true;
+      onMessageBoxChange(next);
+    } else {
+      activeRef.current = false;
+      onMessageBoxChange(null);
+    }
+  }, [onMessageBoxChange]);
+
+  const enqueue = useCallback(
+    (config: MessageBoxConfig) => {
+      queueRef.current.push(config);
+      if (!activeRef.current) {
+        showNext();
+      }
+    },
+    [showNext]
+  );
+
   const showMessage = useCallback(
     (title: string, message: string, onConfirm?: () => void) => {
-      onMessageBoxChange({
+      enqueue({
         title,
         message,
         onConfirm: () => {
-          onConfirm?.();
-          onMessageBoxChange(null);
+          // Advance the queue first so a dialog shown by the callback is
+          // queued normally and the queue can never stall on a throwing callback.
+          showNext();
+          Promise.resolve(onConfirm?.()).catch((error) => {
+            console.error("MessageBox", "onConfirm callback failed", error);
+          });
         },
         showCancel: false,
       });
     },
-    [onMessageBoxChange]
+    [enqueue, showNext]
   );
 
   const showConfirm = useCallback(
     (title: string, message: string, onConfirm: () => void, onCancel?: () => void, options?: ConfirmOptions) => {
-      onMessageBoxChange({
+      enqueue({
         title,
         message,
         onConfirm: () => {
-          // Close confirm first so any later dialogs triggered by async work
-          // (e.g. save errors) are not immediately cleared by this confirm.
-          onMessageBoxChange(null);
+          // Advance first so any later dialogs triggered by async work
+          // (e.g. save errors) are queued normally instead of being cleared.
+          showNext();
           Promise.resolve(onConfirm()).catch((error) => {
             console.error("MessageBox", "onConfirm callback failed", error);
           });
         },
         onCancel: () => {
-          onMessageBoxChange(null);
+          showNext();
           Promise.resolve(onCancel?.()).catch((error) => {
             console.error("MessageBox", "onCancel callback failed", error);
           });
@@ -83,21 +114,21 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
         confirmDanger: options?.confirmDanger,
       });
     },
-    [onMessageBoxChange]
+    [enqueue, showNext]
   );
 
   const showConfirmAsync = useCallback(
     (title: string, message: string, options?: ConfirmOptions): Promise<boolean> => {
       return new Promise((resolve) => {
-        onMessageBoxChange({
+        enqueue({
           title,
           message,
           onConfirm: () => {
-            onMessageBoxChange(null);
+            showNext();
             resolve(true);
           },
           onCancel: () => {
-            onMessageBoxChange(null);
+            showNext();
             resolve(false);
           },
           showCancel: true,
@@ -106,25 +137,25 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
         });
       });
     },
-    [onMessageBoxChange]
+    [enqueue, showNext]
   );
 
   const showYesNoCancelAsync = useCallback(
     (title: string, message: string, options?: ConfirmOptions): Promise<"yes" | "no" | "cancel"> => {
       return new Promise((resolve) => {
-        onMessageBoxChange({
+        enqueue({
           title,
           message,
           onConfirm: () => {
-            onMessageBoxChange(null);
+            showNext();
             resolve("yes");
           },
           onNo: () => {
-            onMessageBoxChange(null);
+            showNext();
             resolve("no");
           },
           onCancel: () => {
-            onMessageBoxChange(null);
+            showNext();
             resolve("cancel");
           },
           showCancel: true,
@@ -133,7 +164,7 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
         });
       });
     },
-    [onMessageBoxChange]
+    [enqueue, showNext]
   );
 
   return (

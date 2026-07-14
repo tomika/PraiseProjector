@@ -2800,7 +2800,7 @@ const App: React.FC = () => {
                       message={messageBox.message}
                       onConfirm={messageBox.onConfirm}
                       onNo={messageBox.onNo}
-                      onCancel={messageBox.showCancel ? messageBox.onCancel || (() => setMessageBox(null)) : undefined}
+                      onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
                       showCancel={messageBox.showCancel ?? true}
                       confirmText={messageBox.confirmText}
                       confirmDanger={messageBox.confirmDanger}
