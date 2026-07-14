@@ -820,6 +820,10 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     }
   };
 
+  // handleSyncClick is intentionally not wrapped in useCallback: it closes over
+  // a large amount of dialog state and is only invoked from user actions, so
+  // deriving a correct dependency list for it would be error-prone for no gain.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleSyncClick = async (skipConflictCheck = false) => {
     if (syncInProgressRef.current) {
       return;

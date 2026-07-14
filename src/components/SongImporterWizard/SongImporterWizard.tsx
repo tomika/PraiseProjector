@@ -414,6 +414,9 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     const supportedFiles = initialFiles.filter((file) => DocumentImporter.isSupportedFile(file.name));
     if (supportedFiles.length === 0) {
       const firstName = initialFiles[0]?.name || "";
+      // Surfacing a message box in response to processing the incoming file
+      // batch (external prop); the ref-key guard above prevents effect re-runs.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessageBox({
         title: t("SongImportUnsupportedFormatTitle"),
         message: format("SongImportUnsupportedFormatMessage", firstName),

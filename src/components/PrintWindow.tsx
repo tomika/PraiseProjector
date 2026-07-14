@@ -83,6 +83,8 @@ const PrintWindow: React.FC = () => {
   // Clear position when dropdown closes
   useEffect(() => {
     if (!showSettings) {
+      // Deliberate reset-on-close of the measured dropdown position.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDropdownPos(null);
     }
   }, [showSettings]);
@@ -112,7 +114,9 @@ const PrintWindow: React.FC = () => {
       try {
         const data: PrintData = JSON.parse(raw);
         const s = new Song(data.songText, data.chordSystem);
-        // Preserve the title from the metadata already in song text
+        // Preserve the title from the metadata already in song text.
+        // One-time load of external data (localStorage) into state on mount.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSong(s);
       } catch (e) {
         console.error("PrintWindow: failed to parse print data", e);

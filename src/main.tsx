@@ -92,6 +92,9 @@ function RootView() {
     }
   }, []);
   useEffect(() => {
+    // Clear the one-shot "open options on entry" flag whenever the client view
+    // is left; deliberate dependent-state reset tied to showClient.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!showClient) setOpenOptionsOnClientEntry(false);
   }, [showClient]);
   const refreshAutomaticViewSwitch = useCallback(() => {
@@ -140,6 +143,9 @@ function RootView() {
     previousPagingLayoutRef.current = isPagingLayout;
 
     if (automaticViewSwitch === "orientation") {
+      // Syncing the visible view to the device orientation (external system);
+      // gated by the previousPagingLayoutRef check above so it runs once per flip.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowClient(isPagingLayout);
       return;
     }

@@ -37,7 +37,10 @@ export function ConfirmDialog() {
     return () => document.removeEventListener("keydown", onKey);
   }, [store]);
 
-  // Re-arm the fade whenever a different animation is shown.
+  // Re-arm the fade whenever a different animation is shown. Deliberate
+  // reset-on-prop-change: the <object> remounts (key={anim}) and its onLoad
+  // sets animReady back to true, so this cannot spin into a cascading render.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setAnimReady(false), [anim]);
 
   if (!anim) return null;

@@ -28,6 +28,9 @@ export function InstructionsEditorDialog() {
     // the viewer is rendering, and only fall back to a song lookup when needed.
     const projectedSongText = state.display.song?.trim();
     if (projectedSongText) {
+      // Syncing already-projected song text (external store data) into local
+      // state when the dialog opens — a legitimate external-system sync.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSongData({ text: state.display.song, system: state.display.system });
       setLoading(false);
       setError(null);

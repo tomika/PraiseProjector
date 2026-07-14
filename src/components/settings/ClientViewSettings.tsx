@@ -118,6 +118,11 @@ export default function ClientViewSettings({ settings, updateSetting }: Props) {
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
+    // addBinding is intentionally omitted: it is re-created every render, so
+    // including it would re-register the keydown listener on every render. The
+    // capture listener only needs to re-arm when capture starts/stops or the
+    // active profile changes (activeProfile.id / profiles).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capturingKeyboardAction, activeProfile.id, profiles]);
 
   const learnMidi = async (action: ClientViewInputAction) => {

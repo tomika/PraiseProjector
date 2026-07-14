@@ -28,6 +28,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
   const [resolvedMaxHeight, setResolvedMaxHeight] = useState<number | undefined>(maxHeight);
 
   useEffect(() => {
+    // Reset the resolved (measured) position/height back to the incoming props
+    // whenever the menu is re-opened at a new anchor; the layout effect below
+    // then re-measures. Deliberate prop->state resync, not a cascading loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setResolvedPosition(position);
     setResolvedMaxHeight(maxHeight);
   }, [position, maxHeight]);
@@ -68,6 +72,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, maxHe
     const shouldUpdateMaxHeight = resolvedMaxHeight !== nextMaxHeight;
 
     if (shouldUpdatePosition) {
+      // Position derived from a real DOM measurement above (getBoundingClientRect)
+      // inside a layout effect; the guard prevents re-runs, so no render loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResolvedPosition({ x: nextX, y: nextY });
     }
     if (shouldUpdateMaxHeight) {
