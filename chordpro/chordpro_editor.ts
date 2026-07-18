@@ -497,6 +497,14 @@ export class ChordProEditor extends ChordDrawer {
   private suppressNextClickTs = false;
   private lastTouchTapTime = 0;
   private lastTouchTapPos: Point | null = null;
+  /** Touch long-press → context menu (timer fallback for platforms whose native
+   *  touch `contextmenu` we suppress via preventDefault, and for iOS/WebKit which
+   *  never fires it). */
+  private longPressTimer: number | null = null;
+  private longPressFired = false;
+  private longPressStart: { x: number; y: number } | null = null;
+  private longPressSelection: { start: number | ChordProSelection | null; end: number | ChordProSelection | null } | null = null;
+  private lastLongPressTime = 0;
   private keyEventTarget: HTMLElement | null = null;
   private composing = false;
   private pendingCanvasFocusAfterMetaBlur = false;
@@ -521,6 +529,27 @@ export class ChordProEditor extends ChordDrawer {
   private chordDropMarker: { x: number; y: number } | null = null;
   private contextMenuElement: HTMLDivElement | null = null;
   private readonly handleContextMenu = (e: MouseEvent) => {
+    // A native contextmenu (desktop right-click, or an OS touch long-press that
+    // beat our fallback timer) is authoritative — cancel the pending timer.
+    if (this.longPressTimer != null) {
+      window.clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    // Our timer already opened the menu for this touch: swallow the OS's
+    // trailing native contextmenu so it doesn't reopen it.
+    if (this.longPressFired || Date.now() - this.lastLongPressTime < 700) {
+      e.preventDefault();
+      return;
+    }
+    // Native touch long-press in progress: restore the selection the synthetic
+    // mousedown cleared (mouse right-click never clears it) and suppress the
+    // trailing tap on release.
+    if (this.longPressSelection) {
+      this.selectionStart = this.longPressSelection.start;
+      this.selectionEnd = this.longPressSelection.end;
+      this.longPressFired = true;
+      this.lastLongPressTime = Date.now();
+    }
     this.onContextMenu(e);
   };
   private readonly dismissContextMenu = (e: Event) => {
@@ -956,10 +985,59 @@ export class ChordProEditor extends ChordDrawer {
       touch.target.dispatchEvent(ev);
     };
 
+    // Long-press → context menu. Sits above the platform's default touch-hold
+    // delay; movement past the slop voids it (that's a scroll/drag/selection).
+    const LONG_PRESS_MS = 650;
+    const MOVE_SLOP_PX = 10;
+
+    const cancelLongPressTimer = () => {
+      if (this.longPressTimer != null) {
+        window.clearTimeout(this.longPressTimer);
+        this.longPressTimer = null;
+      }
+    };
+
+    const fireLongPress = () => {
+      this.longPressTimer = null;
+      const start = this.longPressStart;
+      if (!start) return;
+      this.longPressFired = true;
+      this.lastLongPressTime = Date.now();
+      // Restore the selection the synthetic mousedown cleared so Cut/Copy act on
+      // it — mouse right-click (button 2) never clears it in onMouseDown.
+      if (this.longPressSelection) {
+        this.selectionStart = this.longPressSelection.start;
+        this.selectionEnd = this.longPressSelection.end;
+      }
+      this.dragData = null;
+      this.touchActive = false;
+      this.draw();
+      const menuEvent = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 2,
+        buttons: 2,
+        clientX: start.x,
+        clientY: start.y,
+        screenX: start.x,
+        screenY: start.y,
+      });
+      this.onContextMenu(menuEvent);
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       if (isFormElement(e)) return;
       this.suppressNextClickTs = true;
+      // Snapshot state for a possible long-press BEFORE the synthetic mousedown
+      // mutates it (onMouseDown clears the selection).
+      const t0 = e.changedTouches[0];
+      this.longPressFired = false;
+      this.longPressStart = { x: t0.clientX, y: t0.clientY };
+      this.longPressSelection = { start: this.selectionStart, end: this.selectionEnd };
       dispatchMouse("mousedown", e.changedTouches[0]);
+      cancelLongPressTimer();
+      this.longPressTimer = window.setTimeout(fireLongPress, LONG_PRESS_MS);
       // After onMouseDown ran, check if an interactive element was hit. In
       // read-only display mode, also claim blank canvas/page touches so the
       // outer page-flip controller receives the full synthetic mouse gesture.
@@ -972,6 +1050,16 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      // Void a pending long-press on any real movement, regardless of whether
+      // the canvas claimed the gesture (scroll on a blank area also cancels).
+      if (this.longPressTimer != null && this.longPressStart && e.changedTouches.length >= 1) {
+        const t = e.changedTouches[0];
+        if (Math.hypot(t.clientX - this.longPressStart.x, t.clientY - this.longPressStart.y) > MOVE_SLOP_PX) {
+          cancelLongPressTimer();
+          this.longPressStart = null;
+          this.longPressSelection = null;
+        }
+      }
       if (!this.touchActive || e.changedTouches.length !== 1) return;
       dispatchMouse("mousemove", e.changedTouches[0]);
       e.preventDefault();
@@ -979,6 +1067,20 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      cancelLongPressTimer();
+      this.longPressStart = null;
+      this.longPressSelection = null;
+      if (this.longPressFired) {
+        // The long-press already opened the context menu; swallow this release
+        // so it isn't treated as a tap/double-tap and no mouseup is sent. The
+        // preventDefault also suppresses the compat click that would otherwise
+        // land on the freshly opened menu.
+        this.longPressFired = false;
+        this.touchActive = false;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (e.changedTouches.length !== 1) return;
       if (this.touchActive) {
         const touch = e.changedTouches[0];
@@ -1008,20 +1110,11 @@ export class ChordProEditor extends ChordDrawer {
             screenX: touch.screenX,
             screenY: touch.screenY,
           });
-          // Touch: open ABC editor directly when tapping an ABC block.
-          // Fallback to line-hit detection because readOnly modes may not
-          // have AbcHitBox entries.
-          const abcHit = this.checkAbcHitAtPos(pos);
-          const abcLineHit = abcHit ? false : this.checkAbcLineHitAtPos(pos);
-          if (abcHit || abcLineHit) {
-            e.preventDefault();
-            e.stopPropagation();
-            this.touchActive = false;
-            return;
-          }
-          // In readOnly mode, only chord-hit double taps should open the chord
-          // dialog; keep other readOnly double-taps as no-op on mobile.
-          if (!this.readOnly && !this.checkChordBoxOrTemplateHit(dbl)) this.onDoubleClick(dbl);
+          // Route the double-tap through the same handler the mouse
+          // double-click uses so touch and mouse behave identically:
+          // readOnly ABC → MIDI, readOnly line → onLineDblclk, editable ABC →
+          // editor, editable chord/template → chord dialog.
+          this.onDoubleClick(dbl);
         } else {
           this.lastTouchTapTime = now;
           this.lastTouchTapPos = pos;
@@ -1034,6 +1127,10 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchCancel = () => {
+      cancelLongPressTimer();
+      this.longPressStart = null;
+      this.longPressSelection = null;
+      this.longPressFired = false;
       this.touchActive = false;
       this.suppressNextClickTs = false;
       this.lastTouchTapTime = 0;
@@ -1046,6 +1143,7 @@ export class ChordProEditor extends ChordDrawer {
     this.parent_div.addEventListener("touchcancel", onTouchCancel, listenerOpts);
 
     this.removeTouchEvents = () => {
+      cancelLongPressTimer();
       this.parent_div.removeEventListener("touchstart", onTouchStart, listenerOpts);
       this.parent_div.removeEventListener("touchmove", onTouchMove, listenerOpts);
       this.parent_div.removeEventListener("touchend", onTouchEnd, listenerOpts);
@@ -1357,8 +1455,20 @@ export class ChordProEditor extends ChordDrawer {
     if (!svg.dataset.ppDiagramBound) {
       svg.dataset.ppDiagramBound = "1";
       svg.style.cursor = "pointer";
-      // Variant cycling / play. These listeners live on renderer-owned svg
-      // nodes and are removed with them.
+      // Variant cycling (drag) / play (tap). These listeners live on
+      // renderer-owned svg nodes and are removed with them. Mouse and touch
+      // share one gesture resolution so both pointer types behave identically:
+      // a >10px move cycles the fingering variant, a tap plays the chord.
+      const applyGesture = (dx: number, dy: number) => {
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          const offset = dx < 0 || dy < 0 ? -1 : 1;
+          this.chordVariantCache.set(chord, (this.chordVariantCache.get(chord) || 0) + offset);
+          this.draw();
+        } else {
+          const BoxType = chordBoxType === "PIANO" ? PianoChordHitBox : GuitarChordHitBox;
+          this.playChord(new BoxType(0, 0, size.width, size.height, chord));
+        }
+      };
       let mouseDownPos: { x: number; y: number } | null = null;
       svg.addEventListener("mousedown", (e: MouseEvent) => {
         e.stopPropagation();
@@ -1370,14 +1480,33 @@ export class ChordProEditor extends ChordDrawer {
         const dx = e.offsetX - mouseDownPos.x;
         const dy = e.offsetY - mouseDownPos.y;
         mouseDownPos = null;
-        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-          const offset = dx < 0 || dy < 0 ? -1 : 1;
-          this.chordVariantCache.set(chord, (this.chordVariantCache.get(chord) || 0) + offset);
-          this.draw();
-        } else {
-          const BoxType = chordBoxType === "PIANO" ? PianoChordHitBox : GuitarChordHitBox;
-          this.playChord(new BoxType(0, 0, size.width, size.height, chord));
-        }
+        applyGesture(dx, dy);
+      });
+      // Touch: synthetic mouse events don't carry usable offsetX/offsetY, so the
+      // parent touch pipeline can't tell a drag from a tap on the diagram. Own
+      // the gesture directly from touch coordinates and suppress both the parent
+      // pipeline (stopPropagation) and the browser's compatibility mouse events
+      // (preventDefault) so the diagram is never handled twice.
+      let touchStartPos: { x: number; y: number } | null = null;
+      svg.addEventListener(
+        "touchstart",
+        (e: TouchEvent) => {
+          if (e.changedTouches.length !== 1) return;
+          e.stopPropagation();
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          touchStartPos = { x: t.clientX, y: t.clientY };
+        },
+        { passive: false }
+      );
+      svg.addEventListener("touchend", (e: TouchEvent) => {
+        if (!touchStartPos || e.changedTouches.length !== 1) return;
+        e.stopPropagation();
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchStartPos.x;
+        const dy = t.clientY - touchStartPos.y;
+        touchStartPos = null;
+        applyGesture(dx, dy);
       });
     }
     // Resolution-independent: the svg carries a viewBox at the diagram's nominal
@@ -2310,6 +2439,33 @@ export class ChordProEditor extends ChordDrawer {
     this.lastMouseDown = null;
   }
 
+  /**
+   * Toggle ABC MIDI playback for a read-only ABC block (start if stopped or
+   * finished, stop otherwise). Shared by the mouse double-click and the mobile
+   * double-tap paths so both gestures behave identically.
+   */
+  private toggleAbcMidiPlayback(line_obj: ChordProAbc) {
+    if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
+      const abcSource = line_obj.getAbc(true, false);
+      this.midiPlayer = playAbcWithSynth(
+        abcSource,
+        parseInt(line_obj.doc.getMeta("tempo"), 10),
+        (error) => {
+          console.error("Midifile playing error: " + error);
+          this.midiPlayer = undefined;
+        },
+        // The playback animation marks the SVG elements of whichever tune object
+        // rendered them, so it must come from the backend that owns the VISIBLE
+        // staff — otherwise playback re-renders the tune into a detached
+        // container and highlights nothing on screen.
+        this.domRenderer?.getAbcVisualObject(line_obj)
+      );
+    } else {
+      this.midiPlayer.stop();
+      this.midiPlayer = undefined;
+    }
+  }
+
   onDoubleClick(e: MouseEvent) {
     if (this.chordSelector && this.chordSelector.inModal) {
       // Don't close the dialog if the double-click is inside the chord selector
@@ -2323,27 +2479,8 @@ export class ChordProEditor extends ChordDrawer {
     if (this.readOnly) {
       const line_obj = this.HitTestLine(e);
       if (line_obj) {
-        if (line_obj instanceof ChordProAbc) {
-          if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
-            const abcSource = line_obj.getAbc(true, false);
-            this.midiPlayer = playAbcWithSynth(
-              abcSource,
-              parseInt(line_obj.doc.getMeta("tempo"), 10),
-              (error) => {
-                console.error("Midifile playing error: " + error);
-                this.midiPlayer = undefined;
-              },
-              // The playback animation marks the SVG elements of whichever tune
-              // object rendered them, so it must come from the backend that owns
-              // the VISIBLE staff — otherwise playback re-renders the tune into a
-              // detached container and highlights nothing on screen.
-              this.domRenderer?.getAbcVisualObject(line_obj)
-            );
-          } else {
-            this.midiPlayer.stop();
-            this.midiPlayer = undefined;
-          }
-        } else if (this.onLineDblclk && line_obj.sourceLineNumber >= 0) this.onLineDblclk(line_obj.sourceLineNumber);
+        if (line_obj instanceof ChordProAbc) this.toggleAbcMidiPlayback(line_obj);
+        else if (this.onLineDblclk && line_obj.sourceLineNumber >= 0) this.onLineDblclk(line_obj.sourceLineNumber);
       }
       return;
     }
@@ -2363,30 +2500,6 @@ export class ChordProEditor extends ChordDrawer {
     const box = this.HitTestCoords(mp);
     if (box instanceof AbcHitBox) {
       void this.openAbcEditor(box.abc);
-      return true;
-    }
-    return false;
-  }
-
-  private checkAbcLineHit(e: MouseEvent): boolean {
-    return this.checkAbcLineHitAtPos(this.normalizeMousePos(e));
-  }
-
-  private checkAbcLineHitAtPos(mp: Point): boolean {
-    let line_obj: ChordProLine | null = null;
-    // Vertical bands come from the renderer-owned geometry; without this the
-    // touch double-tap ABC fallback would test zeroed ranges and never open
-    // the editor.
-    for (const candidate of this.displayedLines) {
-      const range = this.displayedLineRange(candidate);
-      if (range && range.top <= mp.y && mp.y < range.bottom) {
-        line_obj = candidate;
-        break;
-      }
-    }
-
-    if (line_obj instanceof ChordProAbc) {
-      void this.openAbcEditor(line_obj);
       return true;
     }
     return false;

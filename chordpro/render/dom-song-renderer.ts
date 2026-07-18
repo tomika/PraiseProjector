@@ -1321,6 +1321,38 @@ export class DomSongRenderer {
       // renderer never may.
       node.addEventListener("mousedown", (event: MouseEvent) => input.onPointerDown?.(chord, event));
       node.addEventListener("dblclick", (event: MouseEvent) => input.onDoubleClick?.(chord, event));
+      // Mobile browsers don't reliably emit dblclick; detect a local double-tap
+      // on this template and forward it as the same double-click gesture (open
+      // the chord dialog) so touch matches mouse. A single tap still reaches the
+      // controller's touch pipeline as a template drag.
+      let lastTemplateTap = 0;
+      node.addEventListener(
+        "touchend",
+        (event: TouchEvent) => {
+          if (event.changedTouches.length !== 1) return;
+          const now = Date.now();
+          if (now - lastTemplateTap <= 500) {
+            lastTemplateTap = 0;
+            event.preventDefault();
+            event.stopPropagation();
+            const t = event.changedTouches[0];
+            const synthetic = new MouseEvent("dblclick", {
+              bubbles: true,
+              cancelable: true,
+              view: this.doc.defaultView,
+              button: 0,
+              clientX: t.clientX,
+              clientY: t.clientY,
+              screenX: t.screenX,
+              screenY: t.screenY,
+            });
+            input.onDoubleClick?.(chord, synthetic);
+          } else {
+            lastTemplateTap = now;
+          }
+        },
+        { passive: false }
+      );
       strip.appendChild(node);
       maxWidth = Math.max(maxWidth, this.measureChordVisualWidth(visual, plan));
       top += plan.display.chordLineHeight + gap;
