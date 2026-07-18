@@ -11,7 +11,7 @@
  */
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { useClientPerformanceProfile, useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { isViewingRemoteDisplay, showsNetworkIndicator, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
 import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
@@ -70,6 +70,7 @@ export function MainToolbar({
 }) {
   const store = useClientViewStore();
   const state = useClientViewState();
+  const performanceProfile = useClientPerformanceProfile();
   // View-only: a Client follower, OR App mode while watching a session (legacy
   // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
@@ -78,10 +79,12 @@ export function MainToolbar({
   // When the open wheel was summoned by a drag off its trigger, the in-flight
   // pointer to hand to it so it opens already turning (see useWheelDragOpen).
   const [wheelDrag, setWheelDrag] = useState<WheelDragOpenPayload | null>(null);
-  const transposeBtnRef = useRef<HTMLDivElement | null>(null);
-  const capoBtnRef = useRef<HTMLDivElement | null>(null);
-  const transposeValueRef = useRef<HTMLSpanElement | null>(null);
-  const capoValueRef = useRef<HTMLSpanElement | null>(null);
+  const [transposeBtnElement, setTransposeBtnElement] = useState<HTMLDivElement | null>(null);
+  const [capoBtnElement, setCapoBtnElement] = useState<HTMLDivElement | null>(null);
+  const [transposeValueElement, setTransposeValueElement] = useState<HTMLSpanElement | null>(null);
+  const [capoValueElement, setCapoValueElement] = useState<HTMLSpanElement | null>(null);
+  const pendingTransposeRef = useRef(state.transpose);
+  const pendingCapoRef = useRef(state.capo);
 
   // The toolbar is a vertical column when wide-pane layout is active and options
   // are closed. This mirrors the full-view tab/pane breakpoint.
@@ -122,6 +125,7 @@ export function MainToolbar({
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
   const openCapoPicker = () => {
     if (!state.displaySettings.useCapo) return;
+    pendingCapoRef.current = state.capo;
     setWheelDrag(null);
     setWheel("capo");
   };
@@ -140,6 +144,7 @@ export function MainToolbar({
   const transposeDrag = useWheelDragOpen({
     orientation: "horizontal",
     onOpen: (drag) => {
+      pendingTransposeRef.current = state.transpose;
       setWheelDrag(drag);
       setWheel("transpose");
     },
@@ -148,6 +153,7 @@ export function MainToolbar({
     orientation: "horizontal",
     enabled: state.displaySettings.useCapo,
     onOpen: (drag) => {
+      pendingCapoRef.current = state.capo;
       setWheelDrag(drag);
       setWheel("capo");
     },
@@ -231,14 +237,14 @@ export function MainToolbar({
     // - capo icon toggles useCapo on/off,
     // - small dropdown button opens the capo value list.
     capo: (
-      <div id="capo" ref={capoBtnRef} className={state.hotkeyActiveControl === "capo" ? "cv-hotkey-active" : ""}>
+      <div id="capo" ref={setCapoBtnElement} className={state.hotkeyActiveControl === "capo" ? "cv-hotkey-active" : ""}>
         <div
           id="capoToggle"
           className={`btnDiv${state.displaySettings.useCapo ? " cv-toolbtn-on" : ""}`}
           title={state.displaySettings.useCapo ? "Disable capo (hold to pick value)" : "Enable capo (hold to pick value)"}
           {...capoToggleHandlers}
         >
-          <span id="capoValue" ref={capoValueRef}>
+          <span id="capoValue" ref={setCapoValueElement}>
             {state.displaySettings.useCapo && state.capo > 0 ? state.capo : ""}
           </span>
           <img className="btnImg cv-toggle-icon" src={icon("capo.svg")} alt="Capo" />
@@ -256,7 +262,7 @@ export function MainToolbar({
     transpose: follower ? null : (
       <div
         id="transpose"
-        ref={transposeBtnRef}
+        ref={setTransposeBtnElement}
         className={`btnDiv${wheel === "transpose" ? " cv-toolbtn-on" : ""}${state.hotkeyActiveControl === "transpose" ? " cv-hotkey-active" : ""}`}
         title="Transpose"
         {...transposeDrag.handlers}
@@ -264,13 +270,14 @@ export function MainToolbar({
           // A drag that just opened the wheel also fires a trailing click; ignore
           // it so it does not immediately toggle the freshly-opened wheel shut.
           if (transposeDrag.consumeDragOpenClick()) return;
+          if (wheel !== "transpose") pendingTransposeRef.current = state.transpose;
           setWheelDrag(null);
           setWheel((w) => (w === "transpose" ? null : "transpose"));
         }}
       >
         {/* The value target is always present, including at zero, so the horizontal
             picker can precisely cover the element whose value it changes. */}
-        <span id="shiftValue" ref={transposeValueRef}>
+        <span id="shiftValue" ref={setTransposeValueElement}>
           {state.transpose !== 0 ? transposeValue(state.transpose) : <img className="btnImg" src={icon("transpose.svg")} alt="Transpose" />}
         </span>
       </div>
@@ -330,40 +337,54 @@ export function MainToolbar({
           return node ? <Fragment key={key}>{node}</Fragment> : null;
         })}
       </div>
-      {wheel === "transpose" && transposeBtnRef.current && transposeValueRef.current && (
+      {wheel === "transpose" && transposeBtnElement && transposeValueElement && (
         <WheelPicker
           values={TRANSPOSE_RANGE}
           value={state.transpose}
           format={transposeOption}
-          onChange={(v) => void store.previewTranspose(v)}
+          onChange={(v) => {
+            pendingTransposeRef.current = v;
+            if (!performanceProfile.chordProSlow) void store.previewTranspose(v);
+          }}
           onClose={() => {
             setWheel(null);
             setWheelDrag(null);
-            void store.commitTranspose();
+            if (performanceProfile.chordProSlow) {
+              void store.previewTranspose(pendingTransposeRef.current).then(() => store.commitTranspose());
+            } else {
+              void store.commitTranspose();
+            }
           }}
-          anchor={transposeBtnRef.current}
+          anchor={transposeBtnElement}
           orientation="horizontal"
-          selectionAnchor={transposeValueRef.current}
+          selectionAnchor={transposeValueElement}
           initialDrag={wheelDrag ?? undefined}
           ariaLabel="Transpose"
           dark={state.isDark}
         />
       )}
-      {wheel === "capo" && capoBtnRef.current && capoValueRef.current && (
+      {wheel === "capo" && capoBtnElement && capoValueElement && (
         <WheelPicker
           values={CAPO_RANGE}
           value={state.capo}
           format={(v) => (v >= 0 ? String(v) : "—")}
           valueText={(v) => (v >= 0 ? String(v) : "no capo")}
-          onChange={(v) => void store.previewCapo(v)}
+          onChange={(v) => {
+            pendingCapoRef.current = v;
+            if (!performanceProfile.chordProSlow) void store.previewCapo(v);
+          }}
           onClose={() => {
             setWheel(null);
             setWheelDrag(null);
-            void store.commitCapo();
+            if (performanceProfile.chordProSlow) {
+              void store.previewCapo(pendingCapoRef.current).then(() => store.commitCapo());
+            } else {
+              void store.commitCapo();
+            }
           }}
-          anchor={capoBtnRef.current}
+          anchor={capoBtnElement}
           orientation="horizontal"
-          selectionAnchor={capoValueRef.current}
+          selectionAnchor={capoValueElement}
           initialDrag={wheelDrag ?? undefined}
           ariaLabel="Capo"
           dark={state.isDark}

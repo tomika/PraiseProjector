@@ -129,6 +129,7 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
           onSwipeNext={onSwipeNext}
           prevSong={prevSong}
           nextSong={nextSong}
+          performanceAdaptivePaging
         />
       </div>
     );

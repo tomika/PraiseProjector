@@ -10,6 +10,7 @@ import { Database } from "../../../db-common/Database";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
+import { getClientPerformanceSnapshot, recordChordProRenderDuration, subscribeClientPerformance } from "../../shared/clientPerformanceProfile";
 import "./ChordProEditor.css";
 import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 
@@ -38,6 +39,10 @@ interface ChordProEditorProps {
   onSwipeNext?: () => void; // Called when user swipes left (go to next song)
   prevSong?: Song | null; // Previous song, pre-rendered behind for the page-turn reveal
   nextSong?: Song | null; // Next song, pre-rendered behind for the page-turn reveal
+  /** Full-view opt-in: measure the current page and omit neighbour editors on slow devices. */
+  performanceAdaptivePaging?: boolean;
+  /** Injected by the functional wrapper from the shared runtime-local profile. */
+  chordProSlow?: boolean;
   confirmDiscardChordChanges?: (discard: () => void) => void;
 }
 
@@ -89,6 +94,8 @@ type ChordProAPIBound = {
   hasChordSelectorOpen: () => boolean;
   setChordSelectorDiscardHandler: (handler: ((discard: () => void) => void) | undefined) => void;
   getSelectedText: () => string;
+  getLayoutSnapshot: () => { revision: number; settled: boolean };
+  whenLayoutSettled: (afterRevision?: number) => Promise<unknown>;
 };
 
 const CHORD_PRO_MARKUP = `
@@ -193,6 +200,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private loadedPrevKey: string | null = null;
   private loadedNextKey: string | null = null;
   private pinchTouchHandler: ((e: TouchEvent) => void) | null = null;
+  private renderMeasurementGeneration = 0;
 
   // The page-turn itself is the shared, framework-agnostic controller; this
   // component only owns the DOM, the neighbour content loading and the input
@@ -202,7 +210,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     currentPage: () => this.currentPageRef,
     prevPage: () => this.prevPageRef,
     nextPage: () => this.nextPageRef,
-    hasNeighbour: (next) => (next ? !!this.props.nextSong : !!this.props.prevSong),
+    hasNeighbour: (next) => !this.performancePagingDisabled && (next ? !!this.props.nextSong : !!this.props.prevSong),
     onAdvance: (next) => {
       if (next) this.props.onSwipeNext?.();
       else this.props.onSwipePrev?.();
@@ -215,7 +223,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     // Stop un-clipping at the editor container so the flip does not spill into the
     // adjacent panels.
     isFlipBoundary: (el) => el.classList.contains("chordpro-editor-container"),
-    canFlip: () => !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext),
+    canFlip: () => !this.performancePagingDisabled && !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext),
     isInteractive: () => !this.getBoundChordProAPI()?.isInMarkingState(),
     isChordSelectorOpen: () => !!this.getBoundChordProAPI()?.hasChordSelectorOpen(),
     handleChordBoxTouch: (e, down) => {
@@ -235,6 +243,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.isEditable = props.initialEditMode ?? false;
   }
 
+  private get performancePagingDisabled() {
+    return !!this.props.performanceAdaptivePaging && !!this.props.chordProSlow;
+  }
+
   componentDidMount() {
     const baseUrl = import.meta.env.BASE_URL || "/";
     const soundfontUrl = `${baseUrl}soundfont/`;
@@ -248,6 +260,13 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
   componentDidUpdate(prevProps: ChordProEditorProps) {
     this.prepareWysiwygHost();
+
+    if (prevProps.performanceAdaptivePaging !== this.props.performanceAdaptivePaging || prevProps.chordProSlow !== this.props.chordProSlow) {
+      this.flip.cancel();
+      this.loadedPrevKey = null;
+      this.loadedNextKey = null;
+      this.loadNeighborPages();
+    }
 
     // Check if song changed (different object or different text content)
     const songChanged = prevProps.song !== this.props.song || prevProps.song?.Text !== this.props.song?.Text;
@@ -293,18 +312,20 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.loadedNextKey = null;
     }
     if (
-      prevProps.prevSong !== this.props.prevSong ||
-      prevProps.nextSong !== this.props.nextSong ||
-      prevProps.prevSong?.Text !== this.props.prevSong?.Text ||
-      prevProps.nextSong?.Text !== this.props.nextSong?.Text ||
-      this.loadedPrevKey === null ||
-      this.loadedNextKey === null
+      !this.performancePagingDisabled &&
+      (prevProps.prevSong !== this.props.prevSong ||
+        prevProps.nextSong !== this.props.nextSong ||
+        prevProps.prevSong?.Text !== this.props.prevSong?.Text ||
+        prevProps.nextSong?.Text !== this.props.nextSong?.Text ||
+        this.loadedPrevKey === null ||
+        this.loadedNextKey === null)
     ) {
       this.loadNeighborPages();
     }
   }
 
   componentWillUnmount() {
+    this.renderMeasurementGeneration += 1;
     this.cleanupResizeObserver();
     this.cancelScheduledRefresh();
     this.cleanupThemeObserver();
@@ -627,7 +648,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   // Render the prev/next songs into their own read-only editor instances behind
   // the current page so they are already visible during the flip.
   private loadNeighborPages() {
-    if (!this.wysiwygLoaded) return;
+    if (!this.wysiwygLoaded || this.performancePagingDisabled) return;
     const flipEnabled = !this.isEditable && (!!this.props.onSwipePrev || !!this.props.onSwipeNext);
     this.loadNeighborPage("prev", this.prevHost, flipEnabled ? (this.props.prevSong ?? null) : null);
     this.loadNeighborPage("next", this.nextHost, flipEnabled ? (this.props.nextSong ?? null) : null);
@@ -781,6 +802,12 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     try {
       const chordApi = this.getBoundChordProAPI();
       if (chordApi) {
+        const measurementGeneration = ++this.renderMeasurementGeneration;
+        const currentPerformanceProfile = getClientPerformanceSnapshot();
+        const shouldMeasure =
+          this.props.performanceAdaptivePaging && !currentPerformanceProfile.chordProSlow && currentPerformanceProfile.chordProSampleCount < 5;
+        const measurementStartedAt = shouldMeasure ? performance.now() : null;
+        const previousLayoutRevision = measurementStartedAt === null ? undefined : chordApi.getLayoutSnapshot().revision;
         // In diff mode, updateDocument would not rebuild the differential document,
         // so we always reload for a correct recompute.
         if (!this.hasLoadedDocument || !!compareBase) {
@@ -809,6 +836,18 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         }
 
         this.updateDisplay();
+        if (measurementStartedAt !== null) {
+          const measuredHost = this.chordProHost;
+          void chordApi
+            .whenLayoutSettled(previousLayoutRevision)
+            .then(() => {
+              if (measurementGeneration !== this.renderMeasurementGeneration || measuredHost !== this.chordProHost) return;
+              recordChordProRenderDuration(performance.now() - measurementStartedAt);
+            })
+            .catch(() => {
+              /* The editor was replaced/disposed before this passive measurement settled. */
+            });
+        }
       }
       // The new current song is now in place — if this load completed a page
       // turn, reset the rotated page on top of the revealed neighbour, then
@@ -1118,6 +1157,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     const { compareBase, previewOnly } = this.props;
     const isCompareMode = !!compareBase;
     const hideToolbar = isCompareMode || previewOnly;
+    const renderNeighborPages = !this.performancePagingDisabled;
 
     return (
       <div className="wysiwyg-tab-content">
@@ -1156,12 +1196,16 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         <div className="editor-iframe-container pp-flip-perspective" ref={this.setSwipeContainerRef}>
           {/* Prev/next pages sit behind the current page and are revealed as it
               rotates away during a page turn (mirrors praiseprojector.ts). */}
-          <div className="wysiwyg-page wysiwyg-page-prev" ref={this.setPrevPageRef}>
-            <div className="wysiwyg-host" ref={this.setPrevHostRef} role="presentation" />
-          </div>
-          <div className="wysiwyg-page wysiwyg-page-next" ref={this.setNextPageRef}>
-            <div className="wysiwyg-host" ref={this.setNextHostRef} role="presentation" />
-          </div>
+          {renderNeighborPages && (
+            <div className="wysiwyg-page wysiwyg-page-prev" ref={this.setPrevPageRef}>
+              <div className="wysiwyg-host" ref={this.setPrevHostRef} role="presentation" />
+            </div>
+          )}
+          {renderNeighborPages && (
+            <div className="wysiwyg-page wysiwyg-page-next" ref={this.setNextPageRef}>
+              <div className="wysiwyg-host" ref={this.setNextHostRef} role="presentation" />
+            </div>
+          )}
           <div className="wysiwyg-page wysiwyg-page-current" ref={this.setCurrentPageRef}>
             <div className="wysiwyg-host" ref={this.setChordProHostRef} role="presentation" />
           </div>
@@ -1325,23 +1369,31 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 }
 
 // HOC to inject localization into class component
-const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<ChordProEditorProps, "t" | "tt" | "language">>((props, ref) => {
-  const { t, language } = useLocalization();
-  const { tt } = useTooltips();
-  const { showConfirm } = useMessageBox();
-  return (
-    <ChordProEditor
-      {...props}
-      t={t}
-      tt={tt}
-      language={language}
-      confirmDiscardChordChanges={(discard) =>
-        showConfirm(t("Confirm"), t("AskDiscardChanges"), discard, undefined, { confirmText: t("DiscardChanges"), confirmDanger: true })
-      }
-      ref={ref as React.Ref<ChordProEditor>}
-    />
-  );
-});
+const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<ChordProEditorProps, "t" | "tt" | "language" | "chordProSlow">>(
+  (props, ref) => {
+    const { t, language } = useLocalization();
+    const { tt } = useTooltips();
+    const { showConfirm } = useMessageBox();
+    const getAdaptiveChordProSlow = React.useCallback(
+      () => !!props.performanceAdaptivePaging && getClientPerformanceSnapshot().chordProSlow,
+      [props.performanceAdaptivePaging]
+    );
+    const chordProSlow = React.useSyncExternalStore(subscribeClientPerformance, getAdaptiveChordProSlow, getAdaptiveChordProSlow);
+    return (
+      <ChordProEditor
+        {...props}
+        t={t}
+        tt={tt}
+        language={language}
+        chordProSlow={chordProSlow}
+        confirmDiscardChordChanges={(discard) =>
+          showConfirm(t("Confirm"), t("AskDiscardChanges"), discard, undefined, { confirmText: t("DiscardChanges"), confirmDanger: true })
+        }
+        ref={ref as React.Ref<ChordProEditor>}
+      />
+    );
+  }
+);
 
 ChordProEditorWithLocalization.displayName = "ChordProEditorWithLocalization";
 

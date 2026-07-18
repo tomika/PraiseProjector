@@ -18,8 +18,9 @@
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { useClientPerformanceProfile, useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
+import { recordChordProRenderDuration } from "../../shared/clientPerformanceProfile";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
 import { installPinchZoomHandler } from "../../../common/utils";
@@ -257,6 +258,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
 ) {
   const store = useClientViewStore();
   const state = useClientViewState();
+  const performanceProfile = useClientPerformanceProfile();
+  const neighbourPreloadingEnabled = !performanceProfile.chordProSlow;
   const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
@@ -285,6 +288,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const pinchActiveRef = useRef(false);
   const pinchSuppressPointerRef = useRef(false);
   const pendingTurnFitRef = useRef<PendingTurnFit | null>(null);
+  const chordProSlowRef = useRef(performanceProfile.chordProSlow);
   // True from the moment a page starts rotating until the controller has reset it
   // and re-hidden the neighbours. Two things depend on it: the navigation actions
   // fade out, and neighbour preloading waits (see the neighbour effect).
@@ -324,7 +328,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // capability/leader-mode change takes effect without rebuilding the flip.
       canFlip: () => {
         const s = store.getSnapshot();
-        return !isViewingRemoteDisplay(s);
+        return !chordProSlowRef.current && !isViewingRemoteDisplay(s);
       },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
@@ -338,7 +342,23 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
   }, [store]);
 
-  useImperativeHandle(ref, () => ({ navigate: (next: boolean) => flipRef.current?.turn(next) }), []);
+  useEffect(() => {
+    chordProSlowRef.current = performanceProfile.chordProSlow;
+    if (!performanceProfile.chordProSlow) return;
+    flipRef.current?.cancel();
+    pendingTurnFitRef.current = null;
+  }, [performanceProfile.chordProSlow]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      navigate: (next: boolean) => {
+        if (performanceProfile.chordProSlow) void (next ? store.nextSong() : store.prevSong());
+        else flipRef.current?.turn(next);
+      },
+    }),
+    [performanceProfile.chordProSlow, store]
+  );
 
   // Track the shared paging/pane breakpoint. In closed wide-pane layout the main toolbar sits as a
   // vertical bar on the RIGHT (see client-view.css) and the song pane is
@@ -579,22 +599,18 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
   }, []);
 
-  // ── editors: bind the three pages once; re-fit all on pane resize ─────────────
+  // ── current editor: bind once; re-fit active editors on pane resize ──────────
   useEffect(() => {
     const host = hostRef.current;
     const pane = swipeRef.current;
     if (!host || !pane) return;
     apiRef.current = chordProAPI.bind(host);
-    if (prevHostRef.current) prevApiRef.current = chordProAPI.bind(prevHostRef.current);
-    if (nextHostRef.current) nextApiRef.current = chordProAPI.bind(nextHostRef.current);
     const confirmDiscard = (discard: () => void) => {
       void store.confirm("drop").then((confirmed) => {
         if (confirmed) discard();
       });
     };
     apiRef.current.setChordSelectorDiscardHandler(confirmDiscard);
-    prevApiRef.current?.setChordSelectorDiscardHandler(confirmDiscard);
-    nextApiRef.current?.setChordSelectorDiscardHandler(confirmDiscard);
 
     // Re-fit + re-zoom on pane resize / orientation change. Observe the PANE
     // (the perspective container), not the zoomed hosts (which would feed back
@@ -617,12 +633,39 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       observer.disconnect();
       cancelAnimationFrame(raf);
       apiRef.current?.dispose();
-      prevApiRef.current?.dispose();
-      nextApiRef.current?.dispose();
-      apiRef.current = prevApiRef.current = nextApiRef.current = null;
+      apiRef.current = null;
       loadedTextRef.current = null;
     };
-  }, []);
+  }, [store]);
+
+  // Neighbour editors are an optional visual performance feature. A persisted
+  // slow profile skips binding them on startup; a newly slow profile disposes
+  // both immediately while leaving the tiny page shells for stable geometry.
+  useEffect(() => {
+    if (!neighbourPreloadingEnabled) return;
+    const prevHost = prevHostRef.current;
+    const nextHost = nextHostRef.current;
+    if (!prevHost || !nextHost) return;
+    const confirmDiscard = (discard: () => void) => {
+      void store.confirm("drop").then((confirmed) => {
+        if (confirmed) discard();
+      });
+    };
+    const prevApi = chordProAPI.bind(prevHost);
+    const nextApi = chordProAPI.bind(nextHost);
+    prevApi.setChordSelectorDiscardHandler(confirmDiscard);
+    nextApi.setChordSelectorDiscardHandler(confirmDiscard);
+    prevApiRef.current = prevApi;
+    nextApiRef.current = nextApi;
+    return () => {
+      prevApi.dispose();
+      nextApi.dispose();
+      if (prevApiRef.current === prevApi) prevApiRef.current = null;
+      if (nextApiRef.current === nextApi) nextApiRef.current = null;
+      clearFit(prevHost);
+      clearFit(nextHost);
+    };
+  }, [neighbourPreloadingEnabled, store]);
 
   // ── current page: reflect display + render-setting changes ────────────────────
   // Reload only when the song text changes; re-apply display flags and highlight
@@ -645,6 +688,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       pendingTurnFitRef.current = null;
       return;
     }
+    const renderStartedAt = performance.now();
     if (loadedTextRef.current !== text) {
       loadedTextRef.current = text;
       // Construct without an initial paint (suppressDraw) so transpose/capo and
@@ -713,6 +757,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // after every completed turn.
     void settledFit.then((applied) => {
       if (!applied) return;
+      recordChordProRenderDuration(performance.now() - renderStartedAt);
       requestAnimationFrame(() => {
         if (fitGenerations.get(host) !== settledFitGeneration) return;
         flipRef.current?.finishPending();
@@ -730,7 +775,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // song change lands here while the flip is still active, so hold every
     // neighbour load until the controller has hidden them again (it reports that
     // by turning the flip inactive, after `snapBack` → `hideNeighbours`).
-    if (flipActive) return;
+    if (!neighbourPreloadingEnabled || flipActive) return;
     let cancelled = false;
     const load = async (entry: NavEntry | undefined, host: HTMLDivElement | null, api: BoundEditor | null) => {
       if (!api || !host) return;
@@ -755,6 +800,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
   }, [
     flipActive,
+    neighbourPreloadingEnabled,
     display.songId,
     state.navigationMode,
     state.songs,

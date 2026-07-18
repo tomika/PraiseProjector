@@ -10,6 +10,7 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { ClientViewStore, type ClientViewState } from "./ClientViewStore";
+import { getClientPerformanceSnapshot, subscribeClientPerformance, type ClientPerformanceSnapshot } from "../../shared/clientPerformanceProfile";
 
 const ClientViewContext = createContext<ClientViewStore | null>(null);
 
@@ -26,4 +27,9 @@ export function useClientViewStore(): ClientViewStore {
 export function useClientViewState(): ClientViewState {
   const store = useClientViewStore();
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+/** Runtime-local profile shared by embedded and standalone/PWA client views. */
+export function useClientPerformanceProfile(): ClientPerformanceSnapshot {
+  return useSyncExternalStore(subscribeClientPerformance, getClientPerformanceSnapshot, getClientPerformanceSnapshot);
 }
