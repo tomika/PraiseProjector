@@ -35,7 +35,6 @@ const IMPORT_CHORD_SELECTOR_IDS = {
   guitarChordBox: "song-import-guitarChordBox",
   pianoChordBox: "song-import-pianoChordBox",
   musicChordBox: "song-import-musicChordBox",
-  closeSelector: "song-import-closeSelector",
   applySelector: "song-import-applySelector",
 } as const;
 
@@ -667,7 +666,6 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
           guitarChordBox: IMPORT_CHORD_SELECTOR_IDS.guitarChordBox,
           pianoChordBox: IMPORT_CHORD_SELECTOR_IDS.pianoChordBox,
           musicChordBox: IMPORT_CHORD_SELECTOR_IDS.musicChordBox,
-          closeSelector: IMPORT_CHORD_SELECTOR_IDS.closeSelector,
           applySelector: IMPORT_CHORD_SELECTOR_IDS.applySelector,
         },
         (type: ChordBoxType, chord: string | ChordDetails, canvas: HTMLCanvasElement, variant: number) => {
@@ -1044,9 +1042,6 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         </table>
       </div>
       <div className="song-importer-chord-selector-host chordSelector" ref={chordSelectorHostRef}>
-        <div id={IMPORT_CHORD_SELECTOR_IDS.closeSelector} className="song-importer-chord-selector-close">
-          X
-        </div>
         <table className="song-importer-chord-selector-table">
           <tbody>
             <tr>

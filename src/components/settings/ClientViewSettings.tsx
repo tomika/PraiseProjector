@@ -19,6 +19,7 @@ import {
 } from "../../client-view/input/clientViewInput";
 import { learnMidiMessage, midiInputNames, midiSupported, requestMidiAccess } from "../../client-view/input/midiInput";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { useMessageBox } from "../../contexts/MessageBoxContext";
 import "./ClientViewSettings.css";
 
 interface Props {
@@ -59,6 +60,7 @@ function cloneFactoryProfile(): ClientViewInputProfile {
 
 export default function ClientViewSettings({ settings, updateSetting }: Props) {
   const { t } = useLocalization();
+  const { showConfirm } = useMessageBox();
   const profiles = useMemo(() => normalizeClientViewInputProfiles(settings.clientViewInputProfiles), [settings.clientViewInputProfiles]);
   const activeProfile = resolveClientViewInputProfile(settings.clientViewActiveInputProfileId, profiles);
   const editable = activeProfile.id !== FACTORY_CLIENT_VIEW_INPUT_PROFILE_ID;
@@ -188,11 +190,13 @@ export default function ClientViewSettings({ settings, updateSetting }: Props) {
   };
 
   const deleteProfile = () => {
-    if (!editable || !window.confirm(t("ClientViewInputDeleteConfirm"))) return;
-    saveProfiles(
-      profiles.filter((profile) => profile.id !== activeProfile.id),
-      FACTORY_CLIENT_VIEW_INPUT_PROFILE_ID
-    );
+    if (!editable) return;
+    showConfirm(t("Confirm"), t("ClientViewInputDeleteConfirm"), () => {
+      saveProfiles(
+        profiles.filter((profile) => profile.id !== activeProfile.id),
+        FACTORY_CLIENT_VIEW_INPUT_PROFILE_ID
+      );
+    });
   };
 
   const bindingsFor = (action: ClientViewInputAction, kind: ClientViewInputBinding["kind"]) =>

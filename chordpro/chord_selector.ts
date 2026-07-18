@@ -29,6 +29,9 @@ export type ChordSelectorOptions = {
   musicChordBox?: string;
   applySelector?: string;
   closeSelector?: string;
+  /** Lets the embedding UI confirm discarding changes without coupling this
+   * shared selector to a particular dialog implementation. */
+  onConfirmDiscard?: (discard: () => void) => void;
 };
 
 export class ChordSelector {
@@ -61,11 +64,16 @@ export class ChordSelector {
   private readOnly = false;
   private onCloseCallback?: (chord?: string) => void;
   private onCloseOnceCallback?: (chord?: string) => void;
+  private onConfirmDiscard?: (discard: () => void) => void;
   private applyButton: HTMLInputElement | null = null;
   private musicChordBoxDivName = "musicChordBox";
   private darkMode = false;
   private themeRefreshHandle: number | null = null;
   private openedChord = "";
+
+  public setConfirmDiscardHandler(handler: ((discard: () => void) => void) | undefined) {
+    this.onConfirmDiscard = handler;
+  }
 
   private normalizeChordInput(chord: string | undefined) {
     return (chord ?? "").replace(/[♯＃]/g, "#").replace(/[♭]/g, "b").replace(/\s+/g, " ").trim();
@@ -137,6 +145,7 @@ export class ChordSelector {
     options: ChordSelectorOptions = {},
     private readonly chordBoxDrawer?: (type: ChordBoxType, chord: string | ChordDetails, canvas: HTMLCanvasElement, variant: number) => NoteHitBox[]
   ) {
+    this.onConfirmDiscard = options.onConfirmDiscard;
     let guitarTuning = [24 + 7, 24 + 2, 12 + 10, 12 + 5, 12, 7];
     if (options.musicChordBox) {
       this.musicChordBoxDivName = options.musicChordBox;
@@ -760,8 +769,8 @@ export class ChordSelector {
     if (!this.inModalState) return;
     const chord = this.updateFrom();
     if (!apply && confirmDiscard && this.hasUnsavedChanges(chord)) {
-      const ok = window.confirm("Discard chord changes?");
-      if (!ok) return;
+      this.onConfirmDiscard?.(() => this.closeDialog(false, false));
+      return;
     }
     if (this.themeRefreshHandle != null) {
       window.clearTimeout(this.themeRefreshHandle);

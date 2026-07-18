@@ -37,6 +37,11 @@ export interface WheelPickerProps {
    * continuous (no jump) from the moment the finger first pressed the trigger. */
   initialDrag?: { pointerId: number; startClientX: number; startClientY: number };
   ariaLabel: string;
+  /** The view's dark state. Required because this popup is portalled to
+   *  document.body: no `#mainView:not(.dark)` descendant selector can reach it,
+   *  so it cannot inherit the client view's light/dark tokens (client-view.css
+   *  defaults them to DARK on :root) and must carry the theme down as a class. */
+  dark: boolean;
 }
 
 const ITEM_H = 36;
@@ -146,6 +151,7 @@ export function WheelPicker({
   selectionAnchor,
   initialDrag,
   ariaLabel,
+  dark,
 }: WheelPickerProps) {
   const clampIndex = (i: number) => Math.max(0, Math.min(values.length - 1, i));
   const indexOfValue = (v: number) => {
@@ -409,7 +415,7 @@ export function WheelPicker({
   return createPortal(
     <div
       ref={wheelRef}
-      className={`cv-wheel cv-wheel-${orientation}`}
+      className={`cv-wheel cv-wheel-${orientation}${dark ? "" : " cv-wheel-light"}`}
       role="slider"
       tabIndex={0}
       aria-label={ariaLabel}

@@ -51,6 +51,18 @@ const PrintWindow: React.FC = () => {
   const [editorReady, setEditorReady] = useState(false);
   const editorAreaRef = useRef<HTMLDivElement>(null);
 
+  /** Print is allowed only after the DOM renderer has fonts, wrapping and ABC geometry. */
+  const markEditorReadyWhenSettled = useCallback(async () => {
+    const host = editorAreaRef.current?.querySelector(".wysiwyg-host");
+    if (!(host instanceof HTMLDivElement)) return;
+    try {
+      await chordProAPI.bind(host).whenLayoutSettled();
+      setEditorReady(true);
+    } catch {
+      // A replacement/unmount rejects its waiter; the next mounted editor owns readiness.
+    }
+  }, []);
+
   // Force light mode + set document title
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "light");
@@ -153,12 +165,18 @@ const PrintWindow: React.FC = () => {
     chordProAPI.setDisplay(printingTitle, printingMetaData, printingSuperScript, printingBB, printingMollMode, printingSectionLabels, 1.0, false);
   }, [editorReady, printingBB, printingTitle, printingMetaData, printingSuperScript, printingSectionLabels, printingMollMode]);
 
-  // Mark editor as ready once it reports a line-select (signals load complete)
-  // We also use a timer fallback to catch the case where no line-select fires.
+  // Print readiness comes from the renderer-owned settlement contract, never a
+  // guessed delay. The second animation frame merely waits for React to mount
+  // the child host before subscribing to that contract.
   useEffect(() => {
-    const timer = setTimeout(() => setEditorReady(true), 500);
-    return () => clearTimeout(timer);
-  }, [song]);
+    if (!song) return;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void markEditorReadyWhenSettled();
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [song, settings, markEditorReadyWhenSettled]);
 
   // Keep the embedded editor layout synced to print window/container resizing.
   useEffect(() => {
@@ -222,20 +240,20 @@ const PrintWindow: React.FC = () => {
   }, [printingBB, printingTitle, printingMetaData, printingSuperScript, printingSectionLabels, printingMollMode]);
 
   /** Print handler: optionally save settings, then print */
-  const handlePrint = useCallback(() => {
+  const handlePrint = useCallback(async () => {
     // Save printer settings before printing if "use as default" is checked
     if (useAsDefault) {
       savePrinterSettings();
     }
 
-    // Use requestAnimationFrame to let the CSS @media print rules take effect
-    // The @media print CSS already hides the header
+    await markEditorReadyWhenSettled();
+    // Let the print media rules take effect after the settled layout is visible.
     requestAnimationFrame(() => {
       window.print();
       // Close the window after printing (or if the user cancels the print dialog)
       window.close();
     });
-  }, [useAsDefault, savePrinterSettings]);
+  }, [useAsDefault, savePrinterSettings, markEditorReadyWhenSettled]);
 
   // Memoize the editor element so that when only printer-settings checkboxes
   // change the ChordProEditor is NOT re-rendered.  Without this, every React
@@ -252,11 +270,15 @@ const PrintWindow: React.FC = () => {
         song={song}
         settings={settings}
         previewOnly
+        forceThemeMode="light"
+        onLineSelect={() => {
+          void markEditorReadyWhenSettled();
+        }}
       />
     ),
     // Only re-create when the song or base settings object changes
 
-    [song, settings]
+    [song, settings, markEditorReadyWhenSettled]
   );
 
   if (!song) {

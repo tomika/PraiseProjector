@@ -652,32 +652,31 @@ h6 {
   justify-content: center;
   align-items: center;
 }
-/* Print Styles - Always use light mode for printing */
+/* Print Styles - Always use a light paper surface without flattening the
+   renderer's explicit lyric, chord, and diff colours. */
 @media print {
-  /* Force light mode colors for all elements when printing */
+  /* Request a light printer palette and paint the document itself as paper. */
   :root {
     color-scheme: light;
   }
 
-  /* Remove dark theme styling */
-  [data-theme="dark"],
-  [data-theme="dark"] * {
-    background-color: white !important;
-    color: black !important;
-    border-color: #dee2e6 !important;
-  }
-
-  /* Ensure text is black for printing */
+  html,
   body,
-  body * {
+  [data-theme="dark"],
+  [data-theme="dark"] body {
     background-color: white !important;
+  }
+
+  /* A default only: descendants with their own authored colour, such as
+     chords and differential highlights, retain that colour. */
+  body,
+  [data-theme="dark"] {
     color: black !important;
   }
 
-  /* Restore proper styling for common elements */
+  /* The hosted editor itself remains a white print surface. */
   .wysiwyg-host {
     background-color: white !important;
-    color: black !important;
   }
 
   /* Links should be readable in print */

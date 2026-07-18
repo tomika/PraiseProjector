@@ -2744,7 +2744,10 @@ export class App extends AppBase {
   }
 
   private updateAspectRatio(editor: ChordProEditor) {
-    editor.parentDiv.style.aspectRatio = editor.canvas.width + "/" + editor.canvas.height;
+    // P10B: the canvas backend is gone; read the DOM renderer's committed
+    // logical size from the backend-neutral layout snapshot instead.
+    const snapshot = editor.getLayoutSnapshot();
+    editor.parentDiv.style.aspectRatio = snapshot.width + "/" + snapshot.height;
   }
 
   private verifyChordSelectorSystem(system: ChordSystem) {

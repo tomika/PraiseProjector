@@ -384,11 +384,8 @@ export class ChordProLine {
   private commentDirectiveType?: ChordProCommentType;
   sourceLineNumber = -1;
   sectionChordDuplicate: boolean | null = null;
-  yRange: ChordProLineRange = { top: 0, bottom: 0 };
   marked = 0;
-  posCache: { lyrics: LyricsCharInfo[]; chords: number[] } | null = null;
   modifyRanges: { start: number; added?: boolean }[] | null = null;
-  wordsWithBoxes: ChordProLineWords | null = null;
   multiplierOverride?: number;
   transposeOverride?: number;
   /**
@@ -417,11 +414,8 @@ export class ChordProLine {
     targetLine.instructedSectionIndex = this.instructedSectionIndex;
     if (!dataOnly) {
       targetLine.sectionChordDuplicate = this.sectionChordDuplicate;
-      targetLine.yRange = { ...this.yRange };
       targetLine.marked = this.marked;
-      targetLine.posCache = this.posCache ? { lyrics: this.posCache.lyrics.map((x) => ({ ...x })), chords: [...this.posCache.chords] } : null;
       targetLine.modifyRanges = this.modifyRanges ? this.modifyRanges.map((x) => ({ ...x })) : null;
-      targetLine.wordsWithBoxes = this.wordsWithBoxes ? this.wordsWithBoxes.clone() : null;
     }
   }
 
@@ -492,7 +486,6 @@ export class ChordProLine {
 
   invalidateCache() {
     this.sectionChordDuplicate = null;
-    this.posCache = null;
     this.sectionInfoCache = null;
     this.doc.invalidateCache();
   }
@@ -577,10 +570,6 @@ export class ChordProLine {
       chord.line = this;
       this.chords.push(chord);
     }
-    if (this.wordsWithBoxes && line.wordsWithBoxes) {
-      this.wordsWithBoxes.append(line.wordsWithBoxes);
-    }
-    this.posCache = null;
   }
 
   combineWithNext(backward?: boolean) {
@@ -595,13 +584,13 @@ export class ChordProLine {
     }
   }
 
-  splitAt(pos: number, drawSplitOnly?: boolean) {
-    let i = drawSplitOnly ? 0 : this.getLineIndex();
+  splitAt(pos: number) {
+    let i = this.getLineIndex();
     if (i >= 0) {
       const nl = new ChordProLine(this.doc);
       this.styles.forEach((value, name) => nl.styles.set(name, value));
 
-      if (!drawSplitOnly) this.doc.lines.splice(i + 1, 0, nl);
+      this.doc.lines.splice(i + 1, 0, nl);
 
       // TODO: implement differential version
       nl.setLyrics(this.lyrics.substring(pos));
@@ -617,13 +606,8 @@ export class ChordProLine {
         nl.chords.push(chord);
         this.chords.splice(i, 1);
       }
-      if (this.wordsWithBoxes) nl.wordsWithBoxes = this.wordsWithBoxes.split(pos);
-      if (drawSplitOnly) {
-        this.invalidateCache();
-      } else {
-        nl.genText();
-        this.genText();
-      }
+      nl.genText();
+      this.genText();
       return nl;
     }
     return null;
@@ -726,7 +710,13 @@ export class ChordProChordBase {
   }
 
   get chordInfo() {
-    if (this.chordInfoRef === undefined) this.chordInfoRef = chordMap.get(this.symbol) || findOrCreateChordVariant(this.symbol);
+    // Text the chord regex could not parse at all (no base note, e.g. "xyz")
+    // must stay unknown. Without the baseNote guard its empty symbol would hit
+    // the plain-major-chord entry in chordMap (whose modifier is also ""), so
+    // arbitrary bracket text was treated as a known major chord and never got
+    // the unknown-chord rendering or a getUnknownChords() listing.
+    if (this.chordInfoRef === undefined)
+      this.chordInfoRef = this.baseNoteData ? chordMap.get(this.symbol) || findOrCreateChordVariant(this.symbol) : null;
     return this.chordInfoRef;
   }
 }

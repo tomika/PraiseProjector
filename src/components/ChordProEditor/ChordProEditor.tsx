@@ -5,12 +5,13 @@ import { ensureChordProAssets } from "../../utils/loadChordProAssets";
 import { Settings } from "../../types";
 import { useLocalization, StringKey, Language } from "../../localization/LocalizationContext";
 import { useTooltips, TooltipKey } from "../../localization/TooltipContext";
+import { useMessageBox } from "../../contexts/MessageBoxContext";
 import { Database } from "../../../db-common/Database";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
 import "./ChordProEditor.css";
-import { ChordProEditorEventHandlers } from "../../../chordpro/chordpro_editor";
+import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 
 interface ChordProEditorProps {
   song: Song | null;
@@ -37,6 +38,7 @@ interface ChordProEditorProps {
   onSwipeNext?: () => void; // Called when user swipes left (go to next song)
   prevSong?: Song | null; // Previous song, pre-rendered behind for the page-turn reveal
   nextSong?: Song | null; // Next song, pre-rendered behind for the page-turn reveal
+  confirmDiscardChordChanges?: (discard: () => void) => void;
 }
 
 interface ChordProEditorState {
@@ -46,7 +48,14 @@ interface ChordProEditorState {
 }
 
 type ChordProAPIBound = {
-  load: (chp: string, editable?: boolean, compareBase?: string, eventHandlers?: ChordProEditorEventHandlers) => void;
+  load: (
+    chp: string,
+    editable?: boolean,
+    compareBase?: string,
+    eventHandlers?: ChordProEditorEventHandlers,
+    suppressDraw?: boolean,
+    internalOptions?: ChordProEditorOptions
+  ) => void;
   getText: () => string;
   setDisplay: (
     title: boolean,
@@ -78,13 +87,13 @@ type ChordProAPIBound = {
   isReadOnly: () => boolean;
   isInMarkingState: () => boolean;
   hasChordSelectorOpen: () => boolean;
+  setChordSelectorDiscardHandler: (handler: ((discard: () => void) => void) | undefined) => void;
   getSelectedText: () => string;
 };
 
 const CHORD_PRO_MARKUP = `
     <div style="outline: none; position: relative;"></div>
     <div id="chordsel" class="chordSelector" style="display: none;">
-    <button id="closeSelector" type="button" class="chord-selector-close" aria-label="Close selector">&times;</button>
         <table style="width: 100%">
             <tr>
                 <td>Base&nbsp;note</td>
@@ -440,7 +449,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
   private getBoundChordProAPI(editorDiv: HTMLDivElement | null = this.chordProHost): ChordProAPIBound | undefined {
     if (!editorDiv) return undefined;
-    return chordProAPI.bind(editorDiv) as ChordProAPIBound;
+    const api = chordProAPI.bind(editorDiv) as ChordProAPIBound;
+    api.setChordSelectorDiscardHandler(this.props.confirmDiscardChordChanges);
+    return api;
   }
 
   private cancelScheduledRefresh() {
@@ -633,10 +644,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     const api = this.getBoundChordProAPI(host);
     if (!api) return;
     if (!song) {
-      api.load("", false);
+      api.load("", false, undefined, undefined, undefined, { viewportAlignedTitle: true });
       return;
     }
-    api.load(song.Text, false);
+    api.load(song.Text, false, undefined, undefined, undefined, { viewportAlignedTitle: true });
     const shouldHideChords = this.props.settings?.hideChordsInReadonlyEditor ?? false;
     api.setDisplay(true, true, false, false, "Am", "Full", 1.0, shouldHideChords);
     api.setStyles?.(this.props.settings?.chordProStyles ?? null);
@@ -774,7 +785,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         // so we always reload for a correct recompute.
         if (!this.hasLoadedDocument || !!compareBase) {
           // When compareBase is provided, show diff view (non-editable)
-          chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase, this.getEditorEventHandlers());
+          chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase, this.getEditorEventHandlers(), undefined, {
+            viewportAlignedTitle: true,
+          });
           this.hasLoadedDocument = true;
           // Mark as initialized after load completes
           this.wysiwygInitialized = true;
@@ -1315,7 +1328,19 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<ChordProEditorProps, "t" | "tt" | "language">>((props, ref) => {
   const { t, language } = useLocalization();
   const { tt } = useTooltips();
-  return <ChordProEditor {...props} t={t} tt={tt} language={language} ref={ref as React.Ref<ChordProEditor>} />;
+  const { showConfirm } = useMessageBox();
+  return (
+    <ChordProEditor
+      {...props}
+      t={t}
+      tt={tt}
+      language={language}
+      confirmDiscardChordChanges={(discard) =>
+        showConfirm(t("Confirm"), t("AskDiscardChanges"), discard, undefined, { confirmText: t("DiscardChanges"), confirmDanger: true })
+      }
+      ref={ref as React.Ref<ChordProEditor>}
+    />
+  );
 });
 
 ChordProEditorWithLocalization.displayName = "ChordProEditorWithLocalization";

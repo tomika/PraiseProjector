@@ -140,7 +140,12 @@
 /* The chord-selector popover lives in #swipe-handler (not a .cv-dialog and not
    #options), so it needs its own light-token re-point or it stays dark — the
    panel tokens default to dark on :root — even while the view is in light mode. */
-#mainView:not(.dark) #swipe-handler .chordSelector {
+#mainView:not(.dark) #swipe-handler .chordSelector,
+/* The wheel picker is portalled to document.body (WheelPicker.tsx), so it has no
+   #mainView ancestor and NO descendant selector above can reach it — it would
+   always inherit the dark :root tokens. Its host passes the view's dark state
+   down as this class instead. */
+.cv-wheel.cv-wheel-light {
   --cv-panel-bg: #efefef;
   --cv-panel-fg: #1f1f1f;
   --cv-panel-border: rgba(0, 0, 0, 0.18);
@@ -531,11 +536,11 @@ body,
   top: 50%;
   left: 50%;
   z-index: 80;
-  width: min(92vw, 520px);
+  width: min(92%, 520px);
   max-height: min(86vh, 520px);
   overflow: auto;
   transform: translate(-50%, -50%);
-  padding: 12px 34px 10px 10px;
+  padding: 10px;
   border: 1px solid var(--cv-panel-border);
   background: var(--cv-panel-solid);
   color: var(--cv-panel-fg);
@@ -555,24 +560,6 @@ body,
   background: var(--cv-panel-btn-bg);
   color: var(--cv-panel-fg);
   border: 1px solid var(--cv-panel-border);
-}
-
-#swipe-handler .chordSelector .chord-selector-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--cv-panel-fg);
-  cursor: pointer;
-  font-weight: 600;
-  line-height: 1;
 }
 
 #swipe-handler .chordSelector #musicChordBox,
@@ -2327,6 +2314,13 @@ body,
   outline: none;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+/* The light token block above re-points the panel, but deliberately leaves
+   --cv-accent at its dark value (the dialogs/chord selector share that rule).
+   The wheel paints its current detent and highlight in the accent directly on
+   the light panel, so it takes the same light "selected" colour #options uses. */
+.cv-wheel.cv-wheel-light {
+  --cv-accent: #bd5806;
 }
 .cv-wheel-horizontal {
   width: calc(7 * var(--cv-wheel-item-width));

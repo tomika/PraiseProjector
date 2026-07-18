@@ -1,0 +1,389 @@
+.chp-dom-root {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  overflow: visible;
+  contain: layout style;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: geometricPrecision;
+}
+
+.chp-dom-meta,
+.chp-dom-body,
+.chp-dom-chord-diagrams,
+.chp-dom-occurrence,
+.chp-dom-line {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+}
+
+.chp-dom-meta-row {
+  box-sizing: border-box;
+  white-space: pre;
+}
+
+/* Pane-fitted hosts only: the metadata row is clipped to the song's content
+ * width and ellipsised rather than widening the song, which the host scales by
+ * (`layoutSong` keeps meta out of that width for the same instances, and the
+ * renderer sizes `.chp-dom-meta` to the song box). The runs drop `inline-block`
+ * so the ellipsis can clip INSIDE a long title instead of dropping the whole
+ * atomic box. */
+.chp-dom-meta-clipped .chp-dom-meta-row {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chp-dom-meta-clipped .chp-dom-run,
+.chp-dom-meta-clipped .chp-dom-diff-run {
+  display: inline;
+}
+
+.chp-dom-occurrence {
+  display: grid;
+  grid-template-columns: var(--chp-tag-lane, 0px) minmax(0, 1fr);
+  column-gap: var(--chp-tag-gap, 0px);
+}
+
+.chp-dom-tag {
+  position: relative;
+  box-sizing: border-box;
+  text-align: right;
+  white-space: pre;
+}
+
+.chp-dom-tag-text,
+.chp-dom-run,
+.chp-dom-chord-token,
+.chp-dom-diff-run {
+  display: inline-block;
+  white-space: pre;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+
+.chp-dom-row {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+}
+
+.chp-dom-highlight-layer,
+.chp-dom-chord-layer,
+.chp-dom-lyrics-layer,
+.chp-dom-selection-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chp-dom-chord,
+.chp-dom-run {
+  position: absolute;
+  box-sizing: content-box;
+}
+
+.chp-dom-chord {
+  display: inline-flex;
+  align-items: center;
+  white-space: pre;
+}
+
+.chp-dom-chord-actual {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Differential state is attached to renderer-owned units, never inferred from
+ * current offsets. Removed units intentionally lack data-source-* attributes. */
+.chp-dom-diff-added {
+  background: yellow;
+  color: green !important;
+}
+
+.chp-dom-diff-removed {
+  background: yellow;
+  color: red !important;
+  text-decoration: line-through;
+}
+
+.chp-dom-chord.chp-dom-diff-moved {
+  background: yellow;
+}
+
+.chp-dom-chord-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  pointer-events: none;
+}
+
+.chp-dom-chord-marker-before {
+  border-top: 4px solid currentColor;
+  color: currentColor;
+}
+
+.chp-dom-chord-marker-after {
+  border-top: 4px solid gray;
+  color: gray;
+}
+
+.chp-dom-differential .chp-dom-meta-row,
+.chp-dom-differential .chp-dom-tag {
+  white-space: pre;
+}
+
+.chp-dom-comment,
+.chp-dom-grid,
+.chp-dom-abc {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  white-space: pre;
+}
+
+.chp-dom-comment-box {
+  border: var(--chp-comment-border, 1px solid currentColor);
+}
+
+.chp-dom-grid-text,
+.chp-dom-grid-chord {
+  position: relative;
+  display: inline-flex;
+  left: auto;
+  top: auto;
+  vertical-align: middle;
+}
+
+.chp-dom-abc[data-pending="true"] {
+  opacity: 0.7;
+}
+
+/* abcjs emits `="currentColor"` throughout the generated SVG (see
+ * ChordProAbc.generateSvg, which substitutes exactly that token), so this
+ * container's CSS `color` is what actually paints the notation. Without it the
+ * staff inherits the ABC line's directive colour instead of the score colour. */
+.chp-dom-abc-content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  background-color: transparent;
+  transform-origin: left top;
+  color: black;
+}
+
+.chp-dom-dark .chp-dom-abc-content {
+  color: white;
+}
+
+/*
+ * Song-level highlight bands. They paint behind the text, from the tag column
+ * to the song's widest content edge, so they span occurrences instead of
+ * living inside one row.
+ */
+.chp-dom-highlight-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chp-dom-highlight-band {
+  position: absolute;
+  background-color: var(--chp-highlight-color, transparent);
+}
+
+.chp-dom-occurrence {
+  z-index: 1;
+}
+
+/*
+ * Retained chord-diagram canvases. These are explicitly NOT the song surface and
+ * are never targeted by broad canvas cleanup.
+ */
+.chp-dom-chord-diagrams {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.chp-dom-chord-diagram {
+  position: absolute;
+}
+
+/* The ONE persistent caret element. It survives every keyed reconcile by
+ * identity; visibility is a class toggle so the blink animation state is not
+ * reset by rebuilds. The 2s step cycle blinks 1 s on, 1 s off. */
+.chp-dom-caret {
+  position: absolute;
+  display: none;
+  width: 1px;
+  pointer-events: none;
+  background-color: var(--chp-caret-color, currentColor);
+  z-index: 2;
+}
+
+.chp-dom-caret.chp-dom-caret-visible {
+  display: block;
+  animation: chp-dom-caret-blink 2s step-end infinite;
+}
+
+@keyframes chp-dom-caret-blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Noninteractive selection decorations. Bands sit in the per-row selection
+ * layer BELOW the lyric glyphs, and the selected foreground is a class on the
+ * run nodes themselves. */
+.chp-dom-selection-band {
+  position: absolute;
+  background-color: var(--chp-selected-bg, transparent);
+}
+
+.chp-dom-run.chp-dom-selected {
+  color: var(--chp-selected-fg, currentColor) !important;
+}
+
+/* Diagnostic DOM editing: gestures own caret/selection through the hidden
+ * textarea proxy, so native text selection must never appear on the song
+ * surface. Metadata inputs keep their own native selection. */
+.chp-dom-root.chp-dom-editing,
+.chp-dom-root.chp-dom-editing * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.chp-dom-root.chp-dom-editing input,
+.chp-dom-root.chp-dom-editing textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* --- Editing decorations ----------------------------------------------- */
+
+/* Chord-template strip. A renderer-owned left gutter inside the scaled root. */
+.chp-dom-chord-strip {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.chp-dom-chord-template {
+  position: absolute;
+  left: 0;
+  white-space: nowrap;
+  background: transparent;
+  cursor: grab;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Non-row-scoped editing decorations: chord/tag raw-text caret and selection,
+ * the drag ghost and the drop marker. The root persists across reconciles. */
+.chp-dom-decorations {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.chp-dom-text-selection {
+  position: absolute;
+  background-color: var(--chp-selected-bg, transparent);
+  outline: 1px solid var(--chp-selected-bg, transparent);
+}
+
+/* The chord/tag raw-text caret. It shares the song caret's blink cycle but is a
+ * separate element: the song caret tracks a lyric line's caret stops, while
+ * this one is measured inside a chord or label's raw text. */
+.chp-dom-text-caret {
+  position: absolute;
+  background-color: var(--chp-caret-color, currentColor);
+  animation: chp-dom-caret-blink 2s step-end infinite;
+}
+
+/* Chord drag. The ghost follows the pointer; the dragged chord keeps its
+ * layout slot but is not painted. */
+.chp-dom-chord.chp-dom-chord-dragging {
+  visibility: hidden;
+}
+
+.chp-dom-drag-ghost {
+  position: absolute;
+  white-space: pre;
+  pointer-events: none;
+  cursor: grabbing;
+}
+
+.chp-dom-drag-ghost.chp-dom-drag-nodrop {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Drop marker: a triangle whose apex
+ * points DOWN at the resolved caret boundary, plus the 1px rule that links it
+ * back to the dragged ghost. Only the TOP border is coloured, which is what
+ * points the apex downwards. Both are sized from `chordBorder` by the renderer,
+ * so they scale with the chord band instead of being pinned to fixed pixels. */
+.chp-dom-drop-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-color: var(--chp-chord-color, currentColor) transparent transparent transparent;
+  pointer-events: none;
+}
+
+.chp-dom-drop-marker-bar {
+  position: absolute;
+  height: 1px;
+  background-color: var(--chp-chord-color, currentColor);
+  pointer-events: none;
+}
+
+/* Marking mode. A wavy underline under every marked character cell; a text
+ * decoration merges within a run by construction. */
+.chp-dom-run.chp-dom-marked,
+.chp-dom-chord.chp-dom-marked {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--chp-mark-color, red);
+  text-decoration-skip-ink: none;
+}
+
+.chp-dom-measure-root {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  width: max-content;
+  height: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  contain: strict;
+  white-space: pre;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}

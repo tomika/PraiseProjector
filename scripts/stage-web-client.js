@@ -5,8 +5,8 @@
  *
  * Vite's publicDir (public/public) copies the whole legacy `app/` folder into the
  * build; we don't want a /webapp/app/* URL tree, so we drop it and instead lift
- * only the assets the client-view actually references (icons, soundfonts, chordpro
- * CSS) to the /webapp root. The client-view resolves them via __ppAssetBase="/webapp"
+ * only the legacy assets the client-view still references (icons, soundfonts,
+ * chord-selector CSS) to the /webapp root. The client-view resolves them via __ppAssetBase="/webapp"
  * (see client-view.html / src/client-view/ui/assets.ts).
  *
  * Then we emit /webapp/precache.json — the authoritative list of every file under
@@ -107,8 +107,9 @@ function main() {
 
   // 2. Lift the assets the served client references (via __ppAssetBase="/webapp").
   //    images: dynamically referenced icons (found_*, confirm anims, mode icons, netdisplay).
-  //    soundfont: offline MIDI playback. chordpro/chordselector CSS: loaded by client-view.html.
-  ["images", "soundfont", "chordpro.css", "chordselector.css"].forEach(stage);
+  //    soundfont: offline MIDI playback. chord-selector CSS: loaded by client-view.html.
+  //    Canonical ChordPro CSS is already copied from public/stylesheets by Vite.
+  ["images", "soundfont", "chordselector.css"].forEach(stage);
 
   // 3. Emit the precache manifest (everything under /webapp except maps + the manifest itself).
   const precacheFile = path.join(distDir, "precache.json");

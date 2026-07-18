@@ -1,19 +1,22 @@
-import { UnicodeSymbol } from "../common/symbols";
 import { VersionedMap } from "../common/utils";
 import { ChordSelector } from "./chord_selector";
 import { ChordProChordBase, ChordSystem } from "./chordpro_base";
 import { defaultDisplayProperties } from "./chordpro_styles";
 import { ChordDetails, isHalfNote } from "./note_system";
+import { buildChordVisualModel, ChordVisualToken, CHORDFORMAT_BB, CHORDFORMAT_LCMOLL, CHORDFORMAT_SIMPLIFIED } from "./render/chord-visual";
 import { NoteHitBox, Rectangle, Size } from "./ui_base";
+import { CanvasDiagramSurface, DiagramSurface, SvgDiagramSurface } from "./render/diagram-surface";
 
-export const CHORDFORMAT_LCMOLL = 1;
-export const CHORDFORMAT_NOMMOL = 3;
-export const CHORDFORMAT_SUBSCRIPT = 4;
-export const CHORDFORMAT_BB = 8;
-export const CHORDFORMAT_SIMPLIFIED = 16;
-export const CHORDFORMAT_NOSECTIONDUP = 32;
-export const CHORDFORMAT_NOCHORDS = 64;
-export const CHORDFORMAT_INKEY = 128;
+export {
+  CHORDFORMAT_LCMOLL,
+  CHORDFORMAT_NOMMOL,
+  CHORDFORMAT_SUBSCRIPT,
+  CHORDFORMAT_BB,
+  CHORDFORMAT_SIMPLIFIED,
+  CHORDFORMAT_NOSECTIONDUP,
+  CHORDFORMAT_NOCHORDS,
+  CHORDFORMAT_INKEY,
+} from "./render/chord-visual";
 
 export type ChordBoxType = "PIANO" | "GUITAR" | "";
 
@@ -79,21 +82,22 @@ export class ChordDrawer {
     return !this.readOnly || !moll || !(this.chordFormat & CHORDFORMAT_LCMOLL) ? ChordProChordBase.formatSingleNote(note) : note.toLowerCase();
   }
 
-  drawModifier(text: string, ctx: CanvasRenderingContext2D, x?: number, y?: number) {
-    let fb = ""; // tslint:disable-next-line: no-bitwise
-    const ssp = this.readOnly && (this.chordFormat & CHORDFORMAT_SUBSCRIPT) === CHORDFORMAT_SUBSCRIPT ? getSubscriptParams(ctx.font) : null;
-    if (ssp) {
-      fb = ctx.font;
-      ctx.font = ssp.font;
+  /** Draws (or, with x/y omitted, only measures) one chord-visual token, honoring its subscript font/offset. */
+  private drawChordVisualToken(token: ChordVisualToken, ctx: DiagramSurface, x?: number, y?: number) {
+    if (!token.subscript) {
+      if (x !== undefined && y !== undefined) ctx.fillText(token.text, x, y);
+      return ctx.measureText(token.text).width;
     }
-    const s = ssp ? text.replace(/[#b]/g, (r) => (r === "#" ? UnicodeSymbol.sharp : UnicodeSymbol.flat)) : text.replace(/b/g, UnicodeSymbol.flat);
-    if (x !== undefined && y !== undefined) ctx.fillText(s, x, y - (ssp?.offset || 0));
-    const w = ctx.measureText(s).width;
-    if (ssp) ctx.font = fb;
-    return w;
+    const ssp = getSubscriptParams(ctx.font);
+    const fontBackup = ctx.font;
+    ctx.font = ssp.font;
+    if (x !== undefined && y !== undefined) ctx.fillText(token.text, x, y - ssp.offset);
+    const width = ctx.measureText(token.text).width;
+    ctx.font = fontBackup;
+    return width;
   }
 
-  drawChordText(chord: string | ChordProChordBase, ctx: CanvasRenderingContext2D, x?: number, y?: number, actual?: boolean) {
+  drawChordText(chord: string | ChordProChordBase, ctx: DiagramSurface, x?: number, y?: number, actual?: boolean) {
     const chordVersion = this.chordFormat;
     const chordCacheKey = (typeof chord === "string" ? chord : chord.text) + ":" + ctx.font;
 
@@ -102,73 +106,31 @@ export class ChordDrawer {
       if (width !== undefined) return { width };
     }
 
-    let s: string;
-    let width = 0;
     const chordDetails = this.getChordDetails(chord);
+    const model = buildChordVisualModel({
+      chord,
+      chordDetails,
+      system: this.system,
+      chordFormat: this.chordFormat,
+      readOnly: this.readOnly,
+      actual,
+      actualKey: this.getKey(),
+      chordsInKey: this.chordsInKey,
+    });
 
-    const fillStyleBackup = x === undefined || chordDetails ? undefined : ctx.fillStyle;
+    const fillStyleBackup = x === undefined || !model.unknown ? undefined : ctx.fillStyle;
     if (fillStyleBackup !== undefined) ctx.fillStyle = this.displayProps.unknownChordTextColor;
 
-    if (chordDetails) {
-      if (chordDetails.prefix) {
-        if (x !== undefined && y !== undefined) ctx.fillText(chordDetails.prefix, x + width, y);
-        width += ctx.measureText(chordDetails.prefix).width;
-      }
-
-      let baseNote = chordDetails.baseNote;
-      const actualKey = this.getKey();
-      if (this.readOnly && (this.chordFormat & CHORDFORMAT_INKEY) === CHORDFORMAT_INKEY && actualKey) {
-        const key = this.system.getKey(actualKey);
-        if (key) {
-          let b = this.chordsInKey.get(key.name, baseNote);
-          if (!b) this.chordsInKey.set(key.name, baseNote, (b = key.noteName(baseNote)));
-          baseNote = b;
-        }
-      }
-
-      let note = this.formatNote(baseNote, chordDetails.minor);
-      s = note.substring(0, 1);
-      if (x !== undefined && y !== undefined) ctx.fillText(s, x + width, y);
-      width += ctx.measureText(s).width;
-
-      s = note.substring(1);
-
-      // tslint:disable-next-line: no-bitwise
-      if (this.readOnly && chordDetails.minor && (this.chordFormat & CHORDFORMAT_NOMMOL) === CHORDFORMAT_NOMMOL) s += chordDetails.modifier.substr(1);
-      else s += chordDetails.modifier;
-
-      if (s) width += this.drawModifier(s, ctx, x !== undefined ? x + width + 1 : undefined, y) + 1;
-
-      // tslint:disable-next-line: no-bitwise
-      if (!this.readOnly || (this.chordFormat & CHORDFORMAT_SIMPLIFIED) === 0) {
-        if (chordDetails.bassNote) {
-          if (x !== undefined && y !== undefined) ctx.fillText("/", x + width, y);
-          width += ctx.measureText("/").width;
-          note = this.formatNote(chordDetails.bassNote, false);
-          s = note.substring(0, 1);
-          if (x !== undefined && y !== undefined) ctx.fillText(s, x + width, y);
-          width += ctx.measureText(s).width;
-          s = note.substring(1);
-          width += this.drawModifier(s, ctx, x !== undefined ? x + width : undefined, y);
-        }
-      }
-
-      s = chordDetails.suffix;
-      if (s) {
-        if (x !== undefined && y !== undefined) ctx.fillText(s, x + width, y);
-        width += ctx.measureText(s).width;
-      }
-
-      if (actual && x !== undefined && y !== undefined)
-        ctx.fillRect(x, y + this.displayProps.chordLineHeight / 2 - this.displayProps.chordBorder, width, 1);
-
-      if (fillStyleBackup !== undefined) ctx.fillStyle = fillStyleBackup;
-    } else {
-      const text = typeof chord === "string" ? chord : chord.text;
-      if (x !== undefined && y !== undefined) ctx.fillText(text, x, y);
-      if (fillStyleBackup !== undefined) ctx.fillStyle = fillStyleBackup;
-      width = ctx.measureText(text).width;
+    let width = 0;
+    for (const token of model.tokens) {
+      width += token.gapBefore;
+      width += this.drawChordVisualToken(token, ctx, x !== undefined ? x + width : undefined, y);
     }
+
+    if (model.underline && x !== undefined && y !== undefined)
+      ctx.fillRect(x, y + this.displayProps.chordLineHeight / 2 - this.displayProps.chordBorder, width, 1);
+
+    if (fillStyleBackup !== undefined) ctx.fillStyle = fillStyleBackup;
 
     this.chordsSizeCache.set(chordVersion, chordCacheKey, width);
     return { width };
@@ -251,13 +213,7 @@ export class ChordDrawer {
     return { firstNote, lastNote, keyCount, variantIndex };
   }
 
-  drawPianoChordLayout(
-    ctx: CanvasRenderingContext2D,
-    rect: Rectangle,
-    chord: string | ChordDetails,
-    pVariantIndex?: number,
-    noteHitBoxes?: NoteHitBox[]
-  ) {
+  drawPianoChordLayout(ctx: DiagramSurface, rect: Rectangle, chord: string | ChordDetails, pVariantIndex?: number, noteHitBoxes?: NoteHitBox[]) {
     let key = "",
       forcedVariantIndex = pVariantIndex ?? 0;
     if (typeof chord === "string") {
@@ -295,14 +251,10 @@ export class ChordDrawer {
     const halfKeyWidth = Math.round(keyWidth * 0.5);
     const halfKeyHeight = Math.round(keyRect.height * 0.65);
 
-    const circle = (cx: number, cy: number, radius: number) => {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-      ctx.fill();
-    };
+    const circle = (cx: number, cy: number, radius: number) => ctx.fillCircle(cx, cy, radius);
 
     ctx.strokeRect(keyRect.x, keyRect.y, keyWidth * keyCount, keyRect.height);
-    for (let i = 0, note = firstNote; i < keyCount; ++note)
+    for (let i = 1, note = firstNote; i < keyCount; ++note)
       if (!isHalfNote(note)) {
         const left = keyRect.x + i * keyWidth;
         ctx.fillRect(left, keyRect.y, 1, keyRect.height);
@@ -356,7 +308,7 @@ export class ChordDrawer {
   }
 
   drawGuitarChordLayout(
-    ctx: CanvasRenderingContext2D,
+    ctx: DiagramSurface,
     rect: Rectangle,
     chord: string | ChordDetails,
     forcedVariantIndex?: number,
@@ -403,7 +355,7 @@ export class ChordDrawer {
 
       for (let s = 0; s < stringCount; ++s) {
         const left = gridRect.x + s * stringStep;
-        ctx.fillRect(left, gridRect.y, 1, gridRect.height);
+        ctx.fillRect(left, gridRect.y, 1, gridRect.height + 1);
         if (noteHitBoxes)
           for (let b = 0; b <= bundCount; ++b) {
             const sIndex = stringCount - s - 1;
@@ -426,20 +378,15 @@ export class ChordDrawer {
       const circle = (bund: number, string: number) => {
         const cx = gridRect.x + string * stringStep + 0.5;
         const cy = bund > 0 ? gridRect.y + (bund - minBund) * bundStep + bundStep / 2 + 0.5 : gridRect.y - 1.5 * markRadius;
-        ctx.beginPath();
-        ctx.arc(cx, cy, markRadius + (bund > 0 ? 0.33 : 0), 0, 2 * Math.PI);
-        if (bund > 0) ctx.fill();
-        else ctx.stroke();
+        const radius = markRadius + (bund > 0 ? 0.33 : 0);
+        if (bund > 0) ctx.fillCircle(cx, cy, radius);
+        else ctx.strokeCircle(cx, cy, radius);
       };
       const drawX = (string: number) => {
         const cx = gridRect.x + string * stringStep + 0.5;
         const cy = gridRect.y - 1.5 * markRadius;
-        ctx.beginPath();
-        ctx.moveTo(cx - markRadius, cy - markRadius);
-        ctx.lineTo(cx + markRadius, cy + markRadius);
-        ctx.moveTo(cx - markRadius, cy + markRadius);
-        ctx.lineTo(cx + markRadius, cy - markRadius);
-        ctx.stroke();
+        ctx.strokeLine(cx - markRadius, cy - markRadius, cx + markRadius, cy + markRadius);
+        ctx.strokeLine(cx - markRadius, cy + markRadius, cx + markRadius, cy - markRadius);
       };
       for (let s = 0; s < stringCount; ++s) {
         const pos = layout[stringCount - s - 1];
@@ -514,16 +461,40 @@ export class ChordDrawer {
             height,
           };
         };
+        const surface = new CanvasDiagramSurface(ctx);
         switch (type) {
           case "GUITAR":
-            return this.drawGuitarChordLayout(ctx, rect || maxRect(this.displayProps.guitarChordSize), chord, forcedVariantIndex, noteHitBoxes);
+            return this.drawGuitarChordLayout(surface, rect || maxRect(this.displayProps.guitarChordSize), chord, forcedVariantIndex, noteHitBoxes);
           case "PIANO":
-            return this.drawPianoChordLayout(ctx, rect || maxRect(this.displayProps.pianoChordSize), chord, forcedVariantIndex, noteHitBoxes);
+            return this.drawPianoChordLayout(surface, rect || maxRect(this.displayProps.pianoChordSize), chord, forcedVariantIndex, noteHitBoxes);
         }
       } finally {
         this.displayProps.backgroundColor = originalBackgroundColor;
       }
     }
     return false;
+  }
+
+  /**
+   * SVG counterpart of `chordBoxDraw` for the DOM song surface. Clears and
+   * repopulates `svg` with a resolution-independent diagram sized to `size` (its
+   * `viewBox` becomes `0 0 size.width size.height`), so the fit-to-screen
+   * `transform: scale()` scales it as vectors and it never blurs. The geometry
+   * is the SAME `drawGuitarChordLayout`/`drawPianoChordLayout` the canvas path
+   * runs — only the surface backend differs. Returns false (leaving the svg
+   * cleared) when the chord cannot be laid out. Diagram-level interaction is
+   * owned by the caller, so no per-note hit boxes are collected here.
+   */
+  chordBoxDrawSvg(type: ChordBoxType, chord: string | ChordDetails, svg: SVGSVGElement, size: Size, forcedVariantIndex?: number) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (type !== "GUITAR" && type !== "PIANO") return false;
+    svg.setAttribute("viewBox", `0 0 ${size.width} ${size.height}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    const surface = new SvgDiagramSurface(svg, this.displayProps.backgroundColor);
+    surface.strokeStyle = this.displayProps.lineColor;
+    const rect = { x: 0, y: 0, width: size.width, height: size.height };
+    return type === "GUITAR"
+      ? this.drawGuitarChordLayout(surface, rect, chord, forcedVariantIndex)
+      : this.drawPianoChordLayout(surface, rect, chord, forcedVariantIndex);
   }
 }

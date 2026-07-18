@@ -247,8 +247,39 @@
   background-color: #fff; /* Ensure visible even when empty */
 }
 
+/* The legacy canvas was transparent; keep the DOM song surface equally
+   transparent so the full-view host remains the single background owner. */
+.wysiwyg-host > .chp-dom-root {
+  background-color: transparent !important;
+}
+
+/* This host renders the song at its natural width and scrolls, so a song
+   narrower than the panel would otherwise sit against the left edge. The auto
+   margins collapse to zero once the song outgrows the panel, leaving a wide song
+   overflowing from the left edge to scroll as before.
+   Both read-only and edit mode render into the DOM root, so it alone carries the
+   song. Editing is excluded on purpose — see the left-aligned rule below. */
+.wysiwyg-host > .chp-dom-root:not(.chp-dom-editing) {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Maintainer runtime finding (P10A matrix): while editing, a chord drag changes
+   the song's natural width every frame, and centered auto-margins then re-center
+   the whole song on each width change — so the song jerks left/right under the
+   pointer. Anchoring the editing root to the left edge keeps it still; the song
+   still scrolls when it outgrows the panel exactly as the centered case does.
+   `.chp-dom-editing` is a stable per-instance signal: the renderer toggles it
+   from a non-null editing input, which an editable instance always supplies. */
+.wysiwyg-host > .chp-dom-root.chp-dom-editing {
+  display: block;
+  margin-left: 0;
+  margin-right: auto;
+}
+
 .wysiwyg-host .chordSelector {
-  padding: 12px 34px 10px 10px;
+  padding: 10px;
   background: var(--pp-panel-bg);
   color: var(--pp-text-color);
   border: 1px solid var(--pp-border-color);
@@ -267,43 +298,10 @@
   border: 1px solid var(--pp-border-color);
 }
 
-.wysiwyg-host .chordSelector #closeSelector {
-  color: var(--pp-text-color);
-}
-
-.wysiwyg-host .chordSelector .chord-selector-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--pp-text-color);
-  font-weight: 600;
-  cursor: pointer;
-  line-height: 1;
-  opacity: 0.9;
-  touch-action: manipulation;
-}
-
-.wysiwyg-host .chordSelector .chord-selector-close:hover {
-  opacity: 1;
-}
-
 .wysiwyg-host .chordSelector #musicChordBox,
 .wysiwyg-host .chordSelector #pianoChordBox,
 .wysiwyg-host .chordSelector #guitarChordBox {
   background: var(--pp-panel-bg);
-}
-
-.wysiwyg-host canvas.chordpro-editor-canvas {
-  display: block;
 }
 
 /* Print styles - only print the editor content */

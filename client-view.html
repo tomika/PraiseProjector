@@ -6,6 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>PraiseProjector</title>
+    <link rel="stylesheet" href="./stylesheets/chordpro.css" data-chordpro-css="true" />
     <style>
       html,
       body {
@@ -24,11 +25,13 @@
         align-items: center;
         justify-content: center;
         gap: 14px;
-        background:
-          radial-gradient(circle at top, rgba(102, 126, 234, 0.16), transparent 45%),
-          linear-gradient(180deg, #11151d 0%, #0b0f14 100%);
+        background: radial-gradient(circle at top, rgba(102, 126, 234, 0.16), transparent 45%), linear-gradient(180deg, #11151d 0%, #0b0f14 100%);
         color: #f1f5f9;
-        font: 500 15px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
+        font:
+          500 15px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          sans-serif;
         letter-spacing: 0.02em;
         z-index: 9999;
       }
@@ -89,15 +92,15 @@
       //     and the client runs in follower mode (RestCore.computeCapabilities).
       //   - Cloud PWA (public /webapp): no injection ⇒ __ppApiBase stays "" and
       //     config.ts derives the cloud host from window.location.origin.
-      // Assets (icons, soundfonts, chordpro CSS) always live under /webapp here.
+      // Dynamic legacy assets (icons, soundfonts, chord-selector CSS) live under
+      // /webapp here. ChordPro UI CSS has one canonical relative link above.
       (function () {
         // Preserve any host-injected globals; default to the cloud configuration.
         window.__ppApiBase = window.__ppApiBase || "";
         var served = !!window.__ppApiBase;
         var underWebapp = location.pathname.indexOf("/webapp") === 0;
-        window.__ppAssetBase =
-          window.__ppAssetBase || (location.protocol === "file:" ? "app" : window.electronAPI ? "/app" : "/webapp");
-        ["chordpro.css", "chordselector.css"].forEach(function (file) {
+        window.__ppAssetBase = window.__ppAssetBase || (location.protocol === "file:" ? "app" : window.electronAPI ? "/app" : "/webapp");
+        ["chordselector.css"].forEach(function (file) {
           var link = document.createElement("link");
           link.rel = "stylesheet";
           link.href = window.__ppAssetBase + "/" + file;

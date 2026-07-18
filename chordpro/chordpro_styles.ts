@@ -128,7 +128,7 @@ export function defaultStyles(lyricsFont: string, darkMode?: boolean, localize?:
       font: "bold 32px times",
       fg: "blue",
       bg: "white",
-      height: 34,
+      height: 38,
       align: "center",
     },
     key: {

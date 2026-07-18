@@ -113,6 +113,13 @@
   background-color: #ffffff;
 }
 
+/* The renderer may carry an authored dark backdrop from the parent session.
+   A print surface is always paper-coloured; its text palette is selected by
+   the editor's forced light theme in PrintWindow.tsx. */
+.print-editor-area .chp-dom-root {
+  background-color: #ffffff !important;
+}
+
 /* Print media - hide toolbar, show only editor */
 @media print {
   .print-toolbar {
@@ -130,25 +137,57 @@
     height: auto !important;
   }
 
-  /* Unconstrain the entire ChordProEditor container chain so the canvas
-     is not clipped to the viewport height during printing. */
+  /* Unconstrain the DOM renderer's actual page-flip hierarchy so browser
+     pagination sees the active host in normal document flow. */
   .print-editor-area .chordpro-editor-container,
   .print-editor-area .chordpro-editor-container > .tab-content,
-  .print-editor-area .chordpro-editor-container .tab-pane,
   .print-editor-area .wysiwyg-tab-content,
-  .print-editor-area .wysiwyg-host,
-  .print-editor-area .editor-panel-wrapper {
+  .print-editor-area .editor-iframe-container,
+  .print-editor-area .wysiwyg-page,
+  .print-editor-area .wysiwyg-host {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
     flex: none !important;
   }
 
-  /* Let the canvas itself dictate its natural size */
-  .print-editor-area .wysiwyg-host canvas {
-    display: block;
+  .print-editor-area .editor-iframe-container,
+  .print-editor-area .wysiwyg-page,
+  .print-editor-area .wysiwyg-host {
+    position: static !important;
+    inset: auto !important;
+  }
+
+  /* ChordProEditor's generic print rule hides body descendants first. Keep
+     the full active print hierarchy visible even if its parent is hidden. */
+  .print-editor-area,
+  .print-editor-area * {
+    visibility: visible !important;
+  }
+
+  /* index.css makes every print descendant white. These renderer layers are
+     full-row absolute overlays, so they must stay transparent or the final
+     selection layer paints over the lyrics and chords beneath it. */
+  .print-editor-area .chp-dom-highlight-layer,
+  .print-editor-area .chp-dom-chord-layer,
+  .print-editor-area .chp-dom-lyrics-layer,
+  .print-editor-area .chp-dom-selection-layer {
+    background-color: transparent !important;
+  }
+
+  .print-editor-area .chp-dom-root {
     width: 100% !important;
-    height: auto !important;
+    max-width: 100% !important;
+  }
+
+  .print-editor-area .chp-dom-meta-row,
+  .print-editor-area .chp-dom-occurrence,
+  .print-editor-area .chp-dom-row,
+  .print-editor-area .chp-dom-comment,
+  .print-editor-area .chp-dom-grid,
+  .print-editor-area .chp-dom-abc {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   /* Reset some bootstrap stuff for print */

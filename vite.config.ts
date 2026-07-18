@@ -75,11 +75,7 @@ export default defineConfig(({ command, mode }) => {
           server.middlewares.use("/webapp", (req, res, next) => {
             const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
             const cleanPath = requestPath.replace(/^\/+/, "");
-            const allowed =
-              cleanPath === "chordpro.css" ||
-              cleanPath === "chordselector.css" ||
-              cleanPath.startsWith("images/") ||
-              cleanPath.startsWith("soundfont/");
+            const allowed = cleanPath === "chordselector.css" || cleanPath.startsWith("images/") || cleanPath.startsWith("soundfont/");
             if (!allowed) {
               next();
               return;

@@ -394,6 +394,7 @@ export function PlaylistEditor() {
           selectionAnchor={wheelSelectionAnchor}
           initialDrag={wheelDrag ?? undefined}
           ariaLabel={wheel.kind === "transpose" ? "Transpose" : "Capo"}
+          dark={state.isDark}
         />
       )}
     </>

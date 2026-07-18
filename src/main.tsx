@@ -2,7 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import LogViewerPage from "./components/LogViewerPage";
+import MessageBox from "./components/MessageBox";
 import PrintWindow from "./components/PrintWindow";
+import { MessageBoxProvider, type MessageBoxConfig } from "./contexts/MessageBoxContext";
 import { LocalizationProvider } from "./localization/LocalizationContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
@@ -180,6 +182,29 @@ function RootView() {
   );
 }
 
+/** Supplies the editor's dialog context in the standalone print route. */
+function PrintWindowShell() {
+  const [messageBox, setMessageBox] = useState<MessageBoxConfig | null>(null);
+
+  return (
+    <MessageBoxProvider onMessageBoxChange={setMessageBox}>
+      <PrintWindow />
+      {messageBox && (
+        <MessageBox
+          title={messageBox.title}
+          message={messageBox.message}
+          onConfirm={messageBox.onConfirm}
+          onNo={messageBox.onNo}
+          onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
+          showCancel={messageBox.showCancel ?? true}
+          confirmText={messageBox.confirmText}
+          confirmDanger={messageBox.confirmDanger}
+        />
+      )}
+    </MessageBoxProvider>
+  );
+}
+
 // Check if this is the log viewer window (opened with #/logs hash)
 const isLogViewer = window.location.hash === "#/logs";
 const isPrintWindow = window.location.hash === "#/print";
@@ -197,7 +222,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <LocalizationProvider>
           <SettingsProvider>
             <TooltipProvider>
-              <PrintWindow />
+              <PrintWindowShell />
             </TooltipProvider>
           </SettingsProvider>
         </LocalizationProvider>

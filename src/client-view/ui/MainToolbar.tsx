@@ -346,6 +346,7 @@ export function MainToolbar({
           selectionAnchor={transposeValueRef.current}
           initialDrag={wheelDrag ?? undefined}
           ariaLabel="Transpose"
+          dark={state.isDark}
         />
       )}
       {wheel === "capo" && capoBtnRef.current && capoValueRef.current && (
@@ -365,6 +366,7 @@ export function MainToolbar({
           selectionAnchor={capoValueRef.current}
           initialDrag={wheelDrag ?? undefined}
           ariaLabel="Capo"
+          dark={state.isDark}
         />
       )}
     </>

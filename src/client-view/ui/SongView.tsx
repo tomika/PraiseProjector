@@ -31,12 +31,27 @@ import {
   CHORDFORMAT_SIMPLIFIED,
   CHORDFORMAT_SUBSCRIPT,
 } from "../../../chordpro/chord_drawer";
+import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
+const fitGenerations = new WeakMap<HTMLDivElement, number>();
+const CLIENT_VIEW_EDITOR_OPTIONS: ChordProEditorOptions = { viewportAlignedTitle: true };
+
+interface FitVisualState {
+  readonly transform: string;
+  readonly transformOrigin: string;
+  readonly marginBottom: string;
+  readonly scrollTop: number;
+}
+
+interface PendingTurnFit {
+  readonly songId: string;
+  readonly visual: FitVisualState;
+}
 
 // A decisively vertical drag on the song pane (past the slop, and more vertical
 // than horizontal) is claimed by the axis lock below purely so it can never also
@@ -71,7 +86,6 @@ export interface SongViewHandle {
 // legacy client and src/components/ChordProEditor use.
 const CHORDSEL_MARKUP = `
   <div id="chordsel" class="chordSelector" style="display: none;">
-    <button id="closeSelector" type="button" class="chord-selector-close" aria-label="Close selector">&times;</button>
     <table style="width: 100%">
       <tr>
         <td>Base&nbsp;note</td><td><select id="baseNoteSel"></select></td>
@@ -102,20 +116,56 @@ function buildChordFlags(s: DisplaySettings): number {
   return flags;
 }
 
+function advanceFitGeneration(host: HTMLDivElement): number {
+  const generation = (fitGenerations.get(host) ?? 0) + 1;
+  fitGenerations.set(host, generation);
+  return generation;
+}
+
 /** Clear any scaling this module applied to an editor host, restoring its natural
- *  (unscaled) layout so it can be re-measured or blanked. */
-function clearFit(host: HTMLDivElement): void {
+ *  (unscaled) layout so it can be blanked. Also drops the pending-fit hide below,
+ *  so a host cleared for reuse is never left invisible. */
+function clearFit(host: HTMLDivElement): number {
+  const generation = advanceFitGeneration(host);
   host.style.removeProperty("transform");
   host.style.removeProperty("transform-origin");
   host.style.removeProperty("margin-bottom");
+  host.style.removeProperty("visibility");
+  return generation;
+}
+
+function captureFitVisualState(host: HTMLDivElement): FitVisualState {
+  return {
+    transform: host.style.transform,
+    transformOrigin: host.style.transformOrigin,
+    marginBottom: host.style.marginBottom,
+    scrollTop: host.parentElement?.scrollTop ?? 0,
+  };
+}
+
+function applyFitVisualState(host: HTMLDivElement, state: FitVisualState): void {
+  host.style.transform = state.transform;
+  host.style.transformOrigin = state.transformOrigin;
+  host.style.marginBottom = state.marginBottom;
+  if (host.parentElement) host.parentElement.scrollTop = state.scrollTop;
 }
 
 /**
- * Scale the whole editor (song canvas + title/meta overlays) as ONE unit so it
- * fits the pane and the overlays stay aligned with the song and it top-aligns
- * like the original. FIT (full page) fits both dimensions; SCROLL (full width)
- * fits the width and lets the pane scroll vertically. Scaling is cleared before
- * measuring so the editor's natural rendered size is read.
+ * Scale the whole editor (song + title/meta overlays) as ONE unit so it fits the
+ * pane and the overlays stay aligned with the song and it top-aligns like the
+ * original. FIT (full page) fits both dimensions; SCROLL (full width) fits the
+ * width and lets the pane scroll vertically.
+ *
+ * A HOST IS NEVER PAINTED UNFITTED. The DOM backend settles asynchronously
+ * (measurement, web fonts, ABC) but makes its root visible on its FIRST commit,
+ * so anything that leaves the host without a transform in between gets a frame
+ * of the song at natural size — the page-turn flash. Two rules prevent it:
+ * the previous transform is KEPT until the new one is computed (unlike the old
+ * canvas path, this cannot affect the measurement: the size comes from the
+ * renderer's logical snapshot, and `cw`/`ch` come from a `.cv-page`, which either
+ * clips or reserves a stable scrollbar gutter), and a host with no transform to
+ * keep is hidden until its first fit lands. `visibility` (not `display`) so the
+ * renderer still measures a real viewport width.
  *
  * We scale with `transform: scale()`, NOT `zoom`. `zoom` scales the layout box in
  * Chromium but not in Firefox (which keeps the box at its unzoomed size and paints
@@ -132,20 +182,39 @@ function clearFit(host: HTMLDivElement): void {
  * container measures the SCALED height and scrolls a tall full-width song correctly
  * (a no-op in clipped full-page mode).
  */
-function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean): void {
+function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean, fitViewport?: HTMLElement | null): Promise<boolean> {
   const container = host.parentElement;
   if (container) container.classList.toggle("cv-scroll", scrollMode);
-  clearFit(host);
-  api.fitToPane(scrollMode);
-  const ew = host.offsetWidth || 1;
-  const eh = host.offsetHeight || 1;
-  const cw = container?.clientWidth || ew;
-  const ch = container?.clientHeight || eh;
-  const z = scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
-  const tx = (cw - ew * z) / 2;
-  host.style.transformOrigin = "top left";
-  host.style.transform = `translateX(${tx}px) scale(${z})`;
-  host.style.marginBottom = `${eh * (z - 1)}px`;
+  if (fitViewport && fitViewport !== container && fitViewport.classList.contains("cv-page")) fitViewport.classList.toggle("cv-scroll", scrollMode);
+  // The current page is temporarily lifted and unclipped while it turns. Measure
+  // against an unlifted sibling page so the scrollbar gutter and content box are
+  // identical before and after the page swap.
+  const cw = fitViewport?.clientWidth || container?.clientWidth || 1;
+  const ch = fitViewport?.clientHeight || container?.clientHeight || 1;
+  const generation = advanceFitGeneration(host);
+  api.fitToPane(scrollMode, { width: cw, height: ch });
+  const applySnapshot = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => {
+    if (fitGenerations.get(host) !== generation || !snapshot.width || !snapshot.height) return false;
+    const ew = snapshot.width;
+    const eh = snapshot.height;
+    const z = scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
+    const tx = (cw - ew * z) / 2;
+    api.setViewportAlignedTitleGeometry(cw / z, tx / z);
+    host.style.transformOrigin = "top left";
+    host.style.transform = `translateX(${tx}px) scale(${z})`;
+    host.style.marginBottom = `${eh * (z - 1)}px`;
+    host.style.removeProperty("visibility");
+    return true;
+  };
+
+  const snapshot = api.getLayoutSnapshot();
+  if (applySnapshot(snapshot) && snapshot.settled) return Promise.resolve(true);
+  // Nothing to scale from yet. Keep whatever transform is already on the host —
+  // a page turn hands over the revealed neighbour's, a re-fit keeps its own — and
+  // hide the host outright if it has none, rather than let the renderer's first
+  // commit paint the song at natural size.
+  if (!host.style.transform) host.style.visibility = "hidden";
+  return api.whenLayoutSettled(snapshot.revision).then(applySnapshot, () => false);
 }
 
 /** Render a song into an editor and fit it to its pane. Used for the neighbour
@@ -158,11 +227,12 @@ function renderSong(
   shift: number,
   settings: DisplaySettings,
   dark: boolean,
-  scrollMode: boolean
+  scrollMode: boolean,
+  fitViewport?: HTMLElement | null
 ): void {
   // suppressDraw: apply settings + transpose before the first paint; fitAndZoom()
   // below issues the single draw. Keeps preloaded neighbour pages flash-free too.
-  api.load(text, false, undefined, undefined, true);
+  api.load(text, false, undefined, undefined, true, CLIENT_VIEW_EDITOR_OPTIONS);
   const maxText = settings.maxText;
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
@@ -172,13 +242,13 @@ function renderSong(
     maxText ? !settings.zoomHideMeta : true,
     tagMode !== "HIDDEN",
     tagMode === "ABBREV",
-    maxText,
+    false, // P7 parity: maximise/scroll the natural song; automatic wrapping is deferred.
     flags,
     boxType
   );
   if (shift !== 0) api.transpose(shift);
   api.darkMode(dark);
-  fitAndZoom(host, api, scrollMode);
+  void fitAndZoom(host, api, scrollMode, fitViewport);
 }
 
 export const SongView = forwardRef<SongViewHandle, { display: Display; settings: DisplaySettings; dark: boolean }>(function SongView(
@@ -214,7 +284,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const scrollModeRef = useRef(false);
   const pinchActiveRef = useRef(false);
   const pinchSuppressPointerRef = useRef(false);
-  const [navigationActionsHidden, setNavigationActionsHidden] = useState(false);
+  const pendingTurnFitRef = useRef<PendingTurnFit | null>(null);
+  // True from the moment a page starts rotating until the controller has reset it
+  // and re-hidden the neighbours. Two things depend on it: the navigation actions
+  // fade out, and neighbour preloading waits (see the neighbour effect).
+  const [flipActive, setFlipActive] = useState(false);
 
   // The shared page-turn controller (chordpro/pageFlip), the same one the desktop
   // ChordProEditor drives. Created in an effect so its config closures — which
@@ -228,7 +302,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       prevPage: () => prevPageRef.current,
       nextPage: () => nextPageRef.current,
       hasNeighbour: (next) => !!store.neighbourEntry(next),
-      onAdvance: (next) => void (next ? store.nextSong() : store.prevSong()),
+      onAdvance: (next) => {
+        const entry = store.neighbourEntry(next);
+        const source = next ? nextHostRef.current : prevHostRef.current;
+        pendingTurnFitRef.current = entry && source?.style.transform ? { songId: entry.songId, visual: captureFitVisualState(source) } : null;
+        void (next ? store.nextSong() : store.prevSong());
+      },
       // The client uses `visibility` (not `display`) so the neighbour stays laid
       // out and measurable behind the opaque current page.
       setNeighbourVisible: (page, visible) => {
@@ -250,7 +329,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
       handleChordBoxTouch: (e, down) => apiRef.current?.handleExternalChordBoxTouch(e, down, true) ?? false,
-      onFlipActiveChange: setNavigationActionsHidden,
+      onFlipActiveChange: setFlipActive,
     });
     flipRef.current = flip;
     return () => {
@@ -508,21 +587,32 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     apiRef.current = chordProAPI.bind(host);
     if (prevHostRef.current) prevApiRef.current = chordProAPI.bind(prevHostRef.current);
     if (nextHostRef.current) nextApiRef.current = chordProAPI.bind(nextHostRef.current);
+    const confirmDiscard = (discard: () => void) => {
+      void store.confirm("drop").then((confirmed) => {
+        if (confirmed) discard();
+      });
+    };
+    apiRef.current.setChordSelectorDiscardHandler(confirmDiscard);
+    prevApiRef.current?.setChordSelectorDiscardHandler(confirmDiscard);
+    nextApiRef.current?.setChordSelectorDiscardHandler(confirmDiscard);
 
     // Re-fit + re-zoom on pane resize / orientation change. Observe the PANE
     // (the perspective container), not the zoomed hosts (which would feed back
     // into the observer and loop).
     let raf = 0;
-    const observer = new ResizeObserver(() => {
+    const scheduleFit = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        if (apiRef.current && hostRef.current) fitAndZoom(hostRef.current, apiRef.current, scrollModeRef.current);
-        if (prevApiRef.current && prevHostRef.current) fitAndZoom(prevHostRef.current, prevApiRef.current, scrollModeRef.current);
-        if (nextApiRef.current && nextHostRef.current) fitAndZoom(nextHostRef.current, nextApiRef.current, scrollModeRef.current);
+        const fitViewport = prevPageRef.current ?? nextPageRef.current ?? pane;
+        if (apiRef.current && hostRef.current) void fitAndZoom(hostRef.current, apiRef.current, scrollModeRef.current, fitViewport);
+        if (prevApiRef.current && prevHostRef.current) void fitAndZoom(prevHostRef.current, prevApiRef.current, scrollModeRef.current, fitViewport);
+        if (nextApiRef.current && nextHostRef.current) void fitAndZoom(nextHostRef.current, nextApiRef.current, scrollModeRef.current, fitViewport);
       });
+    };
+    const observer = new ResizeObserver(() => {
+      scheduleFit();
     });
     observer.observe(pane);
-
     return () => {
       observer.disconnect();
       cancelAnimationFrame(raf);
@@ -545,13 +635,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     if (!text) {
       // Nothing projected: clear the editor so stale song content cannot remain
       // visible under the empty-state hint.
-      if (loadedTextRef.current !== "") api.load("", false);
+      if (loadedTextRef.current !== "") api.load("", false, undefined, undefined, undefined, CLIENT_VIEW_EDITOR_OPTIONS);
       loadedTextRef.current = "";
       appliedTransposeRef.current = 0;
       clearFit(host);
       api.setSectionRepeatCounts(undefined, false);
       api.highlight(0, 0, undefined, undefined, false);
       api.setLyricsHitHandler(null);
+      pendingTurnFitRef.current = null;
       return;
     }
     if (loadedTextRef.current !== text) {
@@ -560,7 +651,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // display settings are applied before the first draw — the closing
       // fitAndZoom() below draws once. Without this the editor briefly paints the
       // untransposed song (a one-frame flash on every song switch).
-      api.load(text, false, undefined, undefined, true);
+      api.load(text, false, undefined, undefined, true, CLIENT_VIEW_EDITOR_OPTIONS);
       // A freshly loaded document starts at shift 0.
       appliedTransposeRef.current = 0;
     }
@@ -587,7 +678,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       maxText ? !settings.zoomHideMeta : true,
       tagMode !== "HIDDEN",
       tagMode === "ABBREV",
-      maxText, // autoSplit long lines in zoom mode
+      false, // P7 parity: maximise/scroll the natural song; automatic wrapping is deferred.
       flags,
       boxType
     );
@@ -599,8 +690,6 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // draw=false here is enough.
     api.applyInstructions(display.instructions ?? "", false);
     api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
-    // Scale the editor as a unit to fit the pane (full page) or fit width + scroll.
-    fitAndZoom(host, api, scrollMode);
     api.setSectionRepeatCounts(display.sectionRepeatCounts, false);
     // Show the display's highlighted range only when highlight is on (legacy chkHighlight).
     if (highlightOn) {
@@ -608,21 +697,45 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     } else {
       api.highlight(0, 0, undefined, undefined);
     }
+    const pendingTurnFit = pendingTurnFitRef.current;
+    const carriedFit = pendingTurnFit?.songId === display.songId ? pendingTurnFit.visual : null;
+    if (pendingTurnFit && !carriedFit) pendingTurnFitRef.current = null;
+    if (carriedFit) applyFitVisualState(host, carriedFit);
+    // Scale only after all geometry/decorations for this display have been
+    // submitted, so settlement represents the exact page that will be revealed.
+    const settledFit = fitAndZoom(host, api, scrollMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
+    const settledFitGeneration = fitGenerations.get(host);
     // Leader highlight control: while on, a tap on a lyrics section pushes its
     // {from,to,section} as the display highlight. Re-installed after each load.
     api.setLyricsHitHandler(highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section) : null);
-    // If this load completed a page turn, drop the rotated-away page on top of the
-    // revealed neighbour (a no-op when no turn is pending).
-    requestAnimationFrame(() => flipRef.current?.finishPending());
+    // Keep the revealed neighbour in place until the incoming current page has
+    // its final transform. Swapping earlier exposed a second, slightly larger fit
+    // after every completed turn.
+    void settledFit.then((applied) => {
+      if (!applied) return;
+      requestAnimationFrame(() => {
+        if (fitGenerations.get(host) !== settledFitGeneration) return;
+        flipRef.current?.finishPending();
+        if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
+      });
+    });
   }, [display, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
   useEffect(() => {
+    // A neighbour page is only PAINTED while a flip reveals it, and a completed
+    // turn keeps the revealed one on screen until the incoming current page has
+    // settled. Reloading a neighbour during that window swaps the song the user
+    // is looking at for the next one along — the page-turn flash. The turn's own
+    // song change lands here while the flip is still active, so hold every
+    // neighbour load until the controller has hidden them again (it reports that
+    // by turning the flip inactive, after `snapBack` → `hideNeighbours`).
+    if (flipActive) return;
     let cancelled = false;
     const load = async (entry: NavEntry | undefined, host: HTMLDivElement | null, api: BoundEditor | null) => {
       if (!api || !host) return;
       if (!entry) {
-        api.load("", false);
+        api.load("", false, undefined, undefined, undefined, CLIENT_VIEW_EDITOR_OPTIONS);
         clearFit(host);
         return;
       }
@@ -630,7 +743,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         const data = await store.getSongData(entry.songId);
         if (cancelled) return;
         const shift = (entry.transpose ?? 0) - (settings.useCapo ? Math.max(entry.capo ?? 0, 0) : 0);
-        renderSong(host, api, data.text, shift, settings, dark, scrollMode);
+        renderSong(host, api, data.text, shift, settings, dark, scrollMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
       } catch {
         /* a neighbour that fails to load simply won't reveal during a flip */
       }
@@ -641,6 +754,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       cancelled = true;
     };
   }, [
+    flipActive,
     display.songId,
     state.navigationMode,
     state.songs,
@@ -686,7 +800,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         </div>
       )}
       <div
-        className={`cv-navigation-actions${navigationActionsHidden || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}
+        className={`cv-navigation-actions${flipActive || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}
       >
         {" "}
         <button
