@@ -222,6 +222,8 @@ export interface SemanticRevisions {
 export interface DomDiagramInput {
   readonly chords: readonly string[];
   readonly size: { readonly width: number; readonly height: number };
+  /** Changes when the selected fingering/voicing changes without altering layout. */
+  readonly revision: number;
   /**
    * Resolved target ratio for the side/below diagram policy. A positive value is
    * used as-is. A non-positive value means "below" for a pane-fitted host (the
@@ -547,7 +549,7 @@ function editingKey(input: DomSongRendererInput) {
 function diagramKey(input: DomSongRendererInput) {
   const diagrams = input.diagrams;
   if (!diagrams) return "none";
-  return `${diagrams.targetRatio}:${diagrams.size.width}x${diagrams.size.height}:${diagrams.chords.join(",")}`;
+  return `${diagrams.revision}:${diagrams.targetRatio}:${diagrams.size.width}x${diagrams.size.height}:${diagrams.chords.join(",")}`;
 }
 
 function collapseKey(collapsed: ReadonlySet<string>) {

@@ -697,6 +697,7 @@ export class ChordProEditor extends ChordDrawer {
   private multiChordChangeEnabled = true;
   private currentlyMarked?: Set<ChordProLine | ChordProChord>;
   private chordBoxType: ChordBoxType = "";
+  private chordVariantRevision = 0;
   private highlighted: { from: number; to: number; section?: number; repeatIndex?: number; repeatTotal?: number; repeatNonce?: number } | null = null;
   private sectionRepeatCounts?: SectionRepeatCount[];
   private lastMouseDown: { x: number; y: number } | null = null;
@@ -1443,6 +1444,7 @@ export class ChordProEditor extends ChordDrawer {
     return {
       chords,
       size: chordBoxType === "PIANO" ? this.displayProps.pianoChordSize : this.displayProps.guitarChordSize,
+      revision: this.chordVariantRevision,
       targetRatio: this.targetRatio,
       canRender: (chord) =>
         chordBoxType === "PIANO" ? !!this.system.identifyChord(chord) : !!(this.getActualChordLayout(chord) && this.chordSelector),
@@ -1462,8 +1464,7 @@ export class ChordProEditor extends ChordDrawer {
       const applyGesture = (dx: number, dy: number) => {
         if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
           const offset = dx < 0 || dy < 0 ? -1 : 1;
-          this.chordVariantCache.set(chord, (this.chordVariantCache.get(chord) || 0) + offset);
-          this.draw();
+          this.cycleChordVariant(chord, offset);
         } else {
           const BoxType = chordBoxType === "PIANO" ? PianoChordHitBox : GuitarChordHitBox;
           this.playChord(new BoxType(0, 0, size.width, size.height, chord));
@@ -1514,6 +1515,12 @@ export class ChordProEditor extends ChordDrawer {
     // large scale factor no longer blurs the diagram (the old fixed-size canvas
     // backing store did).
     this.chordBoxDrawSvg(chordBoxType, chord, svg, size);
+  }
+
+  private cycleChordVariant(chord: string, offset: number) {
+    this.chordVariantCache.set(chord, (this.chordVariantCache.get(chord) || 0) + offset);
+    this.chordVariantRevision += 1;
+    this.draw();
   }
 
   private createDomRendererInput(): DomSongRendererInput | null {
@@ -2293,9 +2300,7 @@ export class ChordProEditor extends ChordDrawer {
       if (lp.x < box.left || lp.y < box.top) offset = -1;
       else if (lp.x > box.left + box.width || lp.y > box.top + box.height) offset = 1;
       if (offset) {
-        const variant = (this.chordVariantCache.get(box.chord) || 0) + offset;
-        this.chordVariantCache.set(box.chord, variant);
-        this.draw();
+        this.cycleChordVariant(box.chord, offset);
         return true;
       }
       this.playChord(box);
