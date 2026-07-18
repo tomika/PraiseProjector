@@ -6,6 +6,7 @@ import { SongPreferenceEntry } from "../common/pp-types";
 interface Database {
   getSongs(): Song[];
   ensureProfileBackup(leaderId: string): void;
+  invalidateFilterCache(): void;
 }
 
 import { Song } from "./Song";
@@ -166,6 +167,10 @@ export class Leader {
     if (!pref.isActive && this.preferences.delete(songId)) {
       this.version = 0;
     }
+
+    // A preference change (esp. Preferred/Ignore type) alters filter results and
+    // the preference baked into cached SongFound entries — drop the filter cache.
+    database.invalidateFilterCache();
 
     return pref;
   }

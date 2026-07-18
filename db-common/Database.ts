@@ -168,6 +168,20 @@ export class SongFoundList extends Array<SongFound> {
     this.set.add(song);
     this.push(new SongFound(song, leader?.getPreference(song.Id) ?? null, reason, cost, snippet));
   }
+
+  /**
+   * Shallow copy of the list (SongFound entries are immutable and shared).
+   * Used by the filter cache so callers can never mutate a cached instance's
+   * array container (splice/sort) and corrupt subsequent cache hits.
+   */
+  clone(): SongFoundList {
+    const copy = new SongFoundList();
+    for (const item of this) {
+      copy.push(item);
+      copy.set.add(item.song);
+    }
+    return copy;
+  }
 }
 
 export enum SongOrder {
@@ -343,6 +357,27 @@ class Database {
   public words: SongWords = new SongWords();
   private typesense: TypesenseClient | null = null;
 
+  // --- Filter result cache (LRU) ---------------------------------------------
+  // Song filtering (fuzzy Damerau-Levenshtein over every song/word) is the most
+  // CPU-intensive read in the app and is re-run on every keystroke, filter-flag
+  // toggle, and `db-updated` event — often with a query that was already
+  // evaluated moments ago (e.g. backspacing, or the same list re-requested by a
+  // sibling panel). We memoize the SongFoundList keyed by all inputs that affect
+  // the result. The whole cache is invalidated on any data mutation (see
+  // invalidateFilterCache callers), so a hit is always as correct as a recompute.
+  private static readonly FILTER_CACHE_MAX = 32;
+  private static readonly FILTER_CACHE_MAX_IDS = 500; // don't build huge keys for large songId sets
+  private filterCache = new Map<string, SongFoundList>();
+  // Bumped on every invalidation so an in-flight async (typesense) filter can
+  // detect that data changed under it and decline to cache a now-stale result.
+  private filterCacheEpoch = 0;
+
+  /** Drop all memoized filter results. Called from every mutation entry point. */
+  public invalidateFilterCache(): void {
+    this.filterCacheEpoch++;
+    if (this.filterCache.size) this.filterCache.clear();
+  }
+
   private songToTypesenseInfo(song: Song) {
     return { id: song.Id, version: song.version, text: song.Text };
   }
@@ -359,6 +394,7 @@ class Database {
   }
 
   private updateSearchEngine(newSongs?: Song[]) {
+    this.invalidateFilterCache();
     if (this.typesense) {
       const songs = newSongs ?? this.getSongs();
       this.typesense.update(songs.map((s) => this.songToTypesenseInfo(s))).catch((error) => {
@@ -372,6 +408,7 @@ class Database {
   }
 
   private addSongToSearchEngine(song: Song) {
+    this.invalidateFilterCache();
     if (this.typesense)
       this.typesense.update([this.songToTypesenseInfo(song)]).catch((error) => {
         console.error("Database", "Failed to update Typesense index", error);
@@ -380,6 +417,7 @@ class Database {
   }
 
   private removeSongFromSearchEngine(_song: Song) {
+    this.invalidateFilterCache();
     // Typesense non-existing results are filtered at search time
     this.words.remove(_song);
   }
@@ -1120,6 +1158,7 @@ class Database {
       this.applyDbState(dbState);
 
       this.isDirty = true;
+      this.invalidateFilterCache();
       console.info("Database", `Restored from backup with version ${this.version}`);
     } catch (error) {
       console.error("Database", "Failed to restore from backup", error);
@@ -1138,6 +1177,7 @@ class Database {
     this.profileBackup.clear();
     this.version = 0;
     this.isDirty = true;
+    this.invalidateFilterCache();
   }
 
   public addLeader(leader: Leader): void {
@@ -1201,6 +1241,13 @@ class Database {
 
   public typesenseEngineEnabled = false;
 
+  /**
+   * Filter songs by query, memoizing the result. See the filterCache field for
+   * rationale. On a hit a defensive clone is returned so callers can never
+   * corrupt a cached instance. A result is only stored if the cache was not
+   * invalidated while an async (typesense) filter was in flight (epoch guard),
+   * so a cached entry is always as fresh as a recompute.
+   */
   public async filter(
     expr: string,
     leader: Leader | null = null,
@@ -1208,6 +1255,106 @@ class Database {
     includeItemsWithoutChords = true,
     includeItemsWithNotes = true,
     order: SongOrder = SongOrder.Alphabetical,
+    settings?: DatabaseSettings | null,
+    songIds?: SongIdFilter | null
+  ): Promise<SongFoundList> {
+    const cacheKey = this.filterCacheKey(
+      expr,
+      leader,
+      includeItemsWithChords,
+      includeItemsWithoutChords,
+      includeItemsWithNotes,
+      order,
+      settings,
+      songIds
+    );
+
+    if (cacheKey !== null) {
+      const cached = this.filterCache.get(cacheKey);
+      if (cached) {
+        // LRU touch: re-insert to mark as most-recently used.
+        this.filterCache.delete(cacheKey);
+        this.filterCache.set(cacheKey, cached);
+        return cached.clone();
+      }
+    }
+
+    const epochBefore = this.filterCacheEpoch;
+    const result = await this.runFilter(
+      expr,
+      leader,
+      includeItemsWithChords,
+      includeItemsWithoutChords,
+      includeItemsWithNotes,
+      order,
+      settings,
+      songIds
+    );
+
+    // Only cache if no mutation invalidated the cache during an async filter.
+    if (cacheKey !== null && this.filterCacheEpoch === epochBefore) {
+      this.filterCache.set(cacheKey, result.clone());
+      while (this.filterCache.size > Database.FILTER_CACHE_MAX) {
+        const oldest = this.filterCache.keys().next().value;
+        if (oldest === undefined) break;
+        this.filterCache.delete(oldest);
+      }
+    }
+
+    return result;
+  }
+
+  /** Build a cache key from every input that affects filter output, or null to
+   *  bypass caching (e.g. an unusually large explicit songId set). */
+  private filterCacheKey(
+    expr: string,
+    leader: Leader | null,
+    includeItemsWithChords: boolean,
+    includeItemsWithoutChords: boolean,
+    includeItemsWithNotes: boolean,
+    order: SongOrder,
+    settings?: DatabaseSettings | null,
+    songIds?: SongIdFilter | null
+  ): string | null {
+    let idsSig = "*";
+    const idSet = Database.toSongIdSet(songIds);
+    if (idSet) {
+      if (idSet.size > Database.FILTER_CACHE_MAX_IDS) return null;
+      idsSig = Array.from(idSet).sort().join(",");
+    }
+
+    const settingsSig = settings
+      ? [
+          settings.searchMethod ?? "traditional",
+          settings.searchMaxResults ?? 0,
+          settings.traditionalSearchCaseSensitive ? 1 : 0,
+          settings.traditionalSearchWholeWords ? 1 : 0,
+          settings.useTextSimilarities === false ? 0 : 1,
+          settings.typesenseUrl ?? "",
+          settings.typesenseApiKey ?? "",
+        ].join("")
+      : "-";
+
+    return [
+      expr,
+      leader?.id ?? "",
+      includeItemsWithChords ? 1 : 0,
+      includeItemsWithoutChords ? 1 : 0,
+      includeItemsWithNotes ? 1 : 0,
+      order,
+      this.typesenseEngineEnabled ? 1 : 0,
+      settingsSig,
+      idsSig,
+    ].join("");
+  }
+
+  private async runFilter(
+    expr: string,
+    leader: Leader | null,
+    includeItemsWithChords: boolean,
+    includeItemsWithoutChords: boolean,
+    includeItemsWithNotes: boolean,
+    order: SongOrder,
     settings?: DatabaseSettings | null,
     songIds?: SongIdFilter | null
   ): Promise<SongFoundList> {
