@@ -226,6 +226,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.handleSavePlaylist = this.handleSavePlaylist.bind(this);
     this.handleScheduleDateSelected = this.handleScheduleDateSelected.bind(this);
     this.handleScheduleDialogCancel = this.handleScheduleDialogCancel.bind(this);
+    this.handleRefreshPublicLeaders = this.handleRefreshPublicLeaders.bind(this);
   }
 
   componentDidMount() {
@@ -1589,10 +1590,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Load playlist - matching C# OnPlayListLoad
   async handleLoadPlaylist() {
-    const selectedLeader = this.props.selectedLeader;
+    const db = Database.getInstance();
+    // The load dialog can pick any own OR public leader, so it opens whenever
+    // at least one exists; the file picker is the fallback only when none do.
+    const hasAnyLeader = !!this.props.selectedLeader || db.getAllLeaders().length > 0 || db.getPublicLeaders().length > 0;
 
-    if (selectedLeader) {
-      // Load from leader's schedule
+    if (hasAnyLeader) {
       this.setState({
         showScheduleDialog: true,
         scheduleDialogMode: "load",
@@ -1603,9 +1606,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
   }
 
-  // Handle schedule dialog date selection
-  async handleScheduleDateSelected(date: Date) {
-    const selectedLeader = this.props.selectedLeader;
+  // Handle schedule dialog date selection. `leader` is the leader chosen inside
+  // the dialog (load mode can switch to any own/public leader; save mode always
+  // returns the own selected leader).
+  async handleScheduleDateSelected(date: Date, leader: Leader) {
     const { scheduleDialogMode, currentPlaylist } = this.state;
 
     this.setState({
@@ -1613,19 +1617,17 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       scheduleDialogMode: null,
     });
 
-    if (!selectedLeader) return;
-
     const db = Database.getInstance();
 
     if (scheduleDialogMode === "save") {
       // Save playlist to leader's schedule
-      db.schedule(selectedLeader, date, currentPlaylist);
+      db.schedule(leader, date, currentPlaylist);
       // Remember the date we saved to
       this.setState({ scheduleDate: date });
       this.persistScheduleDate(date);
     } else if (scheduleDialogMode === "load") {
       // Load playlist from leader's schedule
-      const playlist = selectedLeader.getPlaylist(date, 24 * 60 * 60 * 1000); // 1 day timespan
+      const playlist = leader.getPlaylist(date, 24 * 60 * 60 * 1000); // 1 day timespan
       if (playlist) {
         const playlistStr = playlist.toString();
         this.loadPlaylistData(playlistStr);
@@ -1636,11 +1638,40 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
   }
 
+  // Re-fetch the public-leader mirror on demand (the dialog's 🔄 button), then
+  // re-render so the dialog's public group reflects the fresh lists.
+  async handleRefreshPublicLeaders() {
+    await Database.getInstance().updatePublicLeaders();
+    this.forceUpdate();
+  }
+
   handleScheduleDialogCancel() {
     this.setState({
       showScheduleDialog: false,
       scheduleDialogMode: null,
     });
+  }
+
+  // Save mode targets the own selected leader only; load mode also offers every
+  // other own leader and the read-only public leaders, with in-dialog refresh.
+  private renderScheduleDialog(mode: "save" | "load") {
+    const db = Database.getInstance();
+    const ownLeaders = db.getAllLeaders();
+    const publicLeaders = db.getPublicLeaders();
+    const dialogLeader = this.props.selectedLeader ?? (mode === "load" ? (ownLeaders[0] ?? publicLeaders[0]) : undefined);
+    if (!dialogLeader) return null;
+    return (
+      <ScheduleDialog
+        leader={dialogLeader}
+        mode={mode}
+        ownLeaders={mode === "load" ? ownLeaders : undefined}
+        publicLeaders={mode === "load" ? publicLeaders : undefined}
+        onRefreshPublic={mode === "load" ? this.handleRefreshPublicLeaders : undefined}
+        onConfirm={this.handleScheduleDateSelected}
+        onCancel={this.handleScheduleDialogCancel}
+        initialDate={this.state.scheduleDate}
+      />
+    );
   }
 
   // Save playlist to file - matching C# SavePlayListToFile
@@ -2376,15 +2407,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               onClose={this.handleInstructionsClose}
             />
           )}
-          {showScheduleDialog && scheduleDialogMode && this.props.selectedLeader && (
-            <ScheduleDialog
-              leader={this.props.selectedLeader}
-              mode={scheduleDialogMode}
-              onConfirm={this.handleScheduleDateSelected}
-              onCancel={this.handleScheduleDialogCancel}
-              initialDate={this.state.scheduleDate}
-            />
-          )}
+          {showScheduleDialog && scheduleDialogMode && this.renderScheduleDialog(scheduleDialogMode)}
         </div>
       </PlaylistDropTarget>
     );

@@ -1241,7 +1241,12 @@ const AppContent: React.FC = () => {
             headers: { "Content-Type": "application/json" },
           };
         } else if (apiRequest.method === "GET" && apiRequest.path === "/leaders") {
-          const data: LeadersResponse = db.getAllLeaders().map((leader) => leader.toJSON());
+          // Own (synced) leaders plus the read-only public mirror, tagged so
+          // REST clients can group them without a local database.
+          const data: LeadersResponse = [
+            ...db.getAllLeaders().map((leader) => ({ ...leader.toJSON(), access: "own" as const })),
+            ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const })),
+          ];
           response = {
             status: 200,
             data,

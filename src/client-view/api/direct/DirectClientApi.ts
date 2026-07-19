@@ -345,11 +345,11 @@ export class DirectClientApi implements ClientApi {
     // The leader-playlists picker reads from the host's LOCAL Database (the same
     // synced leader profiles the desktop UI uses), not the cloud — Leader.toJSON()
     // yields the wire LeaderDBProfile shape the port expects.
-    const profileFor = (leaderId: string) =>
-      Database.getInstance()
-        .getLeaders()
-        .find((leader) => leader.id === leaderId)
-        ?.toJSON();
+    const profileFor = (leaderId: string) => {
+      const db = Database.getInstance();
+      const leader = db.getLeaders().find((l) => l.id === leaderId) ?? db.getPublicLeaders().find((l) => l.id === leaderId);
+      return leader?.toJSON();
+    };
     const playlistOf = (leaderId: string, label?: string) => {
       const profile = profileFor(leaderId);
       return (label != null ? profile?.playlists.find((pl) => pl.label === label) : profile?.playlists[0])?.songs ?? [];
@@ -367,10 +367,14 @@ export class DirectClientApi implements ClientApi {
       getPlaylist: () => getCurrentDisplay().playlist ?? [],
       setPlaylist: async (entries) => applyPlaylist(entries),
       clear: async () => applyPlaylist([]),
-      getLeaderPlaylists: async () =>
-        Database.getInstance()
-          .getLeaders()
-          .map((leader) => leader.toJSON()),
+      getLeaderPlaylists: async () => {
+        const db = Database.getInstance();
+        return [
+          ...db.getLeaders().map((leader) => ({ ...leader.toJSON(), access: "own" as const })),
+          ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const })),
+        ];
+      },
+      refreshLeaderPlaylists: () => Database.getInstance().updatePublicLeaders(),
       selectLeaderPlaylist: async (leaderId, label) => playlistOf(leaderId, label),
       replaceCurrentWithSelected: async (leaderId, label) => applyPlaylist(playlistOf(leaderId, label)),
       // Save the working list to the selected leader's LOCAL schedule (the desktop

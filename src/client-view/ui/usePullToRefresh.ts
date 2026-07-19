@@ -94,9 +94,19 @@ export interface UsePullToRefreshOptions {
   armDistance?: number;
   /** Override the per-level hold time (tests, tuning). */
   levelHoldMs?: number;
+  /** Override the "scrolled to top" check (default: containerRef.scrollTop ≤ 2)
+   *  — for gestures anchored to a wrapper whose INNER element is the scroller
+   *  (e.g. the leader-playlists picker, where #list scrolls, not the wrapper). */
+  atTop?: () => boolean;
 }
 
-export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs = LEVEL_HOLD_MS }: UsePullToRefreshOptions): PullToRefresh {
+export function usePullToRefresh({
+  maxLevel,
+  onRelease,
+  armDistance,
+  levelHoldMs = LEVEL_HOLD_MS,
+  atTop: atTopOverride,
+}: UsePullToRefreshOptions): PullToRefresh {
   const containerRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<PullPhase>("idle");
   const [offset, setOffset] = useState(0);
@@ -114,6 +124,7 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef = useRef(phase);
   const onReleaseRef = useRef(onRelease);
+  const atTopOverrideRef = useRef(atTopOverride);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -122,6 +133,10 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
   useEffect(() => {
     onReleaseRef.current = onRelease;
   }, [onRelease]);
+
+  useEffect(() => {
+    atTopOverrideRef.current = atTopOverride;
+  }, [atTopOverride]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -135,7 +150,7 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
       const h = (typeof window !== "undefined" && window.innerHeight) || el.clientHeight || 0;
       return h * ARM_DISTANCE_FRACTION || DEFAULT_ARM_DISTANCE;
     };
-    const atTop = () => el.scrollTop <= 2;
+    const atTop = () => (atTopOverrideRef.current ? atTopOverrideRef.current() : el.scrollTop <= 2);
 
     const stopTick = () => {
       if (tickRef.current != null) {
@@ -286,6 +301,12 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
     const onMouseMove = (e: MouseEvent) => {
       if (mouseDown) move(e.clientX, e.clientY, () => e.preventDefault());
     };
+    const onSelectStart = (e: Event) => {
+      // Selection starts before mousemove reaches the pull threshold, so
+      // preventing mousemove alone is too late. Suppress it only while a valid
+      // pull candidate is being tracked from the top of this container.
+      if (mouseDown && startYRef.current != null) e.preventDefault();
+    };
     const onMouseUp = () => {
       if (!mouseDown) return;
       mouseDown = false;
@@ -298,6 +319,7 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
     el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("selectstart", onSelectStart);
     window.addEventListener("mousemove", onMouseMove, passive);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
@@ -307,6 +329,7 @@ export function usePullToRefresh({ maxLevel, onRelease, armDistance, levelHoldMs
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
       el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("selectstart", onSelectStart);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };

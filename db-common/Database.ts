@@ -338,6 +338,7 @@ class Database {
     {
       songBackup: t.array(databaseSongBackupMapEntryCodec),
       profileBackup: t.array(databaseProfileBackupMapEntryCodec),
+      publicLeaders: leadersResponseCodec,
     }
   );
 
@@ -354,6 +355,10 @@ class Database {
   public emitter = new TinyEmitter();
   private songs: Map<string, Song> = new Map();
   public leaders: Leaders = new Leaders();
+  /** Read-only mirror of other leaders' profiles fetched from GET /leaders.
+   *  Kept separate from `leaders` so they never enter sync upload / conflict
+   *  resolution; refreshed wholesale by updatePublicLeaders(). */
+  private publicLeaders: Leaders = new Leaders();
   public words: SongWords = new SongWords();
   private typesense: TypesenseClient | null = null;
 
@@ -610,6 +615,7 @@ class Database {
         {
           songBackup: t.array(t.tuple([t.string, t.type({ version: t.number, song: t.unknown })])),
           profileBackup: t.array(t.tuple([t.string, t.type({ version: t.number, leader: t.unknown })])),
+          publicLeaders: t.array(t.unknown),
         }
       );
 
@@ -631,6 +637,7 @@ class Database {
     version?: number;
     songs?: unknown[];
     leaders?: unknown;
+    publicLeaders?: unknown;
     songBackup?: Array<[string, { version: number; song: unknown }]>;
     profileBackup?: Array<[string, { version: number; leader: unknown }]>;
   }): void {
@@ -646,6 +653,10 @@ class Database {
 
     if (dbState.leaders) {
       this.leaders = Leaders.fromJSON(dbState.leaders);
+    }
+
+    if (dbState.publicLeaders) {
+      this.publicLeaders = Leaders.fromJSON(dbState.publicLeaders);
     }
 
     // Load song backups
@@ -720,6 +731,7 @@ class Database {
           version: this.version,
           songs: Array.from(this.songs.values()),
           leaders: this.leaders,
+          publicLeaders: this.publicLeaders,
           songBackup: Array.from(this.songBackup.entries()),
           profileBackup: Array.from(this.profileBackup.entries()),
         };
@@ -2146,6 +2158,28 @@ class Database {
 
   public getLeaderById(leaderId: string): Leader | undefined {
     return this.leaders.find(leaderId);
+  }
+
+  /** Other leaders' read-only profiles (from GET /leaders). Leaders that have
+   *  since become own/synced are filtered out at read time. */
+  public getPublicLeaders(): Leader[] {
+    const ownIds = new Set(this.leaders.items.map((l) => l.id));
+    return this.publicLeaders.items.filter((l) => !ownIds.has(l.id));
+  }
+
+  /** Refresh the public-leader mirror from GET /leaders (full fetch, works for
+   *  guests too). Own leaders are excluded; failure is non-fatal (offline). */
+  public async updatePublicLeaders(): Promise<void> {
+    try {
+      const profiles = await cloudApi.fetchLeaders(0);
+      const ownIds = new Set(this.leaders.items.map((l) => l.id));
+      const next = new Leaders();
+      next.items = profiles.filter((p) => !ownIds.has(p.leaderId)).map((p) => Leader.fromJSON(p));
+      this.publicLeaders = next;
+      this.forceSave();
+    } catch (error) {
+      console.warn("Database", "Failed to refresh public leader lists", error);
+    }
   }
 
   public getLeaderByName(leaderName: string): Leader | undefined {

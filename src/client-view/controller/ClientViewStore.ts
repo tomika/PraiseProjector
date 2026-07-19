@@ -115,6 +115,12 @@ function toPlaylistEntry(song: SongEntry | SongFound | PlaylistEntry): PlaylistE
   return { songId: song.songId, title: song.title, transpose: song.transpose, capo: song.capo, instructions: song.instructions };
 }
 
+/** Case- and accent-insensitive folding for the local leader-playlist filter
+ *  (á→a etc. via NFD decomposition, so "elje" matches "Élje"). */
+function foldSearchText(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 /**
  * How the current song is rendered. These map 1:1 onto the inputs the legacy
  * `displayChanged()` reads to build the ChordPro `chordFormatFlags` bitmask and
@@ -244,6 +250,10 @@ export interface ClientViewState {
   selectedLeaderId: string | null;
   /** The dated playlist label chosen in the picker (the date select), or null. */
   selectedPlaylistLabel: string | null;
+  /** Local filter over the selected leader's ALL dated playlists (leaderlists
+   *  mode). While non-empty the picker shows matches with their date instead of
+   *  the single selected playlist. */
+  leaderFilterText: string;
   /** The maxText (zoom) settings dialog visibility. */
   zoomDialogOpen: boolean;
   /** The sign-in dialog visibility (cloud context only — capabilities.canLogin). */
@@ -407,6 +417,7 @@ function initialState(): ClientViewState {
     leaderProfilesLoading: false,
     selectedLeaderId: null,
     selectedPlaylistLabel: null,
+    leaderFilterText: "",
     zoomDialogOpen: false,
     loginDialogOpen: false,
     sessionsDialogOpen: false,
@@ -1393,7 +1404,7 @@ export class ClientViewStore {
    *  capabilities.canEditWorkingPlaylist. Entering leaderlists lazily loads the
    *  leader profiles (refreshing them, like the legacy updatePlaylistDroplist). */
   setListMode(mode: ListMode): void {
-    const patch: Partial<ClientViewState> = { listMode: mode };
+    const patch: Partial<ClientViewState> = { listMode: mode, leaderFilterText: "" };
     if (mode === "database" || mode === "playlist") patch.navigationMode = mode;
     this.set(patch);
     if (mode === "leaderlists") void this.loadLeaderPlaylists();
@@ -1416,6 +1427,18 @@ export class ClientViewStore {
     } catch {
       this.set({ leaderProfilesLoading: false });
     }
+  }
+
+  /** Pull-to-refresh in leaderlists mode (the full-view 🔄 equivalent): refresh
+   *  the public-leader mirror behind the picker where the adapter supports it,
+   *  then reload the profiles. Non-fatal on failure (offline). */
+  async refreshLeaderPlaylists(): Promise<void> {
+    try {
+      await this.api.playlist.refreshLeaderPlaylists?.();
+    } catch {
+      // Offline / backend without a mirror — the reload below still re-reads.
+    }
+    await this.loadLeaderPlaylists();
   }
 
   /** Keep the chosen leader/date valid against a fresh profile set: keep the
@@ -1447,12 +1470,43 @@ export class ClientViewStore {
   /** Choose a leader in the picker; resets the date to that leader's newest. */
   selectLeader(leaderId: string): void {
     const labels = this.leaderProfilesFor(leaderId);
-    this.set({ selectedLeaderId: leaderId, selectedPlaylistLabel: labels[0] ?? null });
+    this.set({ selectedLeaderId: leaderId, selectedPlaylistLabel: labels[0] ?? null, leaderFilterText: "" });
   }
 
   /** Choose a dated playlist (the date select). */
   selectLeaderDate(label: string): void {
     this.set({ selectedPlaylistLabel: label });
+  }
+
+  /** Set the local filter over the selected leader's playlists (leaderlists mode). */
+  setLeaderFilterText(text: string): void {
+    this.set({ leaderFilterText: text });
+  }
+
+  /** The picker's leader options grouped for the select: the user's own synced
+   *  leaders first, other ("public") leaders in a separate group sorted by name.
+   *  An untagged profile (cloud /leaders sends no `access`) counts as public. */
+  groupedLeaderProfiles(): { own: LeaderDBProfile[]; public: LeaderDBProfile[] } {
+    const own = this.state.leaderProfiles.filter((p) => p.access === "own");
+    const pub = this.state.leaderProfiles.filter((p) => p.access !== "own").sort((a, b) => a.leaderName.localeCompare(b.leaderName));
+    return { own, public: pub };
+  }
+
+  /** Title matches for the leader filter across the selected leader's ALL dated
+   *  playlists, newest playlist first (accent- and case-insensitive). Each match
+   *  carries its playlist label so the row can show WHERE the song was found. */
+  leaderSearchResults(): { label: string; entry: PlaylistEntry }[] {
+    const query = foldSearchText(this.state.leaderFilterText.trim());
+    if (!query) return [];
+    const profile = this.state.leaderProfiles.find((p) => p.leaderId === this.state.selectedLeaderId);
+    const playlists = [...(profile?.playlists ?? [])].sort((a, b) => -a.label.localeCompare(b.label));
+    const results: { label: string; entry: PlaylistEntry }[] = [];
+    for (const playlist of playlists) {
+      for (const entry of playlist.songs) {
+        if (foldSearchText(entry.title).includes(query)) results.push({ label: playlist.label, entry });
+      }
+    }
+    return results;
   }
 
   private leaderProfilesFor(leaderId: string): string[] {

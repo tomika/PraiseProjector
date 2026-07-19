@@ -20,7 +20,7 @@
  * IMPORTANT: this component must stay free of Electron imports.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { formatLocalDateKey } from "../../common/date-only";
 import { weekStartLocale } from "../../common/utils";
 import "./SchedulePicker.css";
@@ -58,6 +58,10 @@ export interface SchedulePickerProps {
    * confirm instead.
    */
   confirmOverwrite?: (date: Date) => Promise<boolean>;
+  /** Optional host-supplied controls rendered above the calendar/date list —
+   *  e.g. the desktop load dialog's leader switcher. Stays a plain ReactNode so
+   *  this component remains Electron- and localization-free. */
+  headerSlot?: ReactNode;
   onConfirm: (date: Date) => void;
   onCancel: () => void;
 }
@@ -74,6 +78,7 @@ export function SchedulePicker({
   locale,
   action,
   confirmOverwrite,
+  headerSlot,
   onConfirm,
   onCancel,
 }: SchedulePickerProps) {
@@ -238,7 +243,10 @@ export function SchedulePicker({
             ×
           </button>
         </div>
-        <div className="dialog-body">{mode === "save" ? renderCalendar() : renderDateList()}</div>
+        <div className="dialog-body">
+          {headerSlot}
+          {mode === "save" ? renderCalendar() : renderDateList()}
+        </div>
         <div className="dialog-footer">
           {action.style === "text" ? (
             <button type="button" className="btn btn-primary schedule-ok-btn" onClick={() => void handleOK()} disabled={!selectedDate}>

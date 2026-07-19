@@ -1402,6 +1402,16 @@ body,
   min-width: 0;
 }
 
+/* Keep the replace button outside the width calculation: the one-third caps
+   below are relative to the three fields only. */
+.cv-leaderlists-fields {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .cv-leader-select,
 .cv-date-select {
   font-size: inherit;
@@ -1413,18 +1423,61 @@ body,
   min-width: 0;
 }
 
-/* The leader name can be long; let it take the slack, keep the date compact. */
+/* Both selects use their intrinsic option width, but neither may consume more
+   than one third of the three fields' combined width (excluding both gaps). */
 .cv-leader-select {
-  flex: 1 1 auto;
+  flex: 0 1 max-content;
+  width: max-content;
+  max-width: calc((100% - 12px) / 3);
 }
 
 .cv-date-select {
-  flex: 0 1 auto;
+  flex: 0 1 max-content;
+  width: max-content;
+  max-width: calc((100% - 12px) / 3);
 }
 
 .cv-leader-select:disabled,
 .cv-date-select:disabled {
   opacity: 0.5;
+}
+
+/* The filter takes all space left after the content-sized selectors. */
+.cv-leader-filter {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  font-size: inherit;
+  padding: 4px 6px;
+  background: var(--cv-select-bg);
+  color: var(--cv-select-fg);
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+}
+
+.cv-leader-filter:disabled {
+  opacity: 0.5;
+}
+
+/* Wrapper for the leader-playlists list: fills the overlay column so #list
+   keeps its own scroll, anchors the pull-to-refresh spinner (position:relative,
+   like .mainTable for the main pull) and hosts the pull gesture — including on
+   the empty state. */
+.cv-leaderlists-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The date a leader-list search match was found in, shown after the title. */
+.cv-leader-date-badge {
+  margin-left: 8px;
+  font-size: 0.85em;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 .cv-leader-replace-btn {

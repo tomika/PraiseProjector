@@ -33,6 +33,7 @@ import {
   songHistoryResponseCodec,
   songHistoryEntryCodec,
   leaderProfileCodec,
+  leaderAccessCodec,
   profileDataCodec,
   playListCodec,
   errorResponseCodec,
@@ -113,7 +114,8 @@ export type PlayList = t.TypeOf<typeof playListCodec>;
 export type ProfileData = t.TypeOf<typeof profileDataCodec>;
 
 export type LeaderProfile = t.TypeOf<typeof leaderProfileCodec>;
-export type LeaderDBProfile = LeaderProfile & { version: number };
+export type LeaderAccess = t.TypeOf<typeof leaderAccessCodec>;
+export type LeaderDBProfile = LeaderProfile & { version: number; access?: LeaderAccess };
 
 export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 

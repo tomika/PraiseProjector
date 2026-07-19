@@ -316,8 +316,16 @@ export interface PlaylistApi {
   /** Empty the working playlist. */
   clear(): Promise<void>;
   /** Leader playlists available from the backend, for the leader/date pickers
-   *  (each profile carries that leader's dated playlists). */
+   *  (each profile carries that leader's dated playlists). Profiles may be
+   *  tagged with `access` ("own" = the user's synced leaders, "public" = other
+   *  leaders' read-only lists); an untagged profile counts as public. */
   getLeaderPlaylists(): Promise<LeaderDBProfile[]>;
+  /** Re-fetch the public-leader mirror behind getLeaderPlaylists from the cloud
+   *  (the full-view 🔄 equivalent). Optional: the Direct embed refreshes the
+   *  host Database's mirror; REST omits it — its GET /leaders reads whatever
+   *  the backend already has (live data on the cloud, the host's stored mirror
+   *  on the embedded webserver). */
+  refreshLeaderPlaylists?(): Promise<void>;
   /** Load a leader playlist's entries (does not replace the working list). When
    *  `label` is given the matching dated playlist is returned, else the first. */
   selectLeaderPlaylist(leaderId: string, label?: string): Promise<PlaylistEntry[]>;

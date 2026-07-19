@@ -164,7 +164,13 @@ export const profileDataCodec = t.type({
 
 export const leaderProfileCodec = t.intersection([t.type({ leaderId: t.string, leaderName: t.string }), profileDataCodec]);
 
-export const leaderDBProfileCodec = t.intersection([leaderProfileCodec, t.type({ version: t.number })]);
+/** Marks whether a profile belongs to the requesting user ("own") or is another
+ *  leader's publicly readable profile ("public"). Optional on the wire: the
+ *  cloud server never sends it, so an absent value must be treated as "public"
+ *  by consumers that care about the distinction. */
+export const leaderAccessCodec = t.union([t.literal("own"), t.literal("public")]);
+
+export const leaderDBProfileCodec = t.intersection([leaderProfileCodec, t.type({ version: t.number }), t.partial({ access: leaderAccessCodec })]);
 
 export const leadersResponseCodec = t.array(leaderDBProfileCodec);
 

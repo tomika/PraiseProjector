@@ -402,3 +402,22 @@
   height: 44px;
   filter: invert(1);
 }
+
+/* ── headerSlot content (desktop load dialog's leader switcher + refresh) ────── */
+
+.schedule-leader-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.schedule-leader-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.schedule-refresh-btn {
+  flex: none;
+  line-height: 1;
+}

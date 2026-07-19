@@ -234,6 +234,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
     try {
       const result = await database.updateFromServer(undefined, guestFetchingLeaders, "select");
+      // Guests get every leader's playlists as read-only "public" sources;
+      // non-blocking, failure is silent (offline).
+      void database.updatePublicLeaders();
       const total = result.songsUpdated + result.leadersUpdated;
       const hasConflicts = result.songConflicts.length > 0 || result.leaderConflicts.length > 0;
 
@@ -431,6 +434,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       }
       console.debug("Sync", "Got response", response);
       await processDBResponse(response, uploadedSongs, uploadedLeaders);
+      // Refresh the read-only public-leader mirror alongside the synced DB;
+      // non-blocking, failure must not affect the sync result.
+      void database.updatePublicLeaders();
       return true;
     } catch (error: unknown) {
       console.error("Sync", "Sync error", error);
