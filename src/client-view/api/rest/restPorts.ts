@@ -13,7 +13,7 @@ import { getLocalBroadcastAddresses } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { LicenseSection } from "../../../about-licenses";
-import type { AuthApi, DeviceApi, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
+import type { AuthApi, DeviceApi, DeviceInfo, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
 import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
@@ -358,6 +358,14 @@ export function createDeviceApi(): DeviceApi {
       return [];
     }
   };
+  const parseDeviceInfo = (raw: unknown): DeviceInfo | null => {
+    try {
+      const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as DeviceInfo) : null;
+    } catch {
+      return null;
+    }
+  };
   const device: DeviceApi = {
     isFullScreen: () => {
       const native = window.hostDevice?.isFullScreen?.();
@@ -420,6 +428,16 @@ export function createDeviceApi(): DeviceApi {
     getThirdPartyLicenseSections: async () => {
       const raw = await Promise.resolve(window.hostDevice?.getThirdPartyLicenseSections?.() ?? "");
       return typeof raw === "string" ? parseLicenseSections(raw) : [];
+    },
+    getDeviceInfo: async () => {
+      const raw = await Promise.resolve(window.hostDevice?.info?.(-1) ?? "");
+      const info = parseDeviceInfo(raw);
+      const browserMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      const hasHostMemory = !!info?.totalMemory && !!info.freeMemory;
+      if (!hasHostMemory && typeof browserMemory === "number" && browserMemory > 0) {
+        return { ...(info ?? {}), deviceMemory: browserMemory };
+      }
+      return info;
     },
     goHome: () => {
       void window.hostDevice?.goHome?.();

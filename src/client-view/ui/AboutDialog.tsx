@@ -10,12 +10,43 @@
 import { useEffect, useMemo, useState } from "react";
 import { useClientViewStore } from "../controller/ClientViewContext";
 import { getClientViewAboutLicenseSections, type LicenseSection } from "../../about-licenses";
+import type { DeviceInfo } from "../api/ClientApi";
 
 declare const __APP_VERSION__: string;
 declare const __APP_COMMIT__: string;
 declare const __APP_SHOW_COMMIT__: boolean;
 
 const WEBSITE_URL = "https://praiseprojector.com";
+
+type DeviceInfoLine = { key: string; label: string; value: string };
+
+function getDeviceInfoLines(info: DeviceInfo | null, appCommit: string): DeviceInfoLine[] {
+  if (!info) return [];
+
+  const lines: DeviceInfoLine[] = [];
+  const { totalMemory, freeMemory } = info;
+  const hasHostMemory = !!totalMemory && !!freeMemory;
+  if (hasHostMemory) {
+    const formatGb = (bytes: number) => (bytes / (1024 * 1024 * 1024)).toFixed(1).replace(/\.0+$/, "");
+    lines.push({
+      key: "freeMemory",
+      label: "Free memory",
+      value: `${formatGb(freeMemory)}/${formatGb(totalMemory)}G`,
+    });
+  }
+
+  for (const [key, value] of Object.entries(info)) {
+    if (typeof value === "string") {
+      const displayedValue = key === "versionName" && appCommit && !value.includes(appCommit) ? `${value} (${appCommit})` : value;
+      lines.push({ key, label: key.substring(0, 1).toUpperCase() + key.substring(1), value: displayedValue });
+    }
+  }
+
+  if (!hasHostMemory && typeof info.deviceMemory === "number" && info.deviceMemory > 0) {
+    lines.push({ key: "deviceMemory", label: "Device memory", value: `${info.deviceMemory} GB` });
+  }
+  return lines;
+}
 
 export function AboutDialog() {
   const store = useClientViewStore();
@@ -25,7 +56,9 @@ export function AboutDialog() {
   const showCommit = typeof __APP_SHOW_COMMIT__ !== "undefined" ? __APP_SHOW_COMMIT__ : false;
   const versionDisplay = showCommit && commit ? `${version} (${commit})` : version;
   const [hostSections, setHostSections] = useState<LicenseSection[]>([]);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const sections = useMemo(() => [...getClientViewAboutLicenseSections(), ...hostSections], [hostSections]);
+  const deviceInfoLines = useMemo(() => getDeviceInfoLines(deviceInfo, showCommit ? commit : ""), [deviceInfo, showCommit, commit]);
 
   const openUrl = (url: string) => store.openExternalUrl(url);
 
@@ -33,6 +66,9 @@ export function AboutDialog() {
     let cancelled = false;
     void store.getThirdPartyLicenseSections().then((sections) => {
       if (!cancelled) setHostSections(sections);
+    });
+    void store.getDeviceInfo().then((info) => {
+      if (!cancelled) setDeviceInfo(info);
     });
     return () => {
       cancelled = true;
@@ -78,6 +114,17 @@ export function AboutDialog() {
             </button>
             .
           </p>
+
+          {deviceInfoLines.length > 0 && (
+            <div className="cv-about-device-info">
+              <p className="cv-about-section-title">Device information:</p>
+              {deviceInfoLines.map((line) => (
+                <p key={line.key}>
+                  {line.label}: {line.value}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="cv-dialog-actions">

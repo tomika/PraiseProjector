@@ -25,6 +25,7 @@ import type {
   ClientCapabilities,
   ClientConfig,
   ClientMode,
+  DeviceInfo,
   Display,
   ExternalSearchMode,
   LeaderDBProfile,
@@ -1807,6 +1808,10 @@ export class ClientViewStore {
 
   getThirdPartyLicenseSections(): Promise<LicenseSection[]> {
     return this.api.device.getThirdPartyLicenseSections();
+  }
+
+  getDeviceInfo(): Promise<DeviceInfo | null> {
+    return this.api.device.getDeviceInfo();
   }
 
   /** Navigate from the focused client view to the full multi-panel editor. */

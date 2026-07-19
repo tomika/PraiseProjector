@@ -465,6 +465,22 @@ export interface AuthApi {
 //  Sub-port: device / host bridge
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Device details exposed by the native host's legacy `info(-1)` bridge. Hosts
+ * may add further string fields, which the About dialog displays as well. */
+export interface DeviceInfo {
+  [key: string]: string | number | undefined;
+  deviceName?: string;
+  modelName?: string;
+  versionName?: string;
+  totalMemory?: number;
+  freeMemory?: number;
+  ipAddress?: string;
+  gateway?: string;
+  broadcast?: string;
+  /** Browser fallback used when the host does not report byte-level memory. */
+  deviceMemory?: number;
+}
+
 /**
  * Wraps native host capabilities (`window.hostDevice` in the legacy client,
  * Electron preload APIs in the desktop app). Rest-served browser clients
@@ -482,6 +498,8 @@ export interface DeviceApi {
   openExternal(url: string): void;
   /** Third-party license sections supplied by a native host shell, if present. */
   getThirdPartyLicenseSections(): Promise<LicenseSection[]>;
+  /** Native device details, with the browser's approximate memory as fallback. */
+  getDeviceInfo(): Promise<DeviceInfo | null>;
   /** Present when the host can terminate the app (native shells only). */
   exit?(): void;
   /** Navigate back to the host home/launcher. */
