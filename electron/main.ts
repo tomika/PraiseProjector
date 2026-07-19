@@ -2100,42 +2100,6 @@ ipcMain.handle("read-image-as-data-url", async (_event, imagePath: string) => {
 
 ipcMain.handle("get-hostname", () => os.hostname());
 
-// Return all useful network addresses for the domain name combobox, sorted by
-// descending likelihood of being the right choice for a LAN web server:
-//   192.168.x.x > hostname > 10.x.x > 172.16-31.x.x > other > 127.x.x.x > localhost
-ipcMain.handle("get-network-addresses", () => {
-  const hostname = os.hostname();
-  const seen = new Set<string>();
-  const collected: string[] = [];
-
-  const add = (v: string) => {
-    if (v && !seen.has(v)) {
-      seen.add(v);
-      collected.push(v);
-    }
-  };
-
-  add(hostname);
-  for (const iface of Object.values(os.networkInterfaces())) {
-    for (const addr of iface ?? []) {
-      if (addr.family === "IPv4") add(addr.address);
-    }
-  }
-  add("localhost");
-
-  const priority = (addr: string): number => {
-    if (addr === "localhost") return 6; // loopback name — last
-    if (/^127\./.test(addr)) return 5; // loopback IP
-    if (/^192\.168\./.test(addr)) return 0; // home/office LAN — first
-    if (!/^\d+\.\d+\.\d+\.\d+$/.test(addr)) return 1; // hostname
-    if (/^10\./.test(addr)) return 2; // corporate LAN
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(addr)) return 3; // less common private
-    return 4; // other (VPN, docker…)
-  };
-
-  return collected.sort((a, b) => priority(a) - priority(b));
-});
-
 // UFW firewall management (Linux only)
 // Uses pkexec to request elevated privileges via polkit (one auth dialog per action).
 ipcMain.handle("ufw-manage", async (_event, action: "status" | "apply" | "remove", port?: number) => {

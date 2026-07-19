@@ -151,8 +151,7 @@ export interface IElectronAPI {
   persistCookies?: () => Promise<boolean>;
   clearPersistedCookies?: () => Promise<boolean>;
 
-  // Network addresses for domain name combobox
-  getNetworkAddresses?: () => Promise<string[]>;
+  // Hostname for device identification
   getHostname?: () => Promise<string>;
 
   // UFW firewall management (Linux only; returns { supported: false } on other platforms)

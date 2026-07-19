@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { buildLocalUrl, generateQRCodeSVG } from "../../hooks/useSessionUrl";
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { getLocalNetworkAddresses } from "../../services/hostDevicePpd";
 import { getWebServerInterface } from "../../services/webServerBridge";
 import "./WebServerSettings.css";
 
@@ -200,12 +201,20 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
     );
   };
 
-  // Fetch machine's network addresses for the domain combobox
+  // Fetch machine's network addresses through the shared Electron/Android
+  // hostDevice contract.
   useEffect(() => {
-    window.electronAPI
-      ?.getNetworkAddresses?.()
-      .then(setNetworkAddresses)
-      .catch(() => {});
+    let cancelled = false;
+
+    const loadNetworkAddresses = async () => {
+      const addresses = await getLocalNetworkAddresses();
+      if (!cancelled) setNetworkAddresses(addresses);
+    };
+
+    void loadNetworkAddresses();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Auto-populate domain name with most probable address when field is empty

@@ -496,6 +496,17 @@ function ifaceRank(iface: NetworkInterfaceDetail): number {
 
   return 5;
 }
+
+/** Local IPv4 addresses suitable for advertising the embedded webserver,
+ *  using the same LAN-first interface ordering as session discovery. */
+export const getLocalNetworkAddresses = async (): Promise<string[]> => {
+  const interfaces = (await getNetworkInterfaces()).slice().sort((a, b) => ifaceRank(a) - ifaceRank(b));
+  const addresses = interfaces.map((iface) => iface.address);
+
+  const seen = new Set<string>();
+  return addresses.filter((address) => address && address !== "0.0.0.0" && !seen.has(address) && seen.add(address));
+};
+
 /**
  * Candidate local-scan broadcast addresses + the preferred default, derived from
  * the host bridge's full interface list (getNetworkInterfaces → broadcast per NIC),

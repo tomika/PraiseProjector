@@ -443,8 +443,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   persistCookies: () => ipcRenderer.invoke("persist-cookies") as Promise<boolean>,
   clearPersistedCookies: () => ipcRenderer.invoke("clear-persisted-cookies") as Promise<boolean>,
 
-  // Network addresses for domain name combobox
-  getNetworkAddresses: () => ipcRenderer.invoke("get-network-addresses"),
+  // Hostname for device identification
   getHostname: () => ipcRenderer.invoke("get-hostname") as Promise<string>,
 
   // UFW firewall management (Linux only)
