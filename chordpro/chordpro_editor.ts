@@ -315,7 +315,8 @@ class ChordProDragStart {
     public readonly startX: number,
     public readonly startY: number,
     public readonly dragStartX: number,
-    public readonly dragStartY: number
+    public readonly dragStartY: number,
+    public readonly chordOrigin?: { line: ChordProLine; pos: number }
   ) {}
 }
 
@@ -505,6 +506,8 @@ export class ChordProEditor extends ChordDrawer {
   private longPressStart: { x: number; y: number } | null = null;
   private longPressSelection: { start: number | ChordProSelection | null; end: number | ChordProSelection | null } | null = null;
   private lastLongPressTime = 0;
+  private touchChordContextMenuBlocked = false;
+  private lastTouchChordContextMenuBlockTime = 0;
   private keyEventTarget: HTMLElement | null = null;
   private composing = false;
   private pendingCanvasFocusAfterMetaBlur = false;
@@ -529,6 +532,12 @@ export class ChordProEditor extends ChordDrawer {
   private chordDropMarker: { x: number; y: number } | null = null;
   private contextMenuElement: HTMLDivElement | null = null;
   private readonly handleContextMenu = (e: MouseEvent) => {
+    // Chord touches are reserved for chord interaction and drag-and-drop. Keep
+    // swallowing a possible trailing native contextmenu briefly after touchend.
+    if (this.touchChordContextMenuBlocked || Date.now() - this.lastTouchChordContextMenuBlockTime < 700) {
+      e.preventDefault();
+      return;
+    }
     // A native contextmenu (desktop right-click, or an OS touch long-press that
     // beat our fallback timer) is authoritative — cancel the pending timer.
     if (this.longPressTimer != null) {
@@ -983,13 +992,40 @@ export class ChordProEditor extends ChordDrawer {
     const dispatchMouse = (type: string, touch: Touch) => {
       const ev = document.createEvent("MouseEvent");
       ev.initMouseEvent(type, true, true, window, 1, touch.screenX, touch.screenY, touch.clientX, touch.clientY, false, false, false, false, 0, null);
-      touch.target.dispatchEvent(ev);
+      // Mousedown must reach the touched node (templates and diagrams have
+      // target-local handlers). Move/up go to the stable editor root: a drag
+      // repaint replaces the original chord node, so dispatching later events
+      // to `touch.target` would strand them on a detached element.
+      (type === "mousedown" ? touch.target : this.parent_div).dispatchEvent(ev);
     };
 
     // Long-press → context menu. Sits above the platform's default touch-hold
     // delay; movement past the slop voids it (that's a scroll/drag/selection).
     const LONG_PRESS_MS = 650;
     const MOVE_SLOP_PX = 10;
+
+    const chordTouchKind = (touch: Touch): "drag" | "diagram" | null => {
+      const target = touch.target;
+      if (target instanceof Element) {
+        if (target.closest(".chp-dom-chord-diagrams")) return "diagram";
+        if (target.closest(".chp-dom-chord")) return "drag";
+      }
+      const box = this.HitTestCoords(this.normalizeClientPos(touch.clientX, touch.clientY));
+      if (box instanceof ChordBoxHitBox) return "diagram";
+      if (box instanceof ChordProChordHitBox || box instanceof ChordTemplateHitBox) return "drag";
+      return null;
+    };
+
+    const touchTargetOpts: AddEventListenerOptions = { passive: false };
+    let chordTouchEventTarget: HTMLElement | null = null;
+
+    const releaseChordTouchEventTarget = () => {
+      if (!chordTouchEventTarget) return;
+      chordTouchEventTarget.removeEventListener("touchmove", onTouchMove, touchTargetOpts);
+      chordTouchEventTarget.removeEventListener("touchend", onTouchEnd, touchTargetOpts);
+      chordTouchEventTarget.removeEventListener("touchcancel", onTouchCancel, touchTargetOpts);
+      chordTouchEventTarget = null;
+    };
 
     const cancelLongPressTimer = () => {
       if (this.longPressTimer != null) {
@@ -1033,16 +1069,25 @@ export class ChordProEditor extends ChordDrawer {
       // Snapshot state for a possible long-press BEFORE the synthetic mousedown
       // mutates it (onMouseDown clears the selection).
       const t0 = e.changedTouches[0];
+      const touchKind = chordTouchKind(t0);
       this.longPressFired = false;
-      this.longPressStart = { x: t0.clientX, y: t0.clientY };
-      this.longPressSelection = { start: this.selectionStart, end: this.selectionEnd };
+      this.touchChordContextMenuBlocked = touchKind !== null;
+      this.longPressStart = this.touchChordContextMenuBlocked ? null : { x: t0.clientX, y: t0.clientY };
+      this.longPressSelection = this.touchChordContextMenuBlocked ? null : { start: this.selectionStart, end: this.selectionEnd };
+      releaseChordTouchEventTarget();
+      if (touchKind === "drag" && t0.target instanceof HTMLElement) {
+        chordTouchEventTarget = t0.target;
+        chordTouchEventTarget.addEventListener("touchmove", onTouchMove, touchTargetOpts);
+        chordTouchEventTarget.addEventListener("touchend", onTouchEnd, touchTargetOpts);
+        chordTouchEventTarget.addEventListener("touchcancel", onTouchCancel, touchTargetOpts);
+      }
       dispatchMouse("mousedown", e.changedTouches[0]);
       cancelLongPressTimer();
-      this.longPressTimer = window.setTimeout(fireLongPress, LONG_PRESS_MS);
+      if (!this.touchChordContextMenuBlocked) this.longPressTimer = window.setTimeout(fireLongPress, LONG_PRESS_MS);
       // After onMouseDown ran, check if an interactive element was hit. In
       // read-only display mode, also claim blank canvas/page touches so the
       // outer page-flip controller receives the full synthetic mouse gesture.
-      this.touchActive = this.readOnly || this.lastMouseDownHadHit;
+      this.touchActive = this.readOnly || this.lastMouseDownHadHit || touchKind === "drag";
       if (this.touchActive) {
         e.preventDefault();
         e.stopPropagation();
@@ -1051,6 +1096,10 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      // While dragging a chord, the original node owns the real touch stream.
+      // The parent sees the event only until the first repaint detaches that
+      // node, so let the target listener handle every frame consistently.
+      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
       // Void a pending long-press on any real movement, regardless of whether
       // the canvas claimed the gesture (scroll on a blank area also cancels).
       if (this.longPressTimer != null && this.longPressStart && e.changedTouches.length >= 1) {
@@ -1068,9 +1117,13 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
+      releaseChordTouchEventTarget();
       cancelLongPressTimer();
       this.longPressStart = null;
       this.longPressSelection = null;
+      if (this.touchChordContextMenuBlocked) this.lastTouchChordContextMenuBlockTime = Date.now();
+      this.touchChordContextMenuBlocked = false;
       if (this.longPressFired) {
         // The long-press already opened the context menu; swallow this release
         // so it isn't treated as a tap/double-tap and no mouseup is sent. The
@@ -1127,11 +1180,15 @@ export class ChordProEditor extends ChordDrawer {
       this.touchActive = false;
     };
 
-    const onTouchCancel = () => {
+    const onTouchCancel = (e: TouchEvent) => {
+      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
+      releaseChordTouchEventTarget();
       cancelLongPressTimer();
       this.longPressStart = null;
       this.longPressSelection = null;
       this.longPressFired = false;
+      if (this.touchChordContextMenuBlocked) this.lastTouchChordContextMenuBlockTime = Date.now();
+      this.touchChordContextMenuBlocked = false;
       this.touchActive = false;
       this.suppressNextClickTs = false;
       this.lastTouchTapTime = 0;
@@ -1144,6 +1201,7 @@ export class ChordProEditor extends ChordDrawer {
     this.parent_div.addEventListener("touchcancel", onTouchCancel, listenerOpts);
 
     this.removeTouchEvents = () => {
+      releaseChordTouchEventTarget();
       cancelLongPressTimer();
       this.parent_div.removeEventListener("touchstart", onTouchStart, listenerOpts);
       this.parent_div.removeEventListener("touchmove", onTouchMove, listenerOpts);
@@ -2313,11 +2371,11 @@ export class ChordProEditor extends ChordDrawer {
     const pos = this.normalizeMousePos(event);
     if (down) {
       const box = this.HitTestCoords(pos);
-      if (box && (box instanceof ChordBoxHitBox || box instanceof ChordProChordHitBox)) {
+      if (box instanceof ChordBoxHitBox || (this.readOnly && box instanceof ChordProChordHitBox)) {
         this.updateMouseDownPos(event);
         return box instanceof ChordBoxHitBox;
       }
-    } else if (this.checkChordBoxTouch(pos) || (showChordDialog && this.checkChordBoxOrTemplateHit(event))) {
+    } else if (this.checkChordBoxTouch(pos) || (showChordDialog && this.readOnly && this.checkChordBoxOrTemplateHit(event))) {
       this.lastMouseDown = null;
       return true;
     }
@@ -2394,6 +2452,8 @@ export class ChordProEditor extends ChordDrawer {
       const box = this.actionTarget;
       const chord = this.actionTarget.chord;
       if (this.dragData) {
+        const stayedAtOrigin =
+          this.dragData instanceof ChordProDragStart && this.dragData.chordOrigin?.line === chord.line && this.dragData.chordOrigin.pos === chord.pos;
         const stripWidth = this.activeChordStripWidth;
         let noDrop = stripWidth > 0 && this.normalizeMousePos(e).x <= stripWidth;
         if (!noDrop) {
@@ -2406,6 +2466,9 @@ export class ChordProEditor extends ChordDrawer {
           line_obj.removeChord(chord);
           line_obj.genText();
           this.changeActionTarget(null);
+        } else if (stayedAtOrigin) {
+          this.changeActionTarget(chord);
+          this.cursorPos = this.calcCursorPos(box, e);
         } else {
           chord.line.genText();
           this.changeActionTarget(chord.line);
@@ -2704,7 +2767,7 @@ export class ChordProEditor extends ChordDrawer {
 
       if (!(this.dragData instanceof ChordProDragStart)) {
         this.saveState();
-        this.dragData = new ChordProDragStart(box.left, box.top, x, y);
+        this.dragData = new ChordProDragStart(box.left, box.top, x, y, { line: box.chord.line, pos: box.chord.pos });
       }
 
       box.left = this.dragData.startX + x - this.dragData.dragStartX;
