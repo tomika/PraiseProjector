@@ -24,40 +24,76 @@ const CORE_ASSETS = [
 const PRECACHE_MANIFEST = '/webapp/precache.json';
 
 // HTML entry points whose JS/CSS bundles should be discovered and precached.
+// This is a FALLBACK for when the precache manifest can't be fetched — it only
+// finds bundles directly referenced in the entry HTML (entry + modulepreloaded
+// vendors), not the lazily-imported dialog chunks. index.html = full view,
+// client-view.html = follower client view; both must be covered.
 const ENTRY_PAGES = ['/webapp/index.html', '/webapp/client-view.html'];
 
-// Install event - cache core assets and discover JS/CSS bundles
+// Fetch a URL, retrying a few times before giving up. Mobile networks and the
+// Android host webserver proxy occasionally drop the very first request; without
+// a retry a single miss on the precache manifest used to silently skip the whole
+// precache and leave the app almost entirely uncached.
+async function fetchWithRetry(url, options, attempts) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
+    } catch (e) {
+      // network error — fall through to backoff and retry
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+  return null;
+}
+
+// Add a list of URLs to the cache in parallel batches. Parallelism keeps install
+// fast enough to finish before some Android WebViews tear the worker down mid-install
+// (the previous sequential await of 200+ files was slow enough to be interrupted,
+// leaving a partial cache). allSettled means one 404 never aborts the rest.
+async function cacheAllSettled(cache, urls) {
+  const BATCH_SIZE = 24;
+  let ok = 0;
+  let failed = 0;
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const slice = urls.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(slice.map((url) => cache.add(url)));
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        ok++;
+      } else {
+        failed++;
+        console.warn('[SW] Failed to cache:', slice[index]);
+      }
+    });
+  }
+  return { ok, failed };
+}
+
+// Install event - cache core assets and precache the full /webapp tree
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker ' + CACHE_VERSION);
   event.waitUntil(
     caches.open(STATIC_CACHE).then(async (cache) => {
       console.log('[SW] Caching core assets');
-      // Cache core assets
+      // Cache core assets (the shells both views need to boot offline).
       await cache.addAll(CORE_ASSETS);
 
-      // Also try to cache the main JS/CSS bundles by fetching each entry page and parsing.
+      // Discover the main JS/CSS bundles by fetching each entry page and parsing it.
+      // Used both as a warm-up and as the fallback set if the precache manifest is
+      // unreachable, so the full view and the client view can at least cold-start offline.
+      const discovered = new Set();
       for (const page of ENTRY_PAGES) {
         try {
           const response = await fetch(page);
           const html = await response.text();
-
-          // Extract JS and CSS file references
           const assetMatches = html.matchAll(/(?:src|href)="([^"]*\.(?:js|css))"/g);
-          const assets = [];
           for (const match of assetMatches) {
             const url = match[1];
             if (url.startsWith('/webapp/') || url.startsWith('./') || url.startsWith('assets/')) {
-              const fullUrl = url.startsWith('/') ? url : '/webapp/' + url.replace('./', '');
-              assets.push(fullUrl);
-            }
-          }
-
-          console.log('[SW] Caching', assets.length, 'discovered assets from', page);
-          for (const asset of assets) {
-            try {
-              await cache.add(asset);
-            } catch (e) {
-              console.warn('[SW] Failed to cache:', asset);
+              discovered.add(url.startsWith('/') ? url : '/webapp/' + url.replace('./', ''));
             }
           }
         } catch (e) {
@@ -65,30 +101,30 @@ self.addEventListener('install', (event) => {
         }
       }
 
-      // Precache the full /webapp tree (build-emitted) so the client PWA works
-      // fully offline. Added individually (not addAll) so one miss never aborts
-      // the whole install.
-      try {
-        const manifestResp = await fetch(PRECACHE_MANIFEST, { cache: 'no-store' });
-        if (manifestResp.ok) {
+      // Precache the full /webapp tree (build-emitted, authoritative — includes the
+      // hashed bundles for BOTH the full view and the client view, every lazily-loaded
+      // dialog chunk, images, soundfonts and chordpro CSS). Retry the manifest fetch so
+      // a transient failure does not silently skip everything.
+      let precachePaths = [];
+      const manifestResp = await fetchWithRetry(PRECACHE_MANIFEST, { cache: 'no-store' }, 3);
+      if (manifestResp) {
+        try {
           const paths = await manifestResp.json();
           if (Array.isArray(paths)) {
-            console.log('[SW] Precaching', paths.length, 'assets from', PRECACHE_MANIFEST);
-            for (const assetPath of paths) {
-              if (typeof assetPath !== 'string') continue;
-              try {
-                await cache.add(assetPath);
-              } catch (e) {
-                console.warn('[SW] Failed to precache:', assetPath);
-              }
-            }
+            precachePaths = paths.filter((p) => typeof p === 'string');
           }
-        } else {
-          console.warn('[SW] Precache manifest unavailable:', manifestResp.status);
+        } catch (e) {
+          console.warn('[SW] Could not parse precache manifest:', e);
         }
-      } catch (e) {
-        console.warn('[SW] Could not load precache manifest:', e);
+      } else {
+        console.error('[SW] Precache manifest unavailable after retries — caching discovered bundles only');
       }
+
+      // Cache the union of the precache manifest and the discovered bundles, in parallel.
+      const allAssets = Array.from(new Set([...precachePaths, ...discovered]));
+      console.log('[SW] Precaching', allAssets.length, 'assets');
+      const { ok, failed } = await cacheAllSettled(cache, allAssets);
+      console.log('[SW] Precached', ok, 'assets (' + failed + ' failed)');
     })
   );
   // Activate immediately
