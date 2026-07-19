@@ -1327,35 +1327,52 @@ export class ClientViewStore {
     else await this.loadLocalEntry(entry);
   }
 
+  /** True when the locally VIEWED song is the one the backend has projected.
+   *  Only then may transpose/capo changes flow through the display api — the api
+   *  layer always targets the PROJECTED song (Direct dispatches song_update with
+   *  getCurrentDisplay().songId, Rest patches the core display), so pushing while
+   *  viewing a locally-loaded song (database/filter/archive modes) would silently
+   *  retune a different song — or do nothing visible at all, since the resulting
+   *  display echo is dropped for a non-matching song. */
+  private viewingProjectedSong(): boolean {
+    const projectedId = this.api.display.getCurrent().songId;
+    return !!projectedId && projectedId === this.state.display.songId;
+  }
+
   /** Live-preview a transpose value while the WheelPicker is open: update the
    *  toolbar label and re-render the song locally, but do NOT push to the
    *  backend. The finalized value is sent once by {@link commitTranspose} when
    *  the picker closes (mirrors the legacy select firing onchange only on the
-   *  final choice, not per intermediate value). */
+   *  final choice, not per intermediate value). The viewed display is patched
+   *  directly so the wheel works in every navigation mode; the api call (which
+   *  drives the projected song and, on a playlist entry, its per-item
+   *  preference) only fires when the viewed song IS the projected one. */
   async previewTranspose(value: number): Promise<void> {
-    this.set({ transpose: value });
-    await this.api.display.setTranspose(value, false);
+    this.set({ transpose: value, display: { ...this.state.display, transpose: value } });
+    if (this.viewingProjectedSong()) await this.api.display.setTranspose(value, false);
   }
 
   /** Finalize the transpose (picker close): push the current value to the
    *  backend. Reads live store state so it is immune to a stale closure from the
-   *  picker's last onChange. */
+   *  picker's last onChange. On a projected playlist entry this is what persists
+   *  the value into the playlist item (Direct: updatePlaylistItemPreferences,
+   *  Rest: pushPreference); a locally-viewed song stays view-local. */
   async commitTranspose(): Promise<void> {
-    await this.api.display.setTranspose(this.state.transpose, true);
+    if (this.viewingProjectedSong()) await this.api.display.setTranspose(this.state.transpose, true);
   }
 
   /** Live-preview a capo value locally (label + song render) without pushing.
    *  Capo is a per-client preference, so this is all a follower ever does. */
   async previewCapo(value: number): Promise<void> {
-    this.set({ capo: value });
-    await this.api.display.setCapo(value, false);
+    this.set({ capo: value, display: { ...this.state.display, capo: value } });
+    if (this.viewingProjectedSong()) await this.api.display.setCapo(value, false);
   }
 
   /** Finalize the capo (picker close). The push is a no-op for non-controllers
    *  (restPorts pushPreference gates on canControlDisplay), so a follower keeps
    *  its capo purely local; a leader propagates it to the playlist server-side. */
   async commitCapo(): Promise<void> {
-    await this.api.display.setCapo(this.state.capo, true);
+    if (this.viewingProjectedSong()) await this.api.display.setCapo(this.state.capo, true);
   }
 
   // ── playlist ─────────────────────────────────────────────────────────────────
