@@ -640,6 +640,8 @@ body,
   height: 100%;
   min-height: 0;
   overflow-x: hidden;
+  /* Anchor for the absolutely-positioned floating trash target (#trashCan). */
+  position: relative;
 }
 
 .options {
@@ -1712,17 +1714,33 @@ body,
   table-layout: fixed;
 }
 
-/* Trash drop bar (legacy #trashCan): a bottom strip that appears during a drag
-   and turns red when it is the active drop target. */
+/* Trash drop target (legacy #trashCan): a small round button that floats near the
+   bottom-centre during a drag and turns red when it is the active drop target.
+   CRITICAL: it is absolutely positioned (out of normal flow), so revealing it on
+   drag start does NOT resize #list. If it were an in-flow bar, #list would shrink
+   by its height at that exact moment, yanking the just-grabbed bottom row out from
+   under the pointer — which makes Chromium abort the native drag, and was why the
+   list's last rows could not be dragged at all. Being small and centred, it also
+   never covers a row's title (left-aligned), so reordering onto any row still
+   works; only a drop on the button itself removes. */
 #trashCan {
-  flex: none;
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 64px;
-  border-top: 1px solid var(--cv-panel-border);
-  background: rgba(192, 57, 43, 0.14);
-  transition: background 0.15s;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--cv-panel-border);
+  background: rgba(192, 57, 43, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition:
+    background 0.15s,
+    transform 0.15s;
 }
 
 #trashCan.hidden {
@@ -1730,14 +1748,15 @@ body,
 }
 
 #trashCan.droptarget {
-  background: rgba(192, 57, 43, 0.55);
+  background: rgba(192, 57, 43, 0.92);
+  transform: translateX(-50%) scale(1.12);
 }
 
 #trashCan img {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   filter: var(--cv-icon-invert);
-  opacity: 0.85;
+  opacity: 0.95;
   pointer-events: none;
 }
 
