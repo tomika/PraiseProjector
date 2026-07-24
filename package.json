@@ -28,7 +28,7 @@
     "check-port": "netstat -ano | findstr :5173 || echo Port 5173 is free",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"client/**/*.ts\" \"common/**/*.ts\" \"chordpro/**/*.{ts,css}\" \"scripts/run-chordpro-tests.js\"",
+    "format": "node scripts/format.cjs",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"client/**/*.ts\" \"common/**/*.ts\" \"chordpro/**/*.{ts,css}\" \"scripts/run-chordpro-tests.js\"",
     "check:ts": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit",
     "test:chordpro": "node scripts/run-chordpro-tests.js"
