@@ -22,6 +22,8 @@ import { readPersistedSettings } from "./services/settingsStore";
 import type { Settings } from "./types";
 import { disableDefaultZoom } from "./utils/disableDefaultZoom";
 import { shouldUsePagingLayout } from "./utils/viewLayout";
+import { installUiAnimationPreference } from "./shared/performanceSettings";
+import "./shared/performance.css";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
@@ -29,6 +31,7 @@ const SHOW_CLIENT_KEY = "pp-show-client-view";
 type AutomaticViewSwitch = Settings["automaticViewSwitch"];
 
 disableDefaultZoom();
+installUiAnimationPreference();
 
 // Install console interceptor early to capture all logs
 installConsoleInterceptor();

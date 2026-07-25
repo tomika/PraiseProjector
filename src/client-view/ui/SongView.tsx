@@ -18,9 +18,15 @@
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { useClientPerformanceProfile, useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import {
+  useClientPerformancePreferences,
+  useClientPerformanceProfile,
+  useClientViewState,
+  useClientViewStore,
+} from "../controller/ClientViewContext";
 import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
 import { recordChordProRenderDuration } from "../../shared/clientPerformanceProfile";
+import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { PageFlip } from "../../../chordpro/pageFlip";
 import { installPinchZoomHandler } from "../../../common/utils";
@@ -259,7 +265,9 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const store = useClientViewStore();
   const state = useClientViewState();
   const performanceProfile = useClientPerformanceProfile();
-  const neighbourPreloadingEnabled = !performanceProfile.chordProSlow;
+  const performancePreferences = useClientPerformancePreferences();
+  const pageTurnEnabled = resolvePerformanceFeature(performancePreferences.clientViewPageTurnMode, performanceProfile.chordProSlow);
+  const neighbourPreloadingEnabled = pageTurnEnabled;
   const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
   const viewingRemoteDisplay = isViewingRemoteDisplay(state);
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
@@ -289,7 +297,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const pinchActiveRef = useRef(false);
   const pinchSuppressPointerRef = useRef(false);
   const pendingTurnFitRef = useRef<PendingTurnFit | null>(null);
-  const chordProSlowRef = useRef(performanceProfile.chordProSlow);
+  const pageTurnEnabledRef = useRef(pageTurnEnabled);
   // True from the moment a page starts rotating until the controller has reset it
   // and re-hidden the neighbours. Two things depend on it: the navigation actions
   // fade out, and neighbour preloading waits (see the neighbour effect).
@@ -329,7 +337,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // capability/leader-mode change takes effect without rebuilding the flip.
       canFlip: () => {
         const s = store.getSnapshot();
-        return !chordProSlowRef.current && !isViewingRemoteDisplay(s);
+        return pageTurnEnabledRef.current && !isViewingRemoteDisplay(s);
       },
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
@@ -344,21 +352,21 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   }, [store]);
 
   useEffect(() => {
-    chordProSlowRef.current = performanceProfile.chordProSlow;
-    if (!performanceProfile.chordProSlow) return;
+    pageTurnEnabledRef.current = pageTurnEnabled;
+    if (pageTurnEnabled) return;
     flipRef.current?.cancel();
     pendingTurnFitRef.current = null;
-  }, [performanceProfile.chordProSlow]);
+  }, [pageTurnEnabled]);
 
   useImperativeHandle(
     ref,
     () => ({
       navigate: (next: boolean) => {
-        if (performanceProfile.chordProSlow) void (next ? store.nextSong() : store.prevSong());
+        if (!pageTurnEnabled) void (next ? store.nextSong() : store.prevSong());
         else flipRef.current?.turn(next);
       },
     }),
-    [performanceProfile.chordProSlow, store]
+    [pageTurnEnabled, store]
   );
 
   // Track the shared paging/pane breakpoint. In closed wide-pane layout the main toolbar sits as a

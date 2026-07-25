@@ -7,10 +7,11 @@
  * store returned by {@link useClientViewStore}.
  */
 
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { ClientViewStore, type ClientViewState } from "./ClientViewStore";
 import { getClientPerformanceSnapshot, subscribeClientPerformance, type ClientPerformanceSnapshot } from "../../shared/clientPerformanceProfile";
+import { normalizePerformancePreferences, type PerformancePreferences } from "../../shared/performanceSettings";
 
 const ClientViewContext = createContext<ClientViewStore | null>(null);
 
@@ -32,4 +33,36 @@ export function useClientViewState(): ClientViewState {
 /** Runtime-local profile shared by embedded and standalone/PWA client views. */
 export function useClientPerformanceProfile(): ClientPerformanceSnapshot {
   return useSyncExternalStore(subscribeClientPerformance, getClientPerformanceSnapshot, getClientPerformanceSnapshot);
+}
+
+function subscribePerformancePreferences(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === "pp-settings") listener();
+  };
+  window.addEventListener("pp-settings-changed", listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener("pp-settings-changed", listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function getPerformancePreferencesRevision(): string {
+  try {
+    return window.localStorage?.getItem("pp-settings") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** User policies shared by embedded and standalone client views. */
+export function useClientPerformancePreferences(): PerformancePreferences {
+  const revision = useSyncExternalStore(subscribePerformancePreferences, getPerformancePreferencesRevision, getPerformancePreferencesRevision);
+  return useMemo(() => {
+    try {
+      return normalizePerformancePreferences(revision ? JSON.parse(revision) : {});
+    } catch {
+      return normalizePerformancePreferences({});
+    }
+  }, [revision]);
 }

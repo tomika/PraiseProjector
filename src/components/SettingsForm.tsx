@@ -11,6 +11,7 @@ import ImagesSettings from "./settings/ImagesSettings";
 import AboutSettings from "./settings/AboutSettings";
 import ChordProStylesSettings from "./settings/ChordProStylesSettings";
 import ClientViewSettings from "./settings/ClientViewSettings";
+import PerformanceSettings from "./settings/PerformanceSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
@@ -35,6 +36,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
   const validTabs = new Set([
     "general",
     "client-view",
+    "performance",
     "searching",
     "projecting",
     "images",
@@ -275,6 +277,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
     const tabs = {
       general: <GeneralSettings settings={settings} updateSetting={updateSetting} />,
       "client-view": <ClientViewSettings settings={settings} updateSetting={updateSetting} />,
+      performance: <PerformanceSettings settings={settings} updateSetting={updateSetting} />,
       searching: <SearchingSettings settings={settings} updateSetting={updateSetting} />,
       projecting: <ProjectingSettings settings={settings} updateSetting={updateSetting} />,
       leaders: (
@@ -368,6 +371,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "client-view" ? "active" : ""}`} href="#" onClick={() => setActiveTab("client-view")}>
                 {t("SettingsPageClientView")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "performance" ? "active" : ""}`} href="#" onClick={() => setActiveTab("performance")}>
+                {t("SettingsPagePerformance")}
               </a>
             </li>
             {hasWebServerRuntime && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo, useSyncExternalStore } from "react";
 import { generateQRCodeSVG } from "../hooks/useSessionUrl";
 import "./PreviewPanel.css";
 import { PlaylistEntry } from "../../db-common/PlaylistEntry";
@@ -20,6 +20,8 @@ import { Panel, PanelGroup, type ImperativePanelHandle } from "react-resizable-p
 import ResizeHandle from "./ResizeHandle";
 import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
+import { getClientPerformanceSnapshot, recordProjectionRenderDuration, subscribeClientPerformance } from "../shared/clientPerformanceProfile";
+import { projectedImageCacheBudget, resolveProjectionRenderDimensions } from "../shared/performanceSettings";
 import { Display } from "../../common/pp-types";
 import { getWebServerInterface } from "../services/webServerBridge";
 
@@ -383,6 +385,23 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const [_displayAspectRatio, setDisplayAspectRatio] = useState(16 / 9); // Default aspect ratio
     const [projectorWidth, setProjectorWidth] = useState(1920);
     const [projectorHeight, setProjectorHeight] = useState(1080);
+    const performanceProfile = useSyncExternalStore(subscribeClientPerformance, getClientPerformanceSnapshot, getClientPerformanceSnapshot);
+    const projectionRenderDimensions = useMemo(
+      () =>
+        resolveProjectionRenderDimensions(
+          settings?.projectionRenderQualityMode ?? "auto",
+          performanceProfile.projectionSlow,
+          projectorWidth,
+          projectorHeight
+        ),
+      [settings?.projectionRenderQualityMode, performanceProfile.projectionSlow, projectorWidth, projectorHeight]
+    );
+    const renderWidth = projectionRenderDimensions.width;
+    const renderHeight = projectionRenderDimensions.height;
+
+    useEffect(() => {
+      projectedImageCacheService.clear();
+    }, [settings?.projectedImageCacheMode, renderWidth, renderHeight]);
 
     const getTargetDisplays = useCallback(async (displays: MonitorDisplay[]): Promise<MonitorDisplay[]> => {
       const api = window.electronAPI;
@@ -470,8 +489,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Publish render dimensions to the global store so other components (e.g. settings) can read them
     useEffect(() => {
-      setProjectorRenderDims(projectorWidth, projectorHeight);
-    }, [projectorWidth, projectorHeight]);
+      setProjectorRenderDims(renderWidth, renderHeight);
+    }, [renderWidth, renderHeight]);
 
     // Preview canvas state
     const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
@@ -1363,10 +1382,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       const marginTop = settings?.displayBorderRect?.top || 0;
       const marginBottom = settings?.displayBorderRect?.height || 0; // bottom is stored as height
 
-      const renderRectWidth = projectorWidth - Math.floor((projectorWidth * (marginLeft + marginRight)) / 100);
-      const renderRectHeight = projectorHeight - Math.floor((projectorHeight * (marginTop + marginBottom)) / 100);
+      const renderRectWidth = renderWidth - Math.floor((renderWidth * (marginLeft + marginRight)) / 100);
+      const renderRectHeight = renderHeight - Math.floor((renderHeight * (marginTop + marginBottom)) / 100);
 
-      const actualFontSize = SectionRenderer.calculateActualFontSize(settings?.displayFontSize || 16, projectorWidth, projectorHeight);
+      const actualFontSize = SectionRenderer.calculateActualFontSize(settings?.displayFontSize || 16, renderWidth, renderHeight);
 
       const displaySettings: DisplaySettings = {
         fontFamily: settings?.displayFontName || "Arial",
@@ -1447,8 +1466,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       settings,
       contentBasedSections,
       projectInstructions,
-      projectorWidth,
-      projectorHeight,
+      renderWidth,
+      renderHeight,
       selectedSectionIndex,
     ]);
 
@@ -1663,8 +1682,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             textShadowBlur: settings?.displayTextShadowBlur ?? 4,
             textShadowColor: settings?.displayTextShadowColor || "#000000",
             textShadowOpacity: settings?.displayTextShadowOpacity ?? 0.8,
-            renderWidth: projectorWidth,
-            renderHeight: projectorHeight,
+            renderWidth,
+            renderHeight,
             marginLeft: settings?.displayBorderRect?.left || 0,
             marginRight: settings?.displayBorderRect?.width || 0,
             marginTop: settings?.displayBorderRect?.top || 0,
@@ -1693,11 +1712,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
             });
 
             const useCache = !isQrDragging && qrDragPos === null;
-            const previewPng = useCache
-              ? projectedImageCacheService.getOrCreate(cacheKey, () =>
-                  renderer.renderSection(text, renderSettings, showImage ? bgImage : null).toDataURL("image/png")
-                )
-              : renderer.renderSection(text, renderSettings, showImage ? bgImage : null).toDataURL("image/png");
+            const cacheBudget = projectedImageCacheBudget(settings?.projectedImageCacheMode ?? "auto", renderWidth, renderHeight);
+            const renderToPng = () => {
+              const startedAt = performance.now();
+              const result = renderer.renderSection(text, renderSettings, showImage ? bgImage : null).toDataURL("image/png");
+              recordProjectionRenderDuration(performance.now() - startedAt);
+              return result;
+            };
+            const previewPng = useCache ? projectedImageCacheService.getOrCreate(cacheKey, renderToPng, cacheBudget) : renderToPng();
 
             setPreviewDataUrl(previewPng);
           } catch (error) {
@@ -1734,8 +1756,8 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       freezePreview,
       showText,
       showImage,
-      projectorWidth,
-      projectorHeight,
+      renderWidth,
+      renderHeight,
       qrCodeUrl,
       isQrDragging,
       qrDragPos,

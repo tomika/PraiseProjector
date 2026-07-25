@@ -1,6 +1,6 @@
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-const MAX_PROJECTED_IMAGE_ENTRIES = 10;
+const MAX_PROJECTED_IMAGE_ENTRIES = 20;
 
 function stableStringify(value: JsonValue): string {
   if (value === null) return "null";
@@ -19,10 +19,17 @@ function stableStringify(value: JsonValue): string {
   return `{${parts.join(",")}}`;
 }
 
-function trimCache<K, V>(cache: Map<K, V>, maxEntries: number): void {
-  while (cache.size > maxEntries) {
+function estimatedStringBytes(value: string): number {
+  return value.length * 2;
+}
+
+function trimCache(cache: Map<string, string>, maxEstimatedBytes: number): void {
+  let estimatedBytes = 0;
+  for (const value of cache.values()) estimatedBytes += estimatedStringBytes(value);
+  while (cache.size > MAX_PROJECTED_IMAGE_ENTRIES || estimatedBytes > maxEstimatedBytes) {
     const firstKey = cache.keys().next().value;
     if (firstKey === undefined) break;
+    estimatedBytes -= estimatedStringBytes(cache.get(firstKey) ?? "");
     cache.delete(firstKey);
   }
 }
@@ -52,7 +59,8 @@ class ProjectedImageCacheService {
     });
   }
 
-  getOrCreate(cacheKey: string, producer: () => string): string {
+  getOrCreate(cacheKey: string, producer: () => string, maxEstimatedBytes: number): string {
+    if (maxEstimatedBytes <= 0) return producer();
     const cached = this.touch(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -60,7 +68,7 @@ class ProjectedImageCacheService {
 
     const created = producer();
     this.cache.set(cacheKey, created);
-    trimCache(this.cache, MAX_PROJECTED_IMAGE_ENTRIES);
+    trimCache(this.cache, maxEstimatedBytes);
     return created;
   }
 

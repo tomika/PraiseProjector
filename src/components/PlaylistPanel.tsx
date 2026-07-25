@@ -26,6 +26,7 @@ import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
 import { formatLocalDateLabel } from "../../common/date-only";
 import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
+import { readPersistedSettings } from "../services/settingsStore";
 
 // DisplayMode enum matching C# SectionListBox.Item.Mode
 enum DisplayMode {
@@ -300,10 +301,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.keyboardNavRafId = null;
     }
     // Clean up color timer
-    if (this.colorUpdateTimer) {
-      clearInterval(this.colorUpdateTimer);
-      this.colorUpdateTimer = null;
-    }
+    this.stopPlaylistItemStateUpdates();
     window.removeEventListener("pp-settings-changed", this.handleSettingsChange);
   }
 
@@ -611,7 +609,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     );
   }
 
-  private colorUpdateTimer: NodeJS.Timeout | null = null;
+  private colorUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+  private colorUpdateIdleCallback: number | null = null;
   private checkedPlayListItems: Set<number> = new Set();
   private headerRef = React.createRef<HTMLTableSectionElement>();
   private playlistContainerRef = React.createRef<HTMLDivElement>();
@@ -1960,22 +1959,30 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
   }
 
-  // Timer tick handler - processes ONE item per tick (matching C# OnPlaylistDisplayCheckTimerTick)
-  onPlaylistDisplayCheckTimerTick = () => {
+  private stopPlaylistItemStateUpdates() {
+    if (this.colorUpdateTimer !== null) {
+      clearTimeout(this.colorUpdateTimer);
+      this.colorUpdateTimer = null;
+    }
+    if (this.colorUpdateIdleCallback !== null && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(this.colorUpdateIdleCallback);
+      this.colorUpdateIdleCallback = null;
+    }
+  }
+
+  // Processes one item at a time so long playlists never monopolize the renderer.
+  onPlaylistDisplayCheckTimerTick = (): boolean => {
     const { currentPlaylist } = this.state;
     const items = currentPlaylist.items;
 
-    // Get settings from localStorage
-    const settingsJson = localStorage.getItem("pp-settings");
-    const settings = settingsJson
-      ? JSON.parse(settingsJson)
-      : {
-          checkSectionsProjectable: true,
-          displayShowFontSizeReduction: "BOTH",
-          displayCroppedTextBgColor: "#de9191",
-          displayShrinkedTextBgColor: "#fffa9e",
-          displayPlaylistUpdateInterval: 100,
-        };
+    const settings = {
+      checkSectionsProjectable: true,
+      displayShowFontSizeReduction: "BOTH",
+      displayCroppedTextBgColor: "#de9191",
+      displayShrinkedTextBgColor: "#fffa9e",
+      displayPlaylistUpdateInterval: 100,
+      ...readPersistedSettings(),
+    } as Settings;
 
     // Calculate mask to determine what to check (matching C# logic)
     let mask = 0;
@@ -1985,6 +1992,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const showFontReduction = settings.displayShowFontSizeReduction === "BOTH" || settings.displayShowFontSizeReduction === "PLAYLIST";
     if (showFontReduction) {
       mask |= DisplayMode.Shrink; // Add Shrink bit to mask
+    }
+    if (mask === 0) {
+      this.setState({ itemColors: new Map() });
+      return false;
     }
 
     // Process unchecked items (matching C# foreach loop with checkedPlayListItems check)
@@ -2005,37 +2016,54 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         this.checkedPlayListItems.add(index);
 
         // Process only ONE item per tick, then return (matching C# logic)
-        if (mask !== 0) return;
+        if (mask !== 0) return true;
       }
     }
 
-    // All items processed, stop timer (matching C# logic)
-    if (this.colorUpdateTimer) {
-      clearInterval(this.colorUpdateTimer);
-      this.colorUpdateTimer = null;
-    }
+    return false;
   };
 
-  // Start/restart playlist coloring update (matching C# UpdatePlaylistItemStates)
+  private schedulePlaylistItemStateUpdate(mode: Settings["playlistProjectionCheckMode"], interval: number) {
+    if (mode === "auto" && typeof window.requestIdleCallback === "function") {
+      this.colorUpdateIdleCallback = window.requestIdleCallback(
+        () => {
+          this.colorUpdateIdleCallback = null;
+          if (this.onPlaylistDisplayCheckTimerTick()) this.schedulePlaylistItemStateUpdate(mode, interval);
+        },
+        { timeout: 500 }
+      );
+      return;
+    }
+
+    const delay = mode === "auto" ? Math.max(100, interval) : interval;
+    this.colorUpdateTimer = setTimeout(() => {
+      this.colorUpdateTimer = null;
+      if (this.onPlaylistDisplayCheckTimerTick()) this.schedulePlaylistItemStateUpdate(mode, interval);
+    }, delay);
+  }
+
+  // Start/restart playlist coloring update.
   updatePlaylistItemStates() {
     const { currentPlaylist } = this.state;
+    this.stopPlaylistItemStateUpdates();
 
     if (currentPlaylist.items.length > 0) {
-      // Clear checked items and restart timer
       this.checkedPlayListItems.clear();
-
-      // Stop existing timer
-      if (this.colorUpdateTimer) {
-        clearInterval(this.colorUpdateTimer);
+      const settings = readPersistedSettings();
+      const mode =
+        settings.playlistProjectionCheckMode === "off" ||
+        settings.playlistProjectionCheckMode === "on" ||
+        settings.playlistProjectionCheckMode === "auto"
+          ? settings.playlistProjectionCheckMode
+          : settings.displayPlaylistUpdateInterval === -1
+            ? "off"
+            : "auto";
+      if (mode === "off") {
+        this.setState({ itemColors: new Map() });
+        return;
       }
-
-      // Get update interval from settings
-      const settingsJson = localStorage.getItem("pp-settings");
-      const settings = settingsJson ? JSON.parse(settingsJson) : { displayPlaylistUpdateInterval: 100 };
-      const interval = settings.displayPlaylistUpdateInterval || 100;
-
-      // Start new timer
-      this.colorUpdateTimer = setInterval(this.onPlaylistDisplayCheckTimerTick, interval);
+      const interval = Math.max(20, Math.min(500, settings.displayPlaylistUpdateInterval ?? 100));
+      this.schedulePlaylistItemStateUpdate(mode, interval);
     }
   }
 

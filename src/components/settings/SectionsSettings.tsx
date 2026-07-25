@@ -238,21 +238,6 @@ const SectionsSettings: React.FC<SectionsSettingsProps> = ({ settings, updateSet
           </select>
         </div>
       </fieldset>
-
-      <div className="form-group mt-3">
-        <label htmlFor="playlistUpdateMode">{t("PlaylistStateUpdateMode")}</label>
-        <select
-          className="form-control"
-          id="playlistUpdateMode"
-          value={settings.displayPlaylistUpdateInterval}
-          onChange={(e) => updateSetting("displayPlaylistUpdateInterval", parseInt(e.target.value))}
-        >
-          <option value="-1">{t("Never")}</option>
-          <option value="500">{t("Slow")}</option>
-          <option value="100">{t("Normal")}</option>
-          <option value="20">{t("Fast")}</option>
-        </select>
-      </div>
     </div>
   );
 };

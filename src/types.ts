@@ -8,6 +8,8 @@ import type { ClientViewInputProfile } from "./client-view/input/clientViewInput
  * `autoScanExternalMode` in the client-view `sessionFeatureSettings`.
  */
 export type ClientViewAutoScanMode = "off" | "web" | "local" | "both";
+export type PerformanceFeatureMode = "off" | "auto" | "on";
+export type ProjectionRenderQualityMode = "performance" | "auto" | "quality";
 
 export interface Settings {
   displayBorderRect: {
@@ -80,6 +82,15 @@ export interface Settings {
   clientViewActiveInputProfileId: string;
   /** User-created input profiles only; the factory profile stays in code. */
   clientViewInputProfiles: ClientViewInputProfile[];
+
+  // Renderer-local performance and animation preferences.
+  fullViewChordProPageTurnMode: PerformanceFeatureMode;
+  clientViewPageTurnMode: PerformanceFeatureMode;
+  clientViewLivePitchPreviewMode: PerformanceFeatureMode;
+  uiAnimationMode: PerformanceFeatureMode;
+  playlistProjectionCheckMode: PerformanceFeatureMode;
+  projectionRenderQualityMode: ProjectionRenderQualityMode;
+  projectedImageCacheMode: PerformanceFeatureMode;
 
   iWebEnabled: boolean;
   ppdSessionEnabled: boolean;

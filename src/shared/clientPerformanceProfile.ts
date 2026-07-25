@@ -9,10 +9,11 @@
 declare const __APP_VERSION__: string;
 
 const STORAGE_KEY = "pp-client-performance-profile";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MIN_SAMPLES = 3;
 const MAX_SAMPLES = 5;
 const SLOW_RENDER_THRESHOLD_MS = 60;
+const SLOW_PROJECTION_RENDER_THRESHOLD_MS = 80;
 const MAX_REASONABLE_RENDER_MS = 30_000;
 
 interface PersistedClientPerformanceProfile {
@@ -20,6 +21,8 @@ interface PersistedClientPerformanceProfile {
   appVersion: string;
   chordProRenderSamplesMs: number[];
   chordProSlow: boolean;
+  projectionRenderSamplesMs: number[];
+  projectionSlow: boolean;
   updatedAt: number;
 }
 
@@ -31,6 +34,11 @@ export interface ClientPerformanceSnapshot {
   /** Median of the bounded initial sample window, for diagnostics. */
   chordProMedianRenderMs: number | null;
   chordProSampleCount: number;
+  /** True once repeated settled projection canvas renders are slow. */
+  projectionSlow: boolean;
+  projectionMeasured: boolean;
+  projectionMedianRenderMs: number | null;
+  projectionSampleCount: number;
 }
 
 const listeners = new Set<() => void>();
@@ -52,6 +60,8 @@ function emptyProfile(): PersistedClientPerformanceProfile {
     appVersion: appVersion(),
     chordProRenderSamplesMs: [],
     chordProSlow: false,
+    projectionRenderSamplesMs: [],
+    projectionSlow: false,
     updatedAt: Date.now(),
   };
 }
@@ -67,11 +77,18 @@ function readProfile(): PersistedClientPerformanceProfile {
           .filter((value): value is number => Number.isFinite(value) && value >= 0 && value <= MAX_REASONABLE_RENDER_MS)
           .slice(-MAX_SAMPLES)
       : [];
+    const projectionSamples = Array.isArray(parsed.projectionRenderSamplesMs)
+      ? parsed.projectionRenderSamplesMs
+          .filter((value): value is number => Number.isFinite(value) && value >= 0 && value <= MAX_REASONABLE_RENDER_MS)
+          .slice(-MAX_SAMPLES)
+      : [];
     return {
       schemaVersion: SCHEMA_VERSION,
       appVersion: appVersion(),
       chordProRenderSamplesMs: samples,
       chordProSlow: parsed.chordProSlow === true,
+      projectionRenderSamplesMs: projectionSamples,
+      projectionSlow: parsed.projectionSlow === true,
       updatedAt: typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : Date.now(),
     };
   } catch {
@@ -85,6 +102,10 @@ function toSnapshot(profile: PersistedClientPerformanceProfile): ClientPerforman
     chordProMeasured: profile.chordProRenderSamplesMs.length >= MIN_SAMPLES,
     chordProMedianRenderMs: median(profile.chordProRenderSamplesMs),
     chordProSampleCount: profile.chordProRenderSamplesMs.length,
+    projectionSlow: profile.projectionSlow,
+    projectionMeasured: profile.projectionRenderSamplesMs.length >= MIN_SAMPLES,
+    projectionMedianRenderMs: median(profile.projectionRenderSamplesMs),
+    projectionSampleCount: profile.projectionRenderSamplesMs.length,
   };
 }
 
@@ -129,13 +150,44 @@ export function recordChordProRenderDuration(durationMs: number): void {
     updatedAt: Date.now(),
   };
   persistProfile(profile);
+  publishSnapshot();
+}
 
+export function recordProjectionRenderDuration(durationMs: number): void {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+  if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > MAX_REASONABLE_RENDER_MS) return;
+  if (profile.projectionSlow || profile.projectionRenderSamplesMs.length >= MAX_SAMPLES) return;
+
+  const samples = [...profile.projectionRenderSamplesMs, durationMs];
+  const measuredMedian = median(samples);
+  profile = {
+    ...profile,
+    projectionRenderSamplesMs: samples,
+    projectionSlow:
+      profile.projectionSlow || (samples.length >= MIN_SAMPLES && measuredMedian !== null && measuredMedian >= SLOW_PROJECTION_RENDER_THRESHOLD_MS),
+    updatedAt: Date.now(),
+  };
+  persistProfile(profile);
+  publishSnapshot();
+}
+
+export function resetClientPerformanceProfile(): void {
+  profile = emptyProfile();
+  persistProfile(profile);
+  publishSnapshot();
+}
+
+function publishSnapshot(): void {
   const nextSnapshot = toSnapshot(profile);
   if (
     nextSnapshot.chordProSlow === snapshot.chordProSlow &&
     nextSnapshot.chordProMeasured === snapshot.chordProMeasured &&
     nextSnapshot.chordProMedianRenderMs === snapshot.chordProMedianRenderMs &&
-    nextSnapshot.chordProSampleCount === snapshot.chordProSampleCount
+    nextSnapshot.chordProSampleCount === snapshot.chordProSampleCount &&
+    nextSnapshot.projectionSlow === snapshot.projectionSlow &&
+    nextSnapshot.projectionMeasured === snapshot.projectionMeasured &&
+    nextSnapshot.projectionMedianRenderMs === snapshot.projectionMedianRenderMs &&
+    nextSnapshot.projectionSampleCount === snapshot.projectionSampleCount
   ) {
     return;
   }

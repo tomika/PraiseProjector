@@ -11,7 +11,13 @@
  */
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { useClientPerformanceProfile, useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import {
+  useClientPerformancePreferences,
+  useClientPerformanceProfile,
+  useClientViewState,
+  useClientViewStore,
+} from "../controller/ClientViewContext";
+import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import { isViewingRemoteDisplay, showsNetworkIndicator, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
 import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
@@ -71,6 +77,8 @@ export function MainToolbar({
   const store = useClientViewStore();
   const state = useClientViewState();
   const performanceProfile = useClientPerformanceProfile();
+  const performancePreferences = useClientPerformancePreferences();
+  const livePitchPreviewEnabled = resolvePerformanceFeature(performancePreferences.clientViewLivePitchPreviewMode, performanceProfile.chordProSlow);
   // View-only: a Client follower, OR App mode while watching a session (legacy
   // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
@@ -344,12 +352,12 @@ export function MainToolbar({
           format={transposeOption}
           onChange={(v) => {
             pendingTransposeRef.current = v;
-            if (!performanceProfile.chordProSlow) void store.previewTranspose(v);
+            if (livePitchPreviewEnabled) void store.previewTranspose(v);
           }}
           onClose={() => {
             setWheel(null);
             setWheelDrag(null);
-            if (performanceProfile.chordProSlow) {
+            if (!livePitchPreviewEnabled) {
               void store.previewTranspose(pendingTransposeRef.current).then(() => store.commitTranspose());
             } else {
               void store.commitTranspose();
@@ -371,12 +379,12 @@ export function MainToolbar({
           valueText={(v) => (v >= 0 ? String(v) : "no capo")}
           onChange={(v) => {
             pendingCapoRef.current = v;
-            if (!performanceProfile.chordProSlow) void store.previewCapo(v);
+            if (livePitchPreviewEnabled) void store.previewCapo(v);
           }}
           onClose={() => {
             setWheel(null);
             setWheelDrag(null);
-            if (performanceProfile.chordProSlow) {
+            if (!livePitchPreviewEnabled) {
               void store.previewCapo(pendingCapoRef.current).then(() => store.commitCapo());
             } else {
               void store.commitCapo();

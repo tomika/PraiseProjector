@@ -13,6 +13,8 @@ import { PageFlip } from "../../../chordpro/pageFlip";
 import { getClientPerformanceSnapshot, recordChordProRenderDuration, subscribeClientPerformance } from "../../shared/clientPerformanceProfile";
 import "./ChordProEditor.css";
 import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
+import { resolvePerformanceFeature } from "../../shared/performanceSettings";
+import type { PerformanceFeatureMode } from "../../types";
 
 interface ChordProEditorProps {
   song: Song | null;
@@ -41,6 +43,8 @@ interface ChordProEditorProps {
   nextSong?: Song | null; // Next song, pre-rendered behind for the page-turn reveal
   /** Full-view opt-in: measure the current page and omit neighbour editors on slow devices. */
   performanceAdaptivePaging?: boolean;
+  /** Explicit user policy for full-view page-turn animation and neighbour preloading. */
+  pageTurnMode?: PerformanceFeatureMode;
   /** Injected by the functional wrapper from the shared runtime-local profile. */
   chordProSlow?: boolean;
   confirmDiscardChordChanges?: (discard: () => void) => void;
@@ -244,7 +248,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   }
 
   private get performancePagingDisabled() {
-    return !!this.props.performanceAdaptivePaging && !!this.props.chordProSlow;
+    const mode = this.props.pageTurnMode ?? (this.props.performanceAdaptivePaging ? "auto" : "on");
+    return !resolvePerformanceFeature(mode, !!this.props.chordProSlow);
   }
 
   componentDidMount() {
@@ -261,7 +266,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   componentDidUpdate(prevProps: ChordProEditorProps) {
     this.prepareWysiwygHost();
 
-    if (prevProps.performanceAdaptivePaging !== this.props.performanceAdaptivePaging || prevProps.chordProSlow !== this.props.chordProSlow) {
+    if (
+      prevProps.performanceAdaptivePaging !== this.props.performanceAdaptivePaging ||
+      prevProps.pageTurnMode !== this.props.pageTurnMode ||
+      prevProps.chordProSlow !== this.props.chordProSlow
+    ) {
       this.flip.cancel();
       this.loadedPrevKey = null;
       this.loadedNextKey = null;
@@ -804,8 +813,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       if (chordApi) {
         const measurementGeneration = ++this.renderMeasurementGeneration;
         const currentPerformanceProfile = getClientPerformanceSnapshot();
+        const participatesInPerformanceProfile = this.props.pageTurnMode !== undefined || !!this.props.performanceAdaptivePaging;
         const shouldMeasure =
-          this.props.performanceAdaptivePaging && !currentPerformanceProfile.chordProSlow && currentPerformanceProfile.chordProSampleCount < 5;
+          participatesInPerformanceProfile && !currentPerformanceProfile.chordProSlow && currentPerformanceProfile.chordProSampleCount < 5;
         const measurementStartedAt = shouldMeasure ? performance.now() : null;
         const previousLayoutRevision = measurementStartedAt === null ? undefined : chordApi.getLayoutSnapshot().revision;
         // In diff mode, updateDocument would not rebuild the differential document,
@@ -1375,8 +1385,10 @@ const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<Cho
     const { tt } = useTooltips();
     const { showConfirm } = useMessageBox();
     const getAdaptiveChordProSlow = React.useCallback(
-      () => !!props.performanceAdaptivePaging && getClientPerformanceSnapshot().chordProSlow,
-      [props.performanceAdaptivePaging]
+      () =>
+        (props.pageTurnMode === "auto" || (props.pageTurnMode === undefined && !!props.performanceAdaptivePaging)) &&
+        getClientPerformanceSnapshot().chordProSlow,
+      [props.pageTurnMode, props.performanceAdaptivePaging]
     );
     const chordProSlow = React.useSyncExternalStore(subscribeClientPerformance, getAdaptiveChordProSlow, getAdaptiveChordProSlow);
     return (

@@ -4,6 +4,7 @@ import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_sty
 import { useLocalization } from "../localization/LocalizationContext";
 import { syncSettingsToBackend } from "../services/settingsSync";
 import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
+import { normalizePerformancePreferences } from "../shared/performanceSettings";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -128,6 +129,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       clientViewSessionsFoundPopup: "local",
       clientViewActiveInputProfileId: "factory",
       clientViewInputProfiles: [],
+      fullViewChordProPageTurnMode: "auto",
+      clientViewPageTurnMode: "auto",
+      clientViewLivePitchPreviewMode: "auto",
+      uiAnimationMode: "auto",
+      playlistProjectionCheckMode: "auto",
+      projectionRenderQualityMode: "auto",
+      projectedImageCacheMode: "auto",
       allClientsCanUseLeaderMode: true, // C# default: True
       leaderModeClients: [],
       printingBB: false,
@@ -199,6 +207,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!raw.preferenceFilter && raw.showPreferredOnly === true) {
           merged.preferenceFilter = "preferred-only";
         }
+        if (!raw.playlistProjectionCheckMode && raw.displayPlaylistUpdateInterval === -1) {
+          merged.playlistProjectionCheckMode = "off";
+        }
+        Object.assign(merged, normalizePerformancePreferences(merged));
         setSettings(merged);
         setInitialSettings(merged);
         // Push the persisted settings to the backend at startup — they otherwise only
