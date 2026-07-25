@@ -142,7 +142,7 @@
   "SessionsStopHosting": "Munkamenet leállítása",
   "SessionsStartOnline": "Online munkamenet indítása",
   "SessionsStartOnlineTooltip": "Az eszköz közzététele online munkamenetként, amelyet mások követhetnek",
-  "NoSessionsFound": "Nem találtam munkamenetet. Kattints a 'Böngésző indítása' gombra a helyi megjelenítő megnyitásához.",
+  "NoSessionsFound": "Még nem találtam munkamenetet...",
   "BluetoothSettings": "Bluetooth beállítások",
   "BluetoothSettingsTooltip": "Rendszer Bluetooth beállítások megnyitása eszközök párosításához",
   "WebBluetooth": "Gyors BLE csatlakozás",

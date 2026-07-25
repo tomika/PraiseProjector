@@ -25,6 +25,7 @@ type WatchDetails = {
 
 const UDP_PORT_SPEC = "1974-1983";
 const STALE_MS = 3000;
+const DEVICE_ID_PREFERENCE = "ppdDeviceId";
 
 const discoveredSessions = new Map<string, P2PSessionInfo>();
 let initialized = false;
@@ -49,21 +50,55 @@ const randomId = () => Math.random().toString(36).slice(2);
 const resolvePromise = async <T>(value: T | Promise<T>) => value;
 
 const getHostDevice = () => window.hostDevice;
+const isElectronHost = (): boolean => typeof window !== "undefined" && !!(window as Window & { electronAPI?: unknown }).electronAPI;
+
+const getSelfDeviceName = async () => {
+  const hostDevice = getHostDevice();
+  const name = hostDevice?.getName ? await resolvePromise(hostDevice.getName()) : "";
+  if (name && name.trim()) return name.trim();
+  const model = hostDevice?.getModel ? await resolvePromise(hostDevice.getModel()) : "";
+  return model?.trim() || "";
+};
 
 const getSelfDeviceId = async () => {
   if (deviceId) return deviceId;
   const hostDevice = getHostDevice();
-  const name = hostDevice?.getName ? await resolvePromise(hostDevice.getName()) : "";
-  if (name && name.trim()) {
-    deviceId = name.trim();
-    return deviceId;
+
+  // Electron's native UDP host identifies itself with os.hostname(). The
+  // renderer must use that same ID for scans, otherwise the main process treats
+  // its own broadcast as a foreign request and offers itself back to the UI.
+  if (isElectronHost()) {
+    const nativeHostId = await getSelfDeviceName();
+    if (nativeHostId) {
+      deviceId = nativeHostId;
+      return deviceId;
+    }
   }
-  const model = hostDevice?.getModel ? await resolvePromise(hostDevice.getModel()) : "";
-  if (model && model.trim()) {
-    deviceId = model.trim();
-    return deviceId;
+
+  // Android hosts PPD in this JS runtime, so give it a stable ID independent of
+  // the user-visible device name (two phones may legitimately have the same name).
+  try {
+    const stored = hostDevice?.retrievePreference
+      ? await resolvePromise(hostDevice.retrievePreference(DEVICE_ID_PREFERENCE))
+      : window.localStorage?.getItem(DEVICE_ID_PREFERENCE);
+    if (stored?.trim()) {
+      deviceId = stored.trim();
+      return deviceId;
+    }
+  } catch {
+    /* preference access is optional */
   }
-  deviceId = `pp-electron-${randomId()}`;
+
+  deviceId = `pp-${randomId()}${randomId()}`;
+  try {
+    if (hostDevice?.storePreference) {
+      await resolvePromise(hostDevice.storePreference(DEVICE_ID_PREFERENCE, deviceId));
+    } else {
+      window.localStorage?.setItem(DEVICE_ID_PREFERENCE, deviceId);
+    }
+  } catch {
+    /* the in-memory id is still valid for this runtime */
+  }
   return deviceId;
 };
 
@@ -116,8 +151,6 @@ const hostWatchers = new Map<
   string,
   { address: string; port?: number; lastRequestArrived: number; lastDisplaySent: number; lastDisplayAcked: boolean; lastDisplay?: string }
 >();
-
-const isElectronHost = (): boolean => typeof window !== "undefined" && !!(window as Window & { electronAPI?: unknown }).electronAPI;
 
 // Send a host-originated PPD message (offer/display/off), augmenting it with our own
 // device id, name and listen port so the receiver can reply (mirrors legacy
@@ -230,6 +263,10 @@ const stopWatchingInternal = () => {
 const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
   const sessionDeviceId = message.device || "";
   if (!sessionDeviceId && !message.url) return;
+  if (sessionDeviceId && sessionDeviceId === deviceId) {
+    discoveredSessions.delete(`udp_${sessionDeviceId}`);
+    return;
+  }
   const sessionId = sessionDeviceId ? `udp_${sessionDeviceId}` : `web_${message.url}`;
   const offerPort = message.port ?? (sessionDeviceId ? packet.port : undefined);
   // A PPD host that runs no webserver sends an offer with NO url; it is a UDP/Nearby
@@ -420,6 +457,7 @@ export const scanHostDeviceSessions = async (address?: string): Promise<{ succes
   }
   scanId = randomId();
   const selfDevice = await getSelfDeviceId();
+  const selfName = await getSelfDeviceName();
   const host = address && address.trim() ? address.trim() : "*";
   const sentAddress = await sendPpd(
     {
@@ -427,7 +465,7 @@ export const scanHostDeviceSessions = async (address?: string): Promise<{ succes
       id: scanId,
       port,
       device: selfDevice,
-      name: selfDevice,
+      name: selfName || selfDevice,
     },
     host,
     UDP_PORT_SPEC
@@ -596,7 +634,8 @@ export const startHostDevicePpdHosting = async (getDisplay: () => Display): Prom
   if (!isHostDevicePpdAvailable()) return false;
   await initHostDevicePpd();
   await ensureListening();
-  hostName = await getSelfDeviceId();
+  const selfDevice = await getSelfDeviceId();
+  hostName = (await getSelfDeviceName()) || selfDevice;
   const hostDevice = getHostDevice();
   if (isElectronHost()) {
     // Desktop: enabling advertising is all that's needed; the main process answers

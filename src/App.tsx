@@ -71,7 +71,14 @@ import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelop
 import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
-import { initHostDevicePpd, isHostDevicePpdAvailable, startHostDeviceWatching, stopHostDeviceWatching } from "./services/hostDevicePpd";
+import {
+  initHostDevicePpd,
+  isHostDevicePpdAvailable,
+  startHostDevicePpdHosting,
+  startHostDeviceWatching,
+  stopHostDevicePpdHosting,
+  stopHostDeviceWatching,
+} from "./services/hostDevicePpd";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
@@ -200,6 +207,8 @@ const AppContent: React.FC = () => {
   const { showToast } = useToast();
   const hasSyncedSettingsRef = useRef(false);
   const lastCloudNetworkToastAtRef = useRef(0);
+  const ppdHostingSyncRef = useRef<Promise<void>>(Promise.resolve());
+  const ppdSessionEnabled = settings?.ppdSessionEnabled;
 
   // Auto-fallback from Typesense to traditional search on connectivity failure
   const fallbackFiredRef = useRef(false);
@@ -355,6 +364,32 @@ const AppContent: React.FC = () => {
     syncToBackend();
     hasSyncedSettingsRef.current = true;
   }, [settings, syncToBackend]);
+
+  // Electron owns its UDP host in the main process. Android exposes the same
+  // transport through hostDevice, but its PPD responder lives in this web runtime,
+  // so keep it aligned with the persisted feature toggle from initial app load.
+  // Serialize changes so rapid toggles cannot leave an older async start/stop as
+  // the final state.
+  useEffect(() => {
+    if (ppdSessionEnabled == null || window.electronAPI || !isHostDevicePpdAvailable()) return;
+
+    const shouldHost = ppdSessionEnabled;
+    ppdHostingSyncRef.current = ppdHostingSyncRef.current
+      .catch(() => {
+        // A previous bridge failure must not prevent a later setting change from
+        // reconciling the host.
+      })
+      .then(async () => {
+        if (shouldHost) {
+          await startHostDevicePpdHosting(() => getCurrentDisplay());
+        } else {
+          await stopHostDevicePpdHosting();
+        }
+      })
+      .catch((error) => {
+        console.warn("[PPD] Failed to reconcile Android hosting state:", error);
+      });
+  }, [ppdSessionEnabled]);
 
   // Open EULA viewer when requested from About page
   useEffect(() => {

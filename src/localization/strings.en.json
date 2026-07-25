@@ -142,7 +142,7 @@
   "SessionsStopHosting": "Stop session",
   "SessionsStartOnline": "Start online session",
   "SessionsStartOnlineTooltip": "Register this device as an online session others can follow",
-  "NoSessionsFound": "No sessions found. Click 'Start browser' to open the local viewer.",
+  "NoSessionsFound": "No sessions found yet ...",
   "BluetoothSettings": "Bluetooth Settings",
   "BluetoothSettingsTooltip": "Open system Bluetooth settings to pair devices",
   "WebBluetooth": "Quick BLE Connect",
