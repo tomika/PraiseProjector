@@ -130,7 +130,11 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Register service worker for PWA support (web mode only)
-      if ('serviceWorker' in navigator && window.location.pathname.startsWith('/webapp')) {
+      if (
+        'serviceWorker' in navigator &&
+        !window.hostDevice &&
+        window.location.pathname.startsWith('/webapp')
+      ) {
         window.addEventListener('load', () => {
           let hasReloadedForUpdate = false;
           const reloadForUpdate = () => {

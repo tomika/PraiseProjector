@@ -9,8 +9,12 @@
  * chord-selector CSS) to the /webapp root. The client-view resolves them via __ppAssetBase="/webapp"
  * (see client-view.html / src/client-view/ui/assets.ts).
  *
- * Then we emit /webapp/precache.json — the authoritative list of every file under
- * /webapp — consumed by:
+ * Then we emit two manifests:
+ *   - /webapp/precache.json — the URL list consumed by the browser service worker.
+ *   - /webapp/release-manifest.json — the size/hash manifest consumed by the
+ *     Android native A/B bundle updater.
+ *
+ * They describe the same build and are consumed by:
  *   - sw.js (cloud PWA offline precache), and
  *   - the Electron/Android host webservers (webServerBridge → appAssets) so a LAN
  *     follower can load the served client fully offline.
@@ -26,6 +30,7 @@ const crypto = require("crypto");
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist", "web");
 const legacyAppDir = path.join(projectRoot, "public", "app");
+const releaseManifestName = "release-manifest.json";
 
 function rmrf(target) {
   fs.rmSync(target, { recursive: true, force: true });
@@ -96,6 +101,55 @@ function patchServiceWorkerVersion(paths) {
   console.log(`[stage-web-client] patched sw.js CACHE_VERSION → ${buildId}`);
 }
 
+function sha256File(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function emitReleaseManifest() {
+  const files = listWebappPaths(distDir)
+    .filter((urlPath) => !urlPath.endsWith(".map") && urlPath !== `/webapp/${releaseManifestName}`)
+    .sort()
+    .map((urlPath) => {
+      const relativePath = urlPath.slice("/webapp/".length);
+      const filePath = path.join(distDir, relativePath);
+      return {
+        path: relativePath,
+        size: fs.statSync(filePath).size,
+        sha256: sha256File(filePath),
+      };
+    });
+
+  const releaseHash = crypto.createHash("sha256");
+  for (const file of files) {
+    releaseHash.update(file.path);
+    releaseHash.update("\0");
+    releaseHash.update(String(file.size));
+    releaseHash.update("\0");
+    releaseHash.update(file.sha256);
+    releaseHash.update("\0");
+  }
+
+  const minAndroidVersionCode = Number.parseInt(process.env.PP_MIN_ANDROID_VERSION_CODE || "1", 10);
+  if (!Number.isSafeInteger(minAndroidVersionCode) || minAndroidVersionCode < 1) {
+    throw new Error("PP_MIN_ANDROID_VERSION_CODE must be a positive integer");
+  }
+
+  const packageVersion = require("../package.json").version;
+  const manifest = {
+    schemaVersion: 1,
+    releaseId: `${packageVersion}-${releaseHash.digest("hex").slice(0, 32)}`,
+    packageVersion,
+    minAndroidVersionCode,
+    entryPoint: "index.html",
+    files,
+  };
+
+  fs.writeFileSync(path.join(distDir, releaseManifestName), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  console.log(
+    `[stage-web-client] wrote ${files.length} hashed release entries → dist/web/${releaseManifestName} (${manifest.releaseId})`
+  );
+}
+
 function main() {
   if (!fs.existsSync(distDir)) {
     console.error(`[stage-web-client] build output not found: ${path.relative(projectRoot, distDir)}`);
@@ -104,6 +158,8 @@ function main() {
 
   // 1. Drop the publicDir-copied legacy /app tree — its assets are lifted to the root below.
   rmrf(path.join(distDir, "app"));
+  // A stale manifest from an interrupted/manual build must never describe this build.
+  rmrf(path.join(distDir, releaseManifestName));
 
   // 2. Lift the assets the served client references (via __ppAssetBase="/webapp").
   //    images: dynamically referenced icons (found_*, confirm anims, mode icons, netdisplay).
@@ -118,6 +174,8 @@ function main() {
     .sort();
   fs.writeFileSync(precacheFile, JSON.stringify(all, null, 2), "utf8");
   patchServiceWorkerVersion([...all, "/webapp/precache.json"].sort());
+  // Generate hashes after sw.js has received its final build-specific version.
+  emitReleaseManifest();
   console.log(`[stage-web-client] staged legacy assets and wrote ${all.length} precache entries → dist/web/precache.json`);
 }
 
