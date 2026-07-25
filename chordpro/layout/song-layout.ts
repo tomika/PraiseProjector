@@ -4,6 +4,7 @@ import { CHORDFORMAT_NOCHORDS } from "../render/chord-visual";
 import type { TextMeasurer, MeasurementRequest } from "../render/text-measurer";
 import { breakLine } from "./line-break";
 import { layoutRow, type RowCaretStop, type RowGlyphRequest } from "./row-layout";
+import { segmentVisualUnits } from "./text-units";
 import { buildWordSources, computeWordMetrics, isWhitespaceText, type WordSource } from "./word-metrics";
 
 export type SongWidthPolicy = "FIT_PAGE" | "FIT_WIDTH" | "PRINT";
@@ -86,8 +87,25 @@ export interface LayoutOccurrence {
   readonly tagWidth: number;
   readonly tagSeparation: number;
   readonly rows?: readonly LayoutRow[];
+  readonly grid?: LayoutGrid;
   readonly blockWidth?: number;
   readonly blockHeight?: number;
+}
+
+export interface LayoutGridRun {
+  readonly id: string;
+  readonly kind: "text" | "chord";
+  readonly x: number;
+  readonly width: number;
+  readonly sourceStart: number;
+  readonly sourceEnd: number;
+}
+
+export interface LayoutGrid {
+  readonly width: number;
+  readonly height: number;
+  readonly runs: readonly LayoutGridRun[];
+  readonly caretStops: readonly RowCaretStop[];
 }
 
 export interface SongLayoutResult {
@@ -134,8 +152,11 @@ function measurementRequests(plan: DisplayPlan): MeasurementRequest[] {
         );
     } else if (occurrence.kind === "grid") {
       for (const run of occurrence.gridRuns) {
-        if (run.kind === "text") requests.push({ id: run.id, text: run.text, role: "lyric", font: occurrence.style.font });
-        else
+        const rawFont = run.kind === "text" ? occurrence.style.font : plan.display.chordFont;
+        segmentVisualUnits(run.text).forEach((unit, index) =>
+          requests.push({ id: `${run.id}:raw:${index}`, text: unit.text, role: "lyric", font: rawFont })
+        );
+        if (run.kind === "chord")
           run.visual.tokens.forEach((token, index) =>
             requests.push({
               id: `${run.id}:token:${index}`,
@@ -316,6 +337,49 @@ function layoutLyrics(
   return { pending: false, rows };
 }
 
+function layoutGrid(plan: DisplayPlan, occurrence: DisplayOccurrence, measured: ReadonlyMap<string, { width: number; height: number }>): LayoutGrid {
+  const runs: LayoutGridRun[] = [];
+  const caretStops: RowCaretStop[] = [];
+  let x = 0;
+  let height = 0;
+
+  for (const run of occurrence.gridRuns) {
+    const units = segmentVisualUnits(run.text);
+    const rawSizes = units.map((_, index) => measured.get(`${run.id}:raw:${index}`) ?? { width: 0, height: 0 });
+    const rawWidth = rawSizes.reduce((total, size) => total + size.width, 0);
+    let width = rawWidth;
+
+    if (run.kind === "chord") {
+      width = run.visual.tokens.reduce((total, token, index) => {
+        const size = measured.get(`${run.id}:token:${index}`) ?? { width: 0, height: 0 };
+        height = Math.max(height, size.height);
+        return total + token.gapBefore + size.width;
+      }, 0);
+    } else {
+      for (const size of rawSizes) height = Math.max(height, size.height);
+    }
+
+    const scale = rawWidth > 0 ? width / rawWidth : 1;
+    let unitX = x;
+    units.forEach((unit, index) => {
+      caretStops.push({ pos: unitX, sourceOffset: run.sourceStart + unit.sourceStart });
+      unitX += rawSizes[index].width * scale;
+    });
+    runs.push({
+      id: run.id,
+      kind: run.kind,
+      x,
+      width,
+      sourceStart: run.sourceStart,
+      sourceEnd: run.sourceEnd,
+    });
+    x += width;
+  }
+
+  caretStops.push({ pos: x, sourceOffset: occurrence.text.length });
+  return { width: x, height, runs, caretStops };
+}
+
 /** Natural-width FIT_PAGE layout. It is pure and performs no DOM access. */
 export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: SongLayoutOptions): SongLayoutResult {
   const measured = resultMap(measurer, measurementRequests(plan));
@@ -365,30 +429,8 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
       continue;
     }
 
-    const blockSize =
-      occurrence.kind === "grid"
-        ? occurrence.gridRuns.reduce(
-            (size, run) => {
-              if (run.kind === "text") {
-                const measuredRun = measured.get(run.id) ?? { width: 0, height: 0 };
-                size.width += measuredRun.width;
-                size.height = Math.max(size.height, measuredRun.height);
-              } else {
-                let width = 0;
-                let height = 0;
-                run.visual.tokens.forEach((token, index) => {
-                  const measuredToken = measured.get(`${run.id}:token:${index}`) ?? { width: 0, height: 0 };
-                  width += token.gapBefore + measuredToken.width;
-                  height = Math.max(height, measuredToken.height);
-                });
-                size.width += width;
-                size.height = Math.max(size.height, height);
-              }
-              return size;
-            },
-            { width: 0, height: 0 }
-          )
-        : (measured.get(`${occurrence.id}:block`) ?? { width: 0, height: 0 });
+    const grid = occurrence.kind === "grid" ? layoutGrid(plan, occurrence, measured) : undefined;
+    const blockSize = grid ?? measured.get(`${occurrence.id}:block`) ?? { width: 0, height: 0 };
     const extraCommentHeight = occurrence.kind === "comment" ? plan.display.chordLineHeight / 2 : 0;
     const measuredAbcHeight = occurrence.kind === "abc" ? options.abcHeights?.get(occurrence.id) : undefined;
     const blockHeight =
@@ -397,7 +439,17 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
         : Math.max(plan.display.lyricsLineHeight, blockSize.height) + extraCommentHeight;
     const blockWidth = occurrence.style.indent + blockSize.width;
     const height = tagSeparation + blockHeight;
-    occurrences.push({ id: occurrence.id, source: occurrence, height, contentWidth: blockWidth, tagWidth, tagSeparation, blockWidth, blockHeight });
+    occurrences.push({
+      id: occurrence.id,
+      source: occurrence,
+      height,
+      contentWidth: blockWidth,
+      tagWidth,
+      tagSeparation,
+      ...(grid ? { grid } : {}),
+      blockWidth,
+      blockHeight,
+    });
     bodyHeight += height;
     maximumWidth = Math.max(maximumWidth, 2 * plan.display.horizontalMargin + tagLaneWidth + tagGap + blockWidth);
   }

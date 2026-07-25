@@ -27,6 +27,7 @@ import {
   buildChordDropLines,
   hitTestChord,
   hitTestDiagram,
+  hitTestGridChord,
   hitTestOccurrence,
   hitTestTag,
   isTagColumnPoint,
@@ -35,6 +36,7 @@ import {
   resolveChordDropTarget,
   resolveLineCaretHit,
   type ChordDropLine,
+  type GridChordGeometry,
 } from "./render/dom-interaction";
 import {
   DomSongRenderer,
@@ -335,6 +337,18 @@ class ChordProChordHitBox extends ChordProHitBox {
     width: number,
     height: number,
     public readonly chord: ChordProChord
+  ) {
+    super(left, top, width, height);
+  }
+}
+
+class GridChordHitBox extends ChordProHitBox {
+  constructor(
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    public readonly target: GridChordGeometry
   ) {
     super(left, top, width, height);
   }
@@ -715,6 +729,8 @@ export class ChordProEditor extends ChordDrawer {
   private prevText = "";
   private metaMeasureSpan: HTMLSpanElement | null = null;
   private actionTarget: ActionTarget = null;
+  /** Grid chords live in the line's plain source text rather than `line.chords`. */
+  private gridChordSelectorTarget: GridChordGeometry | null = null;
 
   private cursorPos: number | null = null;
   private selectionStart: number | ChordProSelection | null = null;
@@ -2371,7 +2387,7 @@ export class ChordProEditor extends ChordDrawer {
     const pos = this.normalizeMousePos(event);
     if (down) {
       const box = this.HitTestCoords(pos);
-      if (box instanceof ChordBoxHitBox || (this.readOnly && box instanceof ChordProChordHitBox)) {
+      if (box instanceof ChordBoxHitBox || (this.readOnly && (box instanceof ChordProChordHitBox || box instanceof GridChordHitBox))) {
         this.updateMouseDownPos(event);
         return box instanceof ChordBoxHitBox;
       }
@@ -2629,6 +2645,13 @@ export class ChordProEditor extends ChordDrawer {
 
   private checkChordBoxOrTemplateHit(e: MouseEvent) {
     if (this.chordSelector) {
+      const geometry = this.domRenderer?.getGeometryIndex();
+      const gridChord = geometry ? hitTestGridChord(geometry, this.normalizeMousePos(e)) : null;
+      if (gridChord) {
+        this.gridChordSelectorTarget = gridChord;
+        this.chordSelector.showDialog(gridChord.text, this.readOnly, this.isDark);
+        return true;
+      }
       const box = this.HitTest(e);
       if (box instanceof ChordProChordHitBox) {
         if (!this.readOnly) this.changeActionTarget(box.chord);
@@ -4204,6 +4227,8 @@ export class ChordProEditor extends ChordDrawer {
       }
       const chord = hitTestChord(geometry, mp);
       if (chord) return new ChordProChordHitBox(chord.left, chord.top, chord.width, chord.height, chord.chord);
+      const gridChord = hitTestGridChord(geometry, mp);
+      if (this.readOnly && gridChord) return new GridChordHitBox(gridChord.left, gridChord.top, gridChord.width, gridChord.height, gridChord);
 
       // Section labels. The box extends past the label into the separation
       // gap, so a click just after the last character still targets the label
@@ -4220,7 +4245,7 @@ export class ChordProEditor extends ChordDrawer {
       // expects. Columns are valid UTF-16 visual boundaries by construction.
       if (!this.readOnly) {
         const hit = resolveLineCaretHit(geometry, mp);
-        if (hit && hit.occurrence.occurrence.kind === "lyrics" && !isTagColumnPoint(geometry, mp))
+        if (hit && (hit.occurrence.occurrence.kind === "lyrics" || hit.occurrence.occurrence.kind === "grid") && !isTagColumnPoint(geometry, mp))
           return new ChordProLineHitBox(
             hit.cellLeft,
             hit.row.lyricsTop,
@@ -5446,6 +5471,23 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   chordSelectorClosed(chord?: string) {
+    const gridTarget = this.gridChordSelectorTarget;
+    this.gridChordSelectorTarget = null;
+    if (gridTarget) {
+      if (!this.readOnly && chord && chord !== gridTarget.text) {
+        this.saveState();
+        const line = gridTarget.line;
+        line.setLyrics(line.lyrics.slice(0, gridTarget.sourceStart) + chord + line.lyrics.slice(gridTarget.sourceEnd));
+        line.genText();
+        this.changeActionTarget(line);
+        this.cursorPos = gridTarget.sourceStart + chord.length;
+        this.selectionStart = null;
+        this.selectionEnd = null;
+        this.dragData = null;
+      }
+      this.draw();
+      return;
+    }
     if (chord) {
       if (this.multiChordChangeEnabled && this.actionTarget instanceof ChordTemplateHitBox) {
         const box = this.actionTarget;

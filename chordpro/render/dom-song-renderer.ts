@@ -6,6 +6,7 @@ import { ChordProAbc, type ChordProChord, type ChordProDocument, type ChordProLi
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { safeMetaAlignment } from "../layout/meta-alignment";
 import { layoutSong, type LayoutLyricRun, type SongLayoutResult, type SongWidthPolicy } from "../layout/song-layout";
+import { segmentVisualUnits } from "../layout/text-units";
 import type { ChordVisualModel } from "./chord-visual";
 import { createChordNode, createDifferentialTextNode, createLyricRunNode, createTagNode } from "./dom-nodes";
 import {
@@ -1078,7 +1079,7 @@ export class DomSongRenderer {
       if (occurrenceLayout.rows)
         for (const row of occurrenceLayout.rows)
           this.renderRow(plan, row, occurrence, lineNode, layout.bodyWidth, selectionSpans?.get(occurrence.id) ?? null, editing);
-      else this.renderBlock(plan, occurrenceLayout, lineNode);
+      else this.renderBlock(plan, occurrenceLayout, lineNode, selectionSpans?.get(occurrence.id) ?? null);
       body.appendChild(occurrenceNode);
     }
 
@@ -1714,7 +1715,12 @@ export class DomSongRenderer {
     parent.appendChild(row);
   }
 
-  private renderBlock(plan: DisplayPlan, occurrenceLayout: SongLayoutResult["occurrences"][number], parent: HTMLElement) {
+  private renderBlock(
+    plan: DisplayPlan,
+    occurrenceLayout: SongLayoutResult["occurrences"][number],
+    parent: HTMLElement,
+    selection: SelectionSpan | null
+  ) {
     const occurrence = occurrenceLayout.source;
     const block = this.doc.createElement("div");
     block.className = `chp-dom-${occurrence.kind}`;
@@ -1748,12 +1754,17 @@ export class DomSongRenderer {
     if (occurrence.kind === "grid") {
       for (const run of occurrence.gridRuns) {
         if (run.kind === "text") {
-          const text = this.doc.createElement("span");
-          text.className = "chp-dom-grid-text";
-          text.dataset.sourceStart = String(run.sourceStart);
-          text.dataset.sourceEnd = String(run.sourceEnd);
-          text.textContent = run.text;
-          block.appendChild(text);
+          for (const unit of segmentVisualUnits(run.text)) {
+            const text = this.doc.createElement("span");
+            text.className = "chp-dom-grid-text";
+            const sourceStart = run.sourceStart + unit.sourceStart;
+            const sourceEnd = run.sourceStart + unit.sourceEnd;
+            text.dataset.sourceStart = String(sourceStart);
+            text.dataset.sourceEnd = String(sourceEnd);
+            if (selection && sourceStart < selection.end && sourceEnd > selection.start) text.classList.add("chp-dom-selected");
+            text.textContent = unit.text;
+            block.appendChild(text);
+          }
         } else {
           const chord = createChordNode(this.doc, run.id, run.visual, {
             font: plan.display.chordFont,
@@ -1765,6 +1776,7 @@ export class DomSongRenderer {
           chord.dataset.sourceEnd = String(run.sourceEnd);
           chord.style.height = `${plan.display.chordLineHeight}px`;
           chord.style.lineHeight = `${plan.display.chordLineHeight}px`;
+          if (selection && run.sourceStart < selection.end && run.sourceEnd > selection.start) chord.classList.add("chp-dom-selected");
           block.appendChild(chord);
         }
       }

@@ -17,6 +17,18 @@ export interface ChordGeometry {
   readonly chord: ChordProChord;
 }
 
+/** Root-local box of one chord token embedded in a grid line. */
+export interface GridChordGeometry {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly line: ChordProLine;
+  readonly text: string;
+  readonly sourceStart: number;
+  readonly sourceEnd: number;
+}
+
 /** Root-local box of one retained guitar/piano diagram canvas. */
 export interface DiagramGeometry {
   readonly left: number;
@@ -27,9 +39,9 @@ export interface DiagramGeometry {
 }
 
 /**
- * Root-local geometry of one wrapped lyric row, carrying the layout's caret
- * stops. Stops are row-local (the same coordinate space as the row's lyric
- * runs); `left` converts them to root-local x. Every stop is a valid UTF-16
+ * Root-local geometry of one editable lyric or grid row, carrying the layout's
+ * caret stops. Stops are row-local; `left` converts them to root-local x.
+ * Every stop is a valid UTF-16
  * visual boundary produced by the centralized visual-unit helper — hit
  * resolution never lands inside a surrogate pair or grapheme cluster.
  */
@@ -70,7 +82,7 @@ export interface OccurrenceGeometry {
   /** Root-local x of the occurrence's content, after the margin and tag lane. */
   readonly contentLeft: number;
   readonly contentRight: number;
-  /** Present for lyric occurrences only; block occurrences have no caret rows. */
+  /** Present for editable lyric and grid occurrences; other blocks have no caret rows. */
   readonly rows?: readonly RowGeometry[];
   /** Present only where the section label renders. */
   readonly tag?: TagGeometry;
@@ -80,6 +92,8 @@ export interface SongGeometryIndex {
   readonly occurrences: readonly OccurrenceGeometry[];
   /** Every rendered chord's box, in document order. */
   readonly chords: readonly ChordGeometry[];
+  /** Chord-like source ranges rendered inline inside grid blocks. */
+  readonly gridChords: readonly GridChordGeometry[];
   /** Diagram canvases, attached by the renderer after it places them. */
   readonly diagrams: readonly DiagramGeometry[];
   /**
@@ -117,6 +131,7 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
   const contentLeft = leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth + layout.tagGap;
   const occurrences: OccurrenceGeometry[] = [];
   const chords: ChordGeometry[] = [];
+  const gridChords: GridChordGeometry[] = [];
   let y = plan.display.verticalMargin + metaHeight;
   let songMaxRight = contentLeft;
 
@@ -159,6 +174,38 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
       }
       rowTop += row.height;
     }
+    if (entry.grid) {
+      const availableWidth = Math.max(0, layout.bodyWidth - entry.source.style.indent);
+      const remaining = Math.max(0, availableWidth - entry.grid.width);
+      const alignedOffset = entry.source.style.align === "right" ? remaining : entry.source.style.align === "center" ? remaining / 2 : 0;
+      const gridLeft = contentLeft + entry.source.style.indent + alignedOffset;
+      const gridTop = top + entry.tagSeparation;
+      rowGeometry.push({
+        id: `${entry.id}:grid-row`,
+        top: gridTop,
+        bottom: gridTop + (entry.blockHeight ?? plan.display.lyricsLineHeight),
+        left: gridLeft,
+        lyricsTop: gridTop,
+        lyricsHeight: plan.display.lyricsLineHeight,
+        caretStops: entry.grid.caretStops,
+      });
+      const line = entry.source.origin ?? entry.source.source;
+      for (const run of entry.grid.runs) {
+        if (run.kind !== "chord") continue;
+        const sourceRun = entry.source.gridRuns.find((candidate) => candidate.id === run.id);
+        if (!sourceRun) continue;
+        gridChords.push({
+          left: gridLeft + run.x,
+          top: gridTop,
+          width: run.width,
+          height: Math.max(plan.display.chordLineHeight, entry.blockHeight ?? 0),
+          line,
+          text: sourceRun.text,
+          sourceStart: run.sourceStart,
+          sourceEnd: run.sourceEnd,
+        });
+      }
+    }
     // The label is right-aligned in the tag lane (CSS `text-align: right` over a
     // fixed lane column) and shares the exact top/line-height of the first
     // row's lyrics.
@@ -181,7 +228,7 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
       bottom,
       contentLeft,
       contentRight,
-      ...(entry.rows ? { rows: rowGeometry } : {}),
+      ...(rowGeometry.length > 0 ? { rows: rowGeometry } : {}),
       ...(tag ? { tag } : {}),
     });
     y = bottom;
@@ -198,6 +245,7 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
   return {
     occurrences,
     chords,
+    gridChords,
     diagrams: [],
     tagBoundary: leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth,
     highlightLeft: Math.max(0, Math.min(baseHighlightLeft - highlightPadding, width)),
@@ -218,6 +266,12 @@ function contains(box: { left: number; top: number; width: number; height: numbe
  */
 export function hitTestChord(index: SongGeometryIndex, point: Point): ChordGeometry | null {
   for (const chord of index.chords) if (contains(chord, point)) return chord;
+  return null;
+}
+
+/** Resolves a chord-like token embedded in a grid block. */
+export function hitTestGridChord(index: SongGeometryIndex, point: Point): GridChordGeometry | null {
+  for (const chord of index.gridChords) if (contains(chord, point)) return chord;
   return null;
 }
 
@@ -545,9 +599,9 @@ export interface EditingSelectionRange {
 
 /**
  * Per-occurrence selected UTF-16 spans for a document-ordered selection. Lines
- * resolve by object identity, never by mutable index. Only lyric glyph cells
- * paint, so a fully selected middle line spans its text exactly — no synthetic
- * end-of-line cell is added.
+ * resolve by object identity, never by mutable index. Lyric and grid glyph
+ * cells paint, so a fully selected middle line spans its text exactly — no
+ * synthetic end-of-line cell is added.
  */
 export function computeSelectionSpans(
   occurrences: readonly Pick<DisplayOccurrence, "id" | "source" | "origin" | "kind" | "text">[],
@@ -567,7 +621,7 @@ export function computeSelectionSpans(
     else if (inside) span = { start: 0, end: occurrence.text.length };
     if (isStart) inside = !isEnd;
     else if (isEnd) inside = false;
-    if (span && span.end > span.start && occurrence.kind === "lyrics") spans.set(occurrence.id, span);
+    if (span && span.end > span.start && (occurrence.kind === "lyrics" || occurrence.kind === "grid")) spans.set(occurrence.id, span);
   }
   return spans;
 }

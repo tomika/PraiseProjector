@@ -149,7 +149,18 @@
   border: var(--chp-comment-border, 1px solid currentColor);
 }
 
-.chp-dom-grid-text,
+.chp-dom-grid-text {
+  position: relative;
+  /* A whitespace-only anonymous flex item is discarded by the flex layout
+   * algorithm. Grid separators are often exactly such a run, so keep text
+   * runs inline-block to preserve their measured spaces. */
+  display: inline-block;
+  white-space: pre;
+  left: auto;
+  top: auto;
+  vertical-align: middle;
+}
+
 .chp-dom-grid-chord {
   position: relative;
   display: inline-flex;
@@ -257,6 +268,16 @@
 }
 
 .chp-dom-run.chp-dom-selected {
+  color: var(--chp-selected-fg, currentColor) !important;
+}
+
+.chp-dom-grid-text.chp-dom-selected,
+.chp-dom-grid-chord.chp-dom-selected {
+  background-color: var(--chp-selected-bg, transparent);
+  color: var(--chp-selected-fg, currentColor) !important;
+}
+
+.chp-dom-grid-chord.chp-dom-selected .chp-dom-chord-token {
   color: var(--chp-selected-fg, currentColor) !important;
 }
 
