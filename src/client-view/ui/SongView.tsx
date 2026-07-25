@@ -261,6 +261,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const performanceProfile = useClientPerformanceProfile();
   const neighbourPreloadingEnabled = !performanceProfile.chordProSlow;
   const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
+  const viewingRemoteDisplay = isViewingRemoteDisplay(state);
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
   const hasSongText = !!display.song?.trim();
@@ -845,34 +846,36 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
           <p className="cv-empty-hint">Tap the options icon to search and pick a song.</p>
         </div>
       )}
-      <div
-        className={`cv-navigation-actions${flipActive || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}
-      >
-        {" "}
-        <button
-          type="button"
-          className={`cv-navigation-mode${canUsePlaylistNavigation ? "" : " cv-navigation-mode-disabled"}`}
-          title={playlistReturnTitle}
-          aria-label={playlistReturnTitle}
-          aria-disabled={!canUsePlaylistNavigation}
-          onClick={() => {
-            if (canUsePlaylistNavigation) void store.returnCurrentSongToPlaylistNavigation();
-          }}
+      {!viewingRemoteDisplay && (
+        <div
+          className={`cv-navigation-actions${flipActive || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}
         >
-          <img src={icon(NAVIGATION_MODE_META[state.navigationMode].icon)} alt="" />
-        </button>
-        {canAddCurrentSongToPlaylist && (
+          {" "}
           <button
             type="button"
-            className="cv-navigation-mode cv-navigation-add-current cv-play-btn"
-            title="Add current song to playlist and project it"
-            aria-label="Add current song to playlist and project it"
-            onClick={() => void store.addCurrentSongToPlaylistAndProject()}
+            className={`cv-navigation-mode${canUsePlaylistNavigation ? "" : " cv-navigation-mode-disabled"}`}
+            title={playlistReturnTitle}
+            aria-label={playlistReturnTitle}
+            aria-disabled={!canUsePlaylistNavigation}
+            onClick={() => {
+              if (canUsePlaylistNavigation) void store.returnCurrentSongToPlaylistNavigation();
+            }}
           >
-            ▶
+            <img src={icon(NAVIGATION_MODE_META[state.navigationMode].icon)} alt="" />
           </button>
-        )}
-      </div>
+          {canAddCurrentSongToPlaylist && (
+            <button
+              type="button"
+              className="cv-navigation-mode cv-navigation-add-current cv-play-btn"
+              title="Add current song to playlist and project it"
+              aria-label="Add current song to playlist and project it"
+              onClick={() => void store.addCurrentSongToPlaylistAndProject()}
+            >
+              ▶
+            </button>
+          )}
+        </div>
+      )}
       {/* Hidden chord-selector host required by the guitar chord-box renderer. */}
       <div dangerouslySetInnerHTML={{ __html: CHORDSEL_MARKUP }} />
     </div>
