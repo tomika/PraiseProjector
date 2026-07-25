@@ -50,6 +50,7 @@ export function SessionsDialog() {
   addressRef.current = broadcastAddress;
   const addressErrorRef = useRef(addressError);
   addressErrorRef.current = addressError;
+  const refreshInFlightRef = useRef(false);
   // While the dialog runs hidden as the startup auto-scan, probe only the sources
   // chosen in Settings (startupScanMode); once it's a visible/manual hub, scan BOTH.
   const startupScanModeRef = useRef<ExternalSearchMode | null>(null);
@@ -84,10 +85,13 @@ export function SessionsDialog() {
   };
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     try {
       const mode: ExternalSearchMode = startupScanModeRef.current ?? "BOTH";
       await store.refreshSessions(mode, addressErrorRef.current ? undefined : addressRef.current);
     } finally {
+      refreshInFlightRef.current = false;
       if (mountedRef.current) {
         setSearched(true);
       }

@@ -49,6 +49,15 @@ async function fetchWithRetry(url, options, attempts) {
   return null;
 }
 
+// A black-holed connection can otherwise keep a cached PWA shell waiting for
+// the operating system's TCP timeout. Navigation is local-critical, so give the
+// network a brief chance and then fall back to the already-installed cache.
+function fetchWithDeadline(request, options = {}, timeoutMs = 2000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(request, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 // Add a list of URLs to the cache in parallel batches. Parallelism keeps install
 // fast enough to finish before some Android WebViews tear the worker down mid-install
 // (the previous sequential await of 200+ files was slow enough to be interrupted,
@@ -196,7 +205,7 @@ self.addEventListener('fetch', (event) => {
   // does not weaken offline behaviour.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request, { cache: 'no-store' })
+      fetchWithDeadline(event.request, { cache: 'no-store' })
         .then((response) => {
           // Cache the response
           const responseClone = response.clone();

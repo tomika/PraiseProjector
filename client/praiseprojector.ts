@@ -5511,26 +5511,20 @@ export class App extends AppBase {
   private async logout() {
     if (this.token) {
       const clientId = this.clientId ?? "";
-      try {
-        cloudApi.setToken("Bearer " + this.token);
-        const res = await cloudApi.logoutSession(clientId);
-        if (!res) throw "Invalid response";
-        if (isErrorResponse(res)) throw res.error;
-        this.login = res.login;
-        this.token = res.token;
-      } catch (error) {
-        this.log("Token error: " + error);
-        this.login = this.token = undefined;
-      } finally {
-        this.storeSessionInfo("");
-        cloudApi.setToken(null);
-        this.updateFieldsForUser();
-        this.updateDatabase("UPDATE");
-      }
+      cloudApi.setToken("Bearer " + this.token);
+      void cloudApi.logoutSession(clientId, { timeoutMs: 4_000 }).catch((error) => this.log("Token error: " + error));
+      // Local sign-out must not wait for a WAN round-trip.
+      this.login = this.token = undefined;
+      this.storeSessionInfo("");
+      cloudApi.setToken(null);
+      this.updateFieldsForUser();
+      this.updateDatabase("UPDATE");
     }
   }
 
   private async doLogin(loginDialog: HTMLElement) {
+    // Cancel a detached slow logout before starting a new authentication flow.
+    cloudApi.abortAll();
     const login = document.getElementById("login") as HTMLInputElement;
     const key = document.getElementById("password") as HTMLInputElement;
     const store = document.getElementById("keepLoggedIn") as HTMLInputElement | null;
@@ -5544,7 +5538,7 @@ export class App extends AppBase {
         // not inherit stale HttpOnly cookies from the previous account.
         try {
           cloudApi.setToken(null);
-          await cloudApi.logoutSession(clientId);
+          await cloudApi.logoutSession(clientId, { timeoutMs: 4_000 });
         } catch {
           // Ignore cleanup errors; explicit login below can still proceed.
         }
@@ -5552,7 +5546,7 @@ export class App extends AppBase {
         let has_net = true;
         try {
           if (store?.checked) this.verifyClientId();
-          const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true })) as SessionResponse;
+          const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true, timeoutMs: 4_000 })) as SessionResponse;
           if (res && isErrorResponse(res)) throw res.error;
           this.login = res.login;
           this.token = res.token;

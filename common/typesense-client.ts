@@ -47,6 +47,11 @@ export class TypesenseClient {
     this.client = new Client({
       apiKey,
       nodes: [{ host, port, protocol }],
+      // Search is an optional accelerator for a fully local database. Fail fast
+      // so a broken Typesense route cannot freeze the normal song picker.
+      connectionTimeoutSeconds: 2,
+      numRetries: 1,
+      retryIntervalSeconds: 0.1,
     });
   }
 

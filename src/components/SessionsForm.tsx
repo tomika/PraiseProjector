@@ -86,6 +86,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
   // Scan timer ref
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanInFlightRef = useRef(false);
 
   // Initialize the broadcast address + the picker's options from the host bridge
   // (Electron multi-NIC lister / Android info), falling back to the global broadcast.
@@ -179,6 +180,8 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
   // Scan timer tick (matching C# OnTimerTick)
   const onTimerTick = useCallback(async () => {
+    if (scanInFlightRef.current) return;
+    scanInFlightRef.current = true;
     setScanning(true);
     try {
       // 1. Scan for local sessions via HostDevice (Android/Electron parity)
@@ -201,13 +204,14 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
       // 2. Fetch online sessions from cloud (works in both Electron and web mode)
       try {
-        const onlineSessions = await cloudApi.fetchOnlineSessions();
+        const onlineSessions = await cloudApi.fetchOnlineSessions({ timeoutMs: 3_000 });
         console.debug("App", `SessionsForm: Fetched online sessions: ${onlineSessions.length}`);
         updateOnlineSessionList(onlineSessions);
       } catch (error) {
         console.error("App", "Failed to fetch online sessions", error);
       }
     } finally {
+      scanInFlightRef.current = false;
       setScanning(false);
     }
   }, [hasHostDevicePpd, broadcastAddress, scanAddress, updateLocalSessionList, updateOnlineSessionList]);

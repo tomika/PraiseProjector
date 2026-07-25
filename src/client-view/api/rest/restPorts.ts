@@ -249,7 +249,7 @@ export function createSessionApi(core: RestCore): SessionApi {
       const results: OnlineSessionEntry[] = [];
       if (mode === "WEB" || mode === "BOTH") {
         try {
-          results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions(), core.leader?.id));
+          results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions({ timeoutMs: 3_000 }), core.leader?.id));
         } catch {
           /* cloud unreachable — surface whatever local discovery found */
         }

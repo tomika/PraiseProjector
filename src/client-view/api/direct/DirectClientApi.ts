@@ -419,7 +419,7 @@ export class DirectClientApi implements ClientApi {
         const results: OnlineSessionEntry[] = [];
         if (mode === "WEB" || mode === "BOTH") {
           try {
-            results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions(), this.currentLeaderIdentity()?.id));
+            results.push(...filterOwnSessionEntries(await cloudApi.fetchOnlineSessions({ timeoutMs: 3_000 }), this.currentLeaderIdentity()?.id));
           } catch {
             /* cloud unreachable — surface whatever local discovery found */
           }

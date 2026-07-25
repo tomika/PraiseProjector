@@ -60,14 +60,17 @@ export interface IElectronAPI {
   proxyGet?: (
     baseUrl: string,
     path: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
   ) => Promise<{ data: unknown; ppHeaders: Record<string, string> } | { error: { message: string; status?: number; data?: unknown } }>;
   proxyPost?: (
     baseUrl: string,
     path: string,
     data: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
   ) => Promise<{ data: unknown; ppHeaders: Record<string, string> } | { error: { message: string; status?: number; data?: unknown } }>;
+  proxyAbort?: (requestId: string) => void;
 
   // General WebServer API request handler
   onWebserverApiRequest?: (

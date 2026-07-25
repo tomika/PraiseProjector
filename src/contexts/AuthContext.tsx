@@ -35,6 +35,7 @@ const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
 AuthContext.displayName = "AuthContext";
 
 const shouldUseBearerHeader = typeof window !== "undefined" && !!window.electronAPI;
+const AUTH_REQUEST_TIMEOUT_MS = 4_000;
 
 // Guard against React StrictMode double-mount calling loadInitialCredentials
 // concurrently, which causes two session requests racing each other (the server
@@ -65,8 +66,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [authStatus, setAuthStatus] = useState<AuthStatus>("guest");
   const [networkUnavailable, setNetworkUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVerificationPending, setIsVerificationPending] = useState(false);
   const [onLoginSuccess, setOnLoginSuccessCallback] = useState<((leaderId?: string) => void) | undefined>();
   const guestCookieCleanupRetriedRef = useRef(false);
+  // Monotonic auth-intent counter. Every login/logout bumps it so a backgrounded
+  // logout can tell whether it still represents the current intent before it wipes
+  // cookies. Guards against a stale logout clearing a newer session's cookie jar.
+  const authEpochRef = useRef(0);
+  const authRequestControllerRef = useRef<AbortController | null>(null);
 
   const setOnLoginSuccess = useCallback((callback: (leaderId?: string) => void) => {
     setOnLoginSuccessCallback(() => callback);
@@ -92,13 +99,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const verifySession = async (username: string, authToken?: string | null): Promise<SessionResponse | null> => {
+  const verifySession = async (
+    username: string,
+    authToken?: string | null,
+    options?: { signal?: AbortSignal; epoch?: number }
+  ): Promise<SessionResponse | null> => {
     try {
       const authType = authToken ? (authToken.startsWith("Bearer ") ? "Bearer" : authToken.startsWith("Basic ") ? "Basic" : "raw") : "cookie-only";
       console.debug("[Auth] verifySession:", { username, authType });
       cloudApi.setToken(authToken ?? null);
       const clientId = await getDeviceClientId();
-      const response = await cloudApi.fetchSession(clientId, { skipRefresh: true });
+      const response = await cloudApi.fetchSession(clientId, {
+        skipRefresh: true,
+        signal: options?.signal,
+        timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+      });
+      if (options?.epoch !== undefined && authEpochRef.current !== options.epoch) return null;
       if (response.login === username) {
         console.debug("[Auth] verifySession: success for", username);
         return response;
@@ -113,11 +129,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (response.login) {
         cloudApi.setToken(null);
         try {
-          await cloudApi.logoutSession(clientId);
+          await cloudApi.logoutSession(clientId, {
+            signal: options?.signal,
+            timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+            clearCookiesAfterSnapshot: true,
+          });
         } catch {
           // Ignore errors (e.g. network issues) since we're clearing local state anyway
         }
-        await window.electronAPI?.clearPersistedCookies?.();
+        if (options?.epoch === undefined || authEpochRef.current === options.epoch) {
+          await window.electronAPI?.clearPersistedCookies?.();
+        }
       }
       return null;
     } catch (error) {
@@ -136,8 +158,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // with the same token would get 401.
     if (credentialLoadInFlight) return;
     credentialLoadInFlight = true;
+    const myEpoch = authEpochRef.current;
+    authRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    authRequestControllerRef.current = controller;
 
     setIsLoading(true);
+    setIsVerificationPending(true);
     try {
       // In Electron, resolve the cloud API base URL from the main process (proxy-config.json)
       // before any API calls. Without this, the renderer falls back to window.location.origin
@@ -169,6 +196,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (storedUsername) {
         setUsername(storedUsername);
         await Database.switchUser(storedUsername);
+        // The user's local database is now ready. Unblock the UI immediately so
+        // offline startup (state restore + playlist song switching) is never
+        // gated on the network session verification below, which hangs until the
+        // TCP timeout when offline. Verification still runs and is awaited (so
+        // restoreStoredSession() reflects its outcome), but only updates auth
+        // state — it no longer holds up local rendering.
+        setIsLoading(false);
       } else {
         setUsername(null);
         setUser(null);
@@ -177,14 +211,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         cloudApi.setToken(null);
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
 
+        // Switch to the guest (anonymous) database and unblock the UI BEFORE the
+        // network cookie-mismatch check below, so offline guest startup is never
+        // gated on a cloud round-trip. The DB switch is local; the gated effects
+        // (App state restore / playlist song load) safely proceed once it is done
+        // — they re-resolve the ready database via Database.waitForReady().
+        setAuthStatus("guest");
+        if (Database.getCurrentUsername() !== "") {
+          await Database.switchUser("");
+        }
+        setIsLoading(false);
+
         // PWAs and multiple browser tabs share HttpOnly cookies with the main
         // browser session on the same origin, while localStorage is separate.
         // If the browser is logged in but this instance has no stored username,
         // the shared cookies would silently authenticate every fetch request as
         // the browser's user while the UI shows "Guest".  verifySession with an
         // empty expected login detects the mismatch and clears the stale cookies.
+        // Awaited so restoreStoredSession() reflects the outcome, but the UI is
+        // already usable via the setIsLoading(false) above.
         try {
-          await verifySession("", null);
+          await verifySession("", null, { signal: controller.signal, epoch: myEpoch });
         } catch (error) {
           if (!isCloudApiErrorKind(error, "network")) {
             throw error;
@@ -192,10 +239,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.debug("[Auth] loadInitialCredentials: guest session verification skipped while offline");
         }
 
-        setAuthStatus("guest");
-        if (Database.getCurrentUsername() !== "") {
-          await Database.switchUser("");
-        }
         return;
       }
 
@@ -206,7 +249,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (storedSessionToken) {
         console.debug("[Auth] loadInitialCredentials: trying Bearer token");
         try {
-          session = await verifySession(storedUsername, `Bearer ${storedSessionToken}`);
+          session = await verifySession(storedUsername, `Bearer ${storedSessionToken}`, {
+            signal: controller.signal,
+            epoch: myEpoch,
+          });
         } catch (error) {
           if (isCloudApiErrorKind(error, "network")) {
             networkUnavailable = true;
@@ -222,7 +268,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!session && !networkUnavailable) {
         console.debug("[Auth] loadInitialCredentials: trying cookie-only renewal");
         try {
-          session = await verifySession(storedUsername, null);
+          session = await verifySession(storedUsername, null, { signal: controller.signal, epoch: myEpoch });
         } catch (error) {
           if (isCloudApiErrorKind(error, "network")) {
             networkUnavailable = true;
@@ -236,7 +282,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!session && !networkUnavailable && storedLegacyToken) {
         console.debug("[Auth] loadInitialCredentials: trying legacy token");
         try {
-          session = await verifySession(storedUsername, storedLegacyToken);
+          session = await verifySession(storedUsername, storedLegacyToken, {
+            signal: controller.signal,
+            epoch: myEpoch,
+          });
         } catch (error) {
           if (isCloudApiErrorKind(error, "network")) {
             networkUnavailable = true;
@@ -245,6 +294,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
       }
+
+      if (authEpochRef.current !== myEpoch) return;
 
       if (session) {
         console.debug("[Auth] loadInitialCredentials: session restored for", storedUsername);
@@ -266,20 +317,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       localStorage.removeItem("auth_token");
       localStorage.removeItem("pp_session_token");
       await window.electronAPI?.clearPersistedCookies?.();
+      if (authEpochRef.current !== myEpoch) return;
       setUser(null);
       setToken(null);
       setNetworkUnavailable(false);
       cloudApi.setToken(null);
       setAuthStatus("offline");
     } catch (error) {
-      console.error("Auth", "Failed to load initial credentials", error);
+      if (!isCloudApiErrorKind(error, "aborted")) {
+        console.error("Auth", "Failed to load initial credentials", error);
+      }
     } finally {
       credentialLoadInFlight = false;
-      setIsLoading(false);
+      if (authRequestControllerRef.current === controller) {
+        authRequestControllerRef.current = null;
+      }
+      setIsVerificationPending(false);
+      if (authEpochRef.current === myEpoch) setIsLoading(false);
     }
   }, [applySession]);
 
   const login = async (username: string, password?: string): Promise<boolean> => {
+    // Invalidate any in-flight logout so its backgrounded cookie-clear cannot wipe
+    // the session cookie this login is about to establish.
+    const myEpoch = ++authEpochRef.current;
+    authRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    authRequestControllerRef.current = controller;
     setIsLoading(true);
     try {
       const authToken = password ? `Basic ${btoa(`${username}:${password}`)}` : null;
@@ -295,11 +359,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // login cannot be shadowed by stale cookies from a previous account.
       try {
         cloudApi.setToken(null);
-        await cloudApi.logoutSession(clientId);
+        await cloudApi.logoutSession(clientId, {
+          signal: controller.signal,
+          timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+          clearCookiesAfterSnapshot: true,
+        });
       } catch {
         // Ignore pre-login logout errors and continue with explicit credentials.
       }
-      const session = await verifySession(username, authToken);
+      if (authEpochRef.current !== myEpoch) return false;
+      const session = await verifySession(username, authToken, { signal: controller.signal, epoch: myEpoch });
+      if (authEpochRef.current !== myEpoch) return false;
       if (session && session.token) {
         // Don't persist session token yet — wait for "Remember Me" decision.
         // In non-Electron mode, always persist (browser cookies handle refresh).
@@ -309,6 +379,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem("auth_username", username);
 
         await Database.switchUser(username);
+        if (authEpochRef.current !== myEpoch) return false;
 
         if (onLoginSuccess) {
           onLoginSuccess(session.leaderId);
@@ -330,20 +401,57 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setAuthStatus(username ? "offline" : "guest");
       return false;
     } finally {
-      setIsLoading(false);
+      if (authRequestControllerRef.current === controller) {
+        authRequestControllerRef.current = null;
+      }
+      if (authEpochRef.current === myEpoch) setIsLoading(false);
     }
   };
 
   const logout = async () => {
+    // Snapshot this logout's intent. A later login/logout bumps the epoch, letting
+    // the backgrounded task below detect it has been superseded.
+    const myEpoch = ++authEpochRef.current;
+    authRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    authRequestControllerRef.current = controller;
     setIsLoading(true);
+    let logoutRequestStarted = false;
     try {
       const clientId = await getDeviceClientId();
       cloudApi.setClientId(clientId);
       cloudApi.setToken(null);
-      await cloudApi.logoutSession(clientId);
+      // The server-side logout must not block the local sign-out: when offline it
+      // would hang until the TCP timeout. Fire it in the background and clear the
+      // persisted cookies only AFTER the request has been sent (so the logout
+      // request still carries the session cookie), while the local sign-out below
+      // runs immediately.
+      logoutRequestStarted = true;
+      void (async () => {
+        try {
+          await cloudApi.logoutSession(clientId, {
+            signal: controller.signal,
+            timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+            clearCookiesAfterSnapshot: true,
+          });
+        } catch (error) {
+          if (!isCloudApiErrorKind(error, "aborted")) {
+            console.error("Auth", "Logout API call failed", error);
+          }
+        } finally {
+          if (authRequestControllerRef.current === controller) {
+            authRequestControllerRef.current = null;
+          }
+        }
+      })();
     } catch (error) {
-      console.error("Auth", "Logout API call failed", error);
+      // Local sign-out (below) must always run, even if resolving the client id
+      // fails — never let logout() reject.
+      console.error("Auth", "Logout failed", error);
     } finally {
+      if (!logoutRequestStarted) {
+        await window.electronAPI?.clearPersistedCookies?.();
+      }
       setUser(null);
       setToken(null);
       setUsername(null);
@@ -354,12 +462,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       localStorage.removeItem("auth_username");
       localStorage.removeItem("auth_token");
       localStorage.removeItem("pp_session_token");
-      // Clear persisted cookies (Electron "Remember Me")
-      window.electronAPI?.clearPersistedCookies?.();
 
       await Database.switchUser("");
 
-      setIsLoading(false);
+      if (authEpochRef.current === myEpoch) setIsLoading(false);
     }
   };
 
@@ -439,7 +545,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       guestCookieCleanupRetriedRef.current = false;
       return;
     }
-    if (isLoading || guestCookieCleanupRetriedRef.current) return;
+    if (isLoading || isVerificationPending || guestCookieCleanupRetriedRef.current) return;
 
     const tryGuestCookieCleanup = async () => {
       if (guestCookieCleanupRetriedRef.current) return;
@@ -449,7 +555,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         cloudApi.setClientId(clientId);
         cloudApi.setToken(null);
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
-        await cloudApi.logoutSession(clientId);
+        await cloudApi.logoutSession(clientId, {
+          timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+          clearCookiesAfterSnapshot: true,
+        });
       } catch (error) {
         console.debug("[Auth] guest cleanup retry failed", error);
       }
@@ -467,7 +576,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [authStatus, username, isLoading]);
+  }, [authStatus, username, isLoading, isVerificationPending]);
 
   // Listen for automatic token refresh events from cloudApi.
   // When cloudApi transparently refreshes the access token via the refresh cookie,

@@ -37,6 +37,20 @@ import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 1000;
+type CloudRequestOptions = {
+  signal?: AbortSignal;
+  allowEmpty?: boolean;
+  skipRefresh?: boolean;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  clearCookiesAfterSnapshot?: boolean;
+};
+
+type ProxyRequestOptions = {
+  requestId: string;
+  timeoutMs?: number;
+  clearCookiesAfterSnapshot?: boolean;
+};
 
 function isRetryableStatus(status: number) {
   return status === 429 || status === 503;
@@ -50,8 +64,22 @@ function getRetryDelay(retryAfterHeader: string | null, attempt: number) {
   return BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timeout);
+      reject(new Error("aborted"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 export type CloudApiErrorKind = "auth" | "network" | "http" | "aborted";
@@ -116,14 +144,17 @@ interface IProxyAPI {
   proxyGet(
     baseUrl: string,
     path: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    options?: ProxyRequestOptions
   ): Promise<{ data: unknown; ppHeaders: Record<string, string> } | { error: { message: string; status?: number; data?: unknown } }>;
   proxyPost(
     baseUrl: string,
     path: string,
     data: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    options?: ProxyRequestOptions
   ): Promise<{ data: unknown; ppHeaders: Record<string, string> } | { error: { message: string; status?: number; data?: unknown } }>;
+  proxyAbort?(requestId: string): void;
 }
 
 function extractPpHeadersFromFetch(headers: Headers): Record<string, string> {
@@ -146,6 +177,7 @@ export class CloudApiService {
   private inFlightRequests = new Set<AbortController>();
   private fixedHeaders = new Map<string, string>();
   private proxyApi?: IProxyAPI;
+  private proxyRequestSequence = 0;
 
   // Peek response cache — avoids duplicate network calls within the TTL window.
   // Default TTL (10 s) matches MIN_PEEK_INTERVAL_SECONDS in UserPanel.
@@ -216,7 +248,7 @@ export class CloudApiService {
    * Electron proxy cookie jar, or by the browser in web mode).
    * Concurrent callers share a single in-flight request.
    */
-  private async refreshSession(): Promise<boolean> {
+  private async refreshSession(options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<boolean> {
     if (!this.clientId) return false;
     if (this.refreshPromise) return this.refreshPromise;
 
@@ -235,7 +267,11 @@ export class CloudApiService {
         this.authToken = null;
         this.accessTokenExp = 0;
 
-        const response = await this.fetchSession(this.clientId, { skipRefresh: true });
+        const response = await this.fetchSession(this.clientId, {
+          skipRefresh: true,
+          signal: options?.signal,
+          timeoutMs: options?.timeoutMs,
+        });
 
         if (response.token) {
           console.debug("[CloudApi] refreshSession: success, new token received", {
@@ -361,16 +397,21 @@ export class CloudApiService {
     return new CloudApiError("http", "Unknown error", { endpoint });
   }
 
-  private async apiCall<T>(
-    endpoint: string,
-    postData?: unknown,
-    options?: { signal?: AbortSignal; allowEmpty?: boolean; skipRefresh?: boolean; headers?: Record<string, string> }
-  ): Promise<T> {
+  private async apiCall<T>(endpoint: string, postData?: unknown, options?: CloudRequestOptions): Promise<T> {
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const timeoutMs = options?.timeoutMs === undefined ? undefined : Math.max(1, options.timeoutMs);
 
     // Create an AbortController for this request if one isn't provided
     const controller = new AbortController();
     const combinedSignal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    let timedOut = false;
+    const timeoutHandle =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs);
 
     // Track this request for potential abort
     this.inFlightRequests.add(controller);
@@ -387,7 +428,7 @@ export class CloudApiService {
           endpoint,
           accessTokenExp: this.accessTokenExp,
         });
-        await this.refreshSession();
+        await this.refreshSession({ signal: combinedSignal, timeoutMs });
       }
 
       // Check if we're in Electron and should use the proxy
@@ -398,13 +439,28 @@ export class CloudApiService {
 
         if (this.proxyApi) {
           // Use Electron IPC proxy to avoid CORS issues
-          const result =
-            postData !== undefined
-              ? await this.proxyApi.proxyPost(this.baseUrl, path, postData as string | Record<string, string>, headers)
-              : await this.proxyApi.proxyGet(this.baseUrl, path, headers);
+          const requestId = `cloud-${Date.now()}-${++this.proxyRequestSequence}`;
+          const proxyOptions: ProxyRequestOptions = {
+            requestId,
+            timeoutMs,
+            clearCookiesAfterSnapshot: options?.clearCookiesAfterSnapshot,
+          };
+          const abortProxy = () => this.proxyApi?.proxyAbort?.(requestId);
+          combinedSignal.addEventListener("abort", abortProxy, { once: true });
+          let result;
+          try {
+            result =
+              postData !== undefined
+                ? await this.proxyApi.proxyPost(this.baseUrl, path, postData as string | Record<string, string>, headers, proxyOptions)
+                : await this.proxyApi.proxyGet(this.baseUrl, path, headers, proxyOptions);
+          } finally {
+            combinedSignal.removeEventListener("abort", abortProxy);
+          }
 
           if (combinedSignal.aborted) {
-            throw new CloudApiError("aborted", "aborted", { endpoint });
+            throw timedOut
+              ? new CloudApiError("network", `Request timed out after ${timeoutMs}ms`, { endpoint })
+              : new CloudApiError("aborted", "aborted", { endpoint });
           }
 
           // Check for error response from proxy
@@ -418,7 +474,7 @@ export class CloudApiService {
               }
               const delay = getRetryDelay(null, attempt);
               console.warn(`Server returned ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-              await sleep(delay);
+              await sleep(delay, combinedSignal);
               continue;
             }
             if (errorResult.error.status === 401) {
@@ -428,7 +484,7 @@ export class CloudApiService {
               if (!refreshAttempted && !options?.skipRefresh) {
                 refreshAttempted = true;
                 console.debug("[CloudApi] apiCall: Electron proxy returned 401, attempting refresh", { endpoint });
-                if (await this.refreshSession()) {
+                if (await this.refreshSession({ signal: combinedSignal, timeoutMs })) {
                   console.debug("[CloudApi] apiCall: refresh after Electron 401 succeeded", { endpoint });
                   continue;
                 }
@@ -494,7 +550,7 @@ export class CloudApiService {
               }
               const delay = getRetryDelay(response.headers.get("Retry-After"), attempt);
               console.warn(`Server returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-              await sleep(delay);
+              await sleep(delay, combinedSignal);
               continue;
             }
             if (response.status === 401) {
@@ -504,7 +560,7 @@ export class CloudApiService {
               if (!refreshAttempted && !options?.skipRefresh) {
                 refreshAttempted = true;
                 console.debug("[CloudApi] apiCall: fetch returned 401, attempting refresh", { endpoint });
-                if (await this.refreshSession()) {
+                if (await this.refreshSession({ signal: combinedSignal, timeoutMs })) {
                   console.debug("[CloudApi] apiCall: refresh after fetch 401 succeeded", { endpoint });
                   continue;
                 }
@@ -527,6 +583,11 @@ export class CloudApiService {
         }
       }
     } catch (error) {
+      if (timedOut) {
+        const timeoutError = new CloudApiError("network", `Request timed out after ${timeoutMs}ms`, { endpoint });
+        this.emitCloudNetworkError(endpoint, timeoutError.message);
+        throw timeoutError;
+      }
       const normalizedError = this.normalizeCloudApiError(error, endpoint);
       if (normalizedError.kind === "network") {
         this.emitCloudNetworkError(endpoint, normalizedError.message);
@@ -534,6 +595,7 @@ export class CloudApiService {
       throw normalizedError;
     } finally {
       // Clean up tracking
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
       this.inFlightRequests.delete(controller);
     }
   }
@@ -560,12 +622,15 @@ export class CloudApiService {
     return this.parseResponse(leadersResponseCodec, response);
   }
 
-  async fetchSession(clientId: string, options?: { signal?: AbortSignal; skipRefresh?: boolean }): Promise<SessionResponse> {
+  async fetchSession(clientId: string, options?: { signal?: AbortSignal; skipRefresh?: boolean; timeoutMs?: number }): Promise<SessionResponse> {
     const response = await this.apiCall<unknown>("/session", { clientId }, options);
     return this.parseResponse(sessionResponseCodec, response);
   }
 
-  async logoutSession(clientId: string, options?: { signal?: AbortSignal }): Promise<SessionResponse> {
+  async logoutSession(
+    clientId: string,
+    options?: { signal?: AbortSignal; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+  ): Promise<SessionResponse> {
     const response = await this.apiCall<unknown>("/session", { clientId, logout: true }, options);
     return this.parseResponse(sessionResponseCodec, response);
   }
@@ -583,9 +648,9 @@ export class CloudApiService {
    * Fetch list of online sessions from cloud (matching C# view_session?list=only)
    * Returns array of sessions that can be watched/connected to
    */
-  async fetchOnlineSessions(): Promise<OnlineSessionEntry[]> {
+  async fetchOnlineSessions(options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<OnlineSessionEntry[]> {
     try {
-      const response = await this.apiCall<unknown>("/view_session?list=only");
+      const response = await this.apiCall<unknown>("/view_session?list=only", undefined, options);
       const sessions = this.parseResponse(onlineSessionEntryListCodec, response) as OnlineSessionEntry[];
       return sessions || [];
     } catch (error) {

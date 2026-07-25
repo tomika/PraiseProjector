@@ -134,6 +134,12 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+function fetchWithDeadline(request, timeoutMs = 2000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 self.addEventListener("fetch", (event) => {
   // Skip non-GET requests
   if (event.request.method !== "GET") return;
@@ -170,7 +176,7 @@ self.addEventListener("fetch", (event) => {
 
   // Non-asset request — network-first with graceful offline fallback
   event.respondWith(
-    fetch(event.request).catch(() => {
+    fetchWithDeadline(event.request).catch(() => {
       // If it's a navigation request, serve main.html from cache as fallback
       if (event.request.mode === "navigate") {
         return caches.match("/app/main.html").then((cached) => {

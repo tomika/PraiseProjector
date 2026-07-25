@@ -138,9 +138,11 @@ type CookieMap = Map<string, string>;
 
 /** origin → CookieMap */
 const cookieJar = new Map<string, CookieMap>();
+let cookieGeneration = 0;
 
 /** Path to persisted cookie file. Resolved lazily after app is ready. */
 let cookieFilePath = "";
+let cookieWriteSequence = 0;
 
 /** When true, cookie jar changes are automatically written to disk. */
 let cookiePersistenceEnabled = false;
@@ -187,13 +189,24 @@ function persistCookiesToDisk(): void {
       data[origin] = cookies;
     }
     const json = JSON.stringify(data);
+    const generation = cookieGeneration;
+    const writeSequence = ++cookieWriteSequence;
+    const filePath = getCookieFilePath();
+    const tempPath = `${filePath}.${process.pid}.${writeSequence}.tmp`;
     // Use async write to avoid blocking the main-process event loop
     fs.promises
-      .writeFile(getCookieFilePath(), json, "utf8")
-      .then(() => {
+      .writeFile(tempPath, json, "utf8")
+      .then(async () => {
+        if (generation !== cookieGeneration || writeSequence !== cookieWriteSequence || !cookiePersistenceEnabled) {
+          await fs.promises.unlink(tempPath).catch(() => undefined);
+          return;
+        }
+        await fs.promises.unlink(filePath).catch(() => undefined);
+        await fs.promises.rename(tempPath, filePath);
         console.info(`[Proxy Cookie] Persisted ${cookieCount} cookie(s) across ${Object.keys(data).length} origin(s) to disk`);
       })
       .catch((error: unknown) => {
+        void fs.promises.unlink(tempPath).catch(() => undefined);
         console.error("[Proxy Cookie] Failed to persist cookies", error);
       });
   } catch (error) {
@@ -212,6 +225,14 @@ function clearPersistedCookies(): void {
   } catch (error) {
     console.error("[Proxy Cookie] Failed to clear persisted cookies", error);
   }
+}
+
+/** Invalidate every response that started with the previous cookie state. */
+function clearCookieState(): void {
+  cookieGeneration++;
+  cookiePersistenceEnabled = false;
+  clearPersistedCookies();
+  cookieJar.clear();
 }
 
 function getOrigin(url: string): string {
@@ -298,6 +319,8 @@ function applyRequestCookies(url: string, headers: Record<string, string>): Reco
 }
 
 export function initializeProxy() {
+  const proxyRequests = new Map<string, AbortController>();
+
   // Load any persisted cookies from a previous "Remember Me" session.
   loadPersistedCookies();
 
@@ -308,10 +331,12 @@ export function initializeProxy() {
   });
 
   ipcMain.handle("clear-persisted-cookies", () => {
-    cookiePersistenceEnabled = false;
-    clearPersistedCookies();
-    cookieJar.clear();
+    clearCookieState();
     return true;
+  });
+
+  ipcMain.on("proxy-abort", (_event, requestId: string) => {
+    proxyRequests.get(requestId)?.abort();
   });
 
   ipcMain.handle("get-cloud-api-host", () => {
@@ -320,115 +345,168 @@ export function initializeProxy() {
     return host ? `${host.replace(/\/+$/, "")}/praiseprojector` : "";
   });
 
-  ipcMain.handle("proxy-get", async (event, baseUrl: string, path: string, headers?: Record<string, string>) => {
-    const validation = validateProxyTarget(baseUrl);
-    if (!validation.ok) {
-      console.warn(`[Proxy GET] Blocked target: ${baseUrl} (${validation.error || "validation failed"})`);
-      return {
-        error: {
-          message: validation.error || "Proxy target validation failed",
-          status: 400,
-        },
-      };
-    }
-
-    const url = `${baseUrl}${path}`;
-    console.debug(`[Proxy GET] Request: ${url}`);
-    try {
-      const response = await axios.get(url, {
-        headers: applyRequestCookies(url, headers || {}),
-      });
-      captureResponseCookies(url, response);
-
-      const ppHeaders: Record<string, string> = {};
-      for (const [key, value] of Object.entries(response.headers || {})) {
-        const lowerKey = key.toLowerCase();
-        if (!lowerKey.startsWith("x-pp-")) continue;
-        const headerValue = Array.isArray(value) ? value.join(",") : String(value ?? "");
-        ppHeaders[lowerKey.substring(5)] = headerValue;
-      }
-
-      const dataSize = JSON.stringify(response.data).length;
-      console.debug(`[Proxy GET] Response: ${url} - Status: ${response.status}, Size: ${dataSize} bytes`);
-      return {
-        data: response.data,
-        ppHeaders,
-      };
-    } catch (error) {
-      console.error(`[Proxy GET] Failed: ${url}`, error);
-      if (axios.isAxiosError(error)) {
-        if (error.response) captureResponseCookies(url, error.response);
+  ipcMain.handle(
+    "proxy-get",
+    async (
+      _event,
+      baseUrl: string,
+      path: string,
+      headers?: Record<string, string>,
+      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+    ) => {
+      const validation = validateProxyTarget(baseUrl);
+      if (!validation.ok) {
+        if (options?.clearCookiesAfterSnapshot) clearCookieState();
+        console.warn(`[Proxy GET] Blocked target: ${baseUrl} (${validation.error || "validation failed"})`);
         return {
           error: {
-            message: error.message,
-            status: error.response?.status,
-            data: error.response?.data,
+            message: validation.error || "Proxy target validation failed",
+            status: 400,
           },
         };
       }
-      return {
-        error: {
-          message: "An unknown error occurred",
-        },
+
+      const url = `${baseUrl}${path}`;
+      const requestHeaders = applyRequestCookies(url, headers || {});
+      const requestCookieGeneration = cookieGeneration;
+      if (options?.clearCookiesAfterSnapshot) clearCookieState();
+      const controller = new AbortController();
+      if (options?.requestId) proxyRequests.set(options.requestId, controller);
+      const captureCookies = (response: { headers?: Record<string, unknown> }) => {
+        if (cookieGeneration === requestCookieGeneration) {
+          captureResponseCookies(url, response);
+        } else {
+          console.debug(`[Proxy Cookie] Ignoring stale response cookies for ${new URL(url).pathname}`);
+        }
       };
-    }
-  });
+      console.debug(`[Proxy GET] Request: ${url}`);
+      try {
+        const response = await axios.get(url, {
+          headers: requestHeaders,
+          signal: controller.signal,
+          timeout: options?.timeoutMs,
+        });
+        captureCookies(response);
 
-  ipcMain.handle("proxy-post", async (event, baseUrl: string, path: string, data: unknown, headers?: Record<string, string>) => {
-    const validation = validateProxyTarget(baseUrl);
-    if (!validation.ok) {
-      console.warn(`[Proxy POST] Blocked target: ${baseUrl} (${validation.error || "validation failed"})`);
-      return {
-        error: {
-          message: validation.error || "Proxy target validation failed",
-          status: 400,
-        },
-      };
-    }
+        const ppHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(response.headers || {})) {
+          const lowerKey = key.toLowerCase();
+          if (!lowerKey.startsWith("x-pp-")) continue;
+          const headerValue = Array.isArray(value) ? value.join(",") : String(value ?? "");
+          ppHeaders[lowerKey.substring(5)] = headerValue;
+        }
 
-    const url = `${baseUrl}${path}`;
-    const requestSize = JSON.stringify(data).length;
-    console.debug(`[Proxy POST] Request: ${url} - Payload: ${requestSize} bytes`);
-    try {
-      const response = await axios.post(url, data, {
-        headers: applyRequestCookies(url, {
-          "Content-Type": "application/json",
-          ...(headers || {}),
-        }),
-      });
-      captureResponseCookies(url, response);
-
-      const ppHeaders: Record<string, string> = {};
-      for (const [key, value] of Object.entries(response.headers || {})) {
-        const lowerKey = key.toLowerCase();
-        if (!lowerKey.startsWith("x-pp-")) continue;
-        const headerValue = Array.isArray(value) ? value.join(",") : String(value ?? "");
-        ppHeaders[lowerKey.substring(5)] = headerValue;
-      }
-
-      const responseSize = JSON.stringify(response.data).length;
-      console.debug(`[Proxy POST] Response: ${url} - Status: ${response.status}, Size: ${responseSize} bytes`);
-      return {
-        data: response.data,
-        ppHeaders,
-      };
-    } catch (error) {
-      console.error(`[Proxy POST] Failed: ${url}`, error);
-      if (axios.isAxiosError(error)) {
-        if (error.response) captureResponseCookies(url, error.response);
+        const dataSize = JSON.stringify(response.data).length;
+        console.debug(`[Proxy GET] Response: ${url} - Status: ${response.status}, Size: ${dataSize} bytes`);
+        return {
+          data: response.data,
+          ppHeaders,
+        };
+      } catch (error) {
+        console.error(`[Proxy GET] Failed: ${url}`, error);
+        if (axios.isAxiosError(error)) {
+          if (error.response) captureCookies(error.response);
+          return {
+            error: {
+              message: error.message,
+              status: error.response?.status,
+              data: error.response?.data,
+            },
+          };
+        }
         return {
           error: {
-            message: error.message,
-            status: error.response?.status,
-            data: error.response?.data,
+            message: "An unknown error occurred",
+          },
+        };
+      } finally {
+        if (options?.requestId) proxyRequests.delete(options.requestId);
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "proxy-post",
+    async (
+      _event,
+      baseUrl: string,
+      path: string,
+      data: unknown,
+      headers?: Record<string, string>,
+      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+    ) => {
+      const validation = validateProxyTarget(baseUrl);
+      if (!validation.ok) {
+        if (options?.clearCookiesAfterSnapshot) clearCookieState();
+        console.warn(`[Proxy POST] Blocked target: ${baseUrl} (${validation.error || "validation failed"})`);
+        return {
+          error: {
+            message: validation.error || "Proxy target validation failed",
+            status: 400,
           },
         };
       }
-      return {
-        error: {
-          message: "An unknown error occurred",
-        },
+
+      const url = `${baseUrl}${path}`;
+      const requestHeaders = applyRequestCookies(url, {
+        "Content-Type": "application/json",
+        ...(headers || {}),
+      });
+      const requestCookieGeneration = cookieGeneration;
+      if (options?.clearCookiesAfterSnapshot) clearCookieState();
+      const controller = new AbortController();
+      if (options?.requestId) proxyRequests.set(options.requestId, controller);
+      const captureCookies = (response: { headers?: Record<string, unknown> }) => {
+        if (cookieGeneration === requestCookieGeneration) {
+          captureResponseCookies(url, response);
+        } else {
+          console.debug(`[Proxy Cookie] Ignoring stale response cookies for ${new URL(url).pathname}`);
+        }
       };
+      const requestSize = JSON.stringify(data).length;
+      console.debug(`[Proxy POST] Request: ${url} - Payload: ${requestSize} bytes`);
+      try {
+        const response = await axios.post(url, data, {
+          headers: requestHeaders,
+          signal: controller.signal,
+          timeout: options?.timeoutMs,
+        });
+        captureCookies(response);
+
+        const ppHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(response.headers || {})) {
+          const lowerKey = key.toLowerCase();
+          if (!lowerKey.startsWith("x-pp-")) continue;
+          const headerValue = Array.isArray(value) ? value.join(",") : String(value ?? "");
+          ppHeaders[lowerKey.substring(5)] = headerValue;
+        }
+
+        const responseSize = JSON.stringify(response.data).length;
+        console.debug(`[Proxy POST] Response: ${url} - Status: ${response.status}, Size: ${responseSize} bytes`);
+        return {
+          data: response.data,
+          ppHeaders,
+        };
+      } catch (error) {
+        console.error(`[Proxy POST] Failed: ${url}`, error);
+        if (axios.isAxiosError(error)) {
+          if (error.response) captureCookies(error.response);
+          return {
+            error: {
+              message: error.message,
+              status: error.response?.status,
+              data: error.response?.data,
+            },
+          };
+        }
+        return {
+          error: {
+            message: "An unknown error occurred",
+          },
+        };
+      } finally {
+        if (options?.requestId) proxyRequests.delete(options.requestId);
+      }
     }
-  });
+  );
 }

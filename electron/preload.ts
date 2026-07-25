@@ -203,9 +203,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveDatabaseFile: (data: ArrayBuffer, defaultFileName?: string) => ipcRenderer.invoke("save-database-file", { data, defaultFileName }),
 
   // Proxy operations
-  proxyGet: (baseUrl: string, path: string, headers?: Record<string, string>) => ipcRenderer.invoke("proxy-get", baseUrl, path, headers),
-  proxyPost: (baseUrl: string, path: string, data: unknown, headers?: Record<string, string>) =>
-    ipcRenderer.invoke("proxy-post", baseUrl, path, data, headers),
+  proxyGet: (
+    baseUrl: string,
+    path: string,
+    headers?: Record<string, string>,
+    options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+  ) => ipcRenderer.invoke("proxy-get", baseUrl, path, headers, options),
+  proxyPost: (
+    baseUrl: string,
+    path: string,
+    data: unknown,
+    headers?: Record<string, string>,
+    options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+  ) => ipcRenderer.invoke("proxy-post", baseUrl, path, data, headers, options),
+  proxyAbort: (requestId: string) => ipcRenderer.send("proxy-abort", requestId),
 
   // Current display state management
   setCurrentDisplay: (display: Display) => ipcRenderer.invoke("set-current-display", display),

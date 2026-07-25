@@ -503,8 +503,15 @@ export class ClientViewStore {
     this.wire();
     await this.api.init(config);
     if (!this.isLifecycleActive(token)) return;
-    await this.api.auth.restoreSession().catch(() => undefined);
-    if (!this.isLifecycleActive(token)) return;
+    // The embedded view is backed entirely by the host's live local state. Do not
+    // hold its first render behind cloud authentication: refresh auth in the
+    // background and let the auth subscription update the UI when it settles.
+    if (config.entryMode === "embedded") {
+      void this.api.auth.restoreSession().catch(() => undefined);
+    } else {
+      await this.api.auth.restoreSession().catch(() => undefined);
+      if (!this.isLifecycleActive(token)) return;
+    }
     // Read any persisted UI snapshot up front so both applyPersisted (below) and
     // the wide-pane auto-open (further down) can branch on it.
     const persisted = this.loadPersisted();
@@ -2003,6 +2010,17 @@ export class ClientViewStore {
     // collecting — searchExternal's NEARBY leg only reads already-discovered peers.
     if (address && (mode === "BOTH" || mode === "NEARBY")) {
       await this.api.session.scanLocalServers(address);
+    }
+    if (mode === "BOTH") {
+      // Publish nearby results before touching the cloud so a broken WAN cannot
+      // hide peers that are already available on the local network.
+      const nearby = await this.api.session.searchExternal("NEARBY");
+      this.set({ sessions: nearby });
+      const online = await this.api.session.searchExternal("WEB");
+      const merged = new Map(nearby.map((session) => [session.id, session]));
+      for (const session of online) merged.set(session.id, session);
+      this.set({ sessions: [...merged.values()] });
+      return;
     }
     const sessions = await this.api.session.searchExternal(mode);
     this.set({ sessions });

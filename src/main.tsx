@@ -50,6 +50,7 @@ if (window.electronAPI?.proxyGet && window.electronAPI?.proxyPost) {
   cloudApi.setProxy({
     proxyGet: window.electronAPI.proxyGet,
     proxyPost: window.electronAPI.proxyPost,
+    proxyAbort: window.electronAPI.proxyAbort,
   });
 }
 
