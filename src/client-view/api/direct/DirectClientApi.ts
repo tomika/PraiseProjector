@@ -208,7 +208,9 @@ export class DirectClientApi implements ClientApi {
     this.hostStateUnsub?.();
     this.hostStateUnsub = null;
     this.stopFollow();
-    void stopHostDevicePpdHosting();
+    // The embedded client view is transient; the full App stays mounted behind
+    // it and owns the process-wide PPD host according to ppdSessionEnabled.
+    // Disposing this adapter must not make that app session undiscoverable.
     this.capabilityListeners.clear();
     this.authListeners.clear();
     this.networkListeners.clear();
