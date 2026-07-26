@@ -2047,6 +2047,11 @@ const AppContent: React.FC = () => {
         to: display.to ?? emtyDisplay.to,
         transpose: display.transpose ?? emtyDisplay.transpose,
         capo: display.capo ?? emtyDisplay.capo,
+        // Keep the followed playlist in CurrentSongStore as well as the full
+        // view's watchedPlaylist state. The embedded client-view subscribes to
+        // CurrentSongStore, so dropping this field made its read-only list keep
+        // the old local playlist while remote song changes arrived.
+        playlist: display.playlist ?? currentDisplay.playlist,
         playlist_id: display.playlist_id ?? emtyDisplay.playlist_id,
         section: display.section ?? emtyDisplay.section,
         sectionRepeatNonce: display.sectionRepeatNonce ?? emtyDisplay.sectionRepeatNonce,

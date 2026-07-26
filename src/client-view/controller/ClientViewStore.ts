@@ -840,6 +840,11 @@ export class ClientViewStore {
 
   private shouldAcceptDisplayUpdate(display: Display): boolean {
     if (!this.api.hostView) return true;
+    // The embedded App may have entered watch mode while its previous local
+    // navigation source was database/archive. Remote display changes are the
+    // source of truth for the duration of following and must never be filtered
+    // through that stale local navigation mode.
+    if (isAppWatching(this.state)) return true;
     if (this.state.navigationMode === "playlist") return true;
     const viewedSongId = this.state.display.songId;
     return !viewedSongId || viewedSongId === display.songId;

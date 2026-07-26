@@ -530,8 +530,8 @@ export class DirectClientApi implements ClientApi {
       info.id,
       { address: info.address ?? "", port: info.port ?? 0, hostId: info.hostId },
       (display) => {
-        this.relayFollowedDisplay(display);
         this.setNetworkState({ status: "watching" });
+        this.relayFollowedDisplay(display);
       },
       () => {
         this.ppdWatching = false;
@@ -557,8 +557,8 @@ export class DirectClientApi implements ClientApi {
           const { display } = await cloudApi.fetchDisplayQuery(getCurrentDisplay(), { leaderId, signal: controller.signal, forced });
           forced = false;
           if (token !== this.followToken) return;
-          this.relayFollowedDisplay(display);
           this.setNetworkState({ status: "watching" });
+          this.relayFollowedDisplay(display);
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
           this.setNetworkState({ status: "error", error: error instanceof Error ? error.message : String(error) });

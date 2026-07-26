@@ -13,6 +13,7 @@ import { icon } from "./assets";
 import { LeaderPlaylistPicker } from "./LeaderPlaylistPicker";
 import { OptionsBar } from "./OptionsBar";
 import { PlaylistEditor } from "./PlaylistEditor";
+import { ReadonlyPlaylist } from "./ReadonlyPlaylist";
 import { SearchBar } from "./SearchBar";
 import { SongList } from "./SongList";
 
@@ -63,6 +64,59 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
     const frame = requestAnimationFrame(() => contentRef.current?.querySelector("#list tr.cv-hotkey-row")?.scrollIntoView({ block: "nearest" }));
     return () => cancelAnimationFrame(frame);
   }, [state.hotkeySongId, state.listMode, state.optionsOpen]);
+
+  // Keep the active row visible in every list implementation (working playlist,
+  // database, filtered database, archive and the read-only followed playlist).
+  // Run once after the DOM update and once after the portrait overlay's opening
+  // transition; the latter matters when its scroll viewport starts at height 0.
+  useEffect(() => {
+    if (!state.optionsOpen || state.hotkeySongId) return;
+    let innerFrame = 0;
+    const scrollSelected = () => {
+      const content = contentRef.current;
+      const list = content?.querySelector<HTMLElement>("#list");
+      const selected = list?.querySelector<HTMLElement>("tr.selected");
+      if (!list || !selected) return;
+
+      if (appWatching && !state.lockedToSession) {
+        // The centred Stop-following button overlays the list. `nearest` regards
+        // a row behind that button as visible, so following mode deliberately
+        // aligns the current row with the top of the list viewport instead.
+        const scrollHost = list.closest<HTMLElement>("[data-cv-list-scroll-host]") ?? list;
+        const listTop = scrollHost.getBoundingClientRect().top;
+        const selectedTop = selected.getBoundingClientRect().top;
+        scrollHost.scrollTop += selectedTop - listTop;
+        return;
+      }
+
+      selected.scrollIntoView({ block: "nearest" });
+    };
+    const frame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(scrollSelected);
+    });
+    const afterOpen = window.setTimeout(scrollSelected, 520);
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(innerFrame);
+      window.clearTimeout(afterOpen);
+    };
+  }, [
+    appWatching,
+    state.display.songId,
+    state.hotkeySongId,
+    state.leaderFilterText,
+    state.leaderProfiles,
+    state.listMode,
+    state.lockedToSession,
+    state.navigationMode,
+    state.optionsOpen,
+    state.playlist,
+    state.playlistFilterText,
+    state.playlistSearchResults,
+    state.searchResults,
+    state.searchText,
+    state.songs,
+  ]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -150,11 +204,19 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
             </button>
           </div>
         ) : appWatching && !state.lockedToSession ? (
-          <div className="cv-netdisplay-wrap">
-            <button type="button" className="cv-netdisplay-btn" title="Stop following" onClick={() => void store.stopWatching()}>
-              <img className="cv-netdisplay-icon" src={icon("stop.svg")} alt="" />
-              <span>Stop following</span>
-            </button>
+          <div className="cv-following-options">
+            <ReadonlyPlaylist />
+            <div className="cv-following-stop-wrap">
+              <button
+                type="button"
+                className="cv-netdisplay-btn cv-stop-following-btn"
+                title="Stop following"
+                onClick={() => void store.stopWatching()}
+              >
+                <img className="cv-netdisplay-icon" src={icon("stop.svg")} alt="" />
+                <span>Stop following</span>
+              </button>
+            </div>
           </div>
         ) : viewer ? null : editingPlaylist ? (
           <PlaylistEditor />
