@@ -37,8 +37,7 @@ function getDeviceInfoLines(info: DeviceInfo | null, appCommit: string): DeviceI
 
   for (const [key, value] of Object.entries(info)) {
     if (typeof value === "string") {
-      const displayedValue = key === "versionName" && appCommit && !value.includes(appCommit) ? `${value} (${appCommit})` : value;
-      lines.push({ key, label: key.substring(0, 1).toUpperCase() + key.substring(1), value: displayedValue });
+      lines.push({ key, label: key.substring(0, 1).toUpperCase() + key.substring(1), value });
     }
   }
 
