@@ -20,7 +20,7 @@ export type SessionUrlMode =
  * Exported so components that receive settings as props (e.g. WebServerSettings)
  * can use it without needing the hook.
  */
-export function buildLocalUrl(settings: Settings | null | undefined, forcedLocalHost?: boolean): string | null {
+export function buildLocalUrl(settings: Partial<Settings> | null | undefined, forcedLocalHost?: boolean): string | null {
   if (!settings?.iWebEnabled) return null;
   const localhost = "127.0.0.1";
   const host = forcedLocalHost ? localhost : (settings.webServerDomainName || localhost).trim() || localhost;

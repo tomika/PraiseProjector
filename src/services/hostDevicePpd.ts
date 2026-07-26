@@ -1,5 +1,7 @@
 import { P2PSessionInfo } from "../types/electron.d";
 import { Display } from "../../common/pp-types";
+import { readPersistedSettings } from "./settingsStore";
+import { isWebServerRuntimeAvailable } from "./webServerBridge";
 
 type PpdMessage = {
   op?: string;
@@ -176,6 +178,28 @@ const sendHostPpd = async (message: PpdMessage, address: string, port?: number):
   }
 };
 
+/** Build the LAN URL advertised by the JS-hosted PPD responder (Android). Read the
+ * persisted settings for every scan so changing the webserver toggle/address does
+ * not require restarting the PPD host loop. A loopback fallback must never be
+ * advertised to another device; when no explicit host is configured, prefer the
+ * first non-loopback address exposed by the native host bridge. */
+const getAdvertisedWebServerUrl = async (): Promise<string | undefined> => {
+  if (!isWebServerRuntimeAvailable()) return undefined;
+
+  const settings = readPersistedSettings();
+  if (settings.iWebEnabled === false) return undefined;
+
+  const configuredHost = settings.webServerDomainName?.trim();
+  const usableConfiguredHost = configuredHost && configuredHost !== "localhost" && configuredHost !== "127.0.0.1" ? configuredHost : undefined;
+  const host = usableConfiguredHost ?? (await getLocalNetworkAddresses())[0];
+  if (!host) return undefined;
+
+  const port = settings.webServerPort && settings.webServerPort > 0 ? settings.webServerPort : 19740;
+  const rawPath = settings.webServerPath?.trim() || "/";
+  const path = `${rawPath.startsWith("/") ? "" : "/"}${rawPath}${rawPath.endsWith("/") ? "" : "/"}`;
+  return `http://${host}:${port}${path}`;
+};
+
 const registerHostWatcher = (packet: HostDevicePacket, message: PpdMessage): void => {
   if (!message.device) return;
   const existing = hostWatchers.get(message.device);
@@ -199,7 +223,11 @@ const registerHostWatcher = (packet: HostDevicePacket, message: PpdMessage): voi
 const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boolean => {
   switch (message.op) {
     case "scan":
-      if (message.id) void sendHostPpd({ op: "offer", id: message.id }, packet.from, message.port ?? packet.port);
+      if (message.id) {
+        void getAdvertisedWebServerUrl()
+          .catch(() => undefined)
+          .then((url) => sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port));
+      }
       return true;
     case "view":
       if (message.id === deviceId) registerHostWatcher(packet, message);

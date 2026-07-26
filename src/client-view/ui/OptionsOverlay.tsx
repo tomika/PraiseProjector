@@ -214,7 +214,6 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
                 onClick={() => void store.stopWatching()}
               >
                 <img className="cv-netdisplay-icon" src={icon("stop.svg")} alt="" />
-                <span>Stop following</span>
               </button>
             </div>
           </div>

@@ -48,6 +48,8 @@ export interface SessionRow {
   id: string;
   name: string;
   kind: SessionKind;
+  /** Optional runtime-resolved icon for the type column. Falls back to the legacy glyph. */
+  icon?: string;
 }
 
 export interface SessionsFormToggle {
@@ -229,7 +231,7 @@ export function SessionsForm({
                         }}
                       >
                         <td className="session-type-icon" title={session.kind}>
-                          {KIND_ICON[session.kind]}
+                          {session.icon ? <img className="session-kind-image" src={session.icon} alt="" /> : KIND_ICON[session.kind]}
                         </td>
                         <td>{session.name}</td>
                         <td className="session-connect-col">

@@ -26,12 +26,30 @@ import {
 } from "../api/sessionFeatureSettings";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { SessionsForm, classifyOnlineSession, type SessionRow } from "../../shared/SessionsForm";
+import { buildCloudUrl, buildLocalUrl } from "../../hooks/useSessionUrl";
+import { getLocalNetworkAddresses } from "../../services/hostDevicePpd";
+import { readPersistedSettings } from "../../services/settingsStore";
 import { icon } from "./assets";
 
 /** Re-discover sessions this often while the dialog is open (mirrors the desktop hub). */
 const SESSION_POLL_MS = 2000;
 const STARTUP_AUTO_CLOSE_MS = 10_000;
 const FALLBACK_BROADCAST = "255.255.255.255";
+
+type SessionConnectionRow = { row: SessionRow; target: OnlineSessionEntry };
+
+function buildConnectionRows(sessions: OnlineSessionEntry[]): SessionConnectionRow[] {
+  return sessions.flatMap((session) => {
+    const kind = classifyOnlineSession(session.localUrl);
+    if (kind === "webclient" && session.id.startsWith("udp_")) {
+      return [
+        { row: { id: `web:${session.id}`, name: session.name, kind: "webclient" }, target: session },
+        { row: { id: `ppd:${session.id}`, name: session.name, kind: "ppd" }, target: { ...session, localUrl: undefined } },
+      ];
+    }
+    return [{ row: { id: `${kind}:${session.id}`, name: session.name, kind }, target: session }];
+  });
+}
 
 export function SessionsDialog() {
   const store = useClientViewStore();
@@ -43,6 +61,8 @@ export function SessionsDialog() {
   const [addressError, setAddressError] = useState(false);
   const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
   const [sessionToggleSettings, setSessionToggleSettings] = useState<SessionToggleSettings>(() => readSessionToggleSettings());
+  const [sessionUrlSettings, setSessionUrlSettings] = useState(() => readPersistedSettings());
+  const [localWebServerHost, setLocalWebServerHost] = useState("");
   const mountedRef = useRef(true);
   // Host-supplied default broadcast address (to reset to) + the live value for the poller.
   const defaultAddressRef = useRef(FALLBACK_BROADCAST);
@@ -72,8 +92,23 @@ export function SessionsDialog() {
     };
   }, [store]);
 
+  // A blank configured domain is valid, but a QR shared with another device must
+  // contain a LAN address rather than buildLocalUrl's loopback fallback.
   useEffect(() => {
-    const refreshToggles = () => setSessionToggleSettings(readSessionToggleSettings());
+    let active = true;
+    void getLocalNetworkAddresses().then((addresses) => {
+      if (active) setLocalWebServerHost(addresses[0] ?? "");
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshToggles = () => {
+      setSessionToggleSettings(readSessionToggleSettings());
+      setSessionUrlSettings(readPersistedSettings());
+    };
     window.addEventListener("pp-settings-changed", refreshToggles);
     return () => window.removeEventListener("pp-settings-changed", refreshToggles);
   }, []);
@@ -121,16 +156,22 @@ export function SessionsDialog() {
   useEffect(() => {
     if (!state.sessionsDialogStartupHidden || state.sessions.length === 0) return;
     const popupMode = readClientViewSessionsFoundPopup();
-    const anyPopupWorthy = state.sessions.some((s) => sessionKindMatchesMode(classifyOnlineSession(s.localUrl), popupMode));
+    const anyPopupWorthy = buildConnectionRows(state.sessions).some(({ row }) => sessionKindMatchesMode(row.kind, popupMode));
     if (anyPopupWorthy) store.revealStartupSessionsDialog();
     else store.markBackgroundSessionsFound();
   }, [state.sessionsDialogStartupHidden, state.sessions, store]);
 
   const caps = state.capabilities;
 
+  // A single UDP offer can expose two independent connection paths. Keep the
+  // original session id for the transport lookup, but give each visible choice a
+  // distinct row id and override the PPD choice's URL so attach() follows it
+  // instead of opening the advertised HTTP endpoint.
+  const connectionRows = buildConnectionRows(state.sessions);
+
   const handleConnect = (id: string) => {
-    const session = state.sessions.find((s) => s.id === id);
-    if (session) void store.attachSession(session);
+    const connection = connectionRows.find(({ row }) => row.id === id);
+    if (connection) void store.attachSession(connection.target);
     store.closeSessionsDialog();
   };
 
@@ -150,13 +191,20 @@ export function SessionsDialog() {
     setAddressError(false);
   };
 
-  const rows: SessionRow[] = state.sessions.map((session: OnlineSessionEntry) => ({
-    id: session.id,
-    name: session.name,
-    kind: classifyOnlineSession(session.localUrl),
-  }));
+  const sessionKindIcon: Record<SessionRow["kind"], string> = {
+    online: icon("www.svg"),
+    webclient: icon("wifi.svg"),
+    ppd: icon("tablet.svg"),
+  };
+  const rows: SessionRow[] = connectionRows.map(({ row }) => ({ ...row, icon: sessionKindIcon[row.kind] }));
   const hasWebServerBackend = caps.hasWebServerBackend;
   const hasPpdBackend = caps.hasHostBridge;
+  const cloudSessionUrl = state.leader?.id ? buildCloudUrl(state.leader.id) : null;
+  const localSessionUrl = buildLocalUrl({
+    ...sessionUrlSettings,
+    iWebEnabled: sessionToggleSettings.iWebEnabled,
+    webServerDomainName: sessionUrlSettings.webServerDomainName || localWebServerHost,
+  });
 
   if (state.sessionsDialogStartupHidden) return null;
 
@@ -191,6 +239,8 @@ export function SessionsDialog() {
           title: "Cloud",
           description: "Publish this session through the cloud.",
           icon: icon("cloud-session.svg"),
+          qrUrl: cloudSessionUrl,
+          qrLabel: "Cloud",
           showText: false,
           isFeatureEnabled: sessionToggleSettings.externalWebDisplayEnabled,
           onToggle: (nextFeatureEnabled) => void setSessionToggle("externalWebDisplayEnabled", nextFeatureEnabled),
@@ -200,6 +250,8 @@ export function SessionsDialog() {
           title: "iWeb",
           description: "Allow local browsers to connect.",
           icon: icon("iweb-session.svg"),
+          qrUrl: localSessionUrl,
+          qrLabel: "iWeb",
           showText: false,
           isFeatureEnabled: hasWebServerBackend && sessionToggleSettings.iWebEnabled,
           isControlDisabled: !hasWebServerBackend,

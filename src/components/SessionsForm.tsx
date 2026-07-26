@@ -32,6 +32,8 @@ interface SessionsFormProps {
 
 // Unified session type for display
 interface SessionDisplay {
+  /** Unique presentation key. One discovered host can expose separate web + PPD rows. */
+  rowId: string;
   id: string;
   name: string;
   /** Connect path: local = UDP/PPD peer (carries udpDetails); cloud = followed via cloudApi. */
@@ -124,6 +126,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
         for (const [id, session] of onlineMap) {
           if (!existingCloudIds.has(id)) {
             updatedCloudSessions.push({
+              rowId: `cloud:${session.id}`,
               id: session.id,
               name: session.name,
               type: "cloud",
@@ -162,16 +165,41 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
 
       const newLocalSessions: SessionDisplay[] = [];
       for (const [, session] of localMap) {
-        newLocalSessions.push({
+        const common = {
           id: session.id,
           name: session.name,
-          type: "local",
-          kind: classifyOnlineSession(session.url),
-          url: session.url,
+          type: "local" as const,
           address: session.address,
           port: session.port,
           hostId: session.hostId,
-        });
+        };
+        const hasWebConnection = /^https?:\/\//i.test(session.url);
+        const hasPpdConnection = !session.id.startsWith("web_") && !!session.deviceId && !!session.address && !!session.port;
+
+        if (hasWebConnection) {
+          newLocalSessions.push({
+            ...common,
+            rowId: `web:${session.id}`,
+            kind: "webclient",
+            url: session.url,
+          });
+        }
+
+        if (hasPpdConnection) {
+          newLocalSessions.push({
+            ...common,
+            rowId: `ppd:${session.id}`,
+            kind: "ppd",
+            url: `udp://${session.address}:${session.port}/${session.deviceId}`,
+          });
+        } else if (!hasWebConnection) {
+          newLocalSessions.push({
+            ...common,
+            rowId: `ppd:${session.id}`,
+            kind: classifyOnlineSession(session.url),
+            url: session.url,
+          });
+        }
       }
 
       return [...newLocalSessions, ...cloudSessions];
@@ -238,7 +266,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // Connect to a specific session row (the per-row plug button). Enables "watch
   // mode" for that session (matching C# SessionsForm Connect).
   const handleConnect = (id: string) => {
-    const session = sessions.find((s) => s.id === id);
+    const session = sessions.find((s) => s.rowId === id);
     if (session) {
       console.info("App", `Connecting to session: ${session.id} ${session.url} ${session.type}`);
 
@@ -281,7 +309,12 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // Dialog accessible name with the resolved scan address (no visible title bar).
   const title = scanAddress ? `${t("SessionsTitle")} - ${scanAddress}` : t("SessionsTitle");
 
-  const rows: SessionRow[] = sessions.map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
+  const sessionKindIcon: Record<SessionKind, string> = {
+    online: icon("www.svg"),
+    webclient: icon("wifi.svg"),
+    ppd: icon("tablet.svg"),
+  };
+  const rows: SessionRow[] = sessions.map((s) => ({ id: s.rowId, name: s.name, kind: s.kind, icon: sessionKindIcon[s.kind] }));
 
   const hasWebServerBackend = isWebServerRuntimeAvailable();
 
