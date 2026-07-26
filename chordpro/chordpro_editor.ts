@@ -22,6 +22,7 @@ import { NoteHitBox, Point, Rectangle } from "./ui_base";
 import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY } from "./chord_drawer";
 import { projectDisplaySequence, type DisplaySequence } from "./render/display-plan";
 import { buildChordVisualModel } from "./render/chord-visual";
+import { collectChordDiagramLabels } from "./render/diagram-chords";
 import { safeMetaAlignment } from "./layout/meta-alignment";
 import {
   buildChordDropLines,
@@ -1498,23 +1499,7 @@ export class ChordProEditor extends ChordDrawer {
     // Gated on `chordBoxType` alone: diagrams are NOT readonly-only.
     if (!this.chordPro || !this.chordBoxType || this.printSurface) return null;
     const chordBoxType = this.chordBoxType;
-    const chordSet = new Map<string, string>();
-    let displayNormalizedChord = this.displayNormalizedChord;
-    this.chordPro.forAllChords((chord) => {
-      const details = this.getChordDetails(chord);
-      if (!details) return;
-      const suffix = details.bassNote ? "/" + details.bassNote : "";
-      const key = details.baseNote + details.normalized + suffix;
-      const value = details.baseNote + details.modifier + suffix;
-      if (!displayNormalizedChord) {
-        const prev = chordSet.get(key);
-        if (prev) displayNormalizedChord = prev !== value;
-      }
-      chordSet.set(key, value);
-    });
-
-    const chords: string[] = [];
-    chordSet.forEach((value, key) => chords.push(displayNormalizedChord ? key : value));
+    const chords = collectChordDiagramLabels(this.chordPro, this.system, this.chordFormat, this.readOnly, this.displayNormalizedChord);
     return {
       chords,
       size: chordBoxType === "PIANO" ? this.displayProps.pianoChordSize : this.displayProps.guitarChordSize,
