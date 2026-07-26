@@ -187,7 +187,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           ))}
         </select>
 
-        <label className={`cv-opt${hotkeyClass("no-sec-chord-dup")}`} title="No duplicate section chords">
+        <label className={`cv-opt cv-secdup-opt${hotkeyClass("no-sec-chord-dup")}`} title="No duplicate section chords">
           <input type="checkbox" checked={s.noSecChordDup} onChange={(e) => store.setDisplaySetting("noSecChordDup", e.target.checked)} />
           {/* "V1 Am / V2 Am(struck)" — sits side-by-side on wide screens, stacks on
             narrow ones (see .cv-secdup), exactly like the original. */}

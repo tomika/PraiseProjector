@@ -881,7 +881,6 @@ body,
   /* Legacy base (html 15pt = 20px): checkbox glyphs at 1.5em land on the original
      30px, and the bar's icon buttons at 2em land on the original 40px. */
   font-size: 20px;
-  container-type: inline-size;
 }
 
 /* The icon buttons are <button>s, which do NOT inherit the bar's font-size — form
@@ -914,6 +913,20 @@ body,
   min-width: 0;
 }
 
+/* Keep the first row's fixed controls — especially Close — inside the panel.
+   The duplicate-section label is the row's only shrinkable item, so it receives
+   the remaining width and its two glyph groups wrap exactly when they no longer
+   fit side-by-side. This follows the real row width without a viewport/container
+   breakpoint, including Android WebView's transient initial viewport geometry. */
+.cv-options-row:first-child > :not(.cv-secdup-opt) {
+  flex: none;
+}
+
+.cv-secdup-opt {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .cv-opt {
   display: inline-flex;
   align-items: center;
@@ -928,20 +941,21 @@ body,
 /* "V1 Am / V2 Am" — side-by-side on wide, stacked on narrow phones (the
    original's #chkNoSecChordDupLabel responsive behaviour). */
 .cv-secdup {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
   flex-direction: row;
-  gap: 0.5em;
+  column-gap: 0.5em;
+  row-gap: 0;
+  line-height: 1.1;
+}
+.cv-secdup > span {
+  flex: none;
+  white-space: nowrap;
 }
 .cv-secdup s {
   text-decoration: line-through;
-}
-@container (max-width: 30rem) {
-  .cv-secdup {
-    flex-direction: column;
-    gap: 0;
-    font-size: 0.8em;
-    line-height: 1.1;
-  }
 }
 
 /* The raw checkbox is hidden; checked state is shown by a glow on the adjacent
