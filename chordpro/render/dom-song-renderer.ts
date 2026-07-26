@@ -75,13 +75,22 @@ export function placeChordDiagrams(
   const chordStepX = chordSize.width + chordGap;
   const chordStepY = chordSize.height + chordGap;
   const placements: DiagramPlacement[] = [];
+  // Chord formatting can collapse distinct authored variants onto the same
+  // displayed chord (for example G2 -> G in simplified mode). Diagram nodes
+  // are retained by that displayed label, so duplicate labels must not reserve
+  // additional layout slots that the shared SVG can never occupy.
+  const seen = new Set<string>();
+  const renderableChords = chords.filter((chord) => {
+    if (seen.has(chord) || !canRender(chord)) return false;
+    seen.add(chord);
+    return true;
+  });
 
   if (targetRatio > songSize.width / songSize.height) {
     let x = songSize.width + options.horizontalMargin;
     let y = options.verticalMargin;
     let width = songSize.width;
-    for (const chord of chords) {
-      if (!canRender(chord)) continue;
+    for (const chord of renderableChords) {
       placements.push({ chord, x, y });
       width = x + chordSize.width + options.horizontalMargin;
       y += chordStepY;
@@ -93,16 +102,19 @@ export function placeChordDiagrams(
     return { placements, width: width + options.verticalMargin, height: songSize.height };
   }
 
-  let x = options.horizontalMargin;
+  // The below-song strip owns the full composite width, so begin at its left
+  // edge. The song's horizontal margin is already part of `songSize.width`;
+  // applying it again here needlessly shortens the first row and can wrap a
+  // diagram even when the diagrams fit edge-to-edge.
+  let x = 0;
   let y = songSize.height + options.verticalMargin;
   let height = songSize.height;
-  for (const chord of chords) {
-    if (!canRender(chord)) continue;
+  for (const chord of renderableChords) {
     placements.push({ chord, x, y });
     height = y + chordSize.height;
     x += chordStepX;
     if (x + chordSize.width > songSize.width) {
-      x = options.horizontalMargin;
+      x = 0;
       y += chordStepY;
     }
   }
