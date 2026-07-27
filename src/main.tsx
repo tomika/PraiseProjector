@@ -87,6 +87,11 @@ function RootView() {
   const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
   const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
   const previousPagingLayoutRef = useRef(isPagingLayout);
+
+  useEffect(() => {
+    window.hostDevice?.pageLoadedSuccessfully?.();
+  }, []);
+
   // Single setter that also persists, so every switch path (events + the client
   // view's home button) keeps the saved UI choice in sync.
   const setShowClient = useCallback((value: boolean) => {
