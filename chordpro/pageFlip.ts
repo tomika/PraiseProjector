@@ -53,9 +53,17 @@ export interface PageFlipConfig {
    *  rotating page is not clipped by intermediate panes but is still bounded by
    *  the host (e.g. the editor panel, or the client's full-view box). */
   isFlipBoundary(el: HTMLElement): boolean;
-  /** Whether the flip is allowed at all (read-only, wired). False ⇒ gestures only
-   *  scroll, never rotate. */
+  /** Whether the horizontal page-turn GESTURE is allowed at all (read-only, wired).
+   *  False ⇒ gestures only scroll, and never navigate. */
   canFlip(): boolean;
+  /** Whether a permitted turn is ANIMATED — the 3D rotation, which also needs the
+   *  pre-rendered neighbour pages. Default true.
+   *
+   *  When false the swipe is still recognised and still navigates; it just
+   *  advances instantly, with no rotation, no lift and no neighbour reveal. This
+   *  is what a device whose performance profile disables the page-turn visual
+   *  gets: the cheap navigation stays, only the expensive animation goes. */
+  animateTurn?(): boolean;
   /** Whether the editor is interactable for gestures — false while text is being
    *  selected/marked. */
   isInteractive(): boolean;
@@ -201,9 +209,14 @@ export class PageFlip {
     this.restoreLiftedPage();
   }
 
-  /** Forced animated turn for the host's Prev/Next controls. */
+  /** Forced turn for the host's Prev/Next controls (animated unless the host has
+   *  turned the animation off, in which case it advances immediately). */
   turn(next: boolean): void {
     if (this.animatingTurn || !this.cfg.hasNeighbour(next)) return;
+    if (this.cfg.animateTurn?.() === false) {
+      this.cfg.onAdvance(next);
+      return;
+    }
     this.pageTurn(next ? -1 : 1, 100, 200, true);
   }
 
@@ -246,6 +259,10 @@ export class PageFlip {
     // page half-turned with no owner. With the flip disabled the gesture falls
     // through to plain scrolling while the modal is up.
     const pageFlipEnabled = this.cfg.canFlip() && this.cfg.isInteractive() && !this.cfg.isChordSelectorOpen();
+    // Gesture recognition and navigation are independent of the animation: with
+    // the animation off the swipe is tracked and committed exactly the same way,
+    // only the rotation/reveal is skipped (see setPagePhase call sites below).
+    const animateTurn = this.cfg.animateTurn?.() ?? true;
     // The current page is the geometry source, the scroll container and the
     // element that rotates (exactly like praiseprojector.ts).
     const el = this.cfg.currentPage();
@@ -270,7 +287,9 @@ export class PageFlip {
                 const width = rect.width;
                 const right = left + width;
                 const scale = x > s.dragX ? right - s.dragX : s.dragX - left;
-                this.pageTurn(offsetX, scale, 200, Date.now() - s.startTime < 200 && Math.abs(offsetX) > width * 0.1);
+                const forced = Date.now() - s.startTime < 200 && Math.abs(offsetX) > width * 0.1;
+                if (animateTurn) this.pageTurn(offsetX, scale, 200, forced);
+                else this.instantTurn(offsetX, scale, forced);
               } else if (s.lastScroll) {
                 shouldPreventDefault = true;
                 const rollOut = (step: number) => {
@@ -324,11 +343,17 @@ export class PageFlip {
               s.dragY = y;
             } else if (pageFlipEnabled && direction !== 0 && s.direction * direction >= 0) {
               shouldPreventDefault = true;
-              el.style.border = "solid black 1px";
-              this.beginFlip();
+              // Recording the direction is what makes the release below navigate,
+              // so it happens in both modes. Un-animated mode stops there: nothing
+              // rotates, nothing is lifted out of the pane and no neighbour page is
+              // revealed (there may not even be one rendered).
               s.direction = direction;
-              const scale = direction > 0 ? right - s.dragX : s.dragX - left;
-              this.setPagePhase(offsetX, scale);
+              if (animateTurn) {
+                el.style.border = "solid black 1px";
+                this.beginFlip();
+                const scale = direction > 0 ? right - s.dragX : s.dragX - left;
+                this.setPagePhase(offsetX, scale);
+              }
             }
           }
           break;
@@ -447,6 +472,17 @@ export class PageFlip {
 
   private clearShadow(): void {
     if (this.shadowEl) this.shadowEl.style.display = "none";
+  }
+
+  /** The un-animated equivalent of {@link pageTurn}: apply the very same commit
+   *  threshold, then advance immediately. Nothing was rotated, lifted or revealed
+   *  during the drag, so there is no state to unwind and no `pendingReset` for the
+   *  host to resolve — the song simply changes. */
+  private instantTurn(from: number, scale: number, forced: boolean): void {
+    if (from === 0 || this.cfg.isChordSelectorOpen()) return;
+    const next = from < 0;
+    if (!(forced || Math.abs(from) > 0.7 * scale) || !this.cfg.hasNeighbour(next)) return;
+    this.cfg.onAdvance(next);
   }
 
   private pageTurn(from: number, scale: number, time: number, forced?: boolean): void {

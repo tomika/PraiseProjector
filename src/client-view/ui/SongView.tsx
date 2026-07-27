@@ -335,10 +335,16 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // mode while watching a session. Mirrors MainToolbar hiding btnPrev/btnNext
       // (legacy setLeader(false)/ppdWatchMode). Read live state so a mid-session
       // capability/leader-mode change takes effect without rebuilding the flip.
+      // NOTE: deliberately independent of the performance preference — on a slow
+      // device the swipe must still navigate (see animateTurn below).
       canFlip: () => {
         const s = store.getSnapshot();
-        return pageTurnEnabledRef.current && !isViewingRemoteDisplay(s);
+        return !isViewingRemoteDisplay(s);
       },
+      // The performance preference only governs the ANIMATION (and, with it, the
+      // pre-rendered neighbour pages). Off ⇒ the horizontal swipe advances the
+      // song instantly instead of rotating a page.
+      animateTurn: () => pageTurnEnabledRef.current,
       isInteractive: () => !apiRef.current?.isInMarkingState(),
       isChordSelectorOpen: () => !!apiRef.current?.hasChordSelectorOpen(),
       handleChordBoxTouch: (e, down) => apiRef.current?.handleExternalChordBoxTouch(e, down, true) ?? false,
