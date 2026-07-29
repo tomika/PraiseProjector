@@ -79,6 +79,9 @@ export function AboutDialog() {
       <div className="cv-dialog cv-about-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="cv-dialog-head">
           <h2 className="cv-dialog-title">About</h2>
+          <button type="button" className="cv-dialog-x" aria-label="Close" title="Close" onClick={() => store.closeAbout()}>
+            &times;
+          </button>
         </div>
 
         <div className="cv-about-body">
@@ -124,12 +127,6 @@ export function AboutDialog() {
               ))}
             </div>
           )}
-        </div>
-
-        <div className="cv-dialog-actions">
-          <button type="button" className="cv-dialog-ok" onClick={() => store.closeAbout()}>
-            Close
-          </button>
         </div>
       </div>
     </div>

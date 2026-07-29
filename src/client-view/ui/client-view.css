@@ -1921,6 +1921,29 @@ body,
   gap: 10px;
 }
 
+/* Corner "X" dismiss button sitting at the end of the dialog title row. */
+.cv-dialog-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -4px -4px 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cv-panel-fg);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cv-dialog-x:hover {
+  background: rgba(127, 127, 127, 0.25);
+}
+
 .cv-iconbtn:disabled {
   opacity: 0.5;
   cursor: default;
