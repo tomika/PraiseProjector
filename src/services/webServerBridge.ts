@@ -318,7 +318,7 @@ const parsePrecacheManifest = (source: string): string[] => {
 
 const fetchServedClientAssetList = async (): Promise<string[] | null> => {
   // Prefer the new client-view precache manifest (the build-emitted source of truth for the
-  // served client). Fall back to scraping the legacy /app/sw.js when it's absent (pre-deploy).
+  // served client). Fall back to scraping /webapp/sw.js when it's absent (pre-deploy).
   try {
     const response = await fetch(CLIENT_VIEW_PRECACHE_PATH, { cache: "no-store" });
     if (response.ok) {

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 500 500" width="500" height="500" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="247.783" y1="344.235" x2="247.783" y2="477.827" id="gradient-1" gradientTransform="matrix(0.999978, 0.006623, -0.00415, 0.626555, -30.535686, 150.065596)">
+      <stop offset="0" style="stop-color: rgb(207, 229, 255);"/>
+      <stop offset="1" style="stop-color: rgb(129, 142, 169);"/>
+    </linearGradient>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="324.052" cy="-396.512" r="227.55" id="gradient-3" gradientTransform="matrix(-0.246654, 1.182573, -1.420921, -0.288839, -148.879924, -902.825178)">
+      <stop offset="0" style="stop-color: rgba(255, 255, 255, 0.75);"/>
+      <stop offset="1" style="stop-color: rgba(255, 255, 255, 0.26);"/>
+    </radialGradient>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="351.776" cy="382.248" r="72.486" id="gradient-2" gradientTransform="matrix(1.215655, -1.276135, 1.568778, 1.557345, -673.550249, 235.870071)">
+      <stop offset="0" style="stop-color: rgba(165, 164, 164, 0.6);"/>
+      <stop offset="1" style="stop-color: rgba(220, 220, 220, 0.28);"/>
+    </radialGradient>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="297.755" cy="396.678" r="157.693" id="gradient-4" gradientTransform="matrix(-1.667906, -1.43339, 0.651775, -0.758412, 567.372681, 1132.674927)">
+      <stop offset="0" style="stop-color: rgba(216, 216, 216, 0.76);"/>
+      <stop offset="1" style="stop-color: rgba(198, 198, 198, 0.19);"/>
+    </radialGradient>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="307.095" cy="437.638" r="47.672" id="gradient-0" spreadMethod="pad" gradientTransform="matrix(1.296571, 0.092832, -0.094133, 1.314747, -53.024171, -170.81571)">
+      <stop offset="0" style="stop-color: rgb(158, 136, 195);"/>
+      <stop offset="1" style="stop-color: rgb(243, 235, 250);"/>
+    </radialGradient>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="316.008" cy="266.027" r="69.23" id="gradient-5" gradientTransform="matrix(0.376062, -2.051305, 0.983608, 0.180323, -35.53322, 845.228441)">
+      <stop offset="0" style="stop-color: rgb(16, 15, 63);"/>
+      <stop offset="1" style="stop-color: rgb(115, 45, 45);"/>
+    </radialGradient>
+  </defs>
+  <rect x="17.16" y="15.976" width="459.172" height="295.858" style="fill: rgba(255, 255, 255, 0.87);"/>
+  <rect x="42.864" y="339.673" width="403.548" height="133.592" style="stroke-linejoin: round; stroke-width: 11px; stroke-linecap: round; fill: url(#gradient-1); stroke: rgb(13, 17, 69);" rx="40.466" ry="40.466"/>
+  <rect x="87.764" y="376.812" width="132.483" height="0.554" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-width: 13px; stroke-linejoin: round;"/>
+  <rect x="87.487" y="404.252" width="132.483" height="0.554" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-width: 13px; stroke-linejoin: round;"/>
+  <rect x="87.487" y="431.968" width="132.483" height="0.554" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-width: 13px; stroke-linejoin: round;"/>
+  <text style="fill: rgba(51, 51, 51, 0.88); font-family: Arial, sans-serif; font-size: 15.5px; white-space: pre;" transform="matrix(12.981908, 0, 0, 13.416209, -2021.332031, -1929.063965)" x="159.091" y="162.417">🎶</text>
+  <path d="M 334.139 -408.41 L 477.124 -15.949 L 17.365 -15.949 L 334.139 -408.41 Z" style="fill: url(#gradient-3);" transform="matrix(1, 0, 0, -1, 0, 0)" bx:shape="triangle 17.365 -408.41 459.759 392.461 0.689 0 1@fa7faa98"/>
+  <polyline style="fill: url(#gradient-2);" points="476.923 15.976 476.344 310.651 334.911 406.509"/>
+  <polyline style="fill: url(#gradient-4);" points="17.16 15.385 17.159 313.609 332.544 406.509"/>
+  <ellipse style="stroke-width: 14px; fill: url(#gradient-0); stroke: rgb(22, 27, 80);" cx="333.883" cy="406.469" rx="47.672" ry="47.395"/>
+  <ellipse style="stroke: rgb(254, 254, 254); fill: rgb(253, 253, 253);" cx="350.236" cy="388.731" rx="6.929" ry="7.483"/>
+  <polyline style="stroke-linejoin: round; stroke-linecap: round; fill: url(#gradient-5);" points="360.947 29.586 362.13 88.758 302.367 88.757 302.367 109.467 362.13 109.467 362.722 276.923 382.84 276.923 382.249 109.467 440.828 108.876 440.828 88.757 382.249 88.758 382.249 29.586"/>
+</svg>

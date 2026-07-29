@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport"
+        content="initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,width=device-width,user-scalable=no" />
+    <title>PraiseProjector</title>
+    <link rel="icon" href="images/pp.svg" type="image/svg+xml">
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0px;
+        }
+        body {
+            background-color: black;
+            overflow: hidden;
+        }
+        #toast {
+            position: fixed;
+            left: 50%;
+            bottom: 8vh;
+            transform: translateX(-50%);
+            z-index: 10;
+            padding: 0.6em 1.2em;
+            border-radius: 2em;
+            background: rgba(0, 0, 0, 0.65);
+            color: #fff;
+            font: 4vh/1.3 Arial, sans-serif;
+            text-align: center;
+            max-width: 80vw;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 600ms linear;
+        }
+        #toast.hidden { opacity: 0; }
+    </style>
+</head>
+<body>
+    <div id="toast"></div>
+    <script>
+        // Net display — mirrors the leader's projected IMAGE on a second screen.
+        //
+        // Port of the legacy app/image.html + P.imageApp() from the pp-api.js
+        // bundle. Deliberately dependency-free plain JS so the desktop/mobile
+        // hosts no longer have to ship the 1.6 MB legacy client just to drive
+        // this page.
+        //
+        // Wire protocol (unchanged, served by the host webserver):
+        //   GET {api}image?id=<lastId>  long-poll -> {id, bgColor, transient, transitionType}
+        //   GET {api}image?c=<id>       the image bytes
+        //
+        // Query params:
+        //   ?api=<base>    API base; defaults to this page's origin root
+        //   ?bgcolor=<c>   initial background (the host used to patch the CSS)
+        //   ?leader=<id>   accepted and ignored; a host serves one leader
+        //
+        // Double-tap/double-click exits back to the client view, matching the
+        // legacy behaviour (which returned to the app root).
+        (function () {
+            function queryParam(name) {
+                return new URLSearchParams(window.location.search).get(name) || "";
+            }
+
+            var api = queryParam("api") || "/";
+            if (!api.endsWith("/")) api += "/";
+
+            // ── Localized exit hint (host used to inject __TOAST_TEXT__) ──────
+            var TOAST = {
+                en: "Double click or tap to exit projector mode",
+                hu: "Dupla koppintás a vetítő módból való kilépéshez"
+            };
+            var lang = (navigator.language || "en").slice(0, 2).toLowerCase();
+            var toast = document.getElementById("toast");
+            toast.innerText = TOAST[lang] || TOAST.en;
+            setTimeout(function () { toast.classList.add("hidden"); }, 4000);
+
+            // ── State ─────────────────────────────────────────────────────────
+            var startupImageId = "startup";
+            var lastImageId = "startup";
+            var inited = false;
+            var imageLayers = null;
+            var activeLayerIndex = 0;
+            var currentImageId;
+            var loadingImageId;
+            var loadSequence = 0;
+            var clearTimer;
+            var transitionMs = 200;
+            var transitionType = "linear";
+
+            function applyNetDisplaySettings(bgColor) {
+                if (!document.body) return;
+                document.body.style.backgroundColor = bgColor && bgColor.trim() ? bgColor : "black";
+            }
+
+            function createLayer(zIndex, opacity) {
+                var img = document.createElement("img");
+                img.style.position = "fixed";
+                img.style.left = "0";
+                img.style.top = "0";
+                img.style.width = "100vw";
+                img.style.height = "100vh";
+                img.style.objectFit = "contain";
+                img.style.objectPosition = "center center";
+                img.style.pointerEvents = "none";
+                img.style.userSelect = "none";
+                img.style.zIndex = String(zIndex);
+                img.style.opacity = opacity;
+                img.style.transition = "opacity 200ms linear";
+                return img;
+            }
+
+            function ensureLayers() {
+                if (imageLayers || !document.body) return;
+                var front = createLayer(1, "1");
+                var back = createLayer(0, "0");
+                document.body.appendChild(front);
+                document.body.appendChild(back);
+                imageLayers = [front, back];
+            }
+
+            function clampTransitionMs(value) {
+                if (typeof value === "boolean") return value ? 500 : 0;
+                if (typeof value !== "number" || !isFinite(value)) return 200;
+                return Math.max(0, Math.min(500, Math.round(value)));
+            }
+
+            function setLayerTransition(ms, type) {
+                if (!imageLayers) return;
+                var transition = ms <= 0 ? "none" : "opacity " + ms + "ms " + (type || "linear");
+                imageLayers[0].style.transition = transition;
+                imageLayers[1].style.transition = transition;
+            }
+
+            function cancelClear() {
+                if (clearTimer !== undefined) {
+                    clearTimeout(clearTimer);
+                    clearTimer = undefined;
+                }
+            }
+
+            function clearImagesNow() {
+                if (!imageLayers) return;
+                ++loadSequence;
+                currentImageId = undefined;
+                loadingImageId = undefined;
+                imageLayers[0].removeAttribute("src");
+                imageLayers[1].removeAttribute("src");
+                imageLayers[0].style.opacity = "0";
+                imageLayers[1].style.opacity = "0";
+            }
+
+            function clearWithTransition(ms) {
+                if (!imageLayers) return;
+                if (clearTimer !== undefined) return;
+                setLayerTransition(ms, transitionType);
+                imageLayers[activeLayerIndex].style.opacity = "0";
+                imageLayers[1 - activeLayerIndex].style.opacity = "0";
+                if (ms <= 0) {
+                    clearImagesNow();
+                    return;
+                }
+                clearTimer = window.setTimeout(function () {
+                    clearTimer = undefined;
+                    clearImagesNow();
+                }, ms);
+            }
+
+            function loadIntoBackLayerAndSwap(imageId) {
+                if (imageId === currentImageId || imageId === loadingImageId) return;
+                ensureLayers();
+                if (!imageLayers) return;
+
+                var backLayerIndex = 1 - activeLayerIndex;
+                var backLayer = imageLayers[backLayerIndex];
+                var frontLayer = imageLayers[activeLayerIndex];
+
+                var nextUrl = api + "image?c=" + encodeURIComponent(imageId);
+                var sequence = ++loadSequence;
+                loadingImageId = imageId;
+                cancelClear();
+                setLayerTransition(transitionMs, transitionType);
+                backLayer.style.opacity = "0";
+                backLayer.style.zIndex = "2";
+
+                backLayer.onload = function () {
+                    if (sequence !== loadSequence || loadingImageId !== imageId) return;
+
+                    if (transitionMs <= 0) {
+                        backLayer.style.transition = "none";
+                        frontLayer.style.transition = "none";
+                        backLayer.style.opacity = "1";
+                        frontLayer.style.opacity = "0";
+                        backLayer.style.zIndex = "1";
+                        frontLayer.style.zIndex = "0";
+                    } else {
+                        requestAnimationFrame(function () {
+                            backLayer.style.opacity = "1";
+                            frontLayer.style.opacity = "0";
+                        });
+                        window.setTimeout(function () {
+                            if (sequence !== loadSequence || loadingImageId !== undefined) return;
+                            backLayer.style.zIndex = "1";
+                            frontLayer.style.zIndex = "0";
+                        }, transitionMs);
+                    }
+
+                    activeLayerIndex = backLayerIndex;
+                    currentImageId = imageId;
+                    loadingImageId = undefined;
+                };
+                backLayer.onerror = function () {
+                    if (sequence !== loadSequence || loadingImageId !== imageId) return;
+                    loadingImageId = undefined;
+                    console.log("Cannot preload image: " + imageId);
+                };
+                backLayer.src = nextUrl;
+            }
+
+            // Legacy doubleClickHelper semantics: a lone click must not fire the
+            // exit, so a real dblclick (or a second click inside 500 ms) does.
+            function doubleClickHelper(element, ondblclick) {
+                var doubleclicked = false;
+                var clicked = false;
+                element.onclick = function () {
+                    if (!clicked) {
+                        setTimeout(function () {
+                            if (doubleclicked) doubleclicked = false;
+                            clicked = false;
+                        }, 500);
+                    } else ondblclick();
+                    clicked = !clicked;
+                };
+                element.ondblclick = function () {
+                    doubleclicked = true;
+                    clicked = false;
+                    ondblclick();
+                };
+            }
+
+            function init() {
+                if (inited || !document.body) return;
+                applyNetDisplaySettings(queryParam("bgcolor"));
+                ensureLayers();
+                doubleClickHelper(document.body, function () {
+                    location.href = "client-view.html";
+                });
+                inited = true;
+            }
+
+            function requestImage() {
+                var id = startupImageId !== undefined ? startupImageId : lastImageId;
+                startupImageId = undefined;
+                fetch(api + "image?id=" + encodeURIComponent(id), { cache: "no-store" })
+                    .then(function (response) {
+                        if (!response.ok) throw new Error("HTTP " + response.status);
+                        return response.json();
+                    })
+                    .then(function (netDisplayData) {
+                        lastImageId = netDisplayData.id;
+                        applyNetDisplaySettings(netDisplayData.bgColor || queryParam("bgcolor"));
+                        transitionMs = clampTransitionMs(netDisplayData.transient);
+                        transitionType = netDisplayData.transitionType || "linear";
+                        if (netDisplayData.id) {
+                            loadIntoBackLayerAndSwap(netDisplayData.id);
+                        } else if (imageLayers) {
+                            clearWithTransition(transitionMs);
+                        }
+                        setTimeout(requestImage, 100);
+                        init();
+                    })
+                    .catch(function (error) {
+                        console.log("Cannot load image: " + error);
+                        setTimeout(requestImage, 10000);
+                        init();
+                    });
+            }
+
+            requestImage();
+        })();
+    </script>
+</body>
+</html>

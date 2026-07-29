@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 500 500" width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+  <polyline style="stroke: rgb(0, 0, 0);" points="251.132 127.262 95.588 253.959 95.588 442.308 207.014 442.873 207.014 310.52 294.683 310.52 294.683 442.308 408.371 442.873 408.371 250"/>
+  <polyline style="stroke: rgb(0, 0, 0); fill: none; stroke-width: 19px; stroke-linecap: round; stroke-linejoin: round;" points="85.977 237.557 252.257 103.507 418.557 234.729 252.257 105.204 252.257 106.901"/>
+  <path style="stroke-linejoin: round; stroke: rgb(0, 0, 0); stroke-width: 8px;" d="M 381.222 201.358 L 380.656 104.072 L 342.76 104.073 C 342.76 104.073 344.422 177.498 342.194 170.815"/>
+</svg>

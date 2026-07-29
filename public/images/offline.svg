@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 372.537 365.148" width="372.537" height="365.148" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <filter id="grayscale-filter-0" x="-500%" y="-500%" width="1000%" height="1000%" bx:preset="grayscale 1 1">
+      <feColorMatrix type="matrix" values="0.213 0.715 0.072 0 0 0.213 0.715 0.072 0 0 0.213 0.715 0.072 0 0 0 0 0 1 0"/>
+    </filter>
+  </defs>
+  <g style="filter: url(#grayscale-filter-0);">
+    <path style="fill: rgb(55, 185, 76);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.66568, -24.490297)" d="M -263.733 785 A 728.733 728.733 0 0 1 181.538 113.657 L 465 785 Z" bx:shape="pie 465 785 0 728.733 270 337.109 1@620f0612"/>
+    <path style="fill: rgb(58, 230, 23);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.592072, -24.234922)" d="M -118.751 785 A 583.751 583.751 0 0 1 237.933 247.222 L 465 785 Z" bx:shape="pie 465 785 0 583.751 270 337.109 1@fcc67265"/>
+    <path style="fill: rgb(216, 216, 216);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.611237, -23.887856)" d="M 25.388 785 A 439.612 439.612 0 0 1 294 380.009 L 465 785 Z" bx:shape="pie 465 785 0 439.612 270 337.109 1@3f2ddc6a"/>
+  </g>
+  <circle style="fill: rgb(210, 24, 24);" cx="265.317" cy="264.868" r="94.196"/>
+  <path d="M 275.945 212.781 H 307.752 V 276.395 H 371.366 V 308.202 H 307.752 V 371.816 H 275.945 V 308.202 H 212.331 V 276.395 H 275.945 Z" style="fill: rgb(255, 255, 255);" transform="matrix(0.723869, 0.689938, -0.689938, 0.723869, 256.174042, -146.726654)" bx:shape="cross 212.331 212.781 159.035 159.035 31.807 31.807 0.5 1@9d152ca3"/>
+</svg>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 218.343 338.461 281.065" width="338.461" height="281.065" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <polygon style="stroke-linecap: round; stroke-linejoin: round; paint-order: stroke; stroke: rgb(0, 0, 0); fill: rgb(255, 255, 255); stroke-width: 56.4371px;" points="34.776 41.087 33.728 466.863 298.921 466.339 301.61 123.687 230.992 41.02"/>
+  <polyline style="stroke-linecap: round; stroke-width: 50px; fill: rgb(219, 24, 24); stroke: rgb(0, 0, 0);" points="69.23 256.213 261.539 256.213"/>
+  <polyline style="stroke-linecap: round; stroke-width: 50px; fill: rgb(219, 24, 24); stroke: rgb(0, 0, 0);" points="69.526 342.012 261.835 342.012"/>
+  <polyline style="fill: rgb(216, 216, 216); stroke-linecap: round; stroke-width: 50px; stroke: rgb(210, 34, 34);" points="69.526 342.012 133.433 342.012"/>
+  <polyline style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-width: 50px;" points="69.526 424.26 261.835 424.26"/>
+  <polyline style="fill: rgb(216, 216, 216); stroke-linecap: round; stroke-width: 50px; stroke: rgb(210, 34, 34);" points="198.224 424.26 262.131 424.26"/>
+</svg>

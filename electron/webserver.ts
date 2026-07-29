@@ -18,20 +18,6 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
-// Get the correct static directory path for both dev and packaged app.
-// This is the LEGACY asset root (image.html / pp-api.js for the /netdisplay
-// projection surface, plus old client pages). The new client view is served
-// separately from getWebClientDir().
-function getStaticDir(): string {
-  if (app.isPackaged) {
-    // In packaged app, __dirname is inside app.asar, public is at same level
-    return path.join(process.resourcesPath, "public", "app");
-  } else {
-    // In development, use relative path from project root
-    return path.join(__dirname, "..", "..", "public", "app");
-  }
-}
-
 // Root of the single self-contained web build (dist/web, base "/webapp/"),
 // served to remote followers at /webapp. Bundled into the package as the
 // "webclient" extra resource. Distinct from the Electron *renderer* build
@@ -90,12 +76,8 @@ export class WebServer {
   private isRestarting: boolean = false;
   // Manual stop flag to distinguish intentional stops from crashes
   private isManualStop: boolean = false;
-  // File checksum cache for cache-busting query params (matching C# checksumCache)
-  private checksumCache: Map<string, string> = new Map();
-  private staticDir: string = "";
   private webClientDir: string = "";
-  // Net display / image state (matching C# imagePage, imageData, imageId)
-  private imagePageContent: string = "";
+  // Net display / image state (matching C# imageData, imageId)
   private currentImageSourceDataUrl: string | null = null;
   private currentImageData: Buffer | null = null;
   private currentImageId: string = "";
@@ -201,16 +183,8 @@ export class WebServer {
   }
 
   private setupRoutes() {
-    this.staticDir = getStaticDir();
     this.webClientDir = getWebClientDir();
-    console.info(`WebServer static directory: ${this.staticDir}`);
     console.info(`WebServer client view directory: ${this.webClientDir}`);
-
-    // Load localization strings for server-side page preprocessing
-    this.loadLocalizationStrings();
-
-    // Initialize image page content for /netdisplay (matching C# imagePage)
-    this.initImagePage(this.staticDir);
 
     // Preprocess path from settings
     this.app.use((req, res, next) => {
@@ -329,15 +303,9 @@ export class WebServer {
       res.redirect(302, clientViewRedirectTarget(req));
     });
 
-    // Serve static files with aggressive caching — cache-busting query params in HTML
-    // ensure clients always get updated files after app updates (matching C# cache headers)
-    this.app.use(
-      express.static(this.staticDir, {
-        maxAge: "6d",
-        etag: true,
-        lastModified: true,
-      })
-    );
+    // NOTE: there is deliberately no static mount for the legacy /app tree here
+    // any more. The host serves only the web build (see the /webapp mount) — the
+    // frozen legacy client is not shipped with the desktop app.
 
     // Setup remaining routes
     this.setupDisplayRoutes();
@@ -604,88 +572,6 @@ export class WebServer {
     }
   }
 
-  /**
-   * Compute SHA1 checksum of a file for cache-busting (matching C# GetChecksum).
-   * Results are cached so each file is only hashed once.
-   */
-  private getFileChecksum(filename: string): string {
-    let checksum = this.checksumCache.get(filename);
-    if (checksum) return checksum;
-    try {
-      const filePath = path.join(this.staticDir, filename);
-      const data = fs.readFileSync(filePath);
-      checksum = crypto.createHash("sha1").update(data).digest("hex").substring(0, 12);
-      this.checksumCache.set(filename, checksum);
-    } catch {
-      checksum = "0";
-    }
-    return checksum;
-  }
-
-  /**
-   * Append ?v=<checksum> to src/href references in HTML
-   * This ensures clients fetch new versions after app updates while caching aggressively.
-   */
-  private updateFileReferences(content: string): string {
-    return content.replace(/(?:src|href)="([^"]*\.(?:js|css))"/g, (match, filename) => {
-      const checksum = this.getFileChecksum(filename);
-      return match.slice(0, -1) + "?v=" + checksum + '"';
-    });
-  }
-
-  // Localization strings loaded from JSON files, keyed by language code
-  private locStrings: Record<string, Record<string, string>> = {};
-
-  /**
-   * Get the primary language from the Accept-Language header.
-   */
-  private static getClientLanguage(req: express.Request): string {
-    const accept = req.headers["accept-language"] || "";
-    // Parse first language tag, e.g. "hu-HU,hu;q=0.9,en;q=0.8" → "hu"
-    const match = accept.match(/^([a-zA-Z]{2})/);
-    return match ? match[1].toLowerCase() : "en";
-  }
-
-  /**
-   * Get a localized string by key and language, falling back to English.
-   */
-  private getLocalizedString(lang: string, key: string): string {
-    return this.locStrings[lang]?.[key] || this.locStrings["en"]?.[key] || key;
-  }
-
-  /**
-   * Load localization JSON files from src/localization/ (or bundled path).
-   */
-  private loadLocalizationStrings(): void {
-    const locDir = app.isPackaged ? path.join(process.resourcesPath, "localization") : path.join(__dirname, "..", "..", "src", "localization");
-
-    for (const lang of ["en", "hu"]) {
-      try {
-        const filePath = path.join(locDir, `strings.${lang}.json`);
-        const content = fs.readFileSync(filePath, "utf8");
-        this.locStrings[lang] = JSON.parse(content);
-      } catch (err) {
-        console.warn(`[WebServer] Could not load localization for '${lang}':`, err);
-      }
-    }
-  }
-
-  /**
-   * Initialize image page content for /netdisplay route (matching C# imagePage initialization).
-   * Loads image.html and replaces /praiseprojector/ paths with /.
-   */
-  private initImagePage(staticDir: string): void {
-    const imagePath = path.join(staticDir, "image.html");
-    try {
-      const rawContent = fs.readFileSync(imagePath, "utf8");
-      // Replace paths and add cache-busting to file references (matching C# imagePage init)
-      this.imagePageContent = this.updateFileReferences(rawContent.replace(/\/praiseprojector\//g, this.settings.webServerPath));
-      console.info("Image page initialized for /netdisplay");
-    } catch (err) {
-      console.error("Error loading image.html for /netdisplay:", err);
-    }
-  }
-
   private async registerAndidentifyClient(req: express.Request, projecting: boolean) {
     const clientIdentity = await this.resolveClientIdentity(req.socket);
     const deviceName = (req.headers["x_pp_device_name"] as string) || (req.headers["x-pp-device-name"] as string) || "";
@@ -694,32 +580,21 @@ export class WebServer {
   }
 
   private setupDisplayRoutes() {
-    // Serve /netdisplay page (matching C# netdisplay handler)
-    // Returns image.html with bgcolor and startupImageId customization from query params
+    // /netdisplay — the projected-image mirror. This used to be the legacy
+    // app/image.html rendered here (bgcolor patched into the CSS, localized exit
+    // toast substituted) and driven by P.imageApp() from the 1.6 MB pp-api.js
+    // bundle. Both now live in the served web build's static netdisplay.html,
+    // which reads bgcolor from its own query string and localizes the toast from
+    // navigator.language — so this is just a redirect and the host no longer
+    // ships any part of the legacy client.
     this.app.get("/netdisplay", (req, res) => {
-      if (!this.imagePageContent) {
-        return res.status(404).send("Not found");
-      }
-
-      let page = this.imagePageContent;
-      let bgColor = "";
-
-      // Collect query params (matching C# building startupImageId from all query params)
-      for (const [key, value] of Object.entries(req.query)) {
-        if (key === "bgcolor" && typeof value === "string") bgColor = value;
-      }
-
-      // Replace background-color if custom bgcolor provided (matching C# ColorTranslator logic)
-      if (bgColor && bgColor.toLowerCase() !== "black") {
-        page = page.replace("background-color: black;", `background-color: ${bgColor};`);
-      }
-
-      // Inject localized toast text based on client's Accept-Language
-      const lang = WebServer.getClientLanguage(req);
-      const toastText = this.getLocalizedString(lang, "DoubleTapToExit");
-      page = page.replace("__TOAST_TEXT__", toastText);
-
-      res.type("html").send(page);
+      this.setCommonHeaders(res);
+      const params = new URLSearchParams();
+      const bgColor = req.query.bgcolor;
+      if (typeof bgColor === "string" && bgColor) params.set("bgcolor", bgColor);
+      // The page resolves the /image long-poll against this host's configured path.
+      params.set("api", this.settings.webServerPath || "/");
+      res.redirect(302, `${this.settings.webServerPath}webapp/netdisplay.html?${params.toString()}`);
     });
 
     // Serve /image endpoint for net display image data (matching C# ImageReq long-poll)
@@ -1218,7 +1093,6 @@ export class WebServer {
     };
 
     this.verifyWebServerPath();
-    this.initImagePage(this.staticDir);
 
     // Honor the on/off toggle: start or stop the HTTP server. Takes precedence over a
     // port/path restart (no point restarting a server we're about to stop).

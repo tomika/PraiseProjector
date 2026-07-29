@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="-13.053 0 446.083 450.057" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 44.684 69.629 L 296.437 49.213 C 314.023 49.201 327.479 54.338 329.182 74.193 C 329.182 74.193 333.966 91.775 392.266 336.081 C 396.806 358.775 359.269 369.924 342.252 372.774 L 86.982 408.068 C 67.126 410.351 43.806 386.818 43.806 369.232 L 27.209 95.696 C 27.209 78.11 27.098 69.641 44.684 69.629 Z" style="fill: none; stroke-linejoin: round; stroke-linecap: round; stroke-width: 69px; stroke: rgb(255, 255, 255);"/>
+  <path d="M 44.581 69.539 L 296.334 49.123 C 313.92 49.111 327.376 54.248 329.079 74.103 C 329.079 74.103 333.863 91.685 392.163 335.991 C 396.703 358.685 359.166 369.834 342.149 372.684 L 86.879 407.978 C 67.023 410.261 43.703 386.728 43.703 369.142 L 27.106 95.606 C 27.106 78.02 26.995 69.551 44.581 69.539 Z" style="stroke: rgb(0, 0, 0); fill: none; stroke-linejoin: round; stroke-linecap: round; stroke-width: 43px;"/>
+  <g transform="matrix(1, 0, 0, 1, -0.35759902000427246, 0.8305720686912537)">
+    <rect x="73.343" y="82.548" height="121.413" style="fill: rgb(216, 216, 216); stroke-linecap: round; stroke-linejoin: round; stroke: rgb(255, 255, 255); stroke-width: 80px;" width="0.166" transform="matrix(0.707107, -0.707107, 0.707107, 0.707107, -6.231556, 205.63501)"/>
+    <rect x="311.368" y="143.099" height="213.801" style="fill: rgb(216, 216, 216); stroke-linecap: round; stroke-linejoin: round; stroke: rgb(255, 255, 255); stroke-width: 80px;" width="0.566" transform="matrix(0.707107, 0.707107, -0.707107, 0.707107, 226.693863, -178.335052)"/>
+  </g>
+  <g>
+    <rect x="73.343" y="82.548" height="121.413" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 50px;" width="0.166" transform="matrix(0.707107, -0.707107, 0.707107, 0.707107, -6.231556, 205.63501)"/>
+    <rect x="311.368" y="143.099" height="213.801" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 50px;" width="0.566" transform="matrix(0.707107, 0.707107, -0.707107, 0.707107, 226.693863, -178.335052)"/>
+  </g>
+</svg>

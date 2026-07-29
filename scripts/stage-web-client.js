@@ -3,11 +3,15 @@
  * stage-web-client.js — post-process the web build (dist/web) so the /webapp
  * deploy is fully SELF-CONTAINED (no sibling /app URL tree).
  *
- * Vite's publicDir (public/public) copies the whole legacy `app/` folder into the
- * build; we don't want a /webapp/app/* URL tree, so we drop it and instead lift
- * only the legacy assets the client-view still references (icons, soundfonts,
- * chord-selector CSS) to the /webapp root. The client-view resolves them via __ppAssetBase="/webapp"
- * (see client-view.html / src/client-view/ui/assets.ts).
+ * The webapp owns its assets outright: public/public/{images,soundfont,
+ * chordselector.css} are ITS copies, and Vite's publicDir drops them at the
+ * /webapp root with no help from us. The client-view resolves them via
+ * __ppAssetBase="/webapp" (see client-view.html / src/client-view/ui/assets.ts).
+ *
+ * Vite's publicDir also copies the FROZEN legacy `app/` folder into the build.
+ * That tree is retired — nothing here may depend on it — so we simply drop it.
+ * Do NOT reintroduce "lifting" assets out of app/: that was the coupling that
+ * made new-app icons get added to the legacy client's folder.
  *
  * Then we emit two manifests:
  *   - /webapp/precache.json — the URL list consumed by the browser service worker.
@@ -29,7 +33,6 @@ const crypto = require("crypto");
 
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist", "web");
-const legacyAppDir = path.join(projectRoot, "public", "app");
 const releaseManifestName = "release-manifest.json";
 
 function rmrf(target) {
@@ -49,14 +52,14 @@ function copyRecursive(src, dest) {
   }
 }
 
-/** Copy a legacy asset (dir or file) from public/app into the /webapp root. */
-function stage(relName) {
-  const src = path.join(legacyAppDir, relName);
-  if (!fs.existsSync(src)) {
-    console.warn(`[stage-web-client] missing legacy asset, skipping: app/${relName}`);
-    return;
-  }
-  copyRecursive(src, path.join(distDir, relName));
+/** Fail loudly if a webapp-owned asset didn't make it into the build. */
+function requireAsset(relName) {
+  if (fs.existsSync(path.join(distDir, relName))) return;
+  throw new Error(
+    `[stage-web-client] missing webapp asset in the build: ${relName}\n` +
+      `  Expected Vite's publicDir to copy public/public/${relName} into dist/web.\n` +
+      `  These are the webapp's OWN assets — do not source them from public/app.`
+  );
 }
 
 /** List every file under a directory as forward-slash URL paths rooted at /webapp. */
@@ -156,16 +159,17 @@ function main() {
     process.exit(1);
   }
 
-  // 1. Drop the publicDir-copied legacy /app tree — its assets are lifted to the root below.
+  // 1. Drop the publicDir-copied FROZEN legacy /app tree. The webapp must never
+  //    serve or depend on it.
   rmrf(path.join(distDir, "app"));
   // A stale manifest from an interrupted/manual build must never describe this build.
   rmrf(path.join(distDir, releaseManifestName));
 
-  // 2. Lift the assets the served client references (via __ppAssetBase="/webapp").
+  // 2. Assert the webapp's own assets are present (publicDir put them there):
   //    images: dynamically referenced icons (found_*, confirm anims, mode icons, netdisplay).
   //    soundfont: offline MIDI playback. chord-selector CSS: loaded by client-view.html.
   //    Canonical ChordPro CSS is already copied from public/stylesheets by Vite.
-  ["images", "soundfont", "chordselector.css"].forEach(stage);
+  ["images", "soundfont", "chordselector.css"].forEach(requireAsset);
 
   // 3. Emit the precache manifest (everything under /webapp except maps + the manifest itself).
   const precacheFile = path.join(distDir, "precache.json");

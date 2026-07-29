@@ -8,13 +8,27 @@ const out = path.resolve(__dirname, "..", "dist", "pkg");
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
+// The FROZEN legacy client (public/app, and the copy publicDir leaves in the
+// build output) must never ride along into a package — mirrors the "!app/**"
+// filters in package.json's build.files / build.extraResources.
+const skipLegacyApp = (src, root) => {
+  const rel = path.relative(root, src);
+  return rel !== "app" && !rel.startsWith(`app${path.sep}`);
+};
+
 // Copy compiled electron + webapp
 for (const dir of ["dist/electron", "dist/webapp"]) {
-  fs.cpSync(dir, path.join(out, dir), { recursive: true });
+  fs.cpSync(dir, path.join(out, dir), {
+    recursive: true,
+    filter: (src) => skipLegacyApp(src, path.resolve(dir)),
+  });
 }
 
 // Copy public (extraResources equivalent)
-fs.cpSync("public", path.join(out, "public"), { recursive: true });
+fs.cpSync("public", path.join(out, "public"), {
+  recursive: true,
+  filter: (src) => skipLegacyApp(src, path.resolve("public")),
+});
 
 // Copy assets if present
 if (fs.existsSync("assets")) {
@@ -82,7 +96,7 @@ esac
 print_info "Detected platform: $platform ($uname_out)"
 
 has_admin_privileges() {
-  if [ "${platform}" = "windows" ]; then
+  if [ "\${platform}" = "windows" ]; then
     return 1
   fi
 
@@ -100,7 +114,7 @@ has_admin_privileges() {
 run_install_command() {
   install_command="$1"
 
-  if [ "${platform}" = "windows" ]; then
+  if [ "\${platform}" = "windows" ]; then
     sh -c "$install_command"
     return $?
   fi

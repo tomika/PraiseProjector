@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="30.577 -0.566 431.484 448.471" xmlns="http://www.w3.org/2000/svg">
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px;" x1="242.922" y1="129.105" x2="242.922" y2="57.191"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px;" x1="243.489" y1="390.431" x2="243.489" y2="318.517"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 118.346px 224.236px;" x1="118.346" y1="260.192" x2="118.346" y2="188.279" transform="matrix(0, 1, -1, 2.4574e-8, 0, -0.000032376728)"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 370.329px 225.368px;" x1="370.329" y1="261.325" x2="370.329" y2="189.412" transform="matrix(0, 1, -1, 0, 0, 0)"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 331.823px 133.069px;" x1="331.823" y1="169.025" x2="331.823" y2="97.112" transform="matrix(0.707107044011, 0.707107044011, -0.707108055783, 0.707107549897, -0.000064753439, 0)"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 295.017px 291.053px;" x1="125.764" y1="341.393" x2="176.615" y2="290.543"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 27.18px 70.215px;" x1="-59.4" y1="220.216" x2="-8.55" y2="169.365" transform="matrix(0, -1, 1, 0, 0.000003814697, -0.000003814697)"/>
+  <line style="stroke: rgb(0, 0, 0); fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 35px; transform-origin: 208.381px 256.512px;" x1="121.801" y1="406.513" x2="172.651" y2="355.663" transform="matrix(0, -1, 1, 0, -0.000011444092, 0.000015258789)"/>
+</svg>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 372.537 365.148" width="372.537" height="365.148" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="186.269" y1="181.786" x2="186.269" y2="183.362" id="gradient-3" gradientTransform="matrix(0.003922, 0.999992, -134.797755, 0.52868, 24795.732063, -100.216639)">
+      <stop offset="0" style="stop-color: rgba(221, 26, 26, 1)"/>
+      <stop offset="1" style="stop-color: rgb(198, 24, 24);"/>
+    </linearGradient>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="186.269" y1="181.787" x2="186.269" y2="183.362" id="gradient-4" gradientTransform="matrix(0.999961, -0.008909, 1.179055, 132.346788, -215.443775, -23976.871022)">
+      <stop offset="0" style="stop-color: rgba(221, 26, 26, 1)"/>
+      <stop offset="1" style="stop-color: rgb(198, 24, 24);"/>
+    </linearGradient>
+  </defs>
+  <path d="M 165.151 24.248 L 350.986 24.63 L 350.986 340.518 L 21.551 340.518 L 21.924 149.533" style="fill: none; stroke-linecap: round; stroke-width: 25px; stroke: rgb(0, 0, 0); stroke-linejoin: round; pointer-events: none;" transform="matrix(-0.000463, 1, -1, -0.000463, 368.928711, -3.609948)">
+  </path>
+  <g style="">
+    <line style="fill: none; stroke-width: 40px; stroke-linecap: round; stroke: url(#gradient-3);" x1="80.169" y1="183.362" x2="292.368" y2="181.786" transform="matrix(0.707107, -0.707107, 0.707107, 0.707107, -74.542531, 185.186406)"/>
+    <line style="fill: none; stroke-width: 40px; stroke-linecap: round; stroke: url(#gradient-4);" x1="80.169" y1="183.362" x2="292.368" y2="181.787" transform="matrix(0.707107, 0.707107, -0.707107, 0.707107, 183.656449, -78.236887)"/>
+  </g>
+</svg>

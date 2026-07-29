@@ -99,7 +99,13 @@
         window.__ppApiBase = window.__ppApiBase || "";
         var served = !!window.__ppApiBase;
         var underWebapp = location.pathname.indexOf("/webapp") === 0;
-        window.__ppAssetBase = window.__ppAssetBase || (location.protocol === "file:" ? "app" : window.electronAPI ? "/app" : "/webapp");
+        // Asset roots, all webapp-OWNED (public/public/{images,soundfont,chordselector.css}).
+        // Never point these at the frozen legacy /app tree — that coupling is severed.
+        //   file://          packaged Electron renderer; assets sit beside this HTML
+        //   electronAPI      Electron dev server; publicDir is served at /
+        //   otherwise        cloud or host-served build under /webapp
+        window.__ppAssetBase =
+          window.__ppAssetBase || (location.protocol === "file:" ? "." : window.electronAPI ? "" : "/webapp");
         ["chordselector.css"].forEach(function (file) {
           var link = document.createElement("link");
           link.rel = "stylesheet";

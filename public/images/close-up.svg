@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+  <polyline style="stroke: rgb(0, 0, 0); fill: rgba(216, 216, 216, 0); stroke-width: 50px; stroke-linecap: round; stroke-linejoin: round; transform-origin: 250.614px 375.803px;" points="166.903 589.321 334.324 589.321 334.324 162.284 167.469 163.359" transform="matrix(-0.001247000182, 0.999998927116, -0.999998927116, -0.001247000182, -0.000008647938, -0.000022620622)"/>
+  <polyline style="stroke: rgb(0, 0, 0); fill: rgba(216, 216, 216, 0); stroke-width: 50px; stroke-linecap: round; stroke-linejoin: round; transform-origin: 252.231px 211.21px;" points="83.679 212.341 420.783 211.775 281.643 83.382 420.783 211.775 287.865 339.038" transform="matrix(0.001247000182, -0.999998927116, 0.999998927116, 0.001247000182, -0.000040772756, -0.000022343637)"/>
+</svg>

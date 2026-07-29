@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 403.009 393.31" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <path d="M 423.896 187.961 C 423.896 304.277 327.122 398.57 207.746 398.57 C 88.369 398.57 -8.404 304.277 -8.404 187.961 C -8.404 71.644 88.369 -22.648 207.746 -22.648 C 327.122 -22.648 423.896 71.644 423.896 187.961 Z" style="fill: none; stroke-width: 45px;" transform="matrix(0.9999999999999999, 0, 0, 0.9999999999999999, -1.1368683772161603e-13, -2.842170943040401e-14)"/>
+  <path style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-miterlimit: 2.61; stroke-linecap: round; stroke-width: 50px;" d="M 199.434 38.317 L 200.819 193.503" transform="matrix(0.9999999999999999, 0, 0, 0.9999999999999999, -1.1368683772161603e-13, -2.842170943040401e-14)"/>
+  <path style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 8.15248px; transform-origin: 569.674px 232px;" transform="matrix(0.091739013791, 6.157385826111, -6.107460975647, 0.090992003679, -370.613611543302, -23.31626564642)" d="M 546.349 219.5 A 25 25 0 1 1 546.349 244.5 A 24.986 24.986 0 1 0 546.349 219.5 Z" bx:shape="crescent 568 232 25 300 0.999 1@89897151"/>
+</svg>

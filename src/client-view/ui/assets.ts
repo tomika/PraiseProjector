@@ -4,8 +4,8 @@
  * These images are referenced by URL rather than imported into the bundle.
  *
  * The webapp build serves these files under "/webapp". Electron loads them from
- * the renderer asset tree: relative "app" in packaged file builds, "/app" on the
- * Vite dev server. A host page may override the base by assigning
+ * the renderer asset tree: relative "." in packaged file:// builds, root "" on
+ * the Vite dev server. A host page may override the base by assigning
  * `window.__ppAssetBase` before this bundle loads.
  */
 
@@ -23,15 +23,24 @@ declare global {
   }
 }
 
-function assetBase(): string {
+/**
+ * The webapp asset root. SINGLE SOURCE OF TRUTH — every consumer (icons,
+ * soundfonts, …) must call this rather than re-deriving the base, or the copies
+ * drift. Must stay in sync with the fallbacks in client-view.html / index.html,
+ * and must NEVER point at the frozen legacy /app tree — the webapp owns its
+ * assets (public/public/{images,soundfont,chordselector.css}).
+ */
+export function assetBase(): string {
   if (typeof window === "undefined") return "/webapp";
   if (window.__ppAssetBase !== undefined) return window.__ppAssetBase;
-  if (window.location.protocol === "file:") return "app";
-  if (window.electronAPI) return "/app";
+  // Packaged Electron renderer: assets sit beside the HTML.
+  if (window.location.protocol === "file:") return ".";
+  // Electron dev server: publicDir is served at the root.
+  if (window.electronAPI) return "";
   return "/webapp";
 }
 
-/** Resolve a legacy icon by file name, e.g. icon("left.svg"). */
+/** Resolve an icon by file name, e.g. icon("left.svg"). */
 export function icon(name: string): string {
   return `${assetBase()}/images/${name}`;
 }

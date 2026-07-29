@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PraiseProjector</title>
+    <link rel="icon" href="images/pp.svg" type="image/svg+xml">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        #settings {
+            width: 100vw;
+            height: 0;
+            background-color: lightblue;
+            overflow: hidden;
+            transition: height 0.3s ease;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-around;
+            background-color: darkslategrey;
+            color: white;
+            flex-wrap: wrap;
+        }
+        .container:hover #settings {
+            height: 100%;
+        }
+        .container {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            height: 10vh;
+            display: flex;
+            justify-content: center;
+        }
+        .control {
+            margin: 5px 0;
+        }
+        img {
+            height: 2em;
+            filter: invert(1);
+        }
+    </style>
+    <script>
+        // Message display — the cloud "announcement board" surface: large text
+        // pushed by the leader, polled from message_query.
+        //
+        // Successor to the legacy app/projector.html. NOT the same thing as
+        // netdisplay.html, which mirrors the leader's projected *image* on a
+        // host; the two surfaces have always been distinct and the legacy
+        // /netdisplay URL meant different things on the cloud and on a host.
+        //
+        // Unlike the page it replaces this one is FULLY STATIC: it takes its
+        // leader id and API base from its own query string instead of being
+        // rewritten server-side, so it needs no server rendering and has no
+        // dependency on the frozen /app tree.
+        //
+        //   ?leader=<leaderId>   whose display to follow (required)
+        //   ?api=<base>          API base, default "/praiseprojector/"
+        //                        (hosts pass their own webserver path here)
+        function queryParam(name) {
+            return new URLSearchParams(window.location.search).get(name) || "";
+        }
+
+        const options = { leaderId: queryParam("leader") };
+        let url = queryParam("api") || "/praiseprojector/";
+        if (!url.endsWith("/")) url += "/";
+
+        function storeOptions(restore) {
+            const ls = localStorage || window.localStorage;
+            const settings = {
+                "color": "#ffffff",
+                "background": "#000000",
+                "align": "center",
+                "italic": false,
+                "bold": false,
+                "family": "Times New Roman",
+                "size": 13
+            };
+            if(ls) {
+                const settingsKey = "netprojector-settings";
+                if(restore) try {
+                    const s = JSON.parse(ls.getItem(settingsKey) || "{}");
+                    if(s) for(const key in s) settings[key] = s[key];
+                } catch(e) {
+                    console.error(e);
+                }
+                for(const key in settings) {
+                    const item = document.getElementById(key);
+                    if (item) {
+                        const value = settings[key];
+                        if(restore) {
+                            if(typeof value === "boolean") {
+                                item.checked = value;
+                            } else {
+                                item.value = value;
+                            }
+                            item.dispatchEvent(new Event("change"));
+                            item.dispatchEvent(new Event("input"));
+                        } else settings[key] = typeof value === "boolean" ? item.checked : item.value;
+                    }
+                }
+                ls.setItem(settingsKey, JSON.stringify(settings));
+            }
+        }
+        function init() {
+            const messageDiv = document.getElementById('message');
+            document.getElementById('color').addEventListener('input', (event) => {
+                messageDiv.style.color = event.target.value;
+                storeOptions();
+            });
+            document.getElementById('background').addEventListener('input', (event) => {
+                messageDiv.style.backgroundColor = event.target.value;
+                document.body.style.backgroundColor = event.target.value;
+                storeOptions();
+            });
+            document.getElementById('align').addEventListener('change', (event) => {
+                messageDiv.style.textAlign = event.target.value;
+                storeOptions();
+            });
+            document.getElementById('italic').addEventListener('change', (event) => {
+                messageDiv.style.fontStyle = event.target.checked ? "italic" : "normal";
+                storeOptions();
+                verifySize();
+            });
+            document.getElementById('bold').addEventListener('change', (event) => {
+                messageDiv.style.fontWeight = event.target.checked ? "bold" : "normal";
+                storeOptions();
+                verifySize();
+            });
+            document.getElementById('family').addEventListener('change', (event) => {
+                messageDiv.style.fontFamily = event.target.value;
+                storeOptions();
+                verifySize();
+            });
+            document.getElementById('size').addEventListener('input', (event) => {
+                messageDiv.style.fontSize = event.target.value + 'vh';
+                storeOptions();
+                verifySize();
+            });
+            storeOptions(true);
+            watchDisplay();
+        }
+        function setMessage(text) {
+            document.getElementById("message").innerText = text;
+            verifySize();
+        }
+        function onLoad() {
+            if (!options.leaderId) {
+                setMessage("Missing ?leader=");
+                return;
+            }
+            init();
+        }
+        let display;
+        async function watchDisplay() {
+            try{
+                const response = await fetch(url + "message_query?leader=" + encodeURIComponent(options.leaderId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(display)
+                });
+                if(response.ok) {
+                    display = await response.json();
+                    setMessage(display.message);
+                }
+                watchDisplay();
+            } catch(error) {
+                console.error(error);
+                watchDisplay();
+            }
+        }
+        function toggleSettings() {
+            const settings = document.getElementById("settings");
+            settings.style.height = settings.style.height.startsWith("0") ? "100%" : "0";
+        }
+        function verifySize() {
+            const msgDiv = document.getElementById("message");
+            let size = parseInt(document.getElementById("size").value, 10);
+            const height = document.documentElement.clientHeight;
+            while (size > 0) {
+                msgDiv.style.fontSize = size + "vh";
+                const rect = msgDiv.getBoundingClientRect();
+                if (rect.height < height) break;
+                --size;
+            }
+        }
+    </script>
+</head>
+<body onload="onLoad();" onclick="toggleSettings()" onresize="verifySize()">
+    <div id="message"></div>
+    <div class="container">
+        <div id="settings">
+            <div class="control">
+                <img src="images/home.svg" alt="&#127968;" onclick="window.location.href='client-view.html'" />
+            </div>
+            <div class="control">
+                <label for="color">&#127912;</label>
+                <input type="color" id="color" name="color">
+            </div>
+            <div class="control">
+                <label for="background">&#128445;</label>
+                <input type="color" id="background" name="background">
+            </div>
+            <div class="control">
+                <label for="align">&#11134;</label>
+                <select id="align" name="align">
+                    <option value="left">&#8592;</option>
+                    <option value="right">&#8594;</option>
+                    <option value="center">&#8595;</option>
+                    <option value="justify">&#8596;</option>
+                </select>
+            </div>
+            <div class="control">
+                <label for="italic"><i>A</i></label>
+                <input id="italic" name="italic" type="checkbox" />
+            </div>
+            <div class="control">
+                <label for="bold"><b>A</b></label>
+                <input id="bold" name="bold" type="checkbox" />
+            </div>
+            <div class="control">
+                <label for="family">&#128106;</label>
+                <select id="family" name="family">
+                    <option value="Arial">Arial</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Tahoma">Tahoma</option>
+                    <option value="Trebuchet MS">Trebuchet MS</option>
+                    <option value="Impact">Impact</option>
+                    <option value="Comic Sans MS">Comic Sans MS</option>
+                    <option value="Lucida Console">Lucida Console</option>
+                </select>
+            </div>
+            <div class="control">
+                <label for="size">&#128474;</label>
+                <input type="number" id="size" name="size" min="1" max="100">
+            </div>
+        </div>
+    </div>
+</body>
+</html>

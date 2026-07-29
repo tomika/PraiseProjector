@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 7.1 333.728 281.065" width="333.728" height="281.065" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <polygon style="stroke-linecap: round; stroke-linejoin: round; paint-order: stroke; stroke: rgb(0, 0, 0); fill: rgb(255, 255, 255); stroke-width: 56.4371px;" points="34.776 41.087 33.728 466.863 298.921 466.339 301.61 123.687 230.992 41.02"/>
+  <text style="font-family: Arial, sans-serif; font-size: 92px; font-weight: 700; stroke-width: 0px; white-space: pre;" x="38.462" y="142.603">TITLE</text>
+  <path d="M 339.151 14.079 Q 339.305 8.726 343.821 14.079 L 421.624 106.319 Q 426.139 111.672 421.47 111.672 L 341.011 111.672 Q 336.342 111.672 336.496 106.319 Z" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-width: 17px;" transform="matrix(1, 0, 0.004883, 1, -102.863503, 10.762387)" bx:shape="triangle 336.342 8.726 89.797 102.946 0.033 0.052 1@e856ffb9"/>
+  <polyline style="stroke-linecap: round; stroke-width: 50px; fill: rgb(219, 24, 24); stroke: rgb(0, 0, 0);" points="69.23 256.213 261.539 256.213"/>
+  <text style="fill: rgb(201, 36, 36); font-family: Arial, sans-serif; font-size: 92px; font-weight: 700; stroke-width: 0px; white-space: pre;" transform="matrix(0.573385, 0, 0, 0.701431, 23.696299, 51.485073)" x="40.288" y="218.343">META</text>
+</svg>

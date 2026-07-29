@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 328.994 344.379" width="328.994" height="344.379" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <polygon style="stroke: rgb(0, 0, 0); stroke-width: 16px; stroke-linejoin: round; stroke-linecap: round; fill: rgb(251, 251, 251);" points="15.347 15.481 14.792 326.456 309.692 325.902 311.355 65.924 264.238 15.481">
+    <title>Paper</title>
+  </polygon>
+  <g transform="matrix(1, 0, 0, 1, 5.923317, 5.503191)">
+    <title>List</title>
+    <line style="stroke: rgb(0, 0, 0); stroke-width: 20px; stroke-linecap: round;" x1="44.71" y1="56.574" x2="259.845" y2="56.154"/>
+    <line style="stroke: rgb(0, 0, 0); stroke-width: 20px; stroke-linecap: round;" x1="44.71" y1="113.177" x2="259.845" y2="112.757"/>
+    <line style="stroke: rgb(0, 0, 0); stroke-width: 20px; stroke-linecap: round;" x1="46.19" y1="169.781" x2="261.326" y2="169.361"/>
+    <line style="stroke: rgb(0, 0, 0); stroke-width: 20px; stroke-linecap: round;" x1="45.203" y1="226.385" x2="260.338" y2="225.965"/>
+    <line style="stroke: rgb(0, 0, 0); stroke-width: 20px; stroke-linecap: round;" x1="45.203" y1="282.988" x2="260.338" y2="282.568"/>
+  </g>
+  <g transform="matrix(1, 0, 0, 1, 5.923317, 5.503191)">
+    <path d="M 256.375 8.869 L 256.652 11.086 L 256.098 11.086 L 256.375 8.869 Z" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);" bx:shape="triangle 256.098 8.869 0.554 2.217 0.5 0 1@01b64f00"/>
+    <polygon style="stroke: rgb(0, 0, 0); fill: rgb(206, 206, 206);" points="256.097 17.739 256.651 64.301 298.226 64.302"/>
+    <rect x="248.891" y="9.423" height="62.084" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-width: 13px; stroke-linejoin: round;" width="0.554"/>
+    <rect x="250.554" y="71.507" width="56.541" height="0.554" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); stroke-width: 13px; stroke-linecap: round; stroke-linejoin: round;"/>
+  </g>
+  <rect x="80.941" y="38.442" width="79.57" height="228.702" style="fill: rgb(255, 255, 255); visibility: hidden;" transform="matrix(0.999249, -0.038745, 0.781812, 0.970437, -85.088409, 14.623514)" bx:origin="0.7 0.427"/>
+  <g transform="matrix(0.986107, -0.166402, 0.176072, 0.984378, -26.759029, 10.220183)" style="visibility: hidden;">
+    <rect x="155.257" y="137.472" width="64.648" height="134.908" style="stroke: rgb(0, 0, 0); stroke-width: 16px; stroke-linejoin: bevel; fill: rgb(180, 179, 204);" transform="matrix(0.924266, 0.38175, -0.375995, 0.926643, 132.927353, -41.875393)" bx:origin="0.5 0.5"/>
+    <rect x="106.172" y="170.063" width="62.996" height="46.922" style="stroke: rgb(0, 0, 0); fill: rgb(255, 255, 255); stroke-width: 11px; stroke-linejoin: bevel;" transform="matrix(0.921781, 0.387711, -0.387711, 0.921781, 160.139984, 30.559992)"/>
+  </g>
+</svg>

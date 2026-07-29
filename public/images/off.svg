@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 372.537 365.148" width="372.537" height="365.148" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="278.524" cy="267.184" r="81.518" id="gradient-2" gradientTransform="matrix(0.921781, -0.371087, 0.373449, 0.927651, -75.045248, 123.168502)">
+      <stop offset="0" style="stop-color: rgb(252, 255, 99);"/>
+      <stop offset="1" style="stop-color: rgb(123, 123, 100);"/>
+    </radialGradient>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="491" y1="321.053" x2="491" y2="616.947" id="gradient-0" gradientTransform="matrix(-0.082853, 0.996562, -0.932689, -0.077542, 974.77284, -13.278388)">
+      <stop offset="0" style="stop-color: rgb(255, 9, 0);"/>
+      <stop offset="1" style="stop-color: rgba(161, 8, 3, 1)"/>
+    </linearGradient>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="186.355" y1="161.354" x2="186.355" y2="198.331" id="gradient-1" gradientTransform="matrix(-0.775101, 0.631838, -4.732794, -5.805905, 1206.469012, 1089.457437)">
+      <stop offset="0" style="stop-color: rgb(255, 9, 0);"/>
+      <stop offset="1" style="stop-color: rgba(161, 8, 3, 1)"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <title>Lamp</title>
+    <path d="M 94.137 357.073 L 288.911 357.584 C 294.047 346.845 210.116 323.388 206.872 330.171 L 58.097 155.714 L 184.101 20.237 L 212.86 38.93 L 239.117 156.368 C 239.117 160.782 347.611 39.823 347.611 39.823 L 227.743 21.827 L 195.302 5.736 L 171.699 6.303 L 43.369 141.765 L 41.236 167.811 L 179.151 330.92 C 172.991 321.672 89.446 350.032 94.137 357.073 Z" style="stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 10px;">
+      <title>Frame</title>
+    </path>
+    <ellipse style="stroke: rgb(0, 0, 0); stroke-width: 8px; fill: url(#gradient-2); filter: none;" cx="286.152" cy="244.342" rx="81.518" ry="27.943" transform="matrix(-0.681999, 0.731353, -0.731353, -0.681999, 670.092463, 57.998353)"/>
+    <path style="fill: rgb(255, 249, 67);" transform="matrix(-0.249248, -0.338286, 0.338286, -0.249248, 286.902283, 469.895599)" d="M 772 595 A 63.906 63.906 0 1 1 750 471.094 L 750 535 Z" bx:shape="pie 750 535 0 63.906 159.864 360 1@5095c345">
+      <title>Bulb</title>
+    </path>
+    <ellipse style="stroke-width: 8px; fill: none; stroke: rgb(0, 0, 0);" cx="286.152" cy="244.342" rx="81.518" ry="27.943" transform="matrix(-0.681999, 0.731353, -0.731353, -0.681999, 670.092097, 58.209237)">
+      <title>Rim</title>
+    </ellipse>
+  </g>
+  <g style="" transform="matrix(1, 0, 0, 1, -0.000011, 0.000009)">
+    <title>No</title>
+    <path d="M 491 469 m -147.947 0 a 147.947 147.947 0 1 0 295.894 0 a 147.947 147.947 0 1 0 -295.894 0 Z M 491 469 m -113.341 0 a 113.341 113.341 0 0 1 226.682 0 a 113.341 113.341 0 0 1 -226.682 0 Z" style="fill-rule: evenodd; stroke: rgb(251, 23, 14); fill: url(#gradient-0);" transform="matrix(0.99976, 0.021913, -0.021913, 0.99976, -294.336294, -297.072562)" bx:shape="ring 491 469 113.341 113.341 147.947 147.947 1@519007cf"/>
+    <rect x="54.625" y="161.354" width="263.461" height="36.977" style="fill: url(#gradient-1);" transform="matrix(0.707107, -0.707107, 0.707107, 0.707107, -72.672676, 187.179382)"/>
+  </g>
+</svg>

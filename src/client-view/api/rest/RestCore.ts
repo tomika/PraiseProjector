@@ -274,13 +274,20 @@ export class RestCore {
     this.emitCapabilities();
   }
 
-  /** The serving host's net-display URL for the Client follower button (legacy
-   *  `${webRoot}/netdisplay?leader=${leaderId}`). The served bundle's origin IS
-   *  the host webserver, so we anchor on the configured base / current origin. */
+  /** The serving host's net-display URL for the Client follower button.
+   *
+   *  Points at the webapp's OWN static netdisplay.html — never the retired
+   *  /app surfaces (legacy app/projector.html on the cloud, app/image.html on a
+   *  host). That page is not server-rendered, so it needs its API base handed to
+   *  it: pass the host's base when we have one, otherwise it defaults to the
+   *  cloud's /praiseprojector/. The legacy `/netdisplay?leader=` URL still
+   *  redirects here for older links. */
   netDisplayUrl(): string {
     const origin = (this.config.baseUrl ?? (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
     const leaderId = this.config.leaderId ?? this.leader?.id ?? "";
-    return `${origin}/netdisplay?leader=${encodeURIComponent(leaderId)}`;
+    const apiBase = (this.config.baseUrl ?? "").replace(/\/$/, "");
+    const api = apiBase ? `&api=${encodeURIComponent(`${apiBase}/`)}` : "";
+    return `${origin}/webapp/netdisplay.html?leader=${encodeURIComponent(leaderId)}${api}`;
   }
 
   /** Fold the /display_query `leader-available` header into the capability model

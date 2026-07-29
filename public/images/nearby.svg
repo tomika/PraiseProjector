@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 372.537 365.148" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <g style="filter: none;">
+    <title>Signal</title>
+    <path style="fill: rgb(55, 185, 76);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.66568, -24.490297)" d="M -263.733 785 A 728.733 728.733 0 0 1 181.538 113.657 L 465 785 Z" bx:shape="pie 465 785 0 728.733 270 337.109 1@620f0612"/>
+    <path style="fill: rgb(58, 230, 23);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.592072, -24.234922)" d="M -118.751 785 A 583.751 583.751 0 0 1 237.933 247.222 L 465 785 Z" bx:shape="pie 465 785 0 583.751 270 337.109 1@fcc67265"/>
+    <path style="fill: rgb(216, 216, 216);" transform="matrix(0.244919, 0.377142, -0.377142, 0.244919, 365.611237, -23.887856)" d="M 25.388 785 A 439.612 439.612 0 0 1 294 380.009 L 465 785 Z" bx:shape="pie 465 785 0 439.612 270 337.109 1@3f2ddc6a"/>
+  </g>
+  <g transform="matrix(1.1882820129394531, 0, 0, 1.1882820129394531, -69.76663970947266, -55.8958625793457)" style="">
+    <path style="fill: none; stroke-linejoin: round; stroke-linecap: round; stroke-width: 22px; stroke: rgb(255, 255, 255);" d="M 233.175 283.58 L 322.18 219.633 L 271.197 179.451 L 272.493 332.834 L 323.908 287.468 L 232.311 229.571"/>
+    <path style="fill: none; stroke: rgb(38, 58, 216); stroke-width: 16px; stroke-linejoin: round; stroke-linecap: round;" d="M 233.382 283.594 L 322.387 219.647 L 271.404 179.465 L 272.7 332.848 L 324.115 287.482 L 232.518 229.585"/>
+  </g>
+</svg>

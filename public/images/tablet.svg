@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="246.594" y1="25.539" x2="246.594" y2="429.625" id="gradient-0" gradientTransform="matrix(0.989983, 0, 0, 1, 0.767448, 0)">
+      <stop offset="0" style="stop-color: rgb(100% 100% 100%)"/>
+      <stop offset="1" style="stop-color: rgb(56.687% 56.687% 56.687%)"/>
+    </linearGradient>
+  </defs>
+  <rect x="72.077" y="23.269" width="344.495" height="454.597" style="stroke-linejoin: round; fill: none; stroke: rgb(0, 0, 0); stroke-width: 29px;" transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)"/>
+  <rect x="73.212" y="416.005" width="343.36" height="62.429" style="" transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)"/>
+  <ellipse style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);" cx="245.744" cy="452.895" rx="19.864" ry="19.864" transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)"/>
+  <path d="M 133.296 392.799 L 153.16 429.689 L 113.432 429.689 L 133.296 392.799 Z" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0); transform-origin: 133.296px 411.244px;" transform="matrix(0, -1, 1, 0, -27.873199462891, 42.490753173828)" bx:shape="triangle 113.432 392.799 39.728 36.89 0.5 0 1@5503da4d"/>
+  <rect x="364.926" y="434.166" width="35.188" height="36.89" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);" transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)"/>
+  <rect x="76.617" y="25.539" width="336.55" height="404.086" style="fill: url('#gradient-0'); fill-opacity: 0.56; stroke-linejoin: round;" rx="11.351" ry="11.351" transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)"/>
+  <g transform="matrix(1, 0, 0, 1, -1.7763568394002505e-15, 0)">
+    <ellipse style="" cx="238.932" cy="235.812" rx="23.555" ry="23.267" transform="matrix(0.999884, -0.015204, 0, 1.000116, 4.283779, 7.823591)"/>
+    <path style="stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 24px; fill: none;" d="M 195.801 207.718 C 214.072 166.921 272.115 162.496 290.578 207.719"/>
+    <path style="stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 24px; fill: none;" d="M 162.883 177.921 C 208.635 98.138 297.415 116.866 326.333 178.49"/>
+    <path style="stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round; stroke-width: 24px; fill: none;" d="M 129.4 148.979 C 183.048 51.272 305.957 54.294 362.004 149.235"/>
+  </g>
+</svg>

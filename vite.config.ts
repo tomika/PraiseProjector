@@ -51,13 +51,16 @@ export default defineConfig(({ command, mode }) => {
   // and the public /webapp deploy) gets its own outDir so it never collides with the
   // Electron *renderer* build (base "./", loaded via file://) which keeps dist/webapp.
   const webOutDir = "dist/web";
-  const legacyWebappAssetSourceDir = path.join(__dirname, "public", "app");
-  const soundfontSourceDir = path.join(__dirname, "public", "app", "soundfont");
+  // The webapp's OWN asset set (public/public/{images,soundfont,chordselector.css}).
+  // Never point these at public/app — that tree is the frozen legacy client and
+  // the coupling is deliberately severed.
+  const webappAssetSourceDir = path.join(__dirname, "public");
+  const soundfontSourceDir = path.join(__dirname, "public", "soundfont");
   // fs.createReadStream(...).pipe(res) never sets Content-Type on its own. Browsers happily
   // sniff PNG/JPEG without one, but Chrome refuses to render SVG via <img> without the correct
   // image/svg+xml header — it silently shows the broken-image glyph instead (200 response,
   // right bytes, wrong render). Every extension served by the middleware below needs an entry.
-  const legacyAssetMimeTypes: Record<string, string> = {
+  const webappAssetMimeTypes: Record<string, string> = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -80,8 +83,8 @@ export default defineConfig(({ command, mode }) => {
               next();
               return;
             }
-            const filePath = path.normalize(path.join(legacyWebappAssetSourceDir, cleanPath));
-            if (!filePath.startsWith(legacyWebappAssetSourceDir + path.sep)) {
+            const filePath = path.normalize(path.join(webappAssetSourceDir, cleanPath));
+            if (!filePath.startsWith(webappAssetSourceDir + path.sep)) {
               next();
               return;
             }
@@ -90,7 +93,7 @@ export default defineConfig(({ command, mode }) => {
                 next();
                 return;
               }
-              const mimeType = legacyAssetMimeTypes[path.extname(filePath).toLowerCase()];
+              const mimeType = webappAssetMimeTypes[path.extname(filePath).toLowerCase()];
               if (mimeType) res.setHeader("Content-Type", mimeType);
               fs.createReadStream(filePath).pipe(res);
             });
@@ -119,6 +122,13 @@ export default defineConfig(({ command, mode }) => {
           const soundfontOutDir = path.join(__dirname, "dist", "webapp", "soundfont");
           fs.rmSync(soundfontOutDir, { recursive: true, force: true });
           fs.cpSync(soundfontSourceDir, soundfontOutDir, { recursive: true });
+
+          // publicDir copies the FROZEN legacy public/app tree into every build.
+          // Drop it here or it rides into the installer: electron-builder packages
+          // dist/webapp/**/* wholesale, and scripts/dist-pkg.js copies the whole
+          // directory too — so filtering extraResources alone is not enough.
+          // (stage-web-client.js does the same for the dist/web build.)
+          fs.rmSync(path.join(__dirname, "dist", "webapp", "app"), { recursive: true, force: true });
         },
       },
       // Inject a unique per-build CACHE_VERSION into sw.js so every new deploy
