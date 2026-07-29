@@ -206,6 +206,35 @@
   color: #5c6672;
 }
 
+.session-toggle-status {
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.session-toggle-status.is-progress {
+  color: #52606d;
+}
+
+.session-toggle-status.is-success {
+  color: #24825f;
+}
+
+.session-toggle-status.is-error {
+  color: #b42318;
+}
+
+.session-toggle-status.is-compact {
+  display: block;
+  min-height: 2.4em;
+  text-align: center;
+}
+
+.session-toggle-card.has-error {
+  border-color: #d92d20;
+  background: linear-gradient(180deg, #fffafa 0%, #fff1f0 100%);
+}
+
 .session-toggle-state {
   position: absolute;
   top: 0.6rem;
@@ -221,6 +250,12 @@
   border-color: #24825f;
   background: #28a36f;
   box-shadow: 0 0 0 3px rgba(40, 163, 111, 0.16);
+}
+
+.session-toggle-card.has-error .session-toggle-state {
+  border-color: #b42318;
+  background: #d92d20;
+  box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.14);
 }
 
 .sessions-qr-popup-backdrop {
@@ -573,6 +608,11 @@
   background: linear-gradient(180deg, rgba(68, 184, 131, 0.14) 0%, rgba(68, 184, 131, 0.08) 100%);
 }
 
+[data-theme="dark"] .session-toggle-card.has-error {
+  border-color: #f97066;
+  background: linear-gradient(180deg, rgba(217, 45, 32, 0.2) 0%, rgba(217, 45, 32, 0.1) 100%);
+}
+
 [data-theme="dark"] .sessions-qr-popup {
   background: var(--pp-modal-bg);
   color: var(--pp-text-color);
@@ -738,6 +778,11 @@
 .sessions-form--cv.dark .session-toggle-card.is-enabled {
   border-color: rgba(67, 199, 137, 0.76);
   background: rgba(67, 199, 137, 0.13);
+}
+
+.sessions-form--cv.dark .session-toggle-card.has-error {
+  border-color: rgba(249, 112, 102, 0.85);
+  background: rgba(217, 45, 32, 0.16);
 }
 
 .sessions-form--cv.dark .session-toggle-state {

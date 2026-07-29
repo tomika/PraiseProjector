@@ -66,6 +66,8 @@ export interface SessionsFormToggle {
   isFeatureEnabled: boolean;
   /** Whether the toggle control itself cannot be used, usually because its backend is unavailable. */
   isControlDisabled?: boolean;
+  statusText?: string;
+  statusTone?: "progress" | "success" | "error";
   onToggle: (nextFeatureEnabled: boolean) => void;
 }
 
@@ -323,7 +325,7 @@ export function SessionsForm({
                   <button
                     key={toggle.id}
                     type="button"
-                    className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}`}
+                    className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}${toggle.statusTone === "error" ? " has-error" : ""}`}
                     aria-pressed={toggle.isFeatureEnabled}
                     disabled={toggle.isControlDisabled}
                     onClick={() => toggle.onToggle(!toggle.isFeatureEnabled)}
@@ -375,8 +377,14 @@ export function SessionsForm({
                     {toggle.showText === false ? null : (
                       <span className="session-toggle-copy">
                         <span className="session-toggle-description">{toggle.description}</span>
+                        {toggle.statusText ? (
+                          <span className={`session-toggle-status is-${toggle.statusTone ?? "progress"}`}>{toggle.statusText}</span>
+                        ) : null}
                       </span>
                     )}
+                    {toggle.showText === false && toggle.statusText ? (
+                      <span className={`session-toggle-status is-compact is-${toggle.statusTone ?? "progress"}`}>{toggle.statusText}</span>
+                    ) : null}
                     <span className="session-toggle-state" aria-hidden="true" />
                   </button>
                 );

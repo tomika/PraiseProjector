@@ -254,6 +254,7 @@ export class RestCore {
       isPwa,
       onlineSession: lockedCloudFollower,
       authed: this.authed,
+      hasDefaultLeader: !!this.leader?.id,
       // The auth bridge, host-selected leader and external-display toggle drive
       // the in-process Direct embed only; the Rest roles don't use them.
       hasAuthBridge: false,

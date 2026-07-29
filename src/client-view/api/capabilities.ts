@@ -60,6 +60,8 @@ export interface CapabilityInputs {
   // ── App·Rest (standalone website / Android cloud app) ──
   /** Cloud auth state — gates online-session hosting in App·Rest. */
   authed: boolean;
+  /** The authenticated account has its own default leader/session owner. */
+  hasDefaultLeader: boolean;
 
   // ── App·Direct (Electron desktop embed) ──
   /** An auth bridge is wired (the surrounding app can log in) — Direct canLogin. */
@@ -136,7 +138,7 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
     // Local PPD hosting needs a native transport in both App roles. Online hosting
     // is toggle-gated in the embed and auth-gated in the cloud app.
     canHostLocalSession: hasHostBridge && input.ppdSessionEnabled,
-    canHostOnlineSession: direct ? input.externalWebDisplayEnabled : input.authed,
+    canHostOnlineSession: direct ? input.externalWebDisplayEnabled : input.authed && input.hasDefaultLeader,
     canOpenFullEditor: !input.lockedToSession && !hasHostBridge,
   };
 }

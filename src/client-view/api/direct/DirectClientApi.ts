@@ -132,6 +132,7 @@ export class DirectClientApi implements ClientApi {
       isPwa: false,
       onlineSession: false,
       authed: this.isAuthed(),
+      hasDefaultLeader: false,
       hasAuthBridge: !!this.authBridge,
       hasSelectedLeader: !!this.getSelectedLeader(),
       externalWebDisplayEnabled: this.isExternalWebDisplayEnabled(),
@@ -444,23 +445,10 @@ export class DirectClientApi implements ClientApi {
         this.setNetworkState({ status: "online" });
       },
       setFeatureEnabled: this.setSessionFeatureEnabled,
-      // Host an online (cloud) session: force-register the current projected display
-      // under the authed leader (the /display_update upsert makes us discoverable now).
+      // The surrounding full App stays mounted while this embedded view is shown
+      // and is the sole owner of cloud publishing. Re-sending here would lose its
+      // guest-session/default-leader target and could update the wrong namespace.
       createOnline: async () => {
-        const d = getCurrentDisplay();
-        await cloudApi.sendDisplayUpdate({
-          songId: d.songId,
-          from: d.from,
-          to: d.to,
-          section: d.section,
-          sectionRepeatCounts: d.sectionRepeatCounts,
-          sectionRepeatNonce: d.sectionRepeatNonce,
-          transpose: d.transpose,
-          playlist: d.playlist,
-          song: d.song,
-          message: d.message,
-          instructions: d.instructions,
-        });
         this.setNetworkState({ status: "leading" });
       },
       watch: (session) => this.watch(session),

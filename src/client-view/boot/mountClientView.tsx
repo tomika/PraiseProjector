@@ -14,6 +14,7 @@ import { ClientViewProvider } from "../controller/ClientViewContext";
 import { ClientView } from "../ui/ClientView";
 import { assetBase } from "../ui/assets";
 import { cloudApiBaseUrl } from "../../config";
+import { LocalizationProvider } from "../../localization/LocalizationContext";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
 function readLaunchConfigFromUrl(): Pick<
@@ -71,9 +72,11 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
   });
 
   createRoot(rootEl).render(
-    <ClientViewProvider store={store}>
-      <ClientView />
-    </ClientViewProvider>
+    <LocalizationProvider>
+      <ClientViewProvider store={store}>
+        <ClientView />
+      </ClientViewProvider>
+    </LocalizationProvider>
   );
 
   window.hostDevice?.pageLoadedSuccessfully?.();

@@ -20,6 +20,12 @@ import { filterOwnSessionEntries } from "../../../shared/sessionList";
 
 const TOKEN_KEY = "sessionId";
 
+function displayUpdateLeaderId(core: RestCore): string | undefined {
+  // In App mode only the authenticated default leader may own cloud publishing.
+  // A served Client keeps using the host-provided id for its local control path.
+  return core.leader?.id ?? (core.mode === "Client" ? core.config.leaderId : undefined);
+}
+
 function storeToken(token: string, keep: boolean): void {
   try {
     const ls = window.localStorage;
@@ -58,19 +64,22 @@ function readToken(): string {
  *  updates as separate POSTs. */
 async function pushDisplay(core: RestCore, display: Display): Promise<void> {
   if (!core.canControlDisplay()) return;
-  await cloudApi.sendDisplayUpdate({
-    songId: display.songId,
-    from: display.from,
-    to: display.to,
-    section: display.section,
-    sectionRepeatCounts: display.sectionRepeatCounts,
-    sectionRepeatNonce: display.sectionRepeatNonce,
-    transpose: display.transpose,
-    leaderId: core.leader?.id ?? core.config.leaderId,
-    song: display.song,
-    message: display.message,
-    instructions: display.instructions,
-  });
+  const leaderId = displayUpdateLeaderId(core);
+  await cloudApi.sendDisplayUpdate(
+    {
+      songId: display.songId,
+      from: display.from,
+      to: display.to,
+      section: display.section,
+      sectionRepeatCounts: display.sectionRepeatCounts,
+      sectionRepeatNonce: display.sectionRepeatNonce,
+      transpose: display.transpose,
+      song: display.song,
+      message: display.message,
+      instructions: display.instructions,
+    },
+    leaderId ? { leaderId } : undefined
+  );
 }
 
 /** Push a single changed transpose/capo preference as a MINIMAL id+value
@@ -81,11 +90,8 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
  *  neither). */
 async function pushPreference(core: RestCore, pref: { transpose?: number; capo?: number }): Promise<void> {
   if (!core.canControlDisplay()) return;
-  await cloudApi.sendDisplayPreference({
-    id: core.getDisplay().songId,
-    ...pref,
-    leaderId: core.leader?.id ?? core.config.leaderId,
-  });
+  const leaderId = displayUpdateLeaderId(core);
+  await cloudApi.sendDisplayPreference({ id: core.getDisplay().songId, ...pref }, leaderId ? { leaderId } : undefined);
 }
 
 /** Push the working playlist as a playlist-only update (legacy
@@ -95,16 +101,19 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
 async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<void> {
   if (!core.canControlDisplay()) return;
   const display = core.getDisplay();
-  await cloudApi.sendDisplayUpdate({
-    songId: display.songId,
-    from: display.from,
-    to: display.to,
-    section: display.section,
-    transpose: display.transpose,
-    leaderId: core.leader?.id ?? core.config.leaderId,
-    playlist,
-    song: "",
-  });
+  const leaderId = displayUpdateLeaderId(core);
+  await cloudApi.sendDisplayUpdate(
+    {
+      songId: display.songId,
+      from: display.from,
+      to: display.to,
+      section: display.section,
+      transpose: display.transpose,
+      playlist,
+      song: "",
+    },
+    leaderId ? { leaderId } : undefined
+  );
 }
 
 export function createSongApi(core: RestCore): SongApi {
@@ -263,11 +272,10 @@ export function createSessionApi(core: RestCore): SessionApi {
     startLocal: () => core.startLocalHost(),
     stopLocal: () => core.stopLocalHost(),
     setFeatureEnabled,
-    createOnline: async (leaderId) => {
-      // Force-register the cloud session now (user-chosen): a /display_update carrying
-      // the leader id upserts the sessions row, so the leader appears for followers at
-      // once rather than only on the next project. Cloud hosting lives within App mode.
-      core.config = { ...core.config, leaderId: leaderId ?? core.leader?.id };
+    createOnline: async () => {
+      // Online hosting is always owned by the authenticated user's default leader;
+      // the leader currently selected for editing must not retarget the session.
+      if (!core.leader?.id) throw new Error("A default leader is required for online projection");
       await pushDisplay(core, core.getDisplay());
       // Seed the freshly-registered cloud session with the working playlist so
       // followers see it immediately (pushDisplay no longer carries the list).
@@ -289,7 +297,7 @@ export function createSessionApi(core: RestCore): SessionApi {
 
 export function createAuthApi(core: RestCore): AuthApi {
   const applyLeader = (login: string, leaderId: string | undefined): void => {
-    core.setAuthed(true, { id: leaderId ?? login, name: login });
+    core.setAuthed(true, leaderId ? { id: leaderId, name: login } : null);
   };
   return {
     isAuthed: () => cloudApi.isAuthed(),

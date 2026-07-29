@@ -18,6 +18,7 @@ import { cloudApi } from "../common/cloudApi";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClientViewApp } from "./client-view/boot/ClientViewApp";
 import { AuthProvider } from "./contexts/AuthContext";
+import { OnlineSessionProvider } from "./contexts/OnlineSessionContext";
 import { readPersistedSettings } from "./services/settingsStore";
 import type { Settings } from "./types";
 import { disableDefaultZoom } from "./utils/disableDefaultZoom";
@@ -238,7 +239,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       </ThemeProvider>
     ) : (
       <AuthProvider>
-        <RootView />
+        <OnlineSessionProvider>
+          <RootView />
+        </OnlineSessionProvider>
       </AuthProvider>
     )}
   </React.StrictMode>

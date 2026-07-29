@@ -44,7 +44,28 @@ type CloudRequestOptions = {
   headers?: Record<string, string>;
   timeoutMs?: number;
   clearCookiesAfterSnapshot?: boolean;
+  responseType?: "json" | "text";
 };
+
+export type DisplayUpdateResult = "DONE" | "SKIPPED" | "NO_SESSION" | "UNAUTHORIZED" | "UNKNOWN_LEADER" | "ERROR";
+
+export type DisplaySessionTarget = { leaderId: string; sessionId?: never } | { sessionId: string; leaderId?: never };
+
+const DISPLAY_UPDATE_RESULTS = new Set<DisplayUpdateResult>(["DONE", "SKIPPED", "NO_SESSION", "UNAUTHORIZED", "UNKNOWN_LEADER", "ERROR"]);
+
+export function isGuestDisplaySessionId(value: string): boolean {
+  return value.startsWith("guest_");
+}
+
+function appendDisplayTarget(endpoint: string, target?: Partial<DisplaySessionTarget>): string {
+  if (target?.leaderId && target?.sessionId) throw new Error("A display request cannot target both a leader and a guest session");
+  if (target?.sessionId) return `${endpoint}${endpoint.includes("?") ? "&" : "?"}session=${encodeURIComponent(target.sessionId)}`;
+  if (target?.leaderId) {
+    const key = isGuestDisplaySessionId(target.leaderId) ? "session" : "leader";
+    return `${endpoint}${endpoint.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(target.leaderId)}`;
+  }
+  return endpoint;
+}
 
 type ProxyRequestOptions = {
   requestId: string;
@@ -579,7 +600,7 @@ export class CloudApiService {
             return JSON.parse(text) as T;
           }
 
-          return response.json() as T;
+          return (options?.responseType === "text" ? response.text() : response.json()) as Promise<T>;
         }
       }
     } catch (error) {
@@ -715,6 +736,7 @@ export class CloudApiService {
     options?: {
       signal?: AbortSignal;
       leaderId?: string;
+      sessionId?: string;
       forced?: boolean;
     }
   ): Promise<{ display: Display; ppHeaders: Record<string, string> }> {
@@ -737,7 +759,12 @@ export class CloudApiService {
     if (display.instructions != null) command += "&instructions=" + encodeURIComponent(display.instructions);
     if (display.message != null) command += "&message=" + encodeURIComponent(display.message);
     if (display.chordProStylesRev != null) command += "&chordpro_styles_rev=" + encodeURIComponent(display.chordProStylesRev);
-    if (options?.leaderId) command += "&leader=" + encodeURIComponent(options.leaderId);
+    if (options?.leaderId && options?.sessionId) throw new Error("A display query cannot target both a leader and a guest session");
+    if (options?.sessionId) command += "&session=" + encodeURIComponent(options.sessionId);
+    else if (options?.leaderId) {
+      const key = isGuestDisplaySessionId(options.leaderId) ? "session" : "leader";
+      command += `&${key}=` + encodeURIComponent(options.leaderId);
+    }
     if (options?.forced) command += "&forced=true";
 
     const path = command.startsWith("/") ? command : `/${command}`;
@@ -787,49 +814,62 @@ export class CloudApiService {
     }
   }
 
-  async fetchDisplayStylesQuery(options?: { leaderId?: string; rev?: string; signal?: AbortSignal }): Promise<DisplayStylesQueryResponse> {
+  async fetchDisplayStylesQuery(options?: {
+    leaderId?: string;
+    sessionId?: string;
+    rev?: string;
+    signal?: AbortSignal;
+  }): Promise<DisplayStylesQueryResponse> {
     let endpoint = "/display_styles_query";
     const params: string[] = [];
-    if (options?.leaderId) params.push(`leader=${encodeURIComponent(options.leaderId)}`);
+    if (options?.leaderId && options?.sessionId) throw new Error("A display styles query cannot target both a leader and a guest session");
+    if (options?.sessionId) params.push(`session=${encodeURIComponent(options.sessionId)}`);
+    else if (options?.leaderId) {
+      const key = isGuestDisplaySessionId(options.leaderId) ? "session" : "leader";
+      params.push(`${key}=${encodeURIComponent(options.leaderId)}`);
+    }
     if (options?.rev) params.push(`rev=${encodeURIComponent(options.rev)}`);
     if (params.length > 0) endpoint += `?${params.join("&")}`;
     const response = await this.apiCall<unknown>(endpoint, undefined, { signal: options?.signal });
     return this.parseResponse(displayStylesQueryResponseCodec, response);
   }
 
-  async sendDisplayStylesUpdate(data: { chordProStyles: ChordProStylesSettings; chordProStylesRev?: string; leaderId?: string }): Promise<string> {
+  async sendDisplayStylesUpdate(
+    data: { chordProStyles: ChordProStylesSettings; chordProStylesRev?: string },
+    target?: Partial<DisplaySessionTarget>
+  ): Promise<string> {
     const payload: Record<string, unknown> = {
       chordProStyles: data.chordProStyles,
     };
     if (data.chordProStylesRev) payload.chordProStylesRev = data.chordProStylesRev;
-    if (data.leaderId) payload.leader = data.leaderId;
-
-    return this.apiCall<string>("/display_styles_update", payload);
+    return this.apiCall<string>(appendDisplayTarget("/display_styles_update", target), payload);
   }
 
   /**
    * Display update data type matching C# UpdateWebDisplay values
    */
-  private lastDisplaySent: Record<string, string> = {};
+  private lastDisplaySent = "";
 
   /**
    * Send display update to cloud server (matching C# UpdateWebDisplay)
-   * Returns true if update was sent, false if skipped (no change or disabled)
+   * The publishing target is kept out of the body and sent as a query parameter.
    */
-  async sendDisplayUpdate(data: {
-    songId: string;
-    from: number;
-    to: number;
-    section?: number;
-    sectionRepeatCounts?: Display["sectionRepeatCounts"];
-    sectionRepeatNonce?: number;
-    transpose?: number;
-    leaderId?: string;
-    playlist?: PlaylistEntry[];
-    song: string;
-    message?: string;
-    instructions?: string;
-  }): Promise<boolean> {
+  async sendDisplayUpdate(
+    data: {
+      songId: string;
+      from: number;
+      to: number;
+      section?: number;
+      sectionRepeatCounts?: Display["sectionRepeatCounts"];
+      sectionRepeatNonce?: number;
+      transpose?: number;
+      playlist?: PlaylistEntry[];
+      song: string;
+      message?: string;
+      instructions?: string;
+    },
+    options?: Partial<DisplaySessionTarget> & { force?: boolean }
+  ): Promise<DisplayUpdateResult> {
     // Build values to send (matching C# values dictionary)
     const values: Record<string, string> = {
       ppu: "true",
@@ -851,9 +891,6 @@ export class CloudApiService {
     if (data.sectionRepeatNonce != null) {
       values.sectionRepeatNonce = data.sectionRepeatNonce.toString();
     }
-    if (data.leaderId) {
-      values.leader = data.leaderId;
-    }
     if (data.playlist) {
       values.playlist = data.playlist.map((entry) => JSON.stringify(entry)).join("\n");
     }
@@ -865,58 +902,31 @@ export class CloudApiService {
     }
 
     // Compare with last sent to avoid duplicate uploads (matching C# CompareNameValueCollections)
-    const valuesJson = JSON.stringify(values);
-    if (valuesJson === JSON.stringify(this.lastDisplaySent)) {
-      return false; // No change, skip upload
+    const endpoint = appendDisplayTarget("/display_update", options);
+    const valuesJson = JSON.stringify({ endpoint, values });
+    if (!options?.force && valuesJson === this.lastDisplaySent) {
+      return "SKIPPED";
     }
 
     try {
       console.info("Sync", "Sending display update");
 
-      // Build headers with form encoding
-      const headers = this.applyCommonHeaders({
-        "Content-Type": "application/json",
-        "X-PP-Intent": "control-update",
+      const response = await this.apiCall<unknown>(endpoint, values, {
+        responseType: "text",
+        headers: { "X-PP-Intent": "control-update" },
       });
-
-      // Check if we're in Electron and should use the proxy
-      if (this.proxyApi) {
-        const result = await this.proxyApi.proxyPost(this.baseUrl, "/display_update", JSON.stringify(values), headers);
-
-        // Check for error response from proxy
-        if (result && "error" in result) {
-          const errorResult = result as { error: { message: string; status?: number } };
-          console.warn("Sync", `Display update failed: ${errorResult.error.message}`);
-          return false;
-        }
-
-        this.lastDisplaySent = values;
+      const normalized = String(response).trim().toUpperCase() as DisplayUpdateResult;
+      const result = DISPLAY_UPDATE_RESULTS.has(normalized) ? normalized : "ERROR";
+      if (result === "DONE") {
+        this.lastDisplaySent = valuesJson;
         console.info("Sync", "Display update sent successfully");
-        return true;
       } else {
-        // Web mode: use direct fetch with Vite proxy
-        const url = `${this.baseUrl}/display_update`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(values),
-          credentials: "include",
-        });
-
-        if (response.ok) {
-          this.lastDisplaySent = values;
-          console.info("Sync", "Display update sent successfully");
-          return true;
-        } else {
-          console.warn("Sync", `Display update failed: ${response.status} ${response.statusText}`);
-          return false;
-        }
+        console.warn("Sync", `Display update returned ${result}`);
       }
+      return result;
     } catch (error) {
-      // Network errors are expected if cloud server is not configured or unreachable
-      // Use debug level to avoid alarming users
-      console.debug("Sync", "Display update skipped (server not reachable)", error instanceof Error ? error.message : error);
-      return false;
+      console.debug("Sync", "Display update failed", error instanceof Error ? error.message : error);
+      throw error;
     }
   }
 
@@ -926,12 +936,11 @@ export class CloudApiService {
    *  even when it is 0 (so a value can be reset to zero) and can send capo at all
    *  (sendDisplayUpdate carries neither reliably). No dedup — a repeat of the same
    *  value is harmless and legacy preference updates were never deduped either. */
-  async sendDisplayPreference(fields: { id: string; transpose?: number; capo?: number; leaderId?: string }): Promise<string> {
+  async sendDisplayPreference(fields: { id: string; transpose?: number; capo?: number }, target?: Partial<DisplaySessionTarget>): Promise<string> {
     const values: Record<string, string | number> = { id: fields.id };
     if (fields.transpose !== undefined) values.transpose = fields.transpose.toString();
     if (fields.capo !== undefined) values.capo = fields.capo.toString();
-    if (fields.leaderId) values.leader = fields.leaderId;
-    return this.sendPost("/display_update", values, { "X-PP-Intent": "control-update" });
+    return this.sendPost(appendDisplayTarget("/display_update", target), values, { "X-PP-Intent": "control-update" });
   }
 
   // =========================================================================

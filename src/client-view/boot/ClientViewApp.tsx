@@ -13,9 +13,19 @@ import { ClientViewProvider } from "../controller/ClientViewContext";
 import { ClientView } from "../ui/ClientView";
 import type { ClientConfig } from "../api/ClientApi";
 import { useAuth } from "../../contexts/AuthContext";
+import { LocalizationProvider, useLocalization } from "../../localization/LocalizationContext";
 import "../ui/client-view.css";
 
 export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHome?: () => void }) {
+  return (
+    <LocalizationProvider>
+      <ClientViewAppContent config={config} onHome={onHome} />
+    </LocalizationProvider>
+  );
+}
+
+function ClientViewAppContent({ config, onHome }: { config?: ClientConfig; onHome?: () => void }) {
+  const { t } = useLocalization();
   const auth = useAuth();
   const { isAuthenticated, login, commitSession, logout, restoreStoredSession } = auth;
   const [api] = useState(() => new DirectClientApi());
@@ -28,7 +38,7 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
       isAuthed: () => isAuthenticated,
       login: async (user, password, keepLoggedIn) => {
         const success = await login(user, password);
-        if (!success) throw new Error("Sign in failed");
+        if (!success) throw new Error(t("LoginFailed"));
         if (keepLoggedIn) {
           commitSession();
           await window.electronAPI?.persistCookies?.();
@@ -44,7 +54,7 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
       },
     };
     api.setAuthBridge(bridge);
-  }, [api, isAuthenticated, login, commitSession, logout, restoreStoredSession]);
+  }, [api, isAuthenticated, login, commitSession, logout, restoreStoredSession, t]);
 
   // In-process adapter: the embedded view shares the host app's live state
   // (CurrentSongStore + Database) rather than talking to the cloud.
@@ -66,7 +76,7 @@ export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHom
   }, [store, config]);
 
   if (!ready) {
-    return <div className="cv-loading">Loading…</div>;
+    return <div className="cv-loading">{t("Loading")}</div>;
   }
 
   return (

@@ -2,14 +2,12 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { Leader } from "../../db-common/Leader";
 import { Database } from "../../db-common/Database";
 import { useSettings } from "../hooks/useSettings";
-import { v4 as uuidv4 } from "uuid";
 import { getWebServerInterface } from "../services/webServerBridge";
 
 interface LeaderContextType {
   selectedLeader: Leader | null;
   setSelectedLeaderId: (leaderId: string | null) => void;
   allLeaders: Leader[];
-  guestLeaderId: string;
 }
 
 const LeaderContext = createContext<LeaderContextType | undefined>(undefined);
@@ -45,27 +43,6 @@ export const LeaderProvider: React.FC<LeaderProviderProps> = ({ children }) => {
   // Track the previous leaders list length to detect when it genuinely changes
   // (e.g. after sync or database switch), vs just re-running the effect.
   const prevLeadersCountRef = React.useRef<number | null>(null);
-  // Ensure each client instance gets a persistent guest ID immediately (synchronous on first render).
-  // We read/write localStorage in the state initializer so `guestLeaderId` is available on first render
-  // (avoids race conditions where other code needs the id before an effect runs).
-  const [guestLeaderId] = useState<string>(() => {
-    try {
-      let guestLeader = localStorage.getItem("pp-guest-leader")?.trim();
-      if (!guestLeader) {
-        guestLeader = uuidv4();
-        try {
-          localStorage.setItem("pp-guest-leader", guestLeader);
-        } catch {
-          // ignore storage write errors (e.g. private mode)
-        }
-      }
-      return guestLeader;
-    } catch {
-      // localStorage may be unavailable in some environments — generate a transient id
-      return uuidv4();
-    }
-  });
-
   // Load leaders from database - re-run when user changes (database switches)
   useEffect(() => {
     let dbCleanup: (() => void) | undefined;
@@ -163,5 +140,5 @@ export const LeaderProvider: React.FC<LeaderProviderProps> = ({ children }) => {
     [updateSettingWithAutoSave]
   );
 
-  return <LeaderContext.Provider value={{ selectedLeader, setSelectedLeaderId, allLeaders, guestLeaderId }}>{children}</LeaderContext.Provider>;
+  return <LeaderContext.Provider value={{ selectedLeader, setSelectedLeaderId, allLeaders }}>{children}</LeaderContext.Provider>;
 };

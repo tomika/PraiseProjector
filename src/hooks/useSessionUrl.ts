@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { useSettings } from "./useSettings";
-import { useLeader } from "../contexts/LeaderContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useOnlineSession } from "../contexts/OnlineSessionContext";
 import { cloudApiHost } from "../config";
+import { cloudApi } from "../../common/cloudApi";
 import { Settings } from "../types";
 import { qrCodeCacheService } from "../services/QRCodeCacheService";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
@@ -38,11 +40,24 @@ export function normalizePublicWebRoot(baseUrl: string): string {
 }
 
 /**
- * Pure helper — build the cloud leader session URL.
+ * The web root the session URLs must point at: the SAME host the app actually talks
+ * to, resolved at runtime (`cloudApi.getBaseUrl()` — set from Electron's
+ * proxy-config.json, RestCore's config, or `cloudApiBaseUrl` in web mode). The
+ * build-time `cloudApiHost` (VITE_CLOUD_API_HOST) is only a fallback for the window
+ * before AuthContext has run. Using the build-time constant here would emit
+ * production URLs while every request went to a local test server.
  */
-export function buildCloudUrl(leaderId: string, baseUrl: string = cloudApiHost): string {
-  const webRoot = normalizePublicWebRoot(baseUrl);
-  return `${webRoot}/webapp/client-view.html?follow=${encodeURIComponent(leaderId)}`;
+function runtimeCloudBaseUrl(): string {
+  return cloudApi.getBaseUrl() || cloudApiHost;
+}
+
+/**
+ * Pure helper — build the cloud leader session URL.
+ * Pass `baseUrl` to pin a specific host; omit it to follow the runtime cloud base.
+ */
+export function buildCloudUrl(sessionOwnerId: string, baseUrl?: string): string {
+  const webRoot = normalizePublicWebRoot(baseUrl || runtimeCloudBaseUrl());
+  return `${webRoot}/webapp/client-view.html?follow=${encodeURIComponent(sessionOwnerId)}`;
 }
 
 /**
@@ -65,8 +80,10 @@ export function generateQRCodeSVG(url: string, size: number = 128, level: "L" | 
  */
 export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
   const { settings } = useSettings();
-  const { selectedLeader, guestLeaderId } = useLeader();
-  const sessionLeaderId = selectedLeader?.id || guestLeaderId;
+  const { authStatus, user } = useAuth();
+  const { guestSessionId, state } = useOnlineSession();
+  const sessionOwnerId = authStatus === "authenticated" ? user?.leaderId : authStatus === "guest" ? guestSessionId : null;
+  const cloudUrl = state.phase === "active" && sessionOwnerId ? buildCloudUrl(sessionOwnerId) : null;
 
   // INTENTIONAL: depend only on the specific settings fields used to build the URL,
   // not the whole `settings` object. Broadening would recompute (and re-render
@@ -81,14 +98,14 @@ export function useSessionUrl(mode: SessionUrlMode = "auto"): string | null {
     }
 
     if (mode === "cloud") {
-      return buildCloudUrl(sessionLeaderId);
+      return cloudUrl;
     }
 
     // "auto": prefer local when available
     if (hasWebServerRuntime && settings?.iWebEnabled) {
       return buildLocalUrl(settings);
     }
-    return buildCloudUrl(sessionLeaderId);
-  }, [mode, settings?.iWebEnabled, settings?.webServerDomainName, settings?.webServerPort, settings?.webServerPath, sessionLeaderId]);
+    return cloudUrl;
+  }, [mode, settings?.iWebEnabled, settings?.webServerDomainName, settings?.webServerPort, settings?.webServerPath, cloudUrl]);
   /* eslint-enable react-hooks/preserve-manual-memoization, react-hooks/exhaustive-deps */
 }

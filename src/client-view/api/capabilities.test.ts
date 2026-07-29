@@ -25,6 +25,7 @@ function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): Capabil
     isPwa: false,
     onlineSession: false,
     authed: false,
+    hasDefaultLeader: false,
     hasAuthBridge: false,
     hasSelectedLeader: false,
     externalWebDisplayEnabled: false,
@@ -114,11 +115,12 @@ test("both App roles are always in control with no leader-mode toggle", () => {
 
 // ── AppRest specifics ────────────────────────────────────────────────────────
 
-test("AppRest: login + change-leader always on; online hosting follows authed", () => {
+test("AppRest: online hosting requires auth and a default leader", () => {
   assert.equal(deriveCapabilities(inputs("AppRest")).canLogin, true);
   assert.equal(deriveCapabilities(inputs("AppRest")).canChangeLeader, true);
   assert.equal(deriveCapabilities(inputs("AppRest", { authed: false })).canHostOnlineSession, false);
-  assert.equal(deriveCapabilities(inputs("AppRest", { authed: true })).canHostOnlineSession, true);
+  assert.equal(deriveCapabilities(inputs("AppRest", { authed: true, hasDefaultLeader: false })).canHostOnlineSession, false);
+  assert.equal(deriveCapabilities(inputs("AppRest", { authed: true, hasDefaultLeader: true })).canHostOnlineSession, true);
 });
 
 test("AppRest: local hosting needs a host bridge AND the ppd toggle; full editor only outside locked native session", () => {

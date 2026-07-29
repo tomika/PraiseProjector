@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { Panel, PanelGroup } from "react-resizable-panels";
@@ -56,7 +56,8 @@ import { useSettings } from "./hooks/useSettings";
 import { useSessionUrl } from "./hooks/useSessionUrl";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { useLocalization } from "./localization/LocalizationContext";
-import { cloudApi } from "./../common/cloudApi";
+import { cloudApi, type DisplaySessionTarget, type DisplayUpdateResult } from "./../common/cloudApi";
+import { useOnlineSession } from "./contexts/OnlineSessionContext";
 import { cloudApiHost } from "./config";
 import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryWithData, LeaderDBProfile } from "../common/pp-types";
 import * as t from "io-ts";
@@ -193,7 +194,7 @@ const AppContent: React.FC = () => {
   const width = useWindowWidth();
   const orientation = useOrientation();
   const { settings, syncToBackend, updateSetting, updateSettingWithAutoSave } = useSettings();
-  const { selectedLeader, guestLeaderId } = useLeader();
+  const { selectedLeader } = useLeader();
   const {
     loadInitialCredentials,
     networkUnavailable,
@@ -201,12 +202,25 @@ const AppContent: React.FC = () => {
     restoreStoredSession,
     isAuthenticated,
     isGuest,
+    authStatus,
+    user,
     isLoading: isAuthLoading,
   } = useAuth();
   const { t } = useLocalization();
   const { showToast } = useToast();
+  const {
+    guestSessionId,
+    state: onlineSessionState,
+    ensureGuestSession,
+    clearGuestSession,
+    setStarting: setOnlineSessionStarting,
+    setActive: setOnlineSessionActive,
+    setError: setOnlineSessionError,
+    setDisabled: setOnlineSessionDisabled,
+  } = useOnlineSession();
   const hasSyncedSettingsRef = useRef(false);
   const lastCloudNetworkToastAtRef = useRef(0);
+  const lastDisplayFailureToastAtRef = useRef(0);
   const ppdHostingSyncRef = useRef<Promise<void>>(Promise.resolve());
   const ppdSessionEnabled = settings?.ppdSessionEnabled;
 
@@ -761,18 +775,134 @@ const AppContent: React.FC = () => {
     console.info("App", `Playlist loaded with ${itemCount} items`);
   }, []);
 
+  const cloudDisplayTarget = useMemo<DisplaySessionTarget | undefined>(
+    () =>
+      authStatus === "authenticated" && user?.leaderId
+        ? { leaderId: user.leaderId }
+        : authStatus === "guest" && guestSessionId
+          ? { sessionId: guestSessionId }
+          : undefined,
+    [authStatus, user?.leaderId, guestSessionId]
+  );
+
+  const sendCloudDisplay = useCallback((display: Display, target: DisplaySessionTarget, force = false) => {
+    return cloudApi.sendDisplayUpdate(
+      {
+        songId: display.songId,
+        from: display.from,
+        to: display.to,
+        section: display.section,
+        sectionRepeatNonce: display.sectionRepeatNonce,
+        sectionRepeatCounts: display.sectionRepeatCounts,
+        transpose: display.transpose,
+        playlist: display.playlist,
+        song: display.song,
+        message: display.message,
+        instructions: display.instructions,
+      },
+      { ...target, force }
+    );
+  }, []);
+
+  const displayFailureMessage = useCallback(
+    (result: Exclude<DisplayUpdateResult, "DONE" | "SKIPPED">) => {
+      switch (result) {
+        case "NO_SESSION":
+          return t("OnlineSessionNoSession");
+        case "UNAUTHORIZED":
+          return t("OnlineSessionUnauthorized");
+        case "UNKNOWN_LEADER":
+          return t("OnlineSessionUnknownLeader");
+        default:
+          return t("OnlineSessionError");
+      }
+    },
+    [t]
+  );
+
+  const handleDisplayUpdateFailure = useCallback(
+    (result: Exclude<DisplayUpdateResult, "DONE" | "SKIPPED">, initial: boolean) => {
+      setOnlineSessionError(result);
+      const now = Date.now();
+      if (initial || now - lastDisplayFailureToastAtRef.current >= CLOUD_NETWORK_TOAST_COOLDOWN_MS) {
+        lastDisplayFailureToastAtRef.current = now;
+        showToast(displayFailureMessage(result), "warning");
+      }
+      if (initial) updateSettingWithAutoSave("externalWebDisplayEnabled", false);
+    },
+    [displayFailureMessage, setOnlineSessionError, showToast, updateSettingWithAutoSave]
+  );
+
   useEffect(() => {
-    if (!settings?.externalWebDisplayEnabled || !settings.stylesToClients || !settings.chordProStyles) return;
-    const leaderId = isGuest ? guestLeaderId : settings.selectedLeader;
-    if (!leaderId) return;
+    if (!settings?.externalWebDisplayEnabled && onlineSessionState.phase !== "error") {
+      setOnlineSessionDisabled();
+    }
+  }, [settings?.externalWebDisplayEnabled, onlineSessionState.phase, setOnlineSessionDisabled]);
+
+  useEffect(() => {
+    if (authStatus === "authenticated" && guestSessionId) clearGuestSession();
+  }, [authStatus, guestSessionId, clearGuestSession]);
+
+  // Enabling cloud projection, logging in/out, or changing user always starts by
+  // publishing a complete snapshot to the session owner's target. The QR URL is
+  // withheld until this request returns DONE.
+  useEffect(() => {
+    if (!settings?.externalWebDisplayEnabled || isAuthLoading) return;
+    let cancelled = false;
+
+    if (authStatus === "authenticated" && !user?.leaderId) {
+      handleDisplayUpdateFailure("UNKNOWN_LEADER", true);
+      return;
+    }
+
+    if (authStatus === "guest" && !guestSessionId) {
+      setOnlineSessionStarting();
+      ensureGuestSession();
+      return;
+    }
+
+    if (!cloudDisplayTarget) return;
+    setOnlineSessionStarting();
+    void sendCloudDisplay(getCurrentDisplay(), cloudDisplayTarget, true)
+      .then((result) => {
+        if (cancelled) return;
+        if (result === "DONE" || result === "SKIPPED") setOnlineSessionActive();
+        else handleDisplayUpdateFailure(result, true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOnlineSessionError("ERROR");
+        updateSettingWithAutoSave("externalWebDisplayEnabled", false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    settings?.externalWebDisplayEnabled,
+    isAuthLoading,
+    authStatus,
+    user?.leaderId,
+    guestSessionId,
+    cloudDisplayTarget,
+    ensureGuestSession,
+    handleDisplayUpdateFailure,
+    sendCloudDisplay,
+    setOnlineSessionActive,
+    setOnlineSessionError,
+    setOnlineSessionStarting,
+    updateSettingWithAutoSave,
+  ]);
+
+  useEffect(() => {
+    if (!settings?.externalWebDisplayEnabled || onlineSessionState.phase !== "active" || !settings.stylesToClients || !settings.chordProStyles)
+      return;
+    if (!cloudDisplayTarget) return;
 
     cloudApi
-      .sendDisplayStylesUpdate({
-        leaderId,
-        chordProStyles: settings.chordProStyles,
-      })
+      .sendDisplayStylesUpdate({ chordProStyles: settings.chordProStyles }, cloudDisplayTarget)
       .catch((err) => console.error("Cloud display styles update failed:", err));
-  }, [settings?.externalWebDisplayEnabled, settings?.stylesToClients, settings?.selectedLeader, settings?.chordProStyles, isGuest, guestLeaderId]);
+  }, [settings?.externalWebDisplayEnabled, settings?.stylesToClients, settings?.chordProStyles, onlineSessionState.phase, cloudDisplayTarget]);
 
   useEffect(() => {
     if (pendingPlaylistSelectionIndexRef.current === null || !leftPanelRef.current) {
@@ -808,28 +938,33 @@ const AppContent: React.FC = () => {
         }
 
         // Send display update to cloud when external web display is enabled
-        if (settings?.externalWebDisplayEnabled && (isGuest || settings.selectedLeader)) {
-          cloudApi
-            .sendDisplayUpdate({
-              songId: display.songId,
-              from: display.from,
-              to: display.to,
-              section: display.section,
-              sectionRepeatNonce: display.sectionRepeatNonce,
-              sectionRepeatCounts: display.sectionRepeatCounts,
-              transpose: display.transpose,
-              leaderId: isGuest ? guestLeaderId : settings.selectedLeader,
-              playlist: display.playlist,
-              song: display.song,
-              message: display.message,
-              instructions: display.instructions,
+        if (settings?.externalWebDisplayEnabled && onlineSessionState.phase === "active" && cloudDisplayTarget) {
+          void sendCloudDisplay(display, cloudDisplayTarget)
+            .then((result) => {
+              if (result === "DONE" || result === "SKIPPED") {
+                setOnlineSessionActive();
+              } else if (result === "NO_SESSION" && "sessionId" in cloudDisplayTarget) {
+                clearGuestSession();
+                setOnlineSessionStarting();
+              } else {
+                handleDisplayUpdateFailure(result, false);
+              }
             })
             .catch((err) => console.error("Cloud display update failed:", err));
         }
       };
       setTimeout(update, 50);
     },
-    [settings?.externalWebDisplayEnabled, settings?.selectedLeader, isGuest, guestLeaderId]
+    [
+      settings?.externalWebDisplayEnabled,
+      onlineSessionState.phase,
+      cloudDisplayTarget,
+      sendCloudDisplay,
+      setOnlineSessionActive,
+      clearGuestSession,
+      setOnlineSessionStarting,
+      handleDisplayUpdateFailure,
+    ]
   );
 
   // Subscribe to global display changes and sync to backend

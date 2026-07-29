@@ -14,7 +14,6 @@ import { useTooltips } from "../localization/TooltipContext";
 import { MonitorDisplay } from "../types/electron";
 import ImageSelector from "./preview/ImageSelector";
 import { Settings } from "../types";
-import { useLeader } from "../contexts/LeaderContext";
 import { useSessionUrl } from "../hooks/useSessionUrl";
 import { Panel, PanelGroup, type ImperativePanelHandle } from "react-resizable-panels";
 import ResizeHandle from "./ResizeHandle";
@@ -195,8 +194,6 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const isProjectedPreviewCollapsed = previewPanelCollapseMode === "tabsAndPreviewCollapsed" || previewPanelCollapseMode === "previewCollapsed";
     const [sections, setSections] = useState<ExtendedSectionItem[]>([]);
     const [nextSectionIndex, setNextSectionIndex] = useState(-1);
-    const { guestLeaderId: _guestLeaderId } = useLeader(); // kept for potential future use
-
     // Auto-compute nextSectionIndex when selection or sections change.
     // Keyboard navigation (arrow keys, Home/End, Page) overrides this until the next selection change.
     useEffect(() => {

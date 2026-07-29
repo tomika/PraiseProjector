@@ -26,7 +26,9 @@ import {
 } from "../api/sessionFeatureSettings";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { SessionsForm, classifyOnlineSession, type SessionRow } from "../../shared/SessionsForm";
+import { useOptionalOnlineSession } from "../../contexts/OnlineSessionContext";
 import { buildCloudUrl, buildLocalUrl } from "../../hooks/useSessionUrl";
+import { useLocalization } from "../../localization/LocalizationContext";
 import { getLocalNetworkAddresses } from "../../services/hostDevicePpd";
 import { readPersistedSettings } from "../../services/settingsStore";
 import { icon } from "./assets";
@@ -52,6 +54,8 @@ function buildConnectionRows(sessions: OnlineSessionEntry[]): SessionConnectionR
 }
 
 export function SessionsDialog() {
+  const { t } = useLocalization();
+  const hostOnlineSession = useOptionalOnlineSession();
   const store = useClientViewStore();
   const state = useClientViewState();
 
@@ -199,7 +203,27 @@ export function SessionsDialog() {
   const rows: SessionRow[] = connectionRows.map(({ row }) => ({ ...row, icon: sessionKindIcon[row.kind] }));
   const hasWebServerBackend = caps.hasWebServerBackend;
   const hasPpdBackend = caps.hasHostBridge;
-  const cloudSessionUrl = state.leader?.id ? buildCloudUrl(state.leader.id) : null;
+  const cloudSessionUrl = hostOnlineSession
+    ? hostOnlineSession.state.phase === "active" && hostOnlineSession.sessionOwnerId
+      ? buildCloudUrl(hostOnlineSession.sessionOwnerId)
+      : null
+    : state.leader?.id
+      ? buildCloudUrl(state.leader.id)
+      : null;
+  const cloudStatusText =
+    hostOnlineSession?.state.phase === "starting"
+      ? t("OnlineSessionStarting")
+      : hostOnlineSession?.state.phase === "active"
+        ? t("OnlineSessionActive")
+        : hostOnlineSession?.state.phase === "error"
+          ? hostOnlineSession.state.error === "NO_SESSION"
+            ? t("OnlineSessionNoSession")
+            : hostOnlineSession.state.error === "UNAUTHORIZED"
+              ? t("OnlineSessionUnauthorized")
+              : hostOnlineSession.state.error === "UNKNOWN_LEADER"
+                ? t("OnlineSessionUnknownLeader")
+                : t("OnlineSessionError")
+          : undefined;
   const localSessionUrl = buildLocalUrl({
     ...sessionUrlSettings,
     iWebEnabled: sessionToggleSettings.iWebEnabled,
@@ -212,18 +236,18 @@ export function SessionsDialog() {
     <SessionsForm
       variant="cv"
       isDark={state.isDark}
-      title="Sessions"
-      emptyLabel={searched ? "No sessions found" : "Searching…"}
+      title={t("SessionsTitle")}
+      emptyLabel={searched ? t("NoSessionsFound") : t("SessionsTitle")}
       sessions={rows}
       onConnect={handleConnect}
-      connectLabel="Connect"
+      connectLabel={t("SessionsConnect")}
       scanning={scanning}
       scanIcon={icon("radar.svg")}
       details={
         caps.hasHostBridge
           ? {
-              addressLabel: "Address",
-              resetLabel: "Reset",
+              addressLabel: t("SessionsAddress"),
+              resetLabel: t("SessionsResetAddress"),
               address: broadcastAddress,
               addressError,
               addressOptions,
@@ -236,22 +260,29 @@ export function SessionsDialog() {
       sessionToggles={[
         {
           id: "cloud-session",
-          title: "Cloud",
-          description: "Publish this session through the cloud.",
+          title: t("SessionsCloudToggleTitle"),
+          description: t("SessionsCloudToggleDescription"),
           icon: icon("cloud-session.svg"),
           qrUrl: cloudSessionUrl,
-          qrLabel: "Cloud",
+          qrLabel: t("SessionsCloudToggleTitle"),
           showText: false,
           isFeatureEnabled: sessionToggleSettings.externalWebDisplayEnabled,
-          onToggle: (nextFeatureEnabled) => void setSessionToggle("externalWebDisplayEnabled", nextFeatureEnabled),
+          isControlDisabled: hostOnlineSession ? !hostOnlineSession.canPublish : undefined,
+          statusText: cloudStatusText,
+          statusTone: hostOnlineSession?.state.phase === "error" ? "error" : hostOnlineSession?.state.phase === "active" ? "success" : "progress",
+          onToggle: (nextFeatureEnabled) => {
+            if (nextFeatureEnabled) hostOnlineSession?.setStarting();
+            else hostOnlineSession?.setDisabled();
+            void setSessionToggle("externalWebDisplayEnabled", nextFeatureEnabled);
+          },
         },
         {
           id: "iweb-session",
-          title: "iWeb",
-          description: "Allow local browsers to connect.",
+          title: t("SessionsIWebToggleTitle"),
+          description: t("SessionsIWebToggleDescription"),
           icon: icon("iweb-session.svg"),
           qrUrl: localSessionUrl,
-          qrLabel: "iWeb",
+          qrLabel: t("SessionsIWebToggleTitle"),
           showText: false,
           isFeatureEnabled: hasWebServerBackend && sessionToggleSettings.iWebEnabled,
           isControlDisabled: !hasWebServerBackend,
@@ -259,8 +290,8 @@ export function SessionsDialog() {
         },
         {
           id: "ppd-session",
-          title: "PPD",
-          description: "Allow nearby devices to follow.",
+          title: t("SessionsPpdToggleTitle"),
+          description: t("SessionsPpdToggleDescription"),
           icon: icon("ppd-session.svg"),
           showText: false,
           isFeatureEnabled: hasPpdBackend && sessionToggleSettings.ppdSessionEnabled,
@@ -274,7 +305,7 @@ export function SessionsDialog() {
           },
         },
       ]}
-      closeLabel="Close"
+      closeLabel={t("Close")}
       onClose={() => store.closeSessionsDialog()}
     />
   );

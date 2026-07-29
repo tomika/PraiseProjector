@@ -18,6 +18,7 @@ import { filterOwnSessionEntries } from "../shared/sessionList";
 import { icon } from "../client-view/ui/assets";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
 import { getAssetPath } from "../utils/assetPath";
+import { useOnlineSession } from "../contexts/OnlineSessionContext";
 
 interface SessionsFormProps {
   onClose: () => void;
@@ -57,8 +58,9 @@ interface SessionDisplay {
  */
 const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath, onConnect }) => {
   const { t } = useLocalization();
-  const { user } = useAuth();
+  const { user, authStatus } = useAuth();
   const { settings, updateSettingWithAutoSave } = useSettings();
+  const { state: onlineSessionState, setStarting: setOnlineSessionStarting, setDisabled: setOnlineSessionDisabled } = useOnlineSession();
   const cloudSessionUrl = useSessionUrl("cloud");
   const localSessionUrl = useSessionUrl("local");
   const selfId = user?.leaderId || "";
@@ -317,6 +319,22 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const rows: SessionRow[] = sessions.map((s) => ({ id: s.rowId, name: s.name, kind: s.kind, icon: sessionKindIcon[s.kind] }));
 
   const hasWebServerBackend = isWebServerRuntimeAvailable();
+  const onlineStatusText =
+    onlineSessionState.phase === "starting"
+      ? t("OnlineSessionStarting")
+      : onlineSessionState.phase === "active"
+        ? t("OnlineSessionActive")
+        : onlineSessionState.phase === "error"
+          ? t(
+              onlineSessionState.error === "NO_SESSION"
+                ? "OnlineSessionNoSession"
+                : onlineSessionState.error === "UNAUTHORIZED"
+                  ? "OnlineSessionUnauthorized"
+                  : onlineSessionState.error === "UNKNOWN_LEADER"
+                    ? "OnlineSessionUnknownLeader"
+                    : "OnlineSessionError"
+            )
+          : undefined;
 
   return (
     <SharedSessionsForm
@@ -354,7 +372,14 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
                 qrUrl: cloudSessionUrl,
                 qrLabel: t("SessionsCloudToggleTitle"),
                 isFeatureEnabled: settings.externalWebDisplayEnabled,
-                onToggle: (nextFeatureEnabled) => updateSettingWithAutoSave("externalWebDisplayEnabled", nextFeatureEnabled),
+                isControlDisabled: authStatus === "offline" || (authStatus === "authenticated" && !user?.leaderId),
+                statusText: onlineStatusText,
+                statusTone: onlineSessionState.phase === "error" ? "error" : onlineSessionState.phase === "active" ? "success" : "progress",
+                onToggle: (nextFeatureEnabled) => {
+                  if (nextFeatureEnabled) setOnlineSessionStarting();
+                  else setOnlineSessionDisabled();
+                  updateSettingWithAutoSave("externalWebDisplayEnabled", nextFeatureEnabled);
+                },
               },
               {
                 id: "iweb-session",
