@@ -3,11 +3,13 @@
 /**
  * Conditional build of the web bundle (src + src/client-view) into dist/web,
  * which is the single self-contained /webapp artifact the Electron embedded
- * webserver serves (client-view at /webapp/client-view.html) and the public
- * deploy ships. Parallels build-client-if-needed.js (which builds the LEGACY
- * client into dist/client/app/pp-api.js). Run from the debug preLaunch chain so
- * a VS Code debug session serves the freshly-built client instead of a stale
- * bundle, and from `npm run build:web` for production.
+ * webserver serves (client-view at /webapp/client-view.html, the net display at
+ * /webapp/netdisplay.html) and the public deploy ships. Run from the debug
+ * preLaunch chain so a VS Code debug session serves the freshly-built client
+ * instead of a stale bundle, and from `npm run build:web` for production.
+ *
+ * This is now the ONLY build in the debug chain: the legacy pp-api.js client is
+ * no longer built, shipped or served (its /app tree is frozen on the server).
  *
  * Rebuilds only when a watched source is newer than the built entry (or it is
  * missing), so relaunching without code changes stays fast.
