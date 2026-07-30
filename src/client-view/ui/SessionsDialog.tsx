@@ -29,7 +29,6 @@ import { SessionsForm, classifyOnlineSession, type SessionRow } from "../../shar
 import { useOptionalOnlineSession } from "../../contexts/OnlineSessionContext";
 import { buildCloudUrl, buildLocalUrl } from "../../hooks/useSessionUrl";
 import { useLocalization } from "../../localization/LocalizationContext";
-import { getLocalNetworkAddresses } from "../../services/hostDevicePpd";
 import { readPersistedSettings } from "../../services/settingsStore";
 import { icon } from "./assets";
 
@@ -100,13 +99,13 @@ export function SessionsDialog() {
   // contain a LAN address rather than buildLocalUrl's loopback fallback.
   useEffect(() => {
     let active = true;
-    void getLocalNetworkAddresses().then((addresses) => {
+    void store.getLocalNetworkAddresses().then((addresses) => {
       if (active) setLocalWebServerHost(addresses[0] ?? "");
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [store]);
 
   useEffect(() => {
     const refreshToggles = () => {

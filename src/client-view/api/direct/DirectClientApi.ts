@@ -31,6 +31,7 @@ import type { SyncStatus } from "../../../state/syncStatusStore";
 import {
   getHostDeviceDiscoveredSessions,
   getLocalBroadcastAddresses,
+  getLocalNetworkAddresses,
   isHostDevicePpdAvailable,
   scanHostDeviceSessions,
   startHostDeviceWatching,
@@ -418,6 +419,7 @@ export class DirectClientApi implements ClientApi {
         }
         return this.collectLocalSessions();
       },
+      localNetworkAddresses: () => getLocalNetworkAddresses(),
       searchExternal: async (mode) => {
         const results: OnlineSessionEntry[] = [];
         if (mode === "WEB" || mode === "BOTH") {

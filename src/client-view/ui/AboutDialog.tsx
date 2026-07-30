@@ -20,7 +20,7 @@ const WEBSITE_URL = "https://praiseprojector.com";
 
 type DeviceInfoLine = { key: string; label: string; value: string };
 
-function getDeviceInfoLines(info: DeviceInfo | null, appCommit: string): DeviceInfoLine[] {
+function getDeviceInfoLines(info: DeviceInfo | null): DeviceInfoLine[] {
   if (!info) return [];
 
   const lines: DeviceInfoLine[] = [];
@@ -57,7 +57,7 @@ export function AboutDialog() {
   const [hostSections, setHostSections] = useState<LicenseSection[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const sections = useMemo(() => [...getClientViewAboutLicenseSections(), ...hostSections], [hostSections]);
-  const deviceInfoLines = useMemo(() => getDeviceInfoLines(deviceInfo, showCommit ? commit : ""), [deviceInfo, showCommit, commit]);
+  const deviceInfoLines = useMemo(() => getDeviceInfoLines(deviceInfo), [deviceInfo]);
 
   const openUrl = (url: string) => store.openExternalUrl(url);
 

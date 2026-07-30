@@ -195,10 +195,11 @@ export function MainToolbar({
   // revokes the capo wheel's own precondition (openCapoPicker's early return).
   // The capo wheel is deliberately NOT closed for a follower — capo is a
   // per-client local preference that followers may still set on their own client.
-  useEffect(() => {
-    if (wheel === "transpose" && follower) setWheel(null);
-    else if (wheel === "capo" && !state.displaySettings.useCapo) setWheel(null);
-  }, [follower, wheel, state.displaySettings.useCapo]);
+  const wheelIsInvalid = (wheel === "transpose" && follower) || (wheel === "capo" && !state.displaySettings.useCapo);
+  if (wheelIsInvalid) {
+    setWheel(null);
+    setWheelDrag(null);
+  }
 
   // One renderer per control key; the order arrays decide which appear and where.
   const controls: Record<ToolbarButtonKey, ReactNode> = {

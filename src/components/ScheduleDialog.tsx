@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Leader } from "../../db-common/Leader";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
@@ -43,17 +43,14 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
 }) => {
   const { showConfirmAsync } = useMessageBox();
   const { t } = useLocalization();
-  const [activeLeader, setActiveLeader] = useState<Leader>(leader);
+  const [activeLeaderId, setActiveLeaderId] = useState(leader.id);
   const [refreshing, setRefreshing] = useState(false);
 
   const findLeader = (id: string) => ownLeaders.find((l) => l.id === id) ?? publicLeaders.find((l) => l.id === id);
 
   // After a refresh the leader lists are rebuilt with fresh instances — follow
   // the active id to the new instance so the schedule reflects the fetch.
-  useEffect(() => {
-    const fresh = ownLeaders.find((l) => l.id === activeLeader.id) ?? publicLeaders.find((l) => l.id === activeLeader.id);
-    if (fresh && fresh !== activeLeader) setActiveLeader(fresh);
-  }, [ownLeaders, publicLeaders, activeLeader]);
+  const activeLeader = findLeader(activeLeaderId) ?? leader;
 
   const showSwitcher = mode === "load" && ownLeaders.length + publicLeaders.length > 0;
 
@@ -72,7 +69,7 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
         value={activeLeader.id}
         onChange={(e) => {
           const next = findLeader(e.target.value);
-          if (next) setActiveLeader(next);
+          if (next) setActiveLeaderId(next.id);
         }}
       >
         {!findLeader(activeLeader.id) && <option value={activeLeader.id}>{activeLeader.name}</option>}

@@ -9,7 +9,7 @@
  */
 
 import { cloudApi } from "../../../../common/cloudApi";
-import { getLocalBroadcastAddresses } from "../../../services/hostDevicePpd";
+import { getLocalBroadcastAddresses, getLocalNetworkAddresses } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { LicenseSection } from "../../../about-licenses";
@@ -253,6 +253,7 @@ export function createSessionApi(core: RestCore): SessionApi {
   };
   return {
     scanLocalServers: (address) => core.scanLocal(address),
+    localNetworkAddresses: () => getLocalNetworkAddresses(),
     scanAddresses: () => getLocalBroadcastAddresses(),
     searchExternal: async (mode) => {
       const results: OnlineSessionEntry[] = [];

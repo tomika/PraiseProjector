@@ -405,6 +405,8 @@ export type SessionFeatureKey = "externalWebDisplayEnabled" | "iWebEnabled" | "p
 export interface SessionApi {
   /** Scan the LAN for local PraiseProjector servers (UDP/PPD). */
   scanLocalServers(address?: string): Promise<OnlineSessionEntry[]>;
+  /** Local IPv4 addresses suitable for links shared with another LAN device. */
+  localNetworkAddresses(): Promise<string[]>;
   /**
    * Candidate scan-address options for the picker ({ value, label } per active NIC,
    * label = interface name + broadcast), plus the preferred default value. Sourced

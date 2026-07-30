@@ -2175,6 +2175,11 @@ export class ClientViewStore {
     return this.api.session.scanAddresses();
   }
 
+  /** Local IPv4 addresses suitable for links shared with another LAN device. */
+  getLocalNetworkAddresses(): Promise<string[]> {
+    return this.api.session.localNetworkAddresses();
+  }
+
   async watchSession(session: OnlineSessionEntry): Promise<void> {
     await this.api.session.watch(session);
   }
