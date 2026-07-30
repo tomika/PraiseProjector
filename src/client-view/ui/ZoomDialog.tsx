@@ -1,7 +1,7 @@
 /**
  * ZoomPanel — the maxText (zoom) sub-controls, shown as a contextmenu-like panel
  * anchored below the zoom button in OptionsBar. Mirrors the original
- * #zoomSettingsDialog: title/meta visibility, section-tag mode, and FIT vs SCROLL.
+ * #zoomSettingsDialog: title/meta visibility, section-tag mode, and text sizing.
  *
  * Changes are applied immediately (no OK button). The panel is opened by
  * long-pressing / right-clicking the zoom button and closed by clicking outside.
@@ -12,7 +12,7 @@
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import type { ZoomTagMode } from "../controller/ClientViewStore";
-import { icon } from "./assets";
+import { SIZING_MODES, ZoomSizingModeGlyph } from "./zoomSizingModes";
 
 const TAG_MODES: Array<{ value: ZoomTagMode; label: string }> = [
   { value: "VISIBLE", label: "Verse" },
@@ -53,16 +53,35 @@ export function ZoomPanel() {
         </button>
       </div>
 
-      <div className="cv-zoom-row">
-        <button
-          type="button"
-          className="cv-zoom-btn active cv-zoom-cycle-btn"
-          title={s.zoomScrollable ? "Scroll" : "Fit page"}
-          onClick={() => store.setDisplaySetting("zoomScrollable", !s.zoomScrollable)}
-        >
-          <img className="btnImg" src={icon(s.zoomScrollable ? "scrollpage.svg" : "fitpage.svg")} alt="" />
-        </button>
+      <div className="cv-zoom-row cv-zoom-sizing-row" aria-label="Text sizing mode">
+        {SIZING_MODES.map((mode) => (
+          <button
+            key={mode.value}
+            type="button"
+            className={`cv-zoom-btn cv-zoom-mode-btn${s.zoomSizingMode === mode.value ? " active" : ""}`}
+            title={mode.label}
+            aria-label={mode.label}
+            aria-pressed={s.zoomSizingMode === mode.value}
+            onClick={() => mode.value && store.setZoomSizingMode(mode.value)}
+          >
+            <ZoomSizingModeGlyph mode={mode} />
+          </button>
+        ))}
       </div>
+
+      {s.zoomSizingMode === "MANUAL" && (
+        <label className="cv-zoom-font-row">
+          <input
+            type="range"
+            min="10"
+            max="64"
+            step="1"
+            value={s.zoomFontSize}
+            onChange={(event) => store.setManualZoomFontSize(Number(event.target.value))}
+          />
+          <output>{s.zoomFontSize}px</output>
+        </label>
+      )}
     </div>
   );
 }

@@ -50,6 +50,7 @@ export type DarkMode = "auto" | "light" | "dark";
 
 /** maxText section-tag display: full word, abbreviation, or hidden. */
 export type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
+export type ZoomSizingMode = "FIT_PAGE" | "FIT_WIDTH" | "MANUAL" | "AUTO_HEIGHT";
 
 /** Which collection the options-panel song list shows: the full database
  *  (searchable), the editable working playlist, or the leader-playlists picker
@@ -146,12 +147,13 @@ export interface DisplaySettings {
   useCapo: boolean;
   /** Maximise text: hide title/meta, abbreviate tags, fit more per page. */
   maxText: boolean;
-  /** maxText (zoom) sub-settings — applied only while maxText is on (the
-   *  original zoomPreset). zoomScrollable = full-width SCROLL vs full-page FIT. */
+  /** maxText (zoom) sub-settings — applied only while maxText is on. */
   zoomHideTitle: boolean;
   zoomHideMeta: boolean;
   zoomTagMode: ZoomTagMode;
-  zoomScrollable: boolean;
+  zoomSizingMode: ZoomSizingMode;
+  /** User-selected lyrics size for MANUAL mode, in CSS pixels. */
+  zoomFontSize: number;
 }
 
 const defaultDisplaySettings: DisplaySettings = {
@@ -167,7 +169,8 @@ const defaultDisplaySettings: DisplaySettings = {
   zoomHideTitle: true,
   zoomHideMeta: true,
   zoomTagMode: "ABBREV",
-  zoomScrollable: false,
+  zoomSizingMode: "FIT_PAGE",
+  zoomFontSize: 20,
 };
 
 /**
@@ -733,7 +736,13 @@ export class ClientViewStore {
     const patch: Partial<ClientViewState> = {};
     if (persisted.displaySettings && typeof persisted.displaySettings === "object") {
       // Merge over defaults so a snapshot missing newer keys still validates.
-      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings };
+      const legacy = persisted.displaySettings as DisplaySettings & { zoomScrollable?: boolean };
+      const sizingMode = ["FIT_PAGE", "FIT_WIDTH", "MANUAL", "AUTO_HEIGHT"].includes(legacy.zoomSizingMode)
+        ? legacy.zoomSizingMode
+        : legacy.zoomScrollable
+          ? "FIT_WIDTH"
+          : "FIT_PAGE";
+      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode };
     }
     if (typeof persisted.optionsOpen === "boolean") patch.optionsOpen = persisted.optionsOpen;
     if (typeof persisted.leaderMode === "boolean") patch.leaderMode = persisted.leaderMode;
@@ -1908,6 +1917,46 @@ export class ClientViewStore {
 
   setDisplaySetting<K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]): void {
     this.set({ displaySettings: { ...this.state.displaySettings, [key]: value } });
+  }
+
+  /** Selecting a sizing mode also makes the zoomed song view active. */
+  setZoomSizingMode(zoomSizingMode: ZoomSizingMode): void {
+    this.setZoomMode(zoomSizingMode);
+  }
+
+  /** Atomically select a zoom sizing mode, or turn zoom sizing off. */
+  setZoomMode(zoomSizingMode: ZoomSizingMode | null): void {
+    this.set({
+      displaySettings: {
+        ...this.state.displaySettings,
+        maxText: zoomSizingMode !== null,
+        ...(zoomSizingMode === null ? {} : { zoomSizingMode }),
+      },
+    });
+  }
+
+  /** Gesture-only font adjustment: never activates or changes the sizing mode. */
+  adjustManualZoomFontSize(delta: number): void {
+    const settings = this.state.displaySettings;
+    if (!settings.maxText || settings.zoomSizingMode !== "MANUAL") return;
+    this.set({
+      displaySettings: {
+        ...settings,
+        zoomFontSize: Math.max(10, Math.min(64, Math.round(settings.zoomFontSize + delta))),
+      },
+    });
+  }
+
+  /** Pinch/wheel zoom is an explicit user override of every automatic fit mode. */
+  setManualZoomFontSize(fontSize: number): void {
+    this.set({
+      displaySettings: {
+        ...this.state.displaySettings,
+        maxText: true,
+        zoomSizingMode: "MANUAL",
+        zoomFontSize: Math.max(10, Math.min(64, Math.round(fontSize))),
+      },
+    });
   }
 
   /** Cycle the chord-box mode: none → guitar → piano → no-chords (legacy order). */

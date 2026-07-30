@@ -703,6 +703,7 @@ export class ChordProEditor extends ChordDrawer {
   private showTag = true;
   private abbrevTag = false;
   private autoSplitLines = false;
+  private shrinkWrappedContent = false;
   private displayNormalizedChord = false;
   private differentialDisplay = false;
   private instructionsRenderMode: InstructionsRenderMode = "";
@@ -759,6 +760,13 @@ export class ChordProEditor extends ChordDrawer {
   private tooltipHandler?: (key: string) => string | undefined;
   private abcLocale: "en" | "hu" = "en";
   private stylesBaseRootFontPx = getRootFontSizePx();
+  /**
+   * Per-editor lyrics font size. Unlike the legacy root-font preference this
+   * affects only this editor instance. The rest of the ChordPro typography is
+   * scaled proportionally so chords, tags and directive rows keep their visual
+   * relationship to the lyrics.
+   */
+  private contentFontSizePx: number | null = null;
 
   log(s: string) {
     if (this.onLog) this.onLog(s.toString());
@@ -1336,11 +1344,13 @@ export class ChordProEditor extends ChordDrawer {
     });
   }
 
-  private applyRootFontScale(display: ChordProDisplayProperties, directives: ChordProDirectiveStyles) {
-    const base = this.stylesBaseRootFontPx || 16;
-    const current = getRootFontSizePx();
-    if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(current) || current <= 0) return;
-    const factor = current / base;
+  private fontSizeFromCssFont(value: string): number | null {
+    const match = /(?:^|\s)(\d+(?:\.\d+)?)px(?:\s|$)/i.exec(value);
+    const parsed = match ? parseFloat(match[1]) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  private applyMetricScale(display: ChordProDisplayProperties, directives: ChordProDirectiveStyles, factor: number) {
     if (Math.abs(factor - 1) < 0.0001) return;
 
     display.tagFont = this.scalePxTokens(display.tagFont, factor);
@@ -1361,42 +1371,83 @@ export class ChordProEditor extends ChordDrawer {
     }
   }
 
+  private applyRootFontScale(display: ChordProDisplayProperties, directives: ChordProDirectiveStyles) {
+    const base = this.stylesBaseRootFontPx || 16;
+    const current = getRootFontSizePx();
+    if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(current) || current <= 0) return;
+    this.applyMetricScale(display, directives, current / base);
+  }
+
+  private applyContentFontSize(display: ChordProDisplayProperties, directives: ChordProDirectiveStyles) {
+    if (this.contentFontSizePx == null) return;
+    const naturalSize = this.fontSizeFromCssFont(display.lyricsFont);
+    if (naturalSize == null) return;
+    this.applyMetricScale(display, directives, this.contentFontSizePx / naturalSize);
+  }
+
   private applyStylesForCurrentTheme() {
     const defaults = defaultDisplayProperties(this.isDark);
     const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark, (key) => this.localeHandler?.(key) ?? key);
     const currentTheme = this.isDark ? this.customStyles?.dark : this.customStyles?.light;
 
-    if (!currentTheme) {
+    if (currentTheme) {
+      this.displayProps = cloneDisplayProperties({
+        ...defaults,
+        ...currentTheme.display,
+        guitarChordSize: {
+          ...defaults.guitarChordSize,
+          ...(currentTheme.display?.guitarChordSize ?? {}),
+        },
+        pianoChordSize: {
+          ...defaults.pianoChordSize,
+          ...(currentTheme.display?.pianoChordSize ?? {}),
+        },
+      });
+    } else {
       this.displayProps = defaults;
-      this.directiveStyles = defaultDirectiveStyles;
-      return;
     }
 
-    this.displayProps = cloneDisplayProperties({
-      ...defaults,
-      ...currentTheme.display,
-      guitarChordSize: {
-        ...defaults.guitarChordSize,
-        ...(currentTheme.display?.guitarChordSize ?? {}),
-      },
-      pianoChordSize: {
-        ...defaults.pianoChordSize,
-        ...(currentTheme.display?.pianoChordSize ?? {}),
-      },
-    });
+    const directives = cloneDirectiveStyles(defaultDirectiveStyles);
+    if (currentTheme) {
+      for (const [key, value] of Object.entries(currentTheme.directives ?? {})) {
+        directives[key] = {
+          ...(directives[key] ?? {}),
+          ...value,
+        };
+      }
 
-    const mergedDirectiveStyles = cloneDirectiveStyles(defaultDirectiveStyles);
-    for (const [key, value] of Object.entries(currentTheme.directives ?? {})) {
-      mergedDirectiveStyles[key] = {
-        ...(mergedDirectiveStyles[key] ?? {}),
-        ...value,
-      };
+      // Keep custom styles visually aligned with UI font-size changes at runtime.
+      this.applyRootFontScale(this.displayProps, directives);
     }
 
-    // Keep custom styles visually aligned with UI font-size changes at runtime.
-    this.applyRootFontScale(this.displayProps, mergedDirectiveStyles);
+    this.applyContentFontSize(this.displayProps, directives);
+    this.directiveStyles = directives;
+  }
 
-    this.directiveStyles = mergedDirectiveStyles;
+  /** Set an editor-local lyrics size in CSS pixels, or null to use the theme. */
+  setContentFontSize(fontSizePx: number | null, draw = true) {
+    const normalized = fontSizePx == null ? null : Math.max(6, Math.min(2048, Math.round(fontSizePx)));
+    if (normalized === this.contentFontSizePx) return;
+    this.contentFontSizePx = normalized;
+    this.applyStylesForCurrentTheme();
+    this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
+    for (const lo of this.chordPro?.lines || []) lo.invalidateCache();
+    this.invalidateStyleSemantics();
+    if (draw) this.draw();
+  }
+
+  getContentFontSize() {
+    return this.contentFontSizePx ?? this.fontSizeFromCssFont(this.displayProps.lyricsFont) ?? 14;
+  }
+
+  /** Change only the line-wrapping policy while preserving every display flag. */
+  setLineWrapping(autoSplitLines: boolean, shrinkWrappedContent = false, draw = true) {
+    if (this.autoSplitLines === autoSplitLines && this.shrinkWrappedContent === shrinkWrappedContent) return;
+    this.autoSplitLines = autoSplitLines;
+    this.shrinkWrappedContent = shrinkWrappedContent;
+    for (const line of this.chordPro?.lines || []) line.invalidateCache();
+    this.invalidateDisplaySemantics();
+    if (draw) this.draw();
   }
 
   refreshDisplayProps() {
@@ -1597,7 +1648,7 @@ export class ChordProEditor extends ChordDrawer {
       readOnly: this.readOnly,
       differential: this.differentialDisplay,
       instructionsMode: this.instructionsRenderMode,
-      widthPolicy: this.printSurface ? "PRINT" : this.autoSplitLines ? "FIT_WIDTH" : "FIT_PAGE",
+      widthPolicy: this.printSurface ? "PRINT" : this.autoSplitLines ? (this.shrinkWrappedContent ? "WRAP_CONTENT" : "FIT_WIDTH") : "FIT_PAGE",
       clipMetaToSongWidth: this.fitsToPane,
       viewportAlignedTitle: this.viewportAlignedTitle,
       sequence: this.getDisplaySequence(),
@@ -1939,7 +1990,8 @@ export class ChordProEditor extends ChordDrawer {
     autoSplitLines: boolean,
     chordFlags: number,
     chordBoxType?: ChordBoxType,
-    keepDrawingSuppressed?: boolean
+    keepDrawingSuppressed?: boolean,
+    shrinkWrappedContent = false
   ) {
     let updateRequired = false;
     let chordVisualFormatChanged = false;
@@ -1961,6 +2013,10 @@ export class ChordProEditor extends ChordDrawer {
     }
     if (this.autoSplitLines !== autoSplitLines) {
       this.autoSplitLines = autoSplitLines;
+      updateRequired = true;
+    }
+    if (this.shrinkWrappedContent !== shrinkWrappedContent) {
+      this.shrinkWrappedContent = shrinkWrappedContent;
       updateRequired = true;
     }
     if (this.chordFormat !== chordFlags) {

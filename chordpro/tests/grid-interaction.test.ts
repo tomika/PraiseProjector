@@ -88,3 +88,19 @@ test("grid layout exposes chord hit boxes and editable caret stops", () => {
   });
   assert.deepEqual(selection.get(plan.occurrences[0].id), { start: 1, end: 4 });
 });
+
+test("WRAP_CONTENT constrains wrapping without forcing the result to pane width", () => {
+  const { plan } = gridFixture("D");
+  const common = {
+    tagWidths: new Map(plan.occurrences.map((occurrence) => [occurrence.id, 30])),
+    overlayRevMoveCost: 1,
+    overlayFwdMoveCost: 1,
+    contentWidth: 500,
+  };
+  const fitWidth = layoutSong(plan, measurer, { ...common, widthPolicy: "FIT_WIDTH" });
+  const wrappedContent = layoutSong(plan, measurer, { ...common, widthPolicy: "WRAP_CONTENT" });
+
+  assert.equal(fitWidth.width, 500);
+  assert.ok(wrappedContent.width < fitWidth.width);
+  assert.ok(wrappedContent.bodyWidth < fitWidth.bodyWidth);
+});

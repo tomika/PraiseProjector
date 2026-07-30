@@ -7,7 +7,7 @@ import { layoutRow, type RowCaretStop, type RowGlyphRequest } from "./row-layout
 import { segmentVisualUnits } from "./text-units";
 import { buildWordSources, computeWordMetrics, isWhitespaceText, type WordSource } from "./word-metrics";
 
-export type SongWidthPolicy = "FIT_PAGE" | "FIT_WIDTH" | "PRINT";
+export type SongWidthPolicy = "FIT_PAGE" | "FIT_WIDTH" | "WRAP_CONTENT" | "PRINT";
 
 export interface SongLayoutOptions {
   readonly tagWidths: ReadonlyMap<string, number>;
@@ -20,7 +20,7 @@ export interface SongLayoutOptions {
    * unrendered ABC unsettled.
    */
   readonly abcHeights?: ReadonlyMap<string, number>;
-  /** FIT_PAGE is natural width; FIT_WIDTH/PRINT use the supplied content box. */
+  /** FIT_PAGE is natural width; the other policies wrap to the supplied content box. */
   readonly widthPolicy?: SongWidthPolicy;
   readonly contentWidth?: number;
   /**
@@ -385,13 +385,14 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
   const measured = resultMap(measurer, measurementRequests(plan));
   const widthPolicy = options.widthPolicy ?? "FIT_PAGE";
   const constrainedWidth = widthPolicy === "FIT_PAGE" ? Number.POSITIVE_INFINITY : (options.contentWidth ?? 0);
+  const fillsConstrainedWidth = widthPolicy === "FIT_WIDTH" || widthPolicy === "PRINT";
   const tagLaneWidth = plan.showTags
     ? plan.occurrences.reduce((maximum, occurrence) => Math.max(maximum, lineTagWidth(occurrence, options.tagWidths)), 0)
     : 0;
   const tagGap = tagLaneWidth > 0 ? 2 * plan.display.lyricsLineHeight : 0;
   const meta: LayoutMeta[] = [];
   let metaHeight = 0;
-  let maximumWidth = Number.isFinite(constrainedWidth) && constrainedWidth > 0 ? constrainedWidth : 2 * plan.display.horizontalMargin;
+  let maximumWidth = fillsConstrainedWidth && constrainedWidth > 0 ? constrainedWidth : 2 * plan.display.horizontalMargin;
   // For a pane-fitted host, metadata reserves VERTICAL space only: the row is
   // clipped to the song's own content width and ellipsised rather than
   // widening the song, because the natural width is what the host scales by
@@ -459,9 +460,10 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
     pending,
     width,
     height: Math.max(1, Math.ceil(2 * plan.display.verticalMargin + metaHeight + bodyHeight)),
-    bodyWidth: Number.isFinite(bodyMeasure)
-      ? Math.max(0, bodyMeasure)
-      : Math.max(0, width - 2 * plan.display.horizontalMargin - tagLaneWidth - tagGap),
+    bodyWidth:
+      Number.isFinite(bodyMeasure) && widthPolicy !== "WRAP_CONTENT"
+        ? Math.max(0, bodyMeasure)
+        : Math.max(0, width - 2 * plan.display.horizontalMargin - tagLaneWidth - tagGap),
     tagLaneWidth,
     tagGap,
     meta,

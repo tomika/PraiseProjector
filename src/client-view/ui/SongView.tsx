@@ -17,7 +17,8 @@
  * controller's explicit navigation source.
  */
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useClientPerformancePreferences,
   useClientPerformanceProfile,
@@ -28,8 +29,8 @@ import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
 import { recordChordProRenderDuration } from "../../shared/clientPerformanceProfile";
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import { chordProAPI } from "../../../chordpro/chordProApi";
+import { findLargestLargerFittingFontSize, scaleFitWidthMetric } from "../../../chordpro/layout/auto-font-size";
 import { PageFlip } from "../../../chordpro/pageFlip";
-import { installPinchZoomHandler } from "../../../common/utils";
 import {
   CHORDFORMAT_BB,
   CHORDFORMAT_INKEY,
@@ -40,15 +41,17 @@ import {
 } from "../../../chordpro/chord_drawer";
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import type { Display } from "../api/ClientApi";
-import type { DisplaySettings, NavEntry, NavigationMode } from "../controller/ClientViewStore";
+import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
+import { ZOOM_MODE_ROTATION, ZoomSizingModeGlyph, type ZoomSizingModeMeta } from "./zoomSizingModes";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
 const fitGenerations = new WeakMap<HTMLDivElement, number>();
 const CLIENT_VIEW_EDITOR_OPTIONS: ChordProEditorOptions = { viewportAlignedTitle: true };
 
 interface FitVisualState {
+  readonly width: string;
   readonly transform: string;
   readonly transformOrigin: string;
   readonly marginBottom: string;
@@ -66,6 +69,7 @@ interface PendingTurnFit {
 // overflows) or the gesture is simply inert. See the pointer-plumbing effect.
 const GESTURE_SLOP_PX = 8;
 const ZOOM_PINCH_PIXELS_PER_STEP = 28;
+const MAX_AUTO_FONT_SIZE = 256;
 
 const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string }> = {
   database: { icon: "database.svg", label: "Song database navigation" },
@@ -134,15 +138,18 @@ function advanceFitGeneration(host: HTMLDivElement): number {
  *  so a host cleared for reuse is never left invisible. */
 function clearFit(host: HTMLDivElement): number {
   const generation = advanceFitGeneration(host);
+  host.style.removeProperty("width");
   host.style.removeProperty("transform");
   host.style.removeProperty("transform-origin");
   host.style.removeProperty("margin-bottom");
   host.style.removeProperty("visibility");
+  host.style.removeProperty("opacity");
   return generation;
 }
 
 function captureFitVisualState(host: HTMLDivElement): FitVisualState {
   return {
+    width: host.style.width,
     transform: host.style.transform,
     transformOrigin: host.style.transformOrigin,
     marginBottom: host.style.marginBottom,
@@ -151,6 +158,7 @@ function captureFitVisualState(host: HTMLDivElement): FitVisualState {
 }
 
 function applyFitVisualState(host: HTMLDivElement, state: FitVisualState): void {
+  host.style.width = state.width;
   host.style.transform = state.transform;
   host.style.transformOrigin = state.transformOrigin;
   host.style.marginBottom = state.marginBottom;
@@ -189,7 +197,37 @@ function applyFitVisualState(host: HTMLDivElement, state: FitVisualState): void 
  * container measures the SCALED height and scrolls a tall full-width song correctly
  * (a no-op in clipped full-page mode).
  */
-function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean, fitViewport?: HTMLElement | null): Promise<boolean> {
+async function settledSnapshot(api: BoundEditor) {
+  const snapshot = api.getLayoutSnapshot();
+  return snapshot.settled ? snapshot : api.whenLayoutSettled();
+}
+
+async function fitAndZoom(
+  host: HTMLDivElement,
+  api: BoundEditor,
+  sizingMode: ZoomSizingMode,
+  requestedFontSize: number,
+  fitViewport?: HTMLElement | null
+): Promise<boolean> {
+  try {
+    return await fitAndZoomInternal(host, api, sizingMode, requestedFontSize, fitViewport);
+  } catch {
+    // A page can be disposed while its asynchronous DOM layout is settling.
+    host.style.removeProperty("visibility");
+    host.style.removeProperty("opacity");
+    return false;
+  }
+}
+
+async function fitAndZoomInternal(
+  host: HTMLDivElement,
+  api: BoundEditor,
+  sizingMode: ZoomSizingMode,
+  requestedFontSize: number,
+  fitViewport?: HTMLElement | null
+): Promise<boolean> {
+  const scrollMode = sizingMode !== "FIT_PAGE";
+  const manualFontSize = sizingMode === "MANUAL";
   const container = host.parentElement;
   if (container) container.classList.toggle("cv-scroll", scrollMode);
   if (fitViewport && fitViewport !== container && fitViewport.classList.contains("cv-page")) fitViewport.classList.toggle("cv-scroll", scrollMode);
@@ -199,29 +237,73 @@ function fitAndZoom(host: HTMLDivElement, api: BoundEditor, scrollMode: boolean,
   const cw = fitViewport?.clientWidth || container?.clientWidth || 1;
   const ch = fitViewport?.clientHeight || container?.clientHeight || 1;
   const generation = advanceFitGeneration(host);
+  if (scrollMode) host.style.width = `${cw}px`;
+  else host.style.removeProperty("width");
+  if (sizingMode === "AUTO_HEIGHT") host.style.opacity = "0";
+  else if (!host.style.transform) host.style.visibility = "hidden";
+  api.setLineWrapping(manualFontSize, manualFontSize, false);
+  api.setContentFontSize(manualFontSize ? requestedFontSize : null, false);
   api.fitToPane(scrollMode, { width: cw, height: ch });
+  let finalSnapshot = await settledSnapshot(api);
+
+  const scaledFitWidthHeight = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => scaleFitWidthMetric(snapshot.height, cw, snapshot.width);
+
+  if (sizingMode === "AUTO_HEIGHT" && scaledFitWidthHeight(finalSnapshot) <= ch - 1) {
+    const naturalFontSize = api.getContentFontSize();
+    const fitWidthFontSize = Math.max(6, Math.ceil(scaleFitWidthMetric(naturalFontSize, cw, finalSnapshot.width)));
+    api.setLineWrapping(true, false, false);
+    api.setContentFontSize(fitWidthFontSize, false);
+    api.update();
+    const wrappedFitWidthSnapshot = await settledSnapshot(api);
+    if (fitGenerations.get(host) !== generation) return false;
+
+    if (scaledFitWidthHeight(wrappedFitWidthSnapshot) <= ch - 1) {
+      const fittedFontSize = await findLargestLargerFittingFontSize({
+        base: fitWidthFontSize,
+        max: Math.max(MAX_AUTO_FONT_SIZE, fitWidthFontSize),
+        isCancelled: () => fitGenerations.get(host) !== generation,
+        fits: async (candidate) => {
+          api.setContentFontSize(candidate, false);
+          api.update();
+          const snapshot = await settledSnapshot(api);
+          return scaledFitWidthHeight(snapshot) <= ch - 1;
+        },
+      });
+      if (fitGenerations.get(host) !== generation) return false;
+      api.setContentFontSize(fittedFontSize ?? fitWidthFontSize, false);
+      api.update();
+      finalSnapshot = await settledSnapshot(api);
+    } else {
+      // Wrapping at the FIT_WIDTH visual font would overflow. In that case AUTO
+      // is exactly FIT_WIDTH; it must never shrink merely to eliminate scrolling.
+      api.setLineWrapping(false, false, false);
+      api.setContentFontSize(null, false);
+      api.update();
+      finalSnapshot = await settledSnapshot(api);
+    }
+  }
   const applySnapshot = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => {
     if (fitGenerations.get(host) !== generation || !snapshot.width || !snapshot.height) return false;
     const ew = snapshot.width;
     const eh = snapshot.height;
-    const z = scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
+    const z = manualFontSize ? 1 : scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
     const tx = (cw - ew * z) / 2;
     api.setViewportAlignedTitleGeometry(cw / z, tx / z);
     host.style.transformOrigin = "top left";
     host.style.transform = `translateX(${tx}px) scale(${z})`;
-    host.style.marginBottom = `${eh * (z - 1)}px`;
+    if (manualFontSize) host.style.removeProperty("margin-bottom");
+    else host.style.marginBottom = `${eh * (z - 1)}px`;
     host.style.removeProperty("visibility");
+    host.style.removeProperty("opacity");
     return true;
   };
 
-  const snapshot = api.getLayoutSnapshot();
-  if (applySnapshot(snapshot) && snapshot.settled) return Promise.resolve(true);
+  if (fitGenerations.get(host) !== generation) return false;
   // Nothing to scale from yet. Keep whatever transform is already on the host —
   // a page turn hands over the revealed neighbour's, a re-fit keeps its own — and
   // hide the host outright if it has none, rather than let the renderer's first
   // commit paint the song at natural size.
-  if (!host.style.transform) host.style.visibility = "hidden";
-  return api.whenLayoutSettled(snapshot.revision).then(applySnapshot, () => false);
+  return applySnapshot(finalSnapshot);
 }
 
 /** Render a song into an editor and fit it to its pane. Used for the neighbour
@@ -234,7 +316,7 @@ function renderSong(
   shift: number,
   settings: DisplaySettings,
   dark: boolean,
-  scrollMode: boolean,
+  sizingMode: ZoomSizingMode,
   fitViewport?: HTMLElement | null
 ): void {
   // suppressDraw: apply settings + transpose before the first paint; fitAndZoom()
@@ -244,18 +326,20 @@ function renderSong(
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
   const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+  const autoSplitLines = sizingMode === "MANUAL";
   api.setDisplayMode(
     maxText ? !settings.zoomHideTitle : true,
     maxText ? !settings.zoomHideMeta : true,
     tagMode !== "HIDDEN",
     tagMode === "ABBREV",
-    false, // P7 parity: maximise/scroll the natural song; automatic wrapping is deferred.
+    autoSplitLines,
     flags,
-    boxType
+    boxType,
+    sizingMode === "MANUAL"
   );
   if (shift !== 0) api.transpose(shift);
   api.darkMode(dark);
-  void fitAndZoom(host, api, scrollMode, fitViewport);
+  void fitAndZoom(host, api, sizingMode, settings.zoomFontSize, fitViewport);
 }
 
 export const SongView = forwardRef<SongViewHandle, { display: Display; settings: DisplaySettings; dark: boolean }>(function SongView(
@@ -293,15 +377,49 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
 
   const loadedTextRef = useRef<string | null>(null);
   const appliedTransposeRef = useRef(0);
-  const scrollModeRef = useRef(false);
+  const sizingModeRef = useRef<ZoomSizingMode>("FIT_PAGE");
+  const zoomFontSizeRef = useRef(settings.zoomFontSize);
   const pinchActiveRef = useRef(false);
   const pinchSuppressPointerRef = useRef(false);
   const pendingTurnFitRef = useRef<PendingTurnFit | null>(null);
   const pageTurnEnabledRef = useRef(pageTurnEnabled);
+  const zoomModeToastTimerRef = useRef<number | null>(null);
   // True from the moment a page starts rotating until the controller has reset it
   // and re-hidden the neighbours. Two things depend on it: the navigation actions
   // fade out, and neighbour preloading waits (see the neighbour effect).
   const [flipActive, setFlipActive] = useState(false);
+  const [zoomModeToast, setZoomModeToast] = useState<ZoomSizingModeMeta | null>(null);
+
+  const showZoomModeToast = useCallback((mode: ZoomSizingModeMeta) => {
+    if (zoomModeToastTimerRef.current !== null) window.clearTimeout(zoomModeToastTimerRef.current);
+    setZoomModeToast(mode);
+    zoomModeToastTimerRef.current = window.setTimeout(() => {
+      zoomModeToastTimerRef.current = null;
+      setZoomModeToast(null);
+    }, 1000);
+  }, []);
+
+  const rotateZoomMode = useCallback(
+    (direction: -1 | 1) => {
+      const displaySettings = store.getSnapshot().displaySettings;
+      const currentValue = displaySettings.maxText ? displaySettings.zoomSizingMode : null;
+      const currentIndex = Math.max(
+        0,
+        ZOOM_MODE_ROTATION.findIndex((mode) => mode.value === currentValue)
+      );
+      const nextMode = ZOOM_MODE_ROTATION[(currentIndex + direction + ZOOM_MODE_ROTATION.length) % ZOOM_MODE_ROTATION.length];
+      store.setZoomMode(nextMode.value);
+      showZoomModeToast(nextMode);
+    },
+    [showZoomModeToast, store]
+  );
+
+  useEffect(
+    () => () => {
+      if (zoomModeToastTimerRef.current !== null) window.clearTimeout(zoomModeToastTimerRef.current);
+    },
+    []
+  );
 
   // The shared page-turn controller (chordpro/pageFlip), the same one the desktop
   // ChordProEditor drives. Created in an effect so its config closures — which
@@ -393,70 +511,208 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   }, []);
   // "Toolbar on the right" means wide-pane layout AND options closed.
   const toolbarOnRight = widePane && !optionsOpen;
-  // Closed wide-pane layout (toolbar on the right) forces full-width SCROLL geometry
-  // regardless of the user's zoom preset; otherwise honour the zoom setting.
-  const scrollMode = toolbarOnRight || (settings.maxText && settings.zoomScrollable);
+  // Closed wide-pane layout (toolbar on the right) forces wrapped full-width
+  // geometry; otherwise honour the selected zoom sizing mode while maxText is on.
+  const sizingMode: ZoomSizingMode = toolbarOnRight ? "FIT_WIDTH" : settings.maxText ? settings.zoomSizingMode : "FIT_PAGE";
+  const scrollMode = sizingMode !== "FIT_PAGE";
   // Mirror into a ref the once-bound ResizeObserver can read.
   useEffect(() => {
-    scrollModeRef.current = scrollMode;
-  }, [scrollMode]);
+    sizingModeRef.current = sizingMode;
+    zoomFontSizeRef.current = settings.zoomFontSize;
+  }, [settings.zoomFontSize, sizingMode]);
 
   useEffect(() => {
     const el = swipeRef.current;
     if (!el) return;
 
-    let committed = false;
+    const trackedTouchIds = new Set<number>();
+    let pinchGestureActive = false;
+    let pinchMoved = false;
+    let lastPinchSteps = 0;
+    let pinchStartDistance: number | null = null;
+    let pinchBaselineFontSize = 0;
+    let pinchAdjustsFont = false;
+    let pinchPreviewHost: HTMLDivElement | null = null;
+    let pinchPreviewTransform = "";
     // Count only touches that STARTED inside the pane (touch events keep firing at
     // their start target). event.touches is the global list — a finger resting on
     // the toolbar or bezel area must not keep the pinch "active" forever after the
     // real pinch fingers have lifted (which suppressed and cancelled every
     // subsequent swipe: another "frozen page" state).
-    const insidePaneTouches = (event: TouchEvent) => {
-      let count = 0;
-      for (let i = 0; i < event.touches.length; i++) {
-        const target = event.touches[i].target;
-        if (target instanceof Node && el.contains(target)) count++;
+    const trackedTouches = (touches: TouchList): Touch[] => {
+      const result: Touch[] = [];
+      for (let i = 0; i < touches.length; i++) {
+        if (trackedTouchIds.has(touches[i].identifier)) result.push(touches[i]);
       }
-      return count;
+      return result;
     };
-    const finishPinch = (event: TouchEvent) => {
-      if (insidePaneTouches(event) >= 2) return;
+    const touchDistance = (touches: readonly Touch[]) => Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
+    const restorePinchPreview = () => {
+      if (pinchPreviewHost) pinchPreviewHost.style.transform = pinchPreviewTransform;
+      pinchPreviewHost = null;
+      pinchPreviewTransform = "";
+    };
+    const finishPinch = (cancelled: boolean) => {
+      const cycleMode = pinchGestureActive && !pinchMoved && !cancelled;
+      const finalFontSize = Math.max(10, Math.min(64, pinchBaselineFontSize + lastPinchSteps));
+      const commitFontSize = pinchGestureActive && pinchAdjustsFont && pinchMoved && !cancelled && finalFontSize !== pinchBaselineFontSize;
+      restorePinchPreview();
+      pinchGestureActive = false;
+      pinchStartDistance = null;
+      trackedTouchIds.clear();
       pinchActiveRef.current = false;
-      committed = false;
+      if (cycleMode) rotateZoomMode(1);
+      else if (commitFontSize) store.setManualZoomFontSize(finalFontSize);
     };
-    const cleanupPinch = installPinchZoomHandler(
-      el,
-      (steps, gestureStart) => {
-        if (gestureStart) {
-          pinchActiveRef.current = true;
-          pinchSuppressPointerRef.current = true;
-          committed = false;
-          flipRef.current?.cancel();
-          return;
+    const onTouchStart = (event: TouchEvent) => {
+      for (let i = 0; i < event.changedTouches.length; i++) {
+        const touch = event.changedTouches[i];
+        if (touch.target instanceof Node && el.contains(touch.target)) trackedTouchIds.add(touch.identifier);
+      }
+      const touches = trackedTouches(event.touches);
+      if (touches.length !== 2 || pinchGestureActive) return;
+      pinchGestureActive = true;
+      pinchMoved = false;
+      lastPinchSteps = 0;
+      pinchStartDistance = touchDistance(touches);
+      const displaySettings = store.getSnapshot().displaySettings;
+      pinchBaselineFontSize = displaySettings.zoomFontSize;
+      pinchAdjustsFont = displaySettings.maxText && displaySettings.zoomSizingMode === "MANUAL";
+      pinchPreviewHost = pinchAdjustsFont ? hostRef.current : null;
+      pinchPreviewTransform = pinchPreviewHost?.style.transform ?? "";
+      pinchActiveRef.current = true;
+      pinchSuppressPointerRef.current = true;
+      flipRef.current?.cancel();
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!pinchGestureActive || pinchStartDistance == null) return;
+      const touches = trackedTouches(event.touches);
+      if (touches.length !== 2) return;
+      const fontDelta = (touchDistance(touches) - pinchStartDistance) / ZOOM_PINCH_PIXELS_PER_STEP;
+      const steps = Math.round(fontDelta);
+      if (pinchPreviewHost && pinchBaselineFontSize > 0) {
+        const previewFontSize = Math.max(10, Math.min(64, pinchBaselineFontSize + fontDelta));
+        const scale = previewFontSize / pinchBaselineFontSize;
+        pinchPreviewHost.style.transform = `${pinchPreviewTransform} scale(${scale})`;
+      }
+      if (steps !== lastPinchSteps) {
+        pinchMoved = true;
+        lastPinchSteps = steps;
+      }
+      if (event.cancelable) event.preventDefault();
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      for (let i = 0; i < event.changedTouches.length; i++) trackedTouchIds.delete(event.changedTouches[i].identifier);
+      if (!pinchGestureActive || trackedTouches(event.touches).length >= 2) return;
+      finishPinch(false);
+    };
+    const onTouchCancel = () => {
+      if (pinchGestureActive) finishPinch(true);
+      else trackedTouchIds.clear();
+    };
+
+    // Modern tablet/WebView path: capture both touch pointers on the stable pane.
+    // The ChordPro renderer replaces its own descendants after every font step;
+    // pointer capture keeps the gesture alive across those replacements so line
+    // wrapping and the real font size can update at every detent.
+    const pointerTouches = new Map<number, { x: number; y: number }>();
+    let pointerPinchActive = false;
+    let pointerPinchMoved = false;
+    let pointerPinchStartDistance = 0;
+    let pointerPinchLastSteps = 0;
+    const pointerDistance = () => {
+      const points = [...pointerTouches.values()];
+      return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    };
+    const releasePointerCaptures = () => {
+      for (const id of pointerTouches.keys()) {
+        if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+      }
+    };
+    const finishPointerPinch = (cancelled: boolean) => {
+      const cycleMode = pointerPinchActive && !pointerPinchMoved && !cancelled;
+      releasePointerCaptures();
+      pointerTouches.clear();
+      pointerPinchActive = false;
+      pinchActiveRef.current = false;
+      if (cycleMode) rotateZoomMode(1);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== "touch" || !(event.target instanceof Node) || !el.contains(event.target)) return;
+      pointerTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointerTouches.size !== 2 || pointerPinchActive) return;
+      pointerPinchActive = true;
+      pointerPinchMoved = false;
+      pointerPinchLastSteps = 0;
+      pointerPinchStartDistance = pointerDistance();
+      pinchActiveRef.current = true;
+      pinchSuppressPointerRef.current = true;
+      flipRef.current?.cancel();
+      for (const id of pointerTouches.keys()) {
+        try {
+          el.setPointerCapture(id);
+        } catch {
+          // The pointer may already have ended between the two down events.
         }
-        if (committed || Math.abs(steps) < 1) return;
-        committed = true;
-        store.setDisplaySetting("maxText", steps > 0);
-      },
-      ZOOM_PINCH_PIXELS_PER_STEP
-    );
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!pointerTouches.has(event.pointerId)) return;
+      pointerTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (!pointerPinchActive || pointerTouches.size !== 2) return;
+      const steps = Math.round((pointerDistance() - pointerPinchStartDistance) / ZOOM_PINCH_PIXELS_PER_STEP);
+      if (steps !== pointerPinchLastSteps) {
+        pointerPinchMoved = true;
+        const delta = steps - pointerPinchLastSteps;
+        pointerPinchLastSteps = steps;
+        store.adjustManualZoomFontSize(delta);
+      }
+      event.preventDefault();
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      if (!pointerTouches.delete(event.pointerId)) return;
+      if (pointerPinchActive && pointerTouches.size < 2) finishPointerPinch(event.type === "pointercancel");
+    };
     const onWheel = (ev: WheelEvent) => {
       if (!ev.ctrlKey) return;
       ev.preventDefault();
-      store.setDisplaySetting("maxText", ev.deltaY < 0);
+      const delta = Math.abs(ev.deltaY) >= Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX;
+      if (delta === 0) return;
+      if (ev.shiftKey) rotateZoomMode(delta < 0 ? -1 : 1);
+      else store.adjustManualZoomFontSize(delta < 0 ? 1 : -1);
     };
+    const supportsPointerPinch = "PointerEvent" in window;
     el.addEventListener("wheel", onWheel, { passive: false });
-
-    el.addEventListener("touchend", finishPinch, true);
-    el.addEventListener("touchcancel", finishPinch, true);
+    if (supportsPointerPinch) {
+      el.addEventListener("pointerdown", onPointerDown, true);
+      window.addEventListener("pointermove", onPointerMove, { capture: true, passive: false });
+      window.addEventListener("pointerup", onPointerEnd, true);
+      window.addEventListener("pointercancel", onPointerEnd, true);
+    } else {
+      el.addEventListener("touchstart", onTouchStart, true);
+      window.addEventListener("touchmove", onTouchMove, { capture: true, passive: false });
+      window.addEventListener("touchend", onTouchEnd, true);
+      window.addEventListener("touchcancel", onTouchCancel, true);
+    }
     return () => {
+      restorePinchPreview();
+      releasePointerCaptures();
       pinchActiveRef.current = false;
       pinchSuppressPointerRef.current = false;
-      cleanupPinch();
-      el.removeEventListener("touchend", finishPinch, true);
-      el.removeEventListener("touchcancel", finishPinch, true);
+      el.removeEventListener("wheel", onWheel);
+      if (supportsPointerPinch) {
+        el.removeEventListener("pointerdown", onPointerDown, true);
+        window.removeEventListener("pointermove", onPointerMove, true);
+        window.removeEventListener("pointerup", onPointerEnd, true);
+        window.removeEventListener("pointercancel", onPointerEnd, true);
+      } else {
+        el.removeEventListener("touchstart", onTouchStart, true);
+        window.removeEventListener("touchmove", onTouchMove, true);
+        window.removeEventListener("touchend", onTouchEnd, true);
+        window.removeEventListener("touchcancel", onTouchCancel, true);
+      }
     };
-  }, [store]);
+  }, [rotateZoomMode, store]);
 
   // Pointer plumbing: forward swipe gestures to the shared controller. We do NOT
   // setPointerCapture — capturing on #swipe-handler would steal taps from the
@@ -635,9 +891,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const fitViewport = prevPageRef.current ?? nextPageRef.current ?? pane;
-        if (apiRef.current && hostRef.current) void fitAndZoom(hostRef.current, apiRef.current, scrollModeRef.current, fitViewport);
-        if (prevApiRef.current && prevHostRef.current) void fitAndZoom(prevHostRef.current, prevApiRef.current, scrollModeRef.current, fitViewport);
-        if (nextApiRef.current && nextHostRef.current) void fitAndZoom(nextHostRef.current, nextApiRef.current, scrollModeRef.current, fitViewport);
+        if (apiRef.current && hostRef.current)
+          void fitAndZoom(hostRef.current, apiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
+        if (prevApiRef.current && prevHostRef.current)
+          void fitAndZoom(prevHostRef.current, prevApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
+        if (nextApiRef.current && nextHostRef.current)
+          void fitAndZoom(nextHostRef.current, nextApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
       });
     };
     const observer = new ResizeObserver(() => {
@@ -732,14 +991,16 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // NO_CHORDS is a pseudo box-type: hide chords entirely with an empty box.
     const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
     const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+    const autoSplitLines = sizingMode === "MANUAL";
     api.setDisplayMode(
       maxText ? !settings.zoomHideTitle : true,
       maxText ? !settings.zoomHideMeta : true,
       tagMode !== "HIDDEN",
       tagMode === "ABBREV",
-      false, // P7 parity: maximise/scroll the natural song; automatic wrapping is deferred.
+      autoSplitLines,
       flags,
-      boxType
+      boxType,
+      sizingMode === "MANUAL"
     );
     api.darkMode(dark);
     // Instructions: set the text on the editor, then toggle the overlay via the
@@ -762,7 +1023,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     if (carriedFit) applyFitVisualState(host, carriedFit);
     // Scale only after all geometry/decorations for this display have been
     // submitted, so settlement represents the exact page that will be revealed.
-    const settledFit = fitAndZoom(host, api, scrollMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
+    const settledFit = fitAndZoom(host, api, sizingMode, settings.zoomFontSize, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
     const settledFitGeneration = fitGenerations.get(host);
     // Leader highlight control: while on, a tap on a lyrics section pushes its
     // {from,to,section} as the display highlight. Re-installed after each load.
@@ -779,7 +1040,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
     });
-  }, [display, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, store]);
+  }, [display, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
   useEffect(() => {
@@ -803,7 +1064,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         const data = await store.getSongData(entry.songId);
         if (cancelled) return;
         const shift = (entry.transpose ?? 0) - (settings.useCapo ? Math.max(entry.capo ?? 0, 0) : 0);
-        renderSong(host, api, data.text, shift, settings, dark, scrollMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
+        renderSong(host, api, data.text, shift, settings, dark, sizingMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
       } catch {
         /* a neighbour that fails to load simply won't reveal during a flip */
       }
@@ -826,7 +1087,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     state.selectedPlaylistLabel,
     settings,
     dark,
-    scrollMode,
+    sizingMode,
     store,
   ]);
 
@@ -860,6 +1121,20 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
           <p className="cv-empty-hint">Tap the options icon to search and pick a song.</p>
         </div>
       )}
+      {zoomModeToast &&
+        createPortal(
+          <div
+            key={zoomModeToast.value ?? "OFF"}
+            className="cv-zoom-mode-toast"
+            role="status"
+            aria-live="polite"
+            aria-label={`Zoom mode: ${zoomModeToast.label}`}
+          >
+            <ZoomSizingModeGlyph mode={zoomModeToast} className="cv-zoom-mode-toast-glyph" />
+            <span className="cv-zoom-mode-toast-label">{zoomModeToast.label}</span>
+          </div>,
+          document.body
+        )}
       {!viewingRemoteDisplay && (
         <div
           className={`cv-navigation-actions${flipActive || (state.navigationMode === "playlist" && !canAddCurrentSongToPlaylist) ? " cv-navigation-actions-hidden" : ""}`}

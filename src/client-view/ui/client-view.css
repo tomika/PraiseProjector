@@ -1376,7 +1376,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 100px;
+  min-width: 210px;
   padding: 14px;
   border: 1px solid var(--cv-panel-border);
   border-radius: 8px;
@@ -1462,6 +1462,103 @@ body,
 .cv-zoom-panel .cv-zoom-btn .btnImg {
   width: 1.7em;
   height: 1.7em;
+}
+
+.cv-zoom-sizing-row {
+  gap: 6px;
+}
+
+.cv-zoom-mode-btn {
+  min-width: 40px;
+  padding-inline: 6px;
+}
+
+.cv-zoom-font-symbol {
+  font-size: 1.45em;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.cv-zoom-mode-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv-zoom-mode-toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(64px, calc(env(safe-area-inset-bottom, 0px) + 48px));
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 112px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 16px 20px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 12px;
+  background: var(--cv-panel-solid);
+  color: var(--cv-panel-fg);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+  animation: cv-zoom-mode-toast-in 1s ease both;
+}
+
+.cv-zoom-mode-toast-glyph {
+  width: 64px;
+  height: 64px;
+}
+
+.cv-zoom-mode-toast-glyph > .btnImg {
+  width: 64px;
+  height: 64px;
+  filter: var(--cv-icon-invert);
+}
+
+.cv-zoom-mode-toast-glyph > .cv-zoom-font-symbol {
+  font-size: 52px;
+}
+
+.cv-zoom-mode-toast-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@keyframes cv-zoom-mode-toast-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.92);
+  }
+  15%,
+  75% {
+    opacity: 0.7;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.cv-zoom-font-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-zoom-font-row input[type="range"] {
+  min-width: 0;
+}
+
+.cv-zoom-font-row output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Playlist editor (working-list) ----------------------------------------- */

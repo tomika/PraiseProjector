@@ -284,11 +284,12 @@ function bindEditor(editorDiv: HTMLDivElement) {
       abbrevTag: boolean,
       autoSplitLines: boolean,
       chordFlags: number,
-      chordBoxType?: ChordBoxType
+      chordBoxType?: ChordBoxType,
+      shrinkWrappedContent = false
     ) => {
       const instance = getBoundEditor();
       if (!instance) return;
-      instance.setDisplayMode(title, meta, tag, abbrevTag, autoSplitLines, chordFlags, chordBoxType);
+      instance.setDisplayMode(title, meta, tag, abbrevTag, autoSplitLines, chordFlags, chordBoxType, undefined, shrinkWrappedContent);
     },
     transpose: (shift: number) => {
       const instance = getBoundEditor();
@@ -381,6 +382,15 @@ function bindEditor(editorDiv: HTMLDivElement) {
     refreshDisplayProps: () => {
       const instance = getBoundEditor();
       if (instance) instance.refreshDisplayProps();
+    },
+    setContentFontSize: (fontSizePx: number | null, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.setContentFontSize(fontSizePx, draw);
+    },
+    getContentFontSize: () => getBoundEditor()?.getContentFontSize() ?? 14,
+    setLineWrapping: (autoSplitLines: boolean, shrinkWrappedContent = false, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.setLineWrapping(autoSplitLines, shrinkWrappedContent, draw);
     },
     /**
      * Re-layout the song to its pane (mirrors praiseprojector.ts updateEditor).
