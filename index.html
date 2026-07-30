@@ -11,8 +11,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PraiseProjector" />
     <link rel="manifest" href="/webapp/manifest.json" />
-    <link rel="icon" type="image/png" href="/webapp/assets/pp-64.png" />
-    <link rel="apple-touch-icon" href="/webapp/assets/pp-192.png" />
+    <!-- publicDir-relative, so Vite rewrites them per target base: "/webapp/…" for
+         the web build, "./…" for the file:// Electron renderer, "/…" on the dev
+         server. A hard-coded /webapp prefix 404s in both Electron runtimes. -->
+    <link rel="icon" type="image/png" href="/assets/pp-64.png" />
+    <link rel="apple-touch-icon" href="/assets/pp-192.png" />
     <title>PraiseProjector</title>
     <script>
       // Asset roots, all webapp-OWNED (public/public/{images,soundfont,chordselector.css}).

@@ -16,7 +16,7 @@
     "build:web": "npx vite build --mode web && node scripts/stage-web-client.js",
     "generate-icons": "node scripts/generate-icons.js",
     "deploy": "npm run clean && npm run dist:linux && npm run dist:mac && npm run generate-icons && npm run dist:win && npm run build:web",
-    "dist": "npm run build:web && npm run build && electron-builder --publish never",
+    "dist": "npm run generate-icons && npm run build:web && npm run build && electron-builder --publish never",
     "dist:win": "node -e \"const v=require('electron/package.json').version; require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --win --publish never -c.electronVersion=' + v, {stdio: 'inherit'})\"",
     "dist:mac": "node -e \"process.platform === 'darwin' ? require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --mac --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js mac', {stdio: 'inherit'})\"",
     "dist:linux": "node -e \"process.platform === 'linux' ? require('child_process').execSync('npm run generate-icons && npm run build:web && npm run build && npx electron-builder --linux --publish never', {stdio: 'inherit'}) : require('child_process').execSync('node scripts/build-container-target.js linux', {stdio: 'inherit'})\"",
@@ -111,8 +111,7 @@
       "!dist/webapp/app/**",
       "dist/electron/**/*",
       "proxy-config*.json",
-      "node_modules/**/*",
-      "assets/**/*"
+      "node_modules/**/*"
     ],
     "extraResources": [
       {

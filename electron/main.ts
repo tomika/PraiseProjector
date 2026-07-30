@@ -576,8 +576,15 @@ const resolveAppIcon = (): string | undefined => {
   const candidates: string[] = [];
 
   if (process.platform === "win32") {
+    // Windows: same shape as the Linux/mac branches. dist/build/ is NOT inside
+    // app.asar (it is not listed in build.files), so a packaged run has to reach
+    // the extraResources copy of public/. Never fall back to a legacy icon here:
+    // a stale file silently wins over the real one whenever dist/build is absent
+    // (dev runs, or anything after `npm run clean`).
+    if (app.isPackaged) {
+      candidates.push(path.join(process.resourcesPath, "public", "assets", "pp-512.png"));
+    }
     candidates.push(path.join(appPath, "dist/build/icon.ico"));
-    candidates.push(path.join(appPath, "public/assets/projector.ico"));
   } else if (process.platform === "darwin") {
     if (app.isPackaged) {
       candidates.push(path.join(process.resourcesPath, "public", "assets", "pp-512.png"));
