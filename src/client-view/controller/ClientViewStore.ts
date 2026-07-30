@@ -20,6 +20,7 @@ import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import { autoScanExternalMode, readClientViewAutoScanSessions } from "../api/sessionFeatureSettings";
+import { canRestoreLocalSong, hasPersistedViewMode, shouldAcceptDisplayUpdate, shouldUseClientPlaylistFallback } from "./clientViewRestore";
 import type {
   ClientApi,
   ClientCapabilities,
@@ -194,6 +195,12 @@ interface PersistedClientViewState {
   highlightControl: boolean;
   highlightOpacity: number;
   searchText: string;
+  /** Local filter used while the working-playlist list is visible. */
+  playlistFilterText?: string;
+  /** Leader/date picker state, including its cross-playlist title filter. */
+  selectedLeaderId?: string | null;
+  selectedPlaylistLabel?: string | null;
+  leaderFilterText?: string;
   transpose: number;
   capo: number;
   /** The leader-mode toggle choice, re-applied (where still permitted) on init. */
@@ -472,6 +479,9 @@ export class ClientViewStore {
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPersistedJson = "";
   private persistenceReady = false;
+  /** Saved local song waiting for the served-client capability response. */
+  private pendingLocalRestore: NavEntry | null = null;
+  private restoringPendingLocalSong: NavEntry | null = null;
   /** Resolver for the in-flight {@link confirm} promise (legacy `confirm()`); the
    *  dialog state lives in `confirmAnim`, the resolver is kept off-snapshot. */
   private confirmResolver: ((ok: boolean) => void) | null = null;
@@ -502,6 +512,7 @@ export class ClientViewStore {
     this.disposed = false;
     this.persistenceReady = false;
     this.lastPersistedJson = "";
+    this.pendingLocalRestore = null;
     if (config.fullEditorUrl) this.fullEditorUrl = config.fullEditorUrl;
     this.wire();
     await this.api.init(config);
@@ -552,18 +563,32 @@ export class ClientViewStore {
       );
     }
 
+    // Re-apply the restored leader-mode choice before deciding whether a locally
+    // viewed song may be restored. Served clients start with leader mode off, so
+    // their initial capability snapshot cannot yet tell us that local database /
+    // filter navigation is permitted.
+    this.api.setLeaderMode(this.state.leaderMode);
+
     const hasInitialTarget = !!config.initialPlaylistId || !!config.initialSongId;
-    if (config.entryMode === "embedded" && !hasInitialTarget) {
+    if (config.entryMode === "embedded" && !config.restorePersistedViewOnEntry && !hasInitialTarget) {
       const restoredHostSelection = await this.applyEmbeddedHostSelection();
       if (!restoredHostSelection) this.setListMode("playlist");
-    } else if (this.api.mode === "Client" && !hasInitialTarget) {
-      this.setNavigationMode("playlist");
+    } else if (!hasInitialTarget) {
+      await this.restorePersistedLocalSong(persisted, config);
+      // Preserve the established fresh-Client startup fallback without
+      // overwriting a mode that was actually saved before a page reload.
+      if (
+        shouldUseClientPlaylistFallback({
+          apiMode: this.api.mode,
+          hasInitialTarget,
+          embedded: config.entryMode === "embedded" && !config.restorePersistedViewOnEntry,
+          hasPersistedNavigation: hasPersistedViewMode(persisted?.navigationMode, persisted?.listMode),
+        })
+      ) {
+        this.setNavigationMode("playlist");
+      }
     }
 
-    // Re-apply the restored leader-mode choice to the backend so the effective
-    // capabilities reflect it (the API gates it on the still-granted right, and
-    // re-emits — picked up by the subscribeCapabilities wiring above).
-    this.api.setLeaderMode(this.state.leaderMode);
     if (config.initialPlaylistId) {
       await this.openInitialPlaylist(config).catch(() => undefined);
     } else if (config.initialSongId) {
@@ -638,7 +663,7 @@ export class ClientViewStore {
     // paging layout, where it would overlay the song). Once the user has a persisted
     // optionsOpen preference, that wins — we don't force it back open.
     const openOptionsForEmbeddedEntry = config.entryMode === "embedded" && config.openOptionsOnWideEmbeddedEntry;
-    if (config.entryMode === "embedded" && !this.widePane) {
+    if (config.entryMode === "embedded" && !config.restorePersistedViewOnEntry && !this.widePane) {
       this.set({ optionsOpen: false });
     } else if (this.widePane && (openOptionsForEmbeddedEntry || persisted?.optionsOpen === undefined)) {
       this.set({ optionsOpen: true });
@@ -680,6 +705,7 @@ export class ClientViewStore {
     this.confirmResolver = null;
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistNow(); // flush any pending change before tearing down
+    this.pendingLocalRestore = null;
     this.disposed = true;
     if (this.searchTimer) clearTimeout(this.searchTimer);
     if (this.playlistSearchTimer) clearTimeout(this.playlistSearchTimer);
@@ -708,10 +734,14 @@ export class ClientViewStore {
       highlightControl: s.highlightControl,
       highlightOpacity: s.highlightOpacity,
       searchText: s.searchText,
-      transpose: s.transpose,
-      capo: s.capo,
+      playlistFilterText: s.playlistFilterText,
+      selectedLeaderId: s.selectedLeaderId,
+      selectedPlaylistLabel: s.selectedPlaylistLabel,
+      leaderFilterText: s.leaderFilterText,
+      transpose: this.pendingLocalRestore?.transpose ?? s.transpose,
+      capo: this.pendingLocalRestore?.capo ?? s.capo,
       leaderMode: s.leaderMode,
-      songId: s.display.songId || "",
+      songId: this.pendingLocalRestore?.songId ?? s.display.songId ?? "",
     };
   }
 
@@ -765,29 +795,76 @@ export class ClientViewStore {
     if (typeof persisted.highlightControl === "boolean") {
       patch.highlightControl = persisted.highlightControl && (patch.highlightOn ?? this.state.highlightOn);
     }
+    // A fresh embedded entry is a full-view → client-view switch, so the host
+    // owns startup. When the renderer reloads with client-view already active,
+    // the persisted client snapshot owns startup just like standalone mode.
+    const restoreClientSnapshot = config.entryMode !== "embedded" || !!config.restorePersistedViewOnEntry;
+    if (restoreClientSnapshot) {
+      if (typeof persisted.playlistFilterText === "string") patch.playlistFilterText = persisted.playlistFilterText;
+      if (typeof persisted.selectedLeaderId === "string" || persisted.selectedLeaderId === null) {
+        patch.selectedLeaderId = persisted.selectedLeaderId;
+      }
+      if (typeof persisted.selectedPlaylistLabel === "string" || persisted.selectedPlaylistLabel === null) {
+        patch.selectedPlaylistLabel = persisted.selectedPlaylistLabel;
+      }
+      if (typeof persisted.leaderFilterText === "string") patch.leaderFilterText = persisted.leaderFilterText;
+    }
     this.set(patch);
 
     // Restore the search box and re-run the search so results reappear. Skipped
     // when the adapter binds the filter to a host LeftPanel (desktop embed): there
     // the host filter is the source of truth and is seeded separately in init.
-    if (!this.api.song.hostFilter && typeof persisted.searchText === "string" && persisted.searchText.trim()) {
+    if (restoreClientSnapshot && typeof persisted.searchText === "string" && persisted.searchText.trim()) {
       this.setSearchText(persisted.searchText);
     }
+    if (restoreClientSnapshot && persisted.playlistFilterText?.trim()) {
+      this.schedulePlaylistSearch(persisted.playlistFilterText);
+    }
+  }
 
-    // Restore the locally viewed song ONLY when nothing else already dictates
-    // one: a URL-provided initialSongId wins, a follower's display is driven by
-    // the backend, and an already-seeded display (e.g. the desktop host's current
-    // projection) must not be clobbered.
-    if (
-      persisted.songId &&
-      !config.initialSongId &&
-      !config.initialPlaylistId &&
-      !config.follow &&
-      config.entryMode !== "embedded" &&
-      this.state.capabilities.canControlDisplay &&
-      !this.state.display.songId
-    ) {
-      void this.loadLocalEntry({ songId: persisted.songId, transpose: persisted.transpose ?? 0, capo: persisted.capo }).catch(() => undefined);
+  /** Restore a locally browsed song after capabilities have absorbed the saved
+   *  leader-mode choice. Playlist navigation remains backend-owned, explicit URL
+   *  targets win, and embedded mode restores from its live host UI instead. */
+  private async restorePersistedLocalSong(persisted: PersistedClientViewState | undefined, config: ClientConfig): Promise<boolean> {
+    const restoreContext = {
+      songId: persisted?.songId,
+      navigationMode: persisted?.navigationMode,
+      hasInitialTarget: !!config.initialSongId || !!config.initialPlaylistId,
+      embedded: config.entryMode === "embedded" && !config.restorePersistedViewOnEntry,
+      // Validate the snapshot independently of capability timing. The actual
+      // restore below waits until canControlDisplay becomes true.
+      canControlDisplay: true,
+    };
+    if (!canRestoreLocalSong(restoreContext)) return false;
+    this.pendingLocalRestore = {
+      songId: restoreContext.songId,
+      transpose: persisted?.transpose ?? 0,
+      capo: persisted?.capo,
+    };
+    return this.tryRestorePendingLocalSong();
+  }
+
+  private async tryRestorePendingLocalSong(): Promise<boolean> {
+    const entry = this.pendingLocalRestore;
+    if (!entry || this.restoringPendingLocalSong === entry || !this.state.capabilities.canControlDisplay) return false;
+    this.restoringPendingLocalSong = entry;
+    try {
+      const data = await this.api.song.getSongData(entry.songId);
+      if (
+        this.disposed ||
+        this.pendingLocalRestore !== entry ||
+        !this.state.capabilities.canControlDisplay ||
+        this.state.navigationMode === "playlist"
+      ) {
+        return false;
+      }
+      this.applyLoadedLocalEntry(entry, data, false);
+      this.pendingLocalRestore = null;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (this.restoringPendingLocalSong === entry) this.restoringPendingLocalSong = null;
     }
   }
 
@@ -831,7 +908,10 @@ export class ClientViewStore {
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
       this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
       this.api.auth.subscribeAuth((authed) => this.set({ authed, leader: this.api.auth.currentLeader() })),
-      this.api.subscribeCapabilities((capabilities) => this.set({ capabilities })),
+      this.api.subscribeCapabilities((capabilities) => {
+        this.set({ capabilities });
+        if (capabilities.canControlDisplay) void this.tryRestorePendingLocalSong();
+      }),
       this.api.playlist.subscribePlaylist((playlist) => {
         this.set({ playlist });
         if (this.state.playlistFilterText.trim()) this.schedulePlaylistSearch(this.state.playlistFilterText, playlist);
@@ -848,15 +928,15 @@ export class ClientViewStore {
   }
 
   private shouldAcceptDisplayUpdate(display: Display): boolean {
-    if (!this.api.hostView) return true;
-    // The embedded App may have entered watch mode while its previous local
-    // navigation source was database/archive. Remote display changes are the
-    // source of truth for the duration of following and must never be filtered
-    // through that stale local navigation mode.
-    if (isAppWatching(this.state)) return true;
-    if (this.state.navigationMode === "playlist") return true;
-    const viewedSongId = this.state.display.songId;
-    return !viewedSongId || viewedSongId === display.songId;
+    // A follower/watch-mode view always mirrors the remote display. A controller
+    // browsing a database/filter/archive song locally must keep that song even
+    // when a REST follow loop echoes the currently projected playlist song.
+    return shouldAcceptDisplayUpdate({
+      viewingRemoteDisplay: isViewingRemoteDisplay(this.state),
+      navigationMode: this.state.navigationMode,
+      viewedSongId: this.state.display.songId,
+      incomingSongId: display.songId,
+    });
   }
 
   private async loadSongs(): Promise<void> {
@@ -977,7 +1057,10 @@ export class ClientViewStore {
 
   private setNavigationMode(mode: NavigationMode): void {
     const patch: Partial<ClientViewState> = { navigationMode: mode };
-    if (mode === "playlist") patch.listMode = "playlist";
+    if (mode === "playlist") {
+      this.pendingLocalRestore = null;
+      patch.listMode = "playlist";
+    }
     this.set(patch);
   }
 
@@ -1021,12 +1104,14 @@ export class ClientViewStore {
   }
 
   async selectDatabaseSong(songId: string): Promise<void> {
+    this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("database");
     await this.loadLocalEntry({ songId });
   }
 
   async selectFilteredSong(songId: string): Promise<void> {
+    this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("filter");
     await this.loadLocalEntry({ songId });
@@ -1043,13 +1128,18 @@ export class ClientViewStore {
   /** Project a row from a selected archived/leader playlist without adding it to
    *  the working playlist. Prev/next then walks that selected archive list. */
   async selectArchiveEntry(entry: PlaylistEntry): Promise<void> {
+    this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("archive");
     await this.loadLocalEntry(entry);
   }
 
-  private async loadLocalEntry(entry: NavEntry): Promise<void> {
+  private async loadLocalEntry(entry: NavEntry, closeOptions = true): Promise<void> {
     const data = await this.api.song.getSongData(entry.songId);
+    this.applyLoadedLocalEntry(entry, data, closeOptions);
+  }
+
+  private applyLoadedLocalEntry(entry: NavEntry, data: SongData, closeOptions: boolean): void {
     const transpose = entry.transpose ?? 0;
     const capo = entry.capo;
     this.set({
@@ -1068,7 +1158,7 @@ export class ClientViewStore {
       transpose,
       capo: capo ?? 0,
     });
-    this.closePortraitOptions();
+    if (closeOptions) this.closePortraitOptions();
   }
 
   private async projectEntry(entry: NavEntry): Promise<void> {

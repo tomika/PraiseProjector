@@ -185,6 +185,13 @@ export interface ClientConfig {
    */
   entryMode?: "embedded" | "standalone" | "session";
   /**
+   * The embedded client view was already active when the full renderer reloaded.
+   * In that case its persisted client-view snapshot is the startup source of
+   * truth. Absent/false means a fresh full-view → client-view switch, where the
+   * live host selection remains authoritative.
+   */
+  restorePersistedViewOnEntry?: boolean;
+  /**
    * One-shot embedded-entry hint: when the full view explicitly switches into the
    * client view on a wide viewport, open the options split even if the persisted
    * client-view state had it closed. Standalone launches and in-client rotation

@@ -84,6 +84,10 @@ function RootView() {
       return false;
     }
   });
+  // `showClient` can already be true on the very first render only when the page
+  // is reloading an active embedded client view. A later in-page switch is a
+  // fresh entry and must continue to seed from the live full-view host state.
+  const [restorePersistedClientOnEntry, setRestorePersistedClientOnEntry] = useState(showClient);
   const [openOptionsOnClientEntry, setOpenOptionsOnClientEntry] = useState(false);
   const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
   const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
@@ -97,18 +101,16 @@ function RootView() {
   // view's home button) keeps the saved UI choice in sync.
   const setShowClient = useCallback((value: boolean) => {
     setShowClientState(value);
+    if (!value) {
+      setOpenOptionsOnClientEntry(false);
+      setRestorePersistedClientOnEntry(false);
+    }
     try {
       localStorage.setItem(SHOW_CLIENT_KEY, value ? "1" : "0");
     } catch {
       /* storage may be unavailable (private mode) — non-fatal */
     }
   }, []);
-  useEffect(() => {
-    // Clear the one-shot "open options on entry" flag whenever the client view
-    // is left; deliberate dependent-state reset tied to showClient.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!showClient) setOpenOptionsOnClientEntry(false);
-  }, [showClient]);
   const refreshAutomaticViewSwitch = useCallback(() => {
     setAutomaticViewSwitch(readAutomaticViewSwitch());
   }, []);
@@ -168,8 +170,9 @@ function RootView() {
   const embeddedClientConfig = useMemo(
     () => ({
       openOptionsOnWideEmbeddedEntry: openOptionsOnClientEntry,
+      restorePersistedViewOnEntry: restorePersistedClientOnEntry,
     }),
-    [openOptionsOnClientEntry]
+    [openOptionsOnClientEntry, restorePersistedClientOnEntry]
   );
   // App stays mounted (hidden) while the client view is shown, so its state —
   // selection, projection, webserver/projector wiring — is preserved and the
