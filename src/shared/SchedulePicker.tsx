@@ -29,6 +29,17 @@ type ScheduleAction =
   | { style: "text"; okLabel: string; cancelLabel: string }
   | { style: "icon"; okIcon: string; cancelIcon: string; okTitle: string; cancelTitle: string };
 
+export interface ScheduleConfirmOptions {
+  shareAfterSave: boolean;
+}
+
+export interface ScheduleShareAction {
+  icon: string;
+  title: string;
+  afterSaveLabel?: string;
+  onShare: (date: Date) => void | Promise<void>;
+}
+
 export interface SchedulePickerProps {
   /** Selects the CSS skin: desktop base styling or the client-view reskin. */
   variant: "desktop" | "cv";
@@ -50,6 +61,8 @@ export interface SchedulePickerProps {
   /** Locale for the month/day labels; defaults to the browser locale. */
   locale?: string;
   action: ScheduleAction;
+  /** Optional playlist sharing controls for load rows and save confirmation. */
+  shareAction?: ScheduleShareAction;
   /**
    * Optional overwrite guard, fired in save mode when the chosen date already has
    * a playlist; resolve false to abort the confirm. Desktop supplies it because
@@ -62,7 +75,7 @@ export interface SchedulePickerProps {
    *  e.g. the desktop load dialog's leader switcher. Stays a plain ReactNode so
    *  this component remains Electron- and localization-free. */
   headerSlot?: ReactNode;
-  onConfirm: (date: Date) => void;
+  onConfirm: (date: Date, options: ScheduleConfirmOptions) => void;
   onCancel: () => void;
 }
 
@@ -77,6 +90,7 @@ export function SchedulePicker({
   noSchedulesText,
   locale,
   action,
+  shareAction,
   confirmOverwrite,
   headerSlot,
   onConfirm,
@@ -84,6 +98,7 @@ export function SchedulePicker({
 }: SchedulePickerProps) {
   const [selectedDate, setSelectedDate] = useState<Date | null>(initialDate ?? null);
   const [currentMonth, setCurrentMonth] = useState(initialDate ?? new Date());
+  const [shareAfterSave, setShareAfterSave] = useState(false);
 
   // First day of the week for the active locale (0 = Sun … 6 = Sat), so both the
   // weekday header and the calendar grid start on the locale's first day.
@@ -129,19 +144,22 @@ export function SchedulePicker({
     setSelectedDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
   };
 
-  const handleOK = async () => {
-    if (!selectedDate) return;
-
+  const confirmDate = async (date: Date) => {
     // Load mode requires a date that actually has a schedule.
-    if (mode === "load" && !hasSchedule(selectedDate)) return;
+    if (mode === "load" && !hasSchedule(date)) return;
 
     // Save mode: confirm before overwriting an existing playlist (desktop only —
     // the cloud client handles overwrite via the upload response).
-    if (mode === "save" && confirmOverwrite && hasSchedule(selectedDate)) {
-      if (!(await confirmOverwrite(selectedDate))) return;
+    if (mode === "save" && confirmOverwrite && hasSchedule(date)) {
+      if (!(await confirmOverwrite(date))) return;
     }
 
-    onConfirm(selectedDate);
+    onConfirm(date, { shareAfterSave: mode === "save" && shareAfterSave });
+  };
+
+  const handleOK = async () => {
+    if (!selectedDate) return;
+    await confirmDate(selectedDate);
   };
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
@@ -212,15 +230,30 @@ export function SchedulePicker({
               const isSelected = selectedDate && formatLocalDateKey(date) === formatLocalDateKey(selectedDate);
               return (
                 <li
-                  key={idx}
+                  key={`${date.getTime()}-${idx}`}
                   className={`date-item${isSelected ? " selected" : ""}`}
                   onClick={() => setSelectedDate(date)}
                   onDoubleClick={() => {
                     setSelectedDate(date);
-                    setTimeout(() => void handleOK(), 0);
+                    void confirmDate(date);
                   }}
                 >
-                  {date.toLocaleDateString(locale)}
+                  <span className="date-item-label">{date.toLocaleDateString(locale)}</span>
+                  {shareAction && (
+                    <button
+                      type="button"
+                      className="schedule-share-btn"
+                      title={shareAction.title}
+                      aria-label={shareAction.title}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void shareAction.onShare(date);
+                      }}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                    >
+                      <img src={shareAction.icon} alt="" aria-hidden="true" />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -247,7 +280,13 @@ export function SchedulePicker({
           {headerSlot}
           {mode === "save" ? renderCalendar() : renderDateList()}
         </div>
-        <div className="dialog-footer">
+        <div className={`dialog-footer${mode === "save" && shareAction?.afterSaveLabel ? " schedule-dialog-footer--share" : ""}`}>
+          {mode === "save" && shareAction?.afterSaveLabel && (
+            <label className="schedule-share-after-save">
+              <input type="checkbox" checked={shareAfterSave} onChange={(event) => setShareAfterSave(event.target.checked)} />
+              <span>{shareAction.afterSaveLabel}</span>
+            </label>
+          )}
           {action.style === "text" ? (
             <button type="button" className="btn btn-primary schedule-ok-btn" onClick={() => void handleOK()} disabled={!selectedDate}>
               {action.okLabel}

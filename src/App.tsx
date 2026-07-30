@@ -69,6 +69,7 @@ import { Database, FormatFoundReason } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
+import { findScheduledPlaylist, ScheduledPlaylist } from "./services/playlistOrigin";
 import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
@@ -172,19 +173,19 @@ const saveAppState = (state: AppState): void => {
 
 /**
  * Collect leaders that have a scheduled playlist for today (matching C# CollectScheduledLeaders).
- * Returns a Map<leaderId, Playlist>.
+ * Returns the exact date and playlist for each leader.
  */
-function collectScheduledLeaders(): Map<string, Playlist> {
+function collectScheduledLeaders(): Map<string, ScheduledPlaylist> {
   const db = Database.getInstance();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const dayMs = 24 * 60 * 60 * 1000; // 1 day in ms
 
-  const result = new Map<string, Playlist>();
+  const result = new Map<string, ScheduledPlaylist>();
   for (const leader of db.getAllLeaders()) {
-    const playlist = leader.getPlaylist(today, dayMs);
-    if (playlist) {
-      result.set(leader.id, playlist);
+    const scheduled = findScheduledPlaylist(leader, today, dayMs);
+    if (scheduled) {
+      result.set(leader.id, scheduled);
     }
   }
   return result;
@@ -518,7 +519,7 @@ const AppContent: React.FC = () => {
   const hasRestoredStateRef = useRef(false);
 
   // Snapshot of scheduled leaders before sync starts (matching C# SyncDatabase prev/actual pattern)
-  const preSyncScheduledLeadersRef = useRef<Map<string, Playlist>>(new Map());
+  const preSyncScheduledLeadersRef = useRef<Map<string, ScheduledPlaylist>>(new Map());
 
   // Persist updateable leaders across sync sessions
   const updateableLeadersRef = useRef<Set<string>>(new Set());
@@ -1994,13 +1995,19 @@ const AppContent: React.FC = () => {
   // Check if current playlist has unsaved changes for a remembered schedule date
   // and offer to save before syncing. Returns true to proceed with sync, false to cancel.
   const checkAndSaveScheduledPlaylist = useCallback(async (): Promise<boolean> => {
-    const scheduleDate = leftPanelRef.current?.getScheduleDate();
-    if (!scheduleDate || !selectedLeader) return true;
+    const origin = leftPanelRef.current?.getPlaylistOrigin();
+    if (!origin) return true;
+
+    // Public playlist sources are read-only. For own sources, update the exact
+    // leader/date the working copy came from, independently of the selected leader.
+    const sourceLeader = Database.getInstance().getLeaderById(origin.leaderId);
+    if (!sourceLeader) return true;
+    const scheduleDate = new Date(origin.scheduledAt);
 
     const currentPlaylist = leftPanelRef.current?.getCurrentPlaylist();
     if (!currentPlaylist) return true;
 
-    const savedPlaylist = selectedLeader.getPlaylist(scheduleDate);
+    const savedPlaylist = sourceLeader.getPlaylist(scheduleDate);
     if (savedPlaylist && currentPlaylist.equals(savedPlaylist)) return true; // No changes
 
     const dateStr = formatLocalDateLabel(scheduleDate);
@@ -2008,10 +2015,10 @@ const AppContent: React.FC = () => {
       confirmText: t("UpdatePlaylistConfirm"),
     });
     if (result === "yes") {
-      Database.getInstance().schedule(selectedLeader, scheduleDate, currentPlaylist);
+      Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist);
     }
     return result !== "cancel";
-  }, [selectedLeader, showYesNoCancelAsync, t]);
+  }, [showYesNoCancelAsync, t]);
 
   // Check if user can start sync (matching C# IsLoadedSongUnmodified and SyncDatabase)
   const handleSyncClick = useCallback(async () => {
@@ -2571,17 +2578,17 @@ const AppContent: React.FC = () => {
     if (actual.size !== 1) return;
 
     // Exactly one new scheduled playlist - ask user
-    const [leaderId, playlist] = actual.entries().next().value as [string, Playlist];
+    const [leaderId, scheduled] = actual.entries().next().value as [string, ScheduledPlaylist];
     const confirmed = await showConfirmAsync(t("LoadTodayPlaylistTitle"), t("AskLoadTodayPlaylist"), { confirmText: t("LoadPlaylistConfirm") });
     if (!confirmed) return;
 
     // Select the leader and load the playlist.
-    // These are independent: updatePlaylist() sets playlist items directly via ref,
+    // These are independent: loadScheduledPlaylist() sets the working copy and its source via ref,
     // while the leader context propagates asynchronously through React state.
     // PlaylistPanel.componentDidUpdate does not react to selectedLeader changes,
     // so there is no race condition or ordering dependency.
     updateSettingWithAutoSave("selectedLeader", leaderId);
-    leftPanelRef.current?.updatePlaylist(playlist.items);
+    leftPanelRef.current?.loadScheduledPlaylist(leaderId, scheduled.date, scheduled.playlist);
   }, [showConfirmAsync, t, updateSettingWithAutoSave]);
 
   // Use paging mode whenever the client area is portrait or width is small.

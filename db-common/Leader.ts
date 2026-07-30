@@ -176,7 +176,9 @@ export class Leader {
   }
 
   getPlaylist(dt: Date, timeSpan: number = 0): Playlist | null {
-    let pl = this.schedule.get(dt);
+    // Date keys use reference equality in Map; callers usually reconstruct the
+    // same timestamp with a different Date instance, so resolve exact timestamps.
+    let pl = this.getScheduleEntryByTimestamp(dt.getTime()) ?? undefined;
     if (!pl && timeSpan > 0) {
       const end = new Date(dt.getTime() + timeSpan);
       const sortedKeys = Array.from(this.schedule.keys()).sort((a, b) => a.getTime() - b.getTime());

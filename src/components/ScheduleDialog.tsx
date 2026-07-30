@@ -3,11 +3,13 @@ import { Leader } from "../../db-common/Leader";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { SchedulePicker } from "../shared/SchedulePicker";
+import { getAssetPath } from "../utils/assetPath";
 
 interface ScheduleDialogProps {
   leader: Leader;
   mode: "save" | "load";
-  onConfirm: (date: Date, leader: Leader) => void;
+  onConfirm: (date: Date, leader: Leader, shareAfterSave: boolean) => void;
+  onShare: (date: Date, leader: Leader) => void | Promise<void>;
   onCancel: () => void;
   initialDate?: Date | null;
   /** Load mode only: the user's own (synced) leaders selectable in the dialog. */
@@ -32,6 +34,7 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
   leader,
   mode,
   onConfirm,
+  onShare,
   onCancel,
   initialDate,
   ownLeaders = [],
@@ -105,7 +108,13 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
       weekdays={[t("WeekdaySun"), t("WeekdayMon"), t("WeekdayTue"), t("WeekdayWed"), t("WeekdayThu"), t("WeekdayFri"), t("WeekdaySat")]}
       todayLabel={t("Today")}
       noSchedulesText={t("NoScheduledPlaylists").replace("{0}", activeLeader.name)}
-      action={{ style: "text", okLabel: t("OK"), cancelLabel: t("Cancel") }}
+      action={{ style: "text", okLabel: mode === "save" ? t("Save") : t("Load"), cancelLabel: t("Cancel") }}
+      shareAction={{
+        icon: getAssetPath("images/share.svg"),
+        title: t("SharePlaylist"),
+        afterSaveLabel: t("ShareAfterSave"),
+        onShare: (date) => onShare(date, activeLeader),
+      }}
       confirmOverwrite={(date) =>
         showConfirmAsync(
           t("ConfirmOverwrite"),
@@ -117,7 +126,7 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
         )
       }
       headerSlot={headerSlot}
-      onConfirm={(date) => onConfirm(date, activeLeader)}
+      onConfirm={(date, options) => onConfirm(date, activeLeader, options.shareAfterSave)}
       onCancel={onCancel}
     />
   );

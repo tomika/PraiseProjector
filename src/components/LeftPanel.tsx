@@ -14,6 +14,7 @@ import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { PlaylistEntry as PlaylistEntryData, SongPreference as SongPreferenceData } from "../../common/pp-types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
+import { PlaylistOrigin } from "../services/playlistOrigin";
 
 export interface PlaylistSelectionInput {
   index?: number;
@@ -28,8 +29,10 @@ export interface LeftPanelMethods {
   setPlaylistSelection: (selection: PlaylistSelectionInput | null) => PlaylistSelectionEvent | null;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => void;
+  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
+  getPlaylistOrigin: () => PlaylistOrigin | null;
   getCurrentPlaylist: () => Playlist;
   // Song tree methods
   getSelectedSongId: () => string | null;
@@ -167,9 +170,12 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         },
         getPreferencesForSongId: (songId: string) => playlistPanelRef.current?.getPreferencesForSongId(songId) ?? null,
         updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist),
+        loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) =>
+          playlistPanelRef.current?.loadScheduledPlaylist(leaderId, scheduledDate, playlist),
         updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) =>
           playlistPanelRef.current?.updatePlaylistItemPreferences(songId, transpose, capo, instructions) ?? null,
         getScheduleDate: () => playlistPanelRef.current?.getScheduleDate() ?? null,
+        getPlaylistOrigin: () => playlistPanelRef.current?.getPlaylistOrigin() ?? null,
         getCurrentPlaylist: () => playlistPanelRef.current?.getCurrentPlaylist() ?? new Playlist("CurrentPlaylist", []),
         // Song tree methods
         getSelectedSongId: () => songListPanelRef.current?.getSelectedSongId() ?? null,

@@ -24,9 +24,9 @@ import { Settings } from "../types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
-import { formatLocalDateLabel } from "../../common/date-only";
 import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
 import { readPersistedSettings } from "../services/settingsStore";
+import { createPlaylistOrigin, findScheduledPlaylist, parsePlaylistOrigin, PlaylistOrigin, resolvePlaylistOrigin } from "../services/playlistOrigin";
 
 // DisplayMode enum matching C# SectionListBox.Item.Mode
 enum DisplayMode {
@@ -111,8 +111,10 @@ export interface PlaylistPanelMethods {
   getSelectedIndex: () => number;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => void;
+  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
+  getPlaylistOrigin: () => PlaylistOrigin | null;
   getCurrentPlaylist: () => Playlist;
 }
 
@@ -146,6 +148,11 @@ type PlaylistReorderDragItem = {
   sourceIndex: number;
 };
 
+type PlaylistHistorySnapshot = {
+  playlist: Playlist;
+  origin: PlaylistOrigin | null;
+};
+
 const isPlaylistReorderDragItem = (value: unknown): value is PlaylistReorderDragItem => {
   if (!value || typeof value !== "object") return false;
   const maybe = value as Partial<PlaylistReorderDragItem>;
@@ -169,20 +176,23 @@ interface PlaylistPanelState {
   itemColors: Map<number, string>; // index -> background color
   showScheduleDialog: boolean;
   scheduleDialogMode: "save" | "load" | null;
-  scheduleDate: Date | null; // Remembered date when playlist was loaded from or saved to a leader profile
+  playlistOrigin: PlaylistOrigin | null; // Exact leader/date/label the working playlist was loaded from or saved to
   contextMenu: { position: { x: number; y: number }; targetIndex: number; maxHeight: number; maxWidth: number } | null;
 }
 
 class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelState> {
   private pendingSelectedIndex: number = -1;
-  private undoStack: Playlist[] = [];
-  private redoStack: Playlist[] = [];
+  private undoStack: PlaylistHistorySnapshot[] = [];
+  private redoStack: PlaylistHistorySnapshot[] = [];
   private isApplyingHistory = false;
+  private legacyScheduleDate: Date | null;
   private static readonly PLAYLIST_HISTORY_MAX = 50;
   constructor(props: PlaylistPanelProps) {
     super(props);
 
     const initialIndex = -1;
+    const playlistOrigin = this.loadPlaylistOrigin();
+    this.legacyScheduleDate = playlistOrigin ? null : this.loadLegacyScheduleDate();
     this.state = {
       currentPlaylist: new Playlist("CurrentPlaylist", []),
       selectedItems: initialIndex >= 0 ? new Set([initialIndex]) : new Set<number>(),
@@ -194,7 +204,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       itemColors: new Map(),
       showScheduleDialog: false,
       scheduleDialogMode: null,
-      scheduleDate: this.loadScheduleDate(),
+      playlistOrigin,
       contextMenu: null,
     };
 
@@ -246,11 +256,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.updatePlaylistItemStates();
     }
 
-    // Re-derive the saved-in-profile marker whenever the leader becomes available/changes
-    // or the playlist content is replaced/edited, so "Share playlist" reflects the true state
-    // (the marker restored from localStorage can otherwise be stale on startup).
+    // Migrate the old date-only marker only when it identifies the exact playlist
+    // under the selected leader. Never infer a source by content across schedule entries.
     if (prevProps.selectedLeader !== this.props.selectedLeader || prevState.currentPlaylist !== this.state.currentPlaylist) {
-      this.reconcileScheduleDate();
+      this.tryMigrateLegacyPlaylistOrigin();
     }
 
     // Replace local playlist with remote playlist when watching another session
@@ -258,6 +267,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.setState(
         {
           currentPlaylist: this.props.remotePlaylist,
+          playlistOrigin: null,
           selectedItems: new Set<number>(),
           focusedIndex: -1,
           selectionAnchor: -1,
@@ -344,7 +354,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return this.state.focusedIndex;
   }
 
-  private loadScheduleDate(): Date | null {
+  private loadLegacyScheduleDate(): Date | null {
     try {
       const stored = localStorage.getItem("pp-schedule-date");
       if (stored) {
@@ -357,11 +367,22 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return null;
   }
 
-  private persistScheduleDate(date: Date | null) {
+  private loadPlaylistOrigin(): PlaylistOrigin | null {
     try {
-      if (date) {
-        localStorage.setItem("pp-schedule-date", date.toISOString());
+      return parsePlaylistOrigin(localStorage.getItem("pp-playlist-origin"));
+    } catch {
+      return null;
+    }
+  }
+
+  private persistPlaylistOrigin(origin: PlaylistOrigin | null): void {
+    try {
+      if (origin) {
+        localStorage.setItem("pp-playlist-origin", JSON.stringify(origin));
+        // Keep the legacy date key in sync for downgrade compatibility.
+        localStorage.setItem("pp-schedule-date", new Date(origin.scheduledAt).toISOString());
       } else {
+        localStorage.removeItem("pp-playlist-origin");
         localStorage.removeItem("pp-schedule-date");
       }
     } catch {
@@ -370,34 +391,40 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   getScheduleDate(): Date | null {
-    return this.state.scheduleDate;
+    return this.state.playlistOrigin ? new Date(this.state.playlistOrigin.scheduledAt) : null;
   }
 
-  /** Find the leader-schedule date whose stored playlist content matches `playlist`, if any. */
-  private findMatchingScheduleDate(leader: Leader, playlist: Playlist): Date | null {
-    if (playlist.items.length === 0) return null;
-    for (const date of leader.getSchedule()) {
-      const saved = leader.getPlaylist(date);
-      if (saved && saved.equals(playlist)) return date;
-    }
-    return null;
+  getPlaylistOrigin(): PlaylistOrigin | null {
+    const origin = this.state.playlistOrigin;
+    return origin ? { ...origin } : null;
   }
 
-  /**
-   * Reconcile the saved-in-profile marker (`scheduleDate`) with reality: a playlist counts as
-   * "saved in the leader's profile" only when its content matches one of the leader's scheduled
-   * playlists. Called on leader change and on playlist load/edit so the "Share playlist" gate is
-   * correct even right after startup, when the marker restored from localStorage may be stale.
-   */
-  private reconcileScheduleDate(): void {
+  private findLeaderById(leaderId: string): Leader | undefined {
+    const db = Database.getInstance();
+    return db.getLeaderById(leaderId) ?? db.getPublicLeaders().find((leader) => leader.id === leaderId);
+  }
+
+  private resolveCurrentPlaylistOrigin() {
+    return resolvePlaylistOrigin(this.state.playlistOrigin, this.state.currentPlaylist, (leaderId) => this.findLeaderById(leaderId));
+  }
+
+  /** One-time migration for installations that only persisted pp-schedule-date. */
+  private tryMigrateLegacyPlaylistOrigin(): void {
+    if (this.props.remotePlaylist) return;
+    if (this.state.playlistOrigin || !this.legacyScheduleDate || this.state.currentPlaylist.items.length === 0) return;
     const leader = this.props.selectedLeader;
-    if (!leader) return; // Cannot verify without a leader; keep the restored marker.
-    const matched = this.findMatchingScheduleDate(leader, this.state.currentPlaylist);
-    const currentTs = this.state.scheduleDate ? this.state.scheduleDate.getTime() : null;
-    const matchedTs = matched ? matched.getTime() : null;
-    if (currentTs === matchedTs) return; // No change — avoids a redundant setState loop.
-    this.setState({ scheduleDate: matched });
-    this.persistScheduleDate(matched);
+    if (!leader) return;
+
+    const scheduled = findScheduledPlaylist(leader, this.legacyScheduleDate);
+    this.legacyScheduleDate = null;
+    if (!scheduled || !scheduled.playlist.equals(this.state.currentPlaylist)) {
+      this.persistPlaylistOrigin(null);
+      return;
+    }
+
+    const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
+    this.setState({ playlistOrigin: origin });
+    this.persistPlaylistOrigin(origin);
   }
 
   getCurrentPlaylist(): Playlist {
@@ -450,14 +477,19 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     generatePlaylistId(playlist).then((playlist_id) => updateCurrentDisplay({ playlist, playlist_id }));
   }
 
-  updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string): void {
+  updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string, origin?: PlaylistOrigin | null): void {
     // console.debug("Playlist", "updatePlaylist called", { itemsLength: items?.length, name, id, remoteProp: this.props.remotePlaylist != null });
     const playlist = new Playlist(
       name || "CurrentPlaylist",
       items.map((item: PlaylistEntryData) => PlaylistEntry.fromJSON(item)),
       id
     );
-    this.setState({ currentPlaylist: playlist }, () => {
+    const playlistOrigin = origin ?? null;
+    if (origin === undefined) {
+      this.legacyScheduleDate = null;
+      this.persistPlaylistOrigin(null);
+    }
+    this.setState({ currentPlaylist: playlist, playlistOrigin }, () => {
       // console.debug("Playlist", "setState callback ENTER for updatePlaylist");
       try {
         this.updatePlaylistItemStates();
@@ -479,6 +511,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         // console.debug("Playlist", "setState callback EXIT for updatePlaylist");
       }
     });
+  }
+
+  loadScheduledPlaylist(leaderId: string, scheduledDate: Date, playlist: Playlist): void {
+    const origin = createPlaylistOrigin(leaderId, scheduledDate, playlist);
+    this.replaceCurrentPlaylist(playlist.clone(), origin);
   }
 
   updatePlaylistItemPreferences(songId: string, transpose?: number, capo?: number, instructions?: string): Playlist | null {
@@ -523,12 +560,23 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return JSON.stringify(a.toJSON()) === JSON.stringify(b.toJSON());
   }
 
+  private createHistorySnapshot(): PlaylistHistorySnapshot {
+    return {
+      playlist: this.clonePlaylist(this.state.currentPlaylist),
+      origin: this.state.playlistOrigin ? { ...this.state.playlistOrigin } : null,
+    };
+  }
+
+  private areHistorySnapshotsEqual(a: PlaylistHistorySnapshot, b: PlaylistHistorySnapshot): boolean {
+    return this.arePlaylistsEqual(a.playlist, b.playlist) && JSON.stringify(a.origin) === JSON.stringify(b.origin);
+  }
+
   private recordPlaylistSnapshotForUndo() {
     if (this.isApplyingHistory) return;
 
-    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const current = this.createHistorySnapshot();
     const last = this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1] : null;
-    if (last && this.arePlaylistsEqual(last, current)) return;
+    if (last && this.areHistorySnapshotsEqual(last, current)) return;
 
     this.undoStack.push(current);
     if (this.undoStack.length > PlaylistPanel.PLAYLIST_HISTORY_MAX) {
@@ -537,16 +585,19 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.redoStack = [];
   }
 
-  private restorePlaylistFromHistory(target: Playlist) {
+  private restorePlaylistFromHistory(target: PlaylistHistorySnapshot) {
     this.isApplyingHistory = true;
+    this.legacyScheduleDate = null;
     this.setState(
       {
-        currentPlaylist: this.clonePlaylist(target),
+        currentPlaylist: this.clonePlaylist(target.playlist),
+        playlistOrigin: target.origin ? { ...target.origin } : null,
         selectedItems: new Set<number>(),
         focusedIndex: -1,
         selectionAnchor: -1,
       },
       () => {
+        this.persistPlaylistOrigin(this.state.playlistOrigin);
         this.savePlaylist(this.state.currentPlaylist);
         this.updatePlaylistItemStates();
         this.emitPlaylistSelectionChange(null, -1, "programmatic", true);
@@ -558,7 +609,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private handleUndo() {
     if (this.undoStack.length === 0) return;
 
-    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const current = this.createHistorySnapshot();
     const target = this.undoStack.pop();
     if (!target) return;
 
@@ -573,7 +624,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private handleRedo() {
     if (this.redoStack.length === 0) return;
 
-    const current = this.clonePlaylist(this.state.currentPlaylist);
+    const current = this.createHistorySnapshot();
     const target = this.redoStack.pop();
     if (!target) return;
 
@@ -636,7 +687,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const savedPlaylistJson = localStorage.getItem("pp-playlist");
       if (savedPlaylistJson) {
         const savedPlaylist = Playlist.fromJSON(JSON.parse(savedPlaylistJson));
-        this.updatePlaylist(savedPlaylist.items || [], savedPlaylist.name, savedPlaylist.id);
+        this.updatePlaylist(savedPlaylist.items || [], savedPlaylist.name, savedPlaylist.id, this.loadPlaylistOrigin());
       } else {
         // No saved playlist - still notify parent that loading is complete
         this.props.onPlaylistLoaded?.(0);
@@ -1412,11 +1463,11 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         selectedItems: newFocusedIndex >= 0 ? new Set<number>([newFocusedIndex]) : new Set<number>(),
         focusedIndex: newFocusedIndex,
         selectionAnchor: newFocusedIndex,
-        // Clear remembered schedule date when all items are removed
-        scheduleDate: newItems.length === 0 ? null : this.state.scheduleDate,
+        // An empty working list no longer represents a shareable scheduled playlist.
+        playlistOrigin: newItems.length === 0 ? null : this.state.playlistOrigin,
       },
       () => {
-        if (newItems.length === 0) this.persistScheduleDate(null);
+        if (newItems.length === 0) this.persistPlaylistOrigin(null);
         this.savePlaylist(updatedPlaylist);
         // Notify parent about new selection so display updates
         this.emitPlaylistSelectionChange(newFocusedIndex >= 0 ? newItems[newFocusedIndex] : null, newFocusedIndex, "programmatic", true);
@@ -1559,16 +1610,20 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     });
   }
 
-  // Share the public link of the current playlist. Re-derives the matching profile entry at click
-  // time so the link uses the exact stored label (`playlist.name`, what the server holds) — not a
-  // label reconstructed from `scheduleDate`, which could differ in edge timezone cases.
+  // Share the exact leader playlist this working copy came from. Content equality only
+  // validates that the working copy still represents that source; it never selects a source.
   private handleSharePlaylist = () => {
-    const leader = this.props.selectedLeader;
-    if (!leader) return;
-    const date = this.findMatchingScheduleDate(leader, this.state.currentPlaylist);
-    if (!date) return;
-    const label = leader.getPlaylist(date)?.name || formatLocalDateLabel(date);
-    void sharePublicLink(buildPlaylistShareUrl(leader.id, label), label, this.props.t("ShareLinkCopied"));
+    const resolved = this.resolveCurrentPlaylistOrigin();
+    if (!resolved) return;
+    const { leaderId, label } = resolved.origin;
+    void sharePublicLink(buildPlaylistShareUrl(leaderId, label), label, this.props.t("ShareLinkCopied"));
+  };
+
+  private handleShareScheduledPlaylist = async (date: Date, leader: Leader): Promise<void> => {
+    const scheduled = findScheduledPlaylist(leader, date);
+    if (!scheduled) return;
+    const label = scheduled.playlist.name;
+    await sharePublicLink(buildPlaylistShareUrl(leader.id, label), label, this.props.t("ShareLinkCopied"));
   };
 
   // Save playlist - matching C# OnPlayListSave
@@ -1608,7 +1663,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   // Handle schedule dialog date selection. `leader` is the leader chosen inside
   // the dialog (load mode can switch to any own/public leader; save mode always
   // returns the own selected leader).
-  async handleScheduleDateSelected(date: Date, leader: Leader) {
+  async handleScheduleDateSelected(date: Date, leader: Leader, shareAfterSave = false) {
     const { scheduleDialogMode, currentPlaylist } = this.state;
 
     this.setState({
@@ -1621,18 +1676,19 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     if (scheduleDialogMode === "save") {
       // Save playlist to leader's schedule
       db.schedule(leader, date, currentPlaylist);
-      // Remember the date we saved to
-      this.setState({ scheduleDate: date });
-      this.persistScheduleDate(date);
+      const scheduled = findScheduledPlaylist(leader, date);
+      if (scheduled) {
+        const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
+        this.legacyScheduleDate = null;
+        this.setState({ playlistOrigin: origin });
+        this.persistPlaylistOrigin(origin);
+        if (shareAfterSave) await this.handleShareScheduledPlaylist(scheduled.date, leader);
+      }
     } else if (scheduleDialogMode === "load") {
       // Load playlist from leader's schedule
-      const playlist = leader.getPlaylist(date, 24 * 60 * 60 * 1000); // 1 day timespan
-      if (playlist) {
-        const playlistStr = playlist.toString();
-        this.loadPlaylistData(playlistStr);
-        // Remember the date we loaded from
-        this.setState({ scheduleDate: date });
-        this.persistScheduleDate(date);
+      const scheduled = findScheduledPlaylist(leader, date, 24 * 60 * 60 * 1000);
+      if (scheduled) {
+        this.loadScheduledPlaylist(leader.id, scheduled.date, scheduled.playlist);
       }
     }
   }
@@ -1667,8 +1723,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         publicLeaders={mode === "load" ? publicLeaders : undefined}
         onRefreshPublic={mode === "load" ? this.handleRefreshPublicLeaders : undefined}
         onConfirm={this.handleScheduleDateSelected}
+        onShare={this.handleShareScheduledPlaylist}
         onCancel={this.handleScheduleDialogCancel}
-        initialDate={this.state.scheduleDate}
+        initialDate={this.getScheduleDate() ?? this.legacyScheduleDate}
       />
     );
   }
@@ -1740,21 +1797,26 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Load playlist data - matching C# LoadPlaylistData
   loadPlaylistData(data: string) {
-    this.recordPlaylistSnapshotForUndo();
-    const playlist = this.loadPlaylistFromString(data);
-    this.savePlaylist(playlist);
+    this.replaceCurrentPlaylist(Playlist.parse(data), null);
   }
 
-  // Load playlist from string - matching C# LoadPlaylist
-  loadPlaylistFromString(pls: string): Playlist {
-    const playlist = Playlist.parse(pls);
-    this.setState({
-      currentPlaylist: playlist,
-      selectedItems: new Set<number>(),
-      focusedIndex: -1,
-      selectionAnchor: -1,
-    });
-    return playlist;
+  private replaceCurrentPlaylist(playlist: Playlist, origin: PlaylistOrigin | null): void {
+    this.recordPlaylistSnapshotForUndo();
+    this.legacyScheduleDate = null;
+    this.setState(
+      {
+        currentPlaylist: playlist,
+        playlistOrigin: origin,
+        selectedItems: new Set<number>(),
+        focusedIndex: -1,
+        selectionAnchor: -1,
+      },
+      () => {
+        this.persistPlaylistOrigin(origin);
+        this.savePlaylist(playlist);
+        this.updatePlaylistItemStates();
+      }
+    );
   }
 
   handleKeyDown(e: KeyboardEvent) {
@@ -2110,7 +2172,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     ];
 
     // Share playlist — last item, only when the current playlist content is saved in the leader's profile.
-    const canSharePlaylist = !!this.props.selectedLeader && !!this.state.scheduleDate && currentPlaylist.items.length > 0;
+    const canSharePlaylist = this.resolveCurrentPlaylistOrigin() !== null;
     const shareItems: ContextMenuItem[] = canSharePlaylist
       ? [
           { separator: true, label: "", value: "__separator_share" },

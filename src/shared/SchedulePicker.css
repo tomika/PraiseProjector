@@ -83,6 +83,22 @@
   gap: 0.5rem;
 }
 
+.schedule-dialog .dialog-footer.schedule-dialog-footer--share {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: grid;
+}
+
+.schedule-dialog-footer--share .schedule-share-after-save {
+  grid-column: 1;
+  justify-self: start;
+  min-width: 0;
+}
+
+.schedule-dialog-footer--share .schedule-ok-btn {
+  grid-column: 2;
+  justify-self: center;
+}
+
 /* Calendar */
 .schedule-calendar {
   width: 100%;
@@ -189,12 +205,71 @@
 }
 
 .date-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.75rem 1rem;
   border: 1px solid #dee2e6;
   border-radius: 4px;
   margin-bottom: 0.5rem;
   cursor: pointer;
   transition: background-color 0.2s;
+}
+
+.date-item-label {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.schedule-share-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #6c757d;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.schedule-share-btn:hover {
+  background: rgba(108, 117, 125, 0.14);
+}
+
+.schedule-share-btn img {
+  width: 16px;
+  height: 16px;
+}
+
+.date-item.selected .schedule-share-btn {
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.date-item.selected .schedule-share-btn img {
+  filter: invert(1);
+}
+
+.schedule-share-after-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.schedule-share-after-save input {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
 }
 
 .date-item:hover {
@@ -247,6 +322,10 @@
 
 [data-theme="dark"] .date-item:hover {
   background-color: var(--pp-bg-tertiary);
+}
+
+[data-theme="dark"] .schedule-share-btn img {
+  filter: invert(1);
 }
 
 [data-theme="dark"] .no-schedules {
