@@ -202,6 +202,22 @@ async function settledSnapshot(api: BoundEditor) {
   return snapshot.settled ? snapshot : api.whenLayoutSettled();
 }
 
+/**
+ * Apply a renderer mutation and wait for its frame. A very large AUTO_HEIGHT
+ * trial can leave no usable line width after scaled margins/tag lanes. The
+ * renderer correctly leaves that layout pending, but waiting for settlement in
+ * that case would never finish because there is no geometry to commit. Treat a
+ * frame with no new revision as a non-fitting trial instead.
+ */
+async function snapshotAfterUpdate(api: BoundEditor, update: () => void) {
+  const before = api.getLayoutSnapshot();
+  update();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const after = api.getLayoutSnapshot();
+  if (!after.settled && after.revision === before.revision) return null;
+  return after.settled ? after : api.whenLayoutSettled(before.revision);
+}
+
 async function fitAndZoom(
   host: HTMLDivElement,
   api: BoundEditor,
@@ -245,6 +261,12 @@ async function fitAndZoomInternal(
   api.setContentFontSize(manualFontSize ? requestedFontSize : null, false);
   api.fitToPane(scrollMode, { width: cw, height: ch });
   let finalSnapshot = await settledSnapshot(api);
+  // A resize and the React display effect can start two fits in the same frame.
+  // They share one mutable editor, so a superseded fit must stop before it
+  // switches AUTO_HEIGHT wrapping/font size below. Otherwise the stale fit can
+  // overwrite the active fit's state, leaving the host hidden with its previous
+  // transform (or revealing that stale, over-large transform).
+  if (fitGenerations.get(host) !== generation) return false;
 
   const scaledFitWidthHeight = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => scaleFitWidthMetric(snapshot.height, cw, snapshot.width);
 
@@ -263,10 +285,11 @@ async function fitAndZoomInternal(
         max: Math.max(MAX_AUTO_FONT_SIZE, fitWidthFontSize),
         isCancelled: () => fitGenerations.get(host) !== generation,
         fits: async (candidate) => {
-          api.setContentFontSize(candidate, false);
-          api.update();
-          const snapshot = await settledSnapshot(api);
-          return scaledFitWidthHeight(snapshot) <= ch - 1;
+          const snapshot = await snapshotAfterUpdate(api, () => {
+            api.setContentFontSize(candidate, false);
+            api.update();
+          });
+          return snapshot !== null && scaledFitWidthHeight(snapshot) <= ch - 1;
         },
       });
       if (fitGenerations.get(host) !== generation) return false;
