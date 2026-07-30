@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>PraiseProjector</title>
-    <link rel="stylesheet" href="./stylesheets/chordpro.css" data-chordpro-css="true" />
+    <link rel="stylesheet" href="/stylesheets/chordpro.css" data-chordpro-css="true" />
     <style>
       html,
       body {
@@ -93,7 +93,7 @@
       //   - Cloud PWA (public /webapp): no injection ⇒ __ppApiBase stays "" and
       //     config.ts derives the cloud host from window.location.origin.
       // Dynamic legacy assets (icons, soundfonts, chord-selector CSS) live under
-      // /webapp here. ChordPro UI CSS has one canonical relative link above.
+      // /webapp here. ChordPro UI CSS has one canonical Vite-resolved link above.
       (function () {
         // Preserve any host-injected globals; default to the cloud configuration.
         window.__ppApiBase = window.__ppApiBase || "";

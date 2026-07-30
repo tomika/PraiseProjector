@@ -14,9 +14,11 @@ import { Settings } from "../types";
 import { cloudApi } from "../../common/cloudApi";
 import { SongPreference } from "../../db-common/SongPreference";
 import { Leader } from "../../db-common/Leader";
-import CompareDialog, { convertHistoryEntriesToSongsWithHistory } from "./CompareDialog";
+import { convertHistoryEntriesToSongsWithHistory } from "./compareDialogUtils";
 import { buildSongShareUrl, sharePublicLink } from "../services/shareService";
 import "./SongListPanel.css";
+
+const CompareDialog = React.lazy(() => import("./CompareDialog"));
 
 let addSongToPlaylistCallback: ((song: Song) => void) | null = null;
 
@@ -2079,12 +2081,14 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
         {/* History Dialog */}
         {this.state.showHistoryDialog && this.state.historyOriginalSong && this.state.historyVersions.length > 0 && (
-          <CompareDialog
-            originalSong={this.state.historyOriginalSong}
-            songsToCompare={this.state.historyVersions}
-            mode="History"
-            onClose={this.handleHistoryDialogClose}
-          />
+          <React.Suspense fallback={<div className="loading-overlay" />}>
+            <CompareDialog
+              originalSong={this.state.historyOriginalSong}
+              songsToCompare={this.state.historyVersions}
+              mode="History"
+              onClose={this.handleHistoryDialogClose}
+            />
+          </React.Suspense>
         )}
       </div>
     );

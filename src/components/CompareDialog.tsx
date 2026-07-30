@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { diffWords } from "diff";
 import { Song, SongChange } from "../../db-common/Song";
 import { Database } from "../../db-common/Database";
-import { PendingSongState, SongHistoryEntry } from "../../common/pp-types";
+import { PendingSongState } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
 import ChordProEditor from "./ChordProEditor/ChordProEditor";
 import "./CompareDialog.css";
@@ -16,19 +16,6 @@ export interface ImportDecision {
 
 // Result type for SongCheck mode decisions
 export type SongCheckDecision = "approve" | "reject" | "revoke";
-
-export function convertHistoryEntryToSongWithHistory(historyEntry: SongHistoryEntry): Song {
-  return new Song(historyEntry.songdata.text, historyEntry.songdata.system, {
-    uploader: historyEntry.uploader,
-    created: new Date(historyEntry.created),
-  });
-}
-
-export function convertHistoryEntriesToSongsWithHistory(historyEntries: SongHistoryEntry[]): Song[] {
-  return historyEntries.map((entry) => {
-    return convertHistoryEntryToSongWithHistory(entry);
-  });
-}
 
 interface CompareDialogProps {
   originalSong?: Song | null;

@@ -6,8 +6,9 @@ import { useLocalization, StringKey } from "../localization/LocalizationContext"
 import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import type { SongCheckDecision } from "./CompareDialog";
-import CompareDialog from "./CompareDialog";
 import "./SongCheckDialog.css";
+
+const CompareDialog = React.lazy(() => import("./CompareDialog"));
 
 interface SongCheckDialogProps {
   onClose: () => void;
@@ -228,21 +229,23 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
       </div>
 
       {selectedEntry && (
-        <CompareDialog
-          originalSong={selectedEntryHasPreviousVersion ? new Song(selectedEntry.current!, selectedEntry.songdata.system) : null}
-          songsToCompare={[new Song(selectedEntry.songdata.text, selectedEntry.songdata.system)]}
-          mode="SongCheck"
-          onClose={handleCompareClose}
-          leftLabel={selectedEntryHasPreviousVersion ? t("SongCheckCurrentVersion") : t("SongCheckNewSong")}
-          initialLeftCollapsed={!selectedEntryHasPreviousVersion}
-          rightLabel={t("SongCheckProposedVersion")}
-          onSongCheckDecision={handleSongCheckDecision}
-          songCheckIsOwnUpload={isOwnUpload(selectedEntry)}
-          songCheckState={selectedEntry.state}
-          requesterName={selectedEntry.uploader}
-          onNavigatePrev={handleNavigatePrev}
-          onNavigateNext={handleNavigateNext}
-        />
+        <React.Suspense fallback={<div className="loading-overlay" />}>
+          <CompareDialog
+            originalSong={selectedEntryHasPreviousVersion ? new Song(selectedEntry.current!, selectedEntry.songdata.system) : null}
+            songsToCompare={[new Song(selectedEntry.songdata.text, selectedEntry.songdata.system)]}
+            mode="SongCheck"
+            onClose={handleCompareClose}
+            leftLabel={selectedEntryHasPreviousVersion ? t("SongCheckCurrentVersion") : t("SongCheckNewSong")}
+            initialLeftCollapsed={!selectedEntryHasPreviousVersion}
+            rightLabel={t("SongCheckProposedVersion")}
+            onSongCheckDecision={handleSongCheckDecision}
+            songCheckIsOwnUpload={isOwnUpload(selectedEntry)}
+            songCheckState={selectedEntry.state}
+            requesterName={selectedEntry.uploader}
+            onNavigatePrev={handleNavigatePrev}
+            onNavigateNext={handleNavigateNext}
+          />
+        </React.Suspense>
       )}
     </>
   );

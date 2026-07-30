@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Song } from "../../db-common/Song";
 import { Leader } from "../../db-common/Leader";
@@ -7,13 +7,15 @@ import { useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
-import CompareDialog, { convertHistoryEntryToSongWithHistory } from "./CompareDialog";
+import { convertHistoryEntryToSongWithHistory } from "./compareDialogUtils";
 import LeaderDataMergeDialog from "./LeaderDataMergeDialog";
 import "./DBSyncDialog.css";
 import { ChordSystemCode } from "../../chordpro/chordpro_base";
 import { SyncRequest, SyncResponse } from "../../common/pp-types";
 import { useTooltips } from "../localization/TooltipContext";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
+
+const CompareDialog = lazy(() => import("./CompareDialog"));
 
 enum SyncItemType {
   Song = "song",
@@ -1461,16 +1463,18 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
       {/* Compare Dialog for song conflicts/checking */}
       {compareDialogProps && (
-        <CompareDialog
-          originalSong={compareDialogProps.originalSong}
-          songsToCompare={compareDialogProps.songsToCompare}
-          comparePairs={compareDialogProps.comparePairs}
-          initialPairIndex={compareDialogProps.initialPairIndex}
-          mode={compareDialogProps.mode}
-          leftLabel={compareDialogProps.leftLabel}
-          rightLabel={compareDialogProps.rightLabel}
-          onClose={handleCompareDialogClose}
-        />
+        <Suspense fallback={<div className="loading-overlay" />}>
+          <CompareDialog
+            originalSong={compareDialogProps.originalSong}
+            songsToCompare={compareDialogProps.songsToCompare}
+            comparePairs={compareDialogProps.comparePairs}
+            initialPairIndex={compareDialogProps.initialPairIndex}
+            mode={compareDialogProps.mode}
+            leftLabel={compareDialogProps.leftLabel}
+            rightLabel={compareDialogProps.rightLabel}
+            onClose={handleCompareDialogClose}
+          />
+        </Suspense>
       )}
 
       {/* Leader Merge Dialog for profile conflicts */}
@@ -1593,16 +1597,18 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
       {/* Compare Dialog for updated song comparison */}
       {updatedSongCompare && (
-        <CompareDialog
-          originalSong={updatedSongCompare.compareType === "backup" ? updatedSongCompare.otherSong : updatedSongCompare.localSong}
-          songsToCompare={[updatedSongCompare.compareType === "backup" ? updatedSongCompare.localSong : updatedSongCompare.otherSong]}
-          mode="Conflict"
-          leftLabel={updatedSongCompare.compareType === "backup" ? t("BackupVersion") : t("YourChanges")}
-          rightLabel={updatedSongCompare.compareType === "backup" ? t("YourChanges") : t("ServerVersion")}
-          leftButtonLabel={updatedSongCompare.compareType === "backup" ? t("UseBackupVersion") : t("KeepYourChanges")}
-          rightButtonLabel={updatedSongCompare.compareType === "backup" ? t("KeepYourChanges") : t("UseServerVersion")}
-          onClose={(mergedSong) => handleUpdatedSongCompareClose(updatedSongCompare.localSong.Id, updatedSongCompare.compareType, mergedSong)}
-        />
+        <Suspense fallback={<div className="loading-overlay" />}>
+          <CompareDialog
+            originalSong={updatedSongCompare.compareType === "backup" ? updatedSongCompare.otherSong : updatedSongCompare.localSong}
+            songsToCompare={[updatedSongCompare.compareType === "backup" ? updatedSongCompare.localSong : updatedSongCompare.otherSong]}
+            mode="Conflict"
+            leftLabel={updatedSongCompare.compareType === "backup" ? t("BackupVersion") : t("YourChanges")}
+            rightLabel={updatedSongCompare.compareType === "backup" ? t("YourChanges") : t("ServerVersion")}
+            leftButtonLabel={updatedSongCompare.compareType === "backup" ? t("UseBackupVersion") : t("KeepYourChanges")}
+            rightButtonLabel={updatedSongCompare.compareType === "backup" ? t("KeepYourChanges") : t("UseServerVersion")}
+            onClose={(mergedSong) => handleUpdatedSongCompareClose(updatedSongCompare.localSong.Id, updatedSongCompare.compareType, mergedSong)}
+          />
+        </Suspense>
       )}
 
       {/* Leader profile compare with backup or server */}

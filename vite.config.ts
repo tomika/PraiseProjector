@@ -226,8 +226,14 @@ export default defineConfig(({ command, mode }) => {
           // the editor-only react-dnd chunk it never uses. Routing by node_modules
           // path keeps the shared React runtime in vendor-react.
           manualChunks(id) {
-            if (!id.includes("node_modules")) return undefined;
-            const inPkg = (...names: string[]) => names.some((n) => id.includes(`node_modules/${n}/`));
+            const normalizedId = id.replace(/\\/g, "/");
+            // The full app and standalone client view share the large ChordPro
+            // renderer/editor core. Keep it in a stable application chunk rather
+            // than allowing Rollup to fold it into a catch-all shared chunk. The
+            // ABC editor remains a separate dynamic feature chunk.
+            if (normalizedId.includes("/chordpro/") && !normalizedId.endsWith("/chordpro/abc_editor.ts")) return "chordpro-core";
+            if (!normalizedId.includes("node_modules")) return undefined;
+            const inPkg = (...names: string[]) => names.some((n) => normalizedId.includes(`node_modules/${n}/`));
             // Editor-only React libraries — checked BEFORE react core so the page
             // that uses native HTML5 drag-and-drop (client-view) never pulls them
             // into its initial payload (Phase C bundle diet).
