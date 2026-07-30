@@ -35,6 +35,10 @@
 .schedule-dialog .dialog-header {
   padding: 1rem;
   border-bottom: 1px solid #dee2e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .schedule-dialog .dialog-header h3 {
@@ -42,29 +46,28 @@
   font-size: 1.2rem;
 }
 
+/* Corner "X" dismiss button sitting at the end of the dialog title row —
+   same appearance as the client-view About box's `.cv-dialog-x`. */
 .schedule-close-btn {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  background: transparent;
-  border: 1.5px solid rgba(0, 0, 0, 0.18);
-  border-radius: 50%;
-  cursor: pointer;
-  color: #6c757d;
-  font-size: 1.2rem;
-  line-height: 1;
-  padding: 0 0 3px 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
+  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  z-index: 1;
+  width: 32px;
+  height: 32px;
+  margin: -4px -4px -4px 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .schedule-close-btn:hover {
-  border-color: #5c646d;
+  background: rgba(127, 127, 127, 0.25);
 }
 
 .schedule-dialog .dialog-body {
@@ -276,18 +279,6 @@
 .schedule-picker--cv .dialog-header h3 {
   font-size: 18px;
   font-weight: 600;
-}
-
-.schedule-picker--cv .schedule-close-btn {
-  background: #2d2d2d;
-  border-color: rgba(255, 255, 255, 0.25);
-  color: #9a9a9a;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-
-.schedule-picker--cv .schedule-close-btn:hover {
-  background: #3a3a3a;
-  color: #e8e8e8;
 }
 
 .schedule-picker--cv .dialog-body {
