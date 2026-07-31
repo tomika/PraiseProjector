@@ -12,6 +12,7 @@ import {
   initHostDevicePpd,
   isHostDevicePpdAvailable,
   scanHostDeviceSessions,
+  stopHostDeviceNearbyDiscovery,
 } from "../services/hostDevicePpd";
 import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type SessionKind, type SessionRow } from "../shared/SessionsForm";
 import { filterOwnSessionEntries } from "../shared/sessionList";
@@ -87,6 +88,11 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     const timeout = setTimeout(checkElectron, 100);
     return () => clearTimeout(timeout);
   }, []);
+
+  // Bluetooth/BLE discovery runs only while this dialog is open — it is expensive to
+  // leave scanning. Mount-scoped on purpose: the scan-timer effect below re-runs on
+  // every address change, and tearing discovery down there would restart it constantly.
+  useEffect(() => stopHostDeviceNearbyDiscovery, []);
 
   // Scan timer ref
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,7 +182,10 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
           hostId: session.hostId,
         };
         const hasWebConnection = /^https?:\/\//i.test(session.url);
-        const hasPpdConnection = !session.id.startsWith("web_") && !!session.deviceId && !!session.address && !!session.port;
+        // A bluetooth/nearby peer is followed through its endpoint ID and has no port
+        // at all — requiring one would leave every Bluetooth-only session unconnectable.
+        const isNearbyPeer = session.transport === "bluetooth";
+        const hasPpdConnection = !session.id.startsWith("web_") && !!session.deviceId && !!session.address && (!!session.port || isNearbyPeer);
 
         if (hasWebConnection) {
           newLocalSessions.push({
@@ -192,7 +201,9 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
             ...common,
             rowId: `ppd:${session.id}`,
             kind: "ppd",
-            url: `udp://${session.address}:${session.port}/${session.deviceId}`,
+            // Keep the nrb:// URL the offer produced for a nearby peer; synthesizing a
+            // udp:// one would print `:undefined` for its (nonexistent) port.
+            url: isNearbyPeer ? session.url : `udp://${session.address}:${session.port}/${session.deviceId}`,
           });
         } else if (!hasWebConnection) {
           newLocalSessions.push({
@@ -279,11 +290,14 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
       }
 
       if (onConnect) {
-        const udpDetails =
-          session.type === "local" && session.address && session.port && session.hostId
-            ? { address: session.address, port: session.port, hostId: session.hostId }
+        // A nearby peer has an endpoint ID in `address` and no port; requiring a
+        // truthy port here dropped its watch details and sent it down the cloud path.
+        const isNearbyPeer = session.kind === "ppd" && !session.port;
+        const watchDetails =
+          session.type === "local" && session.address && session.hostId && (session.port || isNearbyPeer)
+            ? { address: session.address, port: session.port ?? 0, hostId: session.hostId }
             : undefined;
-        onConnect(session.id, session.url, session.type, udpDetails);
+        onConnect(session.id, session.url, session.type, watchDetails);
       }
     }
     onClose();
