@@ -202,6 +202,14 @@ export function SessionsDialog() {
   const rows: SessionRow[] = connectionRows.map(({ row }) => ({ ...row, icon: sessionKindIcon[row.kind] }));
   const hasWebServerBackend = caps.hasWebServerBackend;
   const hasPpdBackend = caps.hasHostBridge;
+  // Online hosting needs a live OnlineSession controller to drive. Its provider is
+  // mounted only in the full renderer (main.tsx), so a STANDALONE client view — the
+  // cloud PWA and the /public.html showcase — has none: without this gate the toggle
+  // stayed interactive while starting nothing (no session, no status, no QR).
+  // Deliberately NOT caps.canHostOnlineSession: in the AppDirect embed that flag IS
+  // the externalWebDisplayEnabled setting, so gating the control on it would latch
+  // the switch off permanently once turned off.
+  const canHostOnline = !!hostOnlineSession?.canPublish;
   const cloudSessionUrl = hostOnlineSession
     ? hostOnlineSession.state.phase === "active" && hostOnlineSession.sessionOwnerId
       ? buildCloudUrl(hostOnlineSession.sessionOwnerId)
@@ -265,8 +273,8 @@ export function SessionsDialog() {
           qrUrl: cloudSessionUrl,
           qrLabel: t("SessionsCloudToggleTitle"),
           showText: false,
-          isFeatureEnabled: sessionToggleSettings.externalWebDisplayEnabled,
-          isControlDisabled: hostOnlineSession ? !hostOnlineSession.canPublish : undefined,
+          isFeatureEnabled: canHostOnline && sessionToggleSettings.externalWebDisplayEnabled,
+          isControlDisabled: !canHostOnline,
           statusText: cloudStatusText,
           statusTone: hostOnlineSession?.state.phase === "error" ? "error" : hostOnlineSession?.state.phase === "active" ? "success" : "progress",
           onToggle: (nextFeatureEnabled) => {
