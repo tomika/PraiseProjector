@@ -264,6 +264,7 @@ export class RestCore {
       leaderRight: this.headerLeaderAvailable ?? (!lockedCloudFollower && this.config.hostAccess !== "GUEST"),
       leaderMode: this.leaderMode,
       lockedToSession: !!this.config.lockedToSession,
+      fullEditorReachable: this.config.allowFullEditor !== false,
     });
   }
 

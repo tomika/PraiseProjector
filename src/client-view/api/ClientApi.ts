@@ -233,6 +233,13 @@ export interface ClientConfig {
    * standalone entry may override it from `window.__ppEditorUrl`.
    */
   fullEditorUrl?: string;
+  /**
+   * Set false to withdraw the full-editor switch for this entry (`?ui=client`).
+   * Used by the /public.html showcase, where the editor would open on the empty
+   * local database instead of the cloud catalogue this page demonstrates.
+   * Defaults to true. See CapabilityInputs.fullEditorReachable.
+   */
+  allowFullEditor?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

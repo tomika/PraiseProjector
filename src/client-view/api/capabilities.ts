@@ -85,6 +85,19 @@ export interface CapabilityInputs {
   /** This UI was opened as a concrete session viewer, so it must not expose the
    *  normal full-editor switch in the overflow menu. */
   lockedToSession: boolean;
+
+  // ── entry-specific ──
+  /**
+   * The full editor is not usable from this entry, so the switch must not be
+   * offered. Absent/true ⇒ usable. Set false by the /public.html showcase mount:
+   * that page demonstrates the CLOUD (Rest) catalogue and shared playlists, while
+   * the editor runs on the local database — which is empty on a first visit — and
+   * the way back lands in the embedded Direct client, i.e. a different adapter
+   * over different data. Read only by the App roles; the ClientServed branch is
+   * already a hard false for the adjacent reason that the internal webserver does
+   * not even serve the editor shell (see electron/webserver.ts).
+   */
+  fullEditorReachable?: boolean;
 }
 
 /** Derive the capability snapshot for the given role + context. Pure. */
@@ -120,7 +133,7 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
 
   // App roles: a full client — always in control, with no follower/leader toggle.
   // The desktop embed (AppDirect) and the web/cloud app (AppRest) differ only in
-  // cloud-identity affordances. Full-editor navigation is runtime/session gated.
+  // cloud-identity affordances. Full-editor navigation is runtime/session/entry gated.
   const direct = input.role === "AppDirect";
   return {
     ...env,
@@ -139,6 +152,6 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
     // is toggle-gated in the embed and auth-gated in the cloud app.
     canHostLocalSession: hasHostBridge && input.ppdSessionEnabled,
     canHostOnlineSession: direct ? input.externalWebDisplayEnabled : input.authed && input.hasDefaultLeader,
-    canOpenFullEditor: !input.lockedToSession && !hasHostBridge,
+    canOpenFullEditor: input.fullEditorReachable !== false && !input.lockedToSession && !hasHostBridge,
   };
 }

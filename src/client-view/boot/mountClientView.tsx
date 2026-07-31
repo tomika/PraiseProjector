@@ -19,26 +19,31 @@ import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
 function readLaunchConfigFromUrl(): Pick<
   ClientConfig,
-  "initialSongId" | "initialPlaylistId" | "initialPlaylistIndex" | "leaderId" | "follow" | "lockedToSession" | "entryMode"
+  "initialSongId" | "initialPlaylistId" | "initialPlaylistIndex" | "leaderId" | "follow" | "lockedToSession" | "entryMode" | "allowFullEditor"
 > {
   if (typeof window === "undefined") return {};
   const params = new URLSearchParams(window.location.search);
   const initialSongId = (params.get("songId") || params.get("s") || "").trim() || undefined;
   const followLeaderId = (params.get("follow") || "").trim() || undefined;
-  const followConfig: Pick<ClientConfig, "leaderId" | "follow" | "lockedToSession" | "entryMode"> = followLeaderId
-    ? { leaderId: followLeaderId, follow: true, lockedToSession: true, entryMode: "session" }
-    : {};
+  // Flags that hold whatever launch target the URL names, so they apply to every
+  // return below. `ui=client` pins the entry to the client view: the /public.html
+  // showcase runs on the cloud catalogue, while the full editor would open on the
+  // (initially empty) local database — see ClientConfig.allowFullEditor.
+  const entryConfig: Pick<ClientConfig, "leaderId" | "follow" | "lockedToSession" | "entryMode" | "allowFullEditor"> = {
+    ...(params.get("ui") === "client" ? { allowFullEditor: false } : {}),
+    ...(followLeaderId ? { leaderId: followLeaderId, follow: true, lockedToSession: true, entryMode: "session" as const } : {}),
+  };
   const rawPlaylistId = (params.get("listId") || params.get("l") || "").trim();
-  if (!rawPlaylistId) return { initialSongId, ...followConfig };
+  if (!rawPlaylistId) return { initialSongId, ...entryConfig };
 
   const match = /^(.*)@([0-9]+)$/.exec(rawPlaylistId);
-  if (!match) return { initialSongId, initialPlaylistId: rawPlaylistId, ...followConfig };
+  if (!match) return { initialSongId, initialPlaylistId: rawPlaylistId, ...entryConfig };
 
   return {
     initialSongId,
     initialPlaylistId: match[1],
     initialPlaylistIndex: Number.parseInt(match[2], 10),
-    ...followConfig,
+    ...entryConfig,
   };
 }
 
