@@ -655,6 +655,16 @@ export class DomSongRenderer {
   }
 
   /**
+   * Viewport-space caret box after the latest commit. Keeping this conversion
+   * in the renderer makes it include every CSS offset/transform applied by the
+   * owning view.
+   */
+  getCaretClientRect() {
+    if (!this.caretNode.classList.contains("chp-dom-caret-visible")) return null;
+    return this.caretNode.getBoundingClientRect();
+  }
+
+  /**
    * Width of a raw text prefix in a given font, batched through the renderer's
    * own measurer. The controller uses it for chord/tag caret placement and
    * drag-ghost sizing.
@@ -1791,6 +1801,16 @@ export class DomSongRenderer {
           if (selection && run.sourceStart < selection.end && run.sourceEnd > selection.start) chord.classList.add("chp-dom-selected");
           block.appendChild(chord);
         }
+      }
+    } else if (occurrence.kind === "comment" && !this.input.differential) {
+      for (const unit of segmentVisualUnits(occurrence.text)) {
+        const text = this.doc.createElement("span");
+        text.className = "chp-dom-comment-text";
+        text.dataset.sourceStart = String(unit.sourceStart);
+        text.dataset.sourceEnd = String(unit.sourceEnd);
+        if (selection && unit.sourceStart < selection.end && unit.sourceEnd > selection.start) text.classList.add("chp-dom-selected");
+        text.textContent = unit.text;
+        block.appendChild(text);
       }
     } else this.appendDifferentialText(block, occurrence.textUnits, { font: occurrence.style.font, color: occurrence.style.color });
     parent.appendChild(block);

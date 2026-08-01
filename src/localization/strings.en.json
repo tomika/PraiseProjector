@@ -28,6 +28,8 @@
   "ChpMenuBridge": "Bridge",
   "ChpMenuGrid": "Instrumental",
   "ChpMenuComment": "Comment",
+  "ChpMenuTransposeUp": "Transpose up",
+  "ChpMenuTransposeDown": "Transpose down",
   "ChpMenuClearTag": "Clear Tag",
   "Collapse": "Collapse",
   "Confirm": "Confirm",

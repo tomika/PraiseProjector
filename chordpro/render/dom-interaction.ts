@@ -206,6 +206,23 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
         });
       }
     }
+    if (entry.blockCaretStops) {
+      const availableWidth = Math.max(0, layout.bodyWidth - entry.source.style.indent);
+      const textWidth = Math.max(0, (entry.blockWidth ?? entry.source.style.indent) - entry.source.style.indent);
+      const remaining = Math.max(0, availableWidth - textWidth);
+      const alignedOffset = entry.source.style.align === "right" ? remaining : entry.source.style.align === "center" ? remaining / 2 : 0;
+      const blockLeft = contentLeft + entry.source.style.indent + alignedOffset;
+      const blockTop = top + entry.tagSeparation;
+      rowGeometry.push({
+        id: `${entry.id}:block-row`,
+        top: blockTop,
+        bottom: blockTop + (entry.blockHeight ?? plan.display.lyricsLineHeight),
+        left: blockLeft,
+        lyricsTop: blockTop,
+        lyricsHeight: plan.display.lyricsLineHeight,
+        caretStops: entry.blockCaretStops,
+      });
+    }
     // The label is right-aligned in the tag lane (CSS `text-align: right` over a
     // fixed lane column) and shares the exact top/line-height of the first
     // row's lyrics.
@@ -548,7 +565,7 @@ export function buildChordDropLines(index: SongGeometryIndex): ChordDropLine[] {
       top: entry.top,
       bottom: entry.bottom,
       lyricsTop: entry.rows?.[0]?.lyricsTop ?? entry.top,
-      isInstrumental: entry.occurrence.source.isInstrumental,
+      isInstrumental: entry.occurrence.source.isInstrumental || entry.occurrence.source.isComment,
       stops,
     });
   }
@@ -621,7 +638,8 @@ export function computeSelectionSpans(
     else if (inside) span = { start: 0, end: occurrence.text.length };
     if (isStart) inside = !isEnd;
     else if (isEnd) inside = false;
-    if (span && span.end > span.start && (occurrence.kind === "lyrics" || occurrence.kind === "grid")) spans.set(occurrence.id, span);
+    if (span && span.end > span.start && (occurrence.kind === "lyrics" || occurrence.kind === "comment" || occurrence.kind === "grid"))
+      spans.set(occurrence.id, span);
   }
   return spans;
 }

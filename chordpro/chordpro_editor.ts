@@ -33,7 +33,6 @@ import {
   hitTestTag,
   isTagColumnPoint,
   normalizeClientPoint,
-  resolveCaretGeometry,
   resolveChordDropTarget,
   resolveLineCaretHit,
   type ChordDropLine,
@@ -438,6 +437,7 @@ import { clampTranspose, InstructionItem, Instructions } from "./chordpro_instru
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE" | "FULL";
 export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
 export type SectionRepeatCount = { section: number; from: number; to: number; multiplier: number };
+export type ChordProSelectionState = { commentBlockedByChords: boolean };
 
 export interface ChordProEditorEventHandlers {
   UpdateChordProData?: (text: string) => void;
@@ -446,6 +446,7 @@ export interface ChordProEditorEventHandlers {
   OnLineDblclk?: (line: number) => void;
   OnCopy?: (chordProText: string) => unknown;
   OnPaste?: () => unknown;
+  OnSelectionChange?: (state: ChordProSelectionState) => void;
 }
 
 export interface ChordProEditorOptions {
@@ -540,6 +541,8 @@ export class ChordProEditor extends ChordDrawer {
   private domMetaInputHost: DomMetaInputHost | null = null;
   /** Post-commit hook that keeps the DOM caret in view; owned with the renderer. */
   private domCaretScrollUnsubscribe: (() => void) | null = null;
+  /** Set only by keyboard/text editing, never by rendering or pointer scrolling. */
+  private domCaretScrollPending = false;
   /**
    * Root-local drop marker for an in-flight chord drag, resolved by
    * `applyChordDrag`. It is decoration state, never document state.
@@ -659,6 +662,7 @@ export class ChordProEditor extends ChordDrawer {
 
     if (draw) {
       this.draw();
+      this.requestDomCaretScroll();
     }
   }
   private readonly handleWindowPaste = (evt: ClipboardEvent) => {
@@ -737,6 +741,8 @@ export class ChordProEditor extends ChordDrawer {
   private cursorPos: number | null = null;
   private selectionStart: number | ChordProSelection | null = null;
   private selectionEnd: number | ChordProSelection | null = null;
+  private onSelectionChange: ((state: ChordProSelectionState) => void) | null = null;
+  private lastCommentBlockedByChords: boolean | null = null;
   /**
    * The lines currently displayed, in display order.
    *
@@ -797,6 +803,7 @@ export class ChordProEditor extends ChordDrawer {
       this.onLog = eventHandlers.LogFromWebEditor ? (s) => eventHandlers.LogFromWebEditor?.(s) : null;
       this.onLineSel = eventHandlers.OnLineSel ? (p) => eventHandlers.OnLineSel?.(p) : null;
       this.onLineDblclk = eventHandlers.OnLineDblclk ? (p) => eventHandlers.OnLineDblclk?.(p) : null;
+      this.onSelectionChange = eventHandlers.OnSelectionChange ? (state) => eventHandlers.OnSelectionChange?.(state) : null;
       this.onCopy = eventHandlers.OnCopy
         ? (_plain, chordpro) => {
             eventHandlers.OnCopy?.(chordpro ?? "");
@@ -1936,42 +1943,59 @@ export class ChordProEditor extends ChordDrawer {
     if (this.domRenderer) this.domRenderer.update(input, category);
     else {
       this.domRenderer = new DomSongRenderer(this.parent_div, input);
-      // Caret scroll-into-view: the DOM backend commits on a frame, so the hook
-      // is its post-commit notification, firing once per commit.
-      this.domCaretScrollUnsubscribe = this.domRenderer.subscribeLayout(() => this.scrollDomCaretIntoView());
+      // The DOM backend commits on a frame. The hook is deliberately gated by
+      // keyboard/text editing so an ordinary render cannot undo a user's
+      // intentional scroll away from the caret.
+      this.domCaretScrollUnsubscribe = this.domRenderer.subscribeLayout(() => {
+        if (!this.domCaretScrollPending) return;
+        this.domCaretScrollPending = false;
+        this.scrollDomCaretIntoView();
+      });
     }
     this.syncPrimarySurfaceVisibility();
   }
 
+  private requestDomCaretScroll() {
+    if (this.disposed || this.readOnly || this.drawingSuppressed || !this.domRenderer) return;
+    if (!(this.actionTarget instanceof ChordProLine) || this.cursorPos == null) return;
+    this.domCaretScrollPending = true;
+  }
+
   /**
    * Keeps the DOM caret visible: only a caret outside the viewport scrolls,
-   * and it lands one chord+lyric line inside the edge.
+   * and it lands with a small editing margin inside the edge.
    */
   private scrollDomCaretIntoView() {
     if (this.disposed || this.readOnly) return;
     if (!(this.actionTarget instanceof ChordProLine) || this.cursorPos == null) return;
-    const geometry = this.domRenderer?.getGeometryIndex();
-    const root = this.domRenderer?.element;
-    if (!geometry || !root) return;
-    const caret = resolveCaretGeometry(geometry, this.actionTarget, this.cursorPos);
-    if (!caret) return;
+    const caret = this.domRenderer?.getCaretClientRect();
+    const scrollTarget = this.findCaretScrollContainer(this.parent_div);
+    if (!caret || !scrollTarget) return;
 
-    const parentDiv = this.parent_div;
-    const scrollTop = parentDiv.scrollTop;
-    const viewportHeight = parentDiv.clientHeight;
-    const margin = this.displayProps.chordLineHeight + this.displayProps.lyricsLineHeight;
-    // Root-local y is logical-pixel and the root commits that same logical size
-    // as its CSS box, so the only conversion needed is the root's own offset
-    // inside the scrolling host.
-    const top = root.offsetTop + caret.top;
+    const targetRect = scrollTarget.getBoundingClientRect();
+    const viewportLeft = targetRect.left + scrollTarget.clientLeft;
+    const viewportTop = targetRect.top + scrollTarget.clientTop;
+    const viewportRight = viewportLeft + scrollTarget.clientWidth;
+    const viewportBottom = viewportTop + scrollTarget.clientHeight;
+    const style = window.getComputedStyle(scrollTarget);
+    const allowsScroll = (overflow: string) => overflow === "auto" || overflow === "scroll" || overflow === "overlay";
+    const marginX = Math.max(8, caret.height / 2);
+    const marginY = Math.max(8, caret.height);
+    let left = scrollTarget.scrollLeft;
+    let top = scrollTarget.scrollTop;
 
-    let newScrollTop = 0;
-    if (top < scrollTop) newScrollTop = top - margin;
-    else if (top + caret.height > scrollTop + viewportHeight) newScrollTop = top + caret.height - viewportHeight + margin;
-    if (newScrollTop) {
-      newScrollTop = Math.max(0, Math.min(newScrollTop, parentDiv.scrollHeight - viewportHeight));
-      parentDiv.scrollTo({ top: newScrollTop });
+    if (allowsScroll(style.overflowX)) {
+      if (caret.left < viewportLeft) left += caret.left - viewportLeft - marginX;
+      else if (caret.right > viewportRight) left += caret.right - viewportRight + marginX;
     }
+    if (allowsScroll(style.overflowY)) {
+      if (caret.top < viewportTop) top += caret.top - viewportTop - marginY;
+      else if (caret.bottom > viewportBottom) top += caret.bottom - viewportBottom + marginY;
+    }
+
+    left = Math.max(0, Math.min(left, scrollTarget.scrollWidth - scrollTarget.clientWidth));
+    top = Math.max(0, Math.min(top, scrollTarget.scrollHeight - scrollTarget.clientHeight));
+    if (left !== scrollTarget.scrollLeft || top !== scrollTarget.scrollTop) scrollTarget.scrollTo({ left, top });
   }
 
   getCapo() {
@@ -2515,7 +2539,7 @@ export class ChordProEditor extends ChordDrawer {
         let noDrop = stripWidth > 0 && this.normalizeMousePos(e).x <= stripWidth;
         if (!noDrop) {
           const line_obj = this.HitTestLine(e);
-          noDrop = !line_obj || line_obj.isInstrumental;
+          noDrop = !line_obj || line_obj.isInstrumental || line_obj.isComment;
         }
         if (noDrop) {
           const line_obj = chord.line;
@@ -2744,7 +2768,7 @@ export class ChordProEditor extends ChordDrawer {
       }
       const line_obj = this.HitTestLine(e);
 
-      if (!line_obj || line_obj.isInstrumental) {
+      if (!line_obj || line_obj.isInstrumental || line_obj.isComment) {
         this.setSurfaceCursor("not-allowed");
         this.draw();
         return;
@@ -2816,7 +2840,7 @@ export class ChordProEditor extends ChordDrawer {
       let noDrop = mp.x <= this.activeChordStripWidth;
       if (!noDrop) {
         const line_obj = this.HitTestLine(e);
-        noDrop = !line_obj || line_obj.isInstrumental;
+        noDrop = !line_obj || line_obj.isInstrumental || line_obj.isComment;
       }
       if (noDrop) {
         const line_obj = box.chord.line;
@@ -2988,6 +3012,11 @@ export class ChordProEditor extends ChordDrawer {
     if (!this.chordPro || !(this.actionTarget instanceof ChordProLine) || this.cursorPos === null) return false;
 
     const code_string = getKeyCodeString(e);
+    let caretRenderRequested = false;
+    const drawForCaret = () => {
+      caretRenderRequested = true;
+      this.draw();
+    };
     let line_obj = this.actionTarget;
     let modify_selection = true,
       prevLine: ChordProLine | null,
@@ -3040,11 +3069,11 @@ export class ChordProEditor extends ChordDrawer {
         if (!this.eraseSelection(startPos)) this.saveState();
         this.changeActionTarget(line_obj.splitAt(this.cursorPos));
         this.cursorPos = 0;
-        this.draw();
+        drawForCaret();
         modify_selection = false;
         break;
       case "BACKSPACE":
-        if (this.eraseSelection(startPos)) this.draw();
+        if (this.eraseSelection(startPos)) drawForCaret();
         else if (this.cursorPos === 0) {
           prevLine = line_obj.getPrevLine();
           if (prevLine) {
@@ -3052,28 +3081,28 @@ export class ChordProEditor extends ChordDrawer {
             this.cursorPos = prevLine.lyrics.length;
             prevLine.combineWithNext();
             this.changeActionTarget(prevLine);
-            this.draw();
+            drawForCaret();
           }
         } else {
           this.saveState();
           line_obj.deleteString(--this.cursorPos, 1);
-          this.draw();
+          drawForCaret();
         }
         modify_selection = false;
         break;
       case "DELETE":
-        if (this.eraseSelection(startPos)) this.draw();
+        if (this.eraseSelection(startPos)) drawForCaret();
         else if (this.cursorPos >= line_obj.lyrics.length) {
           nextLine = line_obj.getNextLine();
           if (nextLine) {
             this.saveState();
             line_obj.combineWithNext();
-            this.draw();
+            drawForCaret();
           }
         } else {
           this.saveState();
           line_obj.deleteString(this.cursorPos, 1);
-          this.draw();
+          drawForCaret();
         }
         modify_selection = false;
         break;
@@ -3082,7 +3111,7 @@ export class ChordProEditor extends ChordDrawer {
           if (this.cursorPos === ch.pos) {
             this.changeActionTarget(ch);
             this.cursorPos = 0;
-            this.draw();
+            drawForCaret();
             modify_selection = false;
             this.dragData = null;
             break;
@@ -3099,7 +3128,7 @@ export class ChordProEditor extends ChordDrawer {
             this.changeActionTarget(this.chordPro.lines[0]);
             this.cursorPos = 0;
           }
-          this.draw();
+          drawForCaret();
           modify_selection = false;
         } else if (this.selectionStart instanceof ChordProSelection && this.cursorPos > 0) {
           this.cursorPos = 0;
@@ -3162,9 +3191,10 @@ export class ChordProEditor extends ChordDrawer {
         this.selectionStart = null;
         this.selectionEnd = null;
       }
-      this.draw();
+      drawForCaret();
     }
 
+    if (caretRenderRequested) this.requestDomCaretScroll();
     e.preventDefault();
     return true;
   }
@@ -3532,6 +3562,7 @@ export class ChordProEditor extends ChordDrawer {
 
     if (draw) {
       this.draw();
+      this.requestDomCaretScroll();
       e.preventDefault();
       return true;
     }
@@ -3718,6 +3749,7 @@ export class ChordProEditor extends ChordDrawer {
     }
 
     this.draw();
+    this.requestDomCaretScroll();
   }
 
   getSelectedText(mode: "lyrics" | "chords" | "directives" = "directives"): string {
@@ -4100,7 +4132,7 @@ export class ChordProEditor extends ChordDrawer {
         () => {
           this.toggleCommentType();
         },
-        hasLineSelection,
+        hasLineSelection && !this.selectedLinesContainChords(),
         "\u2638"
       );
 
@@ -4113,6 +4145,13 @@ export class ChordProEditor extends ChordDrawer {
         hasLineSelection,
         "\u2715"
       );
+
+      addSeparator();
+
+      // Whole-document transpose. These actions used to live in the full-view
+      // toolbar; keep the same relative transpose behaviour and keyboard hints.
+      addItem(this.localize("Transpose Up"), "Shift++", () => this.transpose(1), true, "\u2191");
+      addItem(this.localize("Transpose Down"), "Shift+-", () => this.transpose(-1), true, "\u2193");
     } else addItem(this.localize("Copy All"), `${ctrlCmd}+C`, () => this.copyAll(), true, "\u2398");
 
     // Position menu at mouse coordinates, clamping to viewport
@@ -4140,14 +4179,39 @@ export class ChordProEditor extends ChordDrawer {
     });
   }
 
-  private toggleCommentType() {
-    if (this.chordPro && this.selectionStart instanceof ChordProSelection && this.selectionEnd instanceof ChordProSelection) {
-      for (let i = this.selectionStart.line; i <= this.selectionEnd.line; ++i) if (this.chordPro.lines[i].chords.length > 0) return; // Don't allow toggling comment type if any line in selection contains chords
+  private selectedLineRange(): { first: number; last: number } | null {
+    if (!this.chordPro || !(this.selectionStart instanceof ChordProSelection) || !(this.selectionEnd instanceof ChordProSelection)) return null;
+    if (this.comparePositions(this.selectionStart, this.selectionEnd) === 0) return null;
+
+    const first = Math.max(0, Math.min(this.selectionStart.line, this.chordPro.lines.length - 1));
+    let last = this.selectionEnd.line;
+    if (this.selectionEnd.col === 0 && last > this.selectionStart.line) --last;
+    last = Math.max(first, Math.min(last, this.chordPro.lines.length - 1));
+    return { first, last };
+  }
+
+  private selectedLinesContainChords() {
+    const range = this.selectedLineRange();
+    if (!range || !this.chordPro) return false;
+    for (let i = range.first; i <= range.last; ++i) if (this.chordPro.lines[i].chords.length > 0) return true;
+    return false;
+  }
+
+  private reportSelectionState() {
+    if (!this.onSelectionChange) return;
+    const commentBlockedByChords = this.selectedLinesContainChords();
+    if (this.lastCommentBlockedByChords === commentBlockedByChords) return;
+    this.lastCommentBlockedByChords = commentBlockedByChords;
+    this.onSelectionChange({ commentBlockedByChords });
+  }
+
+  toggleCommentType() {
+    const range = this.selectedLineRange();
+    if (this.chordPro && range) {
+      if (this.selectedLinesContainChords()) return;
 
       this.saveState();
-      let lastLine = this.selectionEnd.line;
-      if (!this.selectionEnd.col) --lastLine;
-      for (let i = this.selectionStart.line; i <= lastLine; ++i) {
+      for (let i = range.first; i <= range.last; ++i) {
         const line_obj = this.chordPro.lines[i];
         if (line_obj.isComment) {
           // Remove comment — restore as normal lyrics line
@@ -4161,6 +4225,39 @@ export class ChordProEditor extends ChordDrawer {
       }
       this.draw();
     }
+  }
+
+  insertAbcAtCursor() {
+    if (
+      !this.chordPro ||
+      this.readOnly ||
+      !(this.actionTarget instanceof ChordProLine) ||
+      this.cursorPos === null ||
+      (this.selectionStart !== null && this.selectionEnd !== null && this.comparePositions(this.selectionStart, this.selectionEnd) !== 0)
+    )
+      return false;
+
+    const line = this.actionTarget;
+    const lineIndex = line.getLineIndex();
+    if (lineIndex < 0) return false;
+
+    this.saveState();
+    const suffix = line.splitAt(this.cursorPos);
+    if (!suffix) return false;
+
+    const metaKey = this.chordPro.key;
+    const key = (metaKey ? this.system.getKey(metaKey)?.name : "") || this.guessKey() || "C";
+    const tonic = this.system.getKey(key)?.baseNote.charAt(0) || "C";
+    const abc = new ChordProAbc(this.chordPro, ["X:1", `K:${key}`, tonic]);
+    this.chordPro.lines.splice(lineIndex + 1, 0, abc);
+
+    this.changeActionTarget(null);
+    this.cursorPos = null;
+    this.selectionStart = null;
+    this.selectionEnd = null;
+    this.draw();
+    void this.openAbcEditor(abc);
+    return true;
   }
 
   focus() {
@@ -4286,7 +4383,13 @@ export class ChordProEditor extends ChordDrawer {
       // expects. Columns are valid UTF-16 visual boundaries by construction.
       if (!this.readOnly) {
         const hit = resolveLineCaretHit(geometry, mp);
-        if (hit && (hit.occurrence.occurrence.kind === "lyrics" || hit.occurrence.occurrence.kind === "grid") && !isTagColumnPoint(geometry, mp))
+        if (
+          hit &&
+          (hit.occurrence.occurrence.kind === "lyrics" ||
+            hit.occurrence.occurrence.kind === "comment" ||
+            hit.occurrence.occurrence.kind === "grid") &&
+          !isTagColumnPoint(geometry, mp)
+        )
           return new ChordProLineHitBox(
             hit.cellLeft,
             hit.row.lyricsTop,
@@ -5150,6 +5253,20 @@ export class ChordProEditor extends ChordDrawer {
     return null;
   }
 
+  /** Scroll host used by the editable full-view, including horizontal-only overflow. */
+  private findCaretScrollContainer(start: HTMLElement): HTMLElement | null {
+    let el: HTMLElement | null = start;
+    while (el && el !== document.body) {
+      const style = window.getComputedStyle(el);
+      const allowsScroll = (overflow: string) => overflow === "auto" || overflow === "scroll" || overflow === "overlay";
+      const scrollsX = allowsScroll(style.overflowX) && el.scrollWidth > el.clientWidth + 1;
+      const scrollsY = allowsScroll(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
+      if (scrollsX || scrollsY) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   suppressDraw(suppress = true) {
     if (!suppress && this.drawingSuppressed) this.update();
     else this.drawingSuppressed = suppress;
@@ -5191,6 +5308,8 @@ export class ChordProEditor extends ChordDrawer {
    */
   draw(_delayable?: boolean) {
     if (this.disposed || this.drawingSuppressed) return;
+
+    this.reportSelectionState();
 
     if (this.chordPro) {
       const currentText = this.chordProCode;

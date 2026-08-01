@@ -88,6 +88,7 @@ export interface LayoutOccurrence {
   readonly tagSeparation: number;
   readonly rows?: readonly LayoutRow[];
   readonly grid?: LayoutGrid;
+  readonly blockCaretStops?: readonly RowCaretStop[];
   readonly blockWidth?: number;
   readonly blockHeight?: number;
 }
@@ -169,6 +170,14 @@ function measurementRequests(plan: DisplayPlan): MeasurementRequest[] {
             })
           );
       }
+    } else if (occurrence.kind === "comment") {
+      for (const unit of segmentVisualUnits(occurrence.text))
+        requests.push({
+          id: `${occurrence.id}:comment:u${unit.sourceStart}-${unit.sourceEnd}`,
+          text: unit.text,
+          role: "lyric",
+          font: occurrence.style.font,
+        });
     } else if (occurrence.kind !== "abc") {
       requests.push({ id: `${occurrence.id}:block`, text: occurrence.text, role: "lyric", font: occurrence.style.font });
     }
@@ -380,6 +389,20 @@ function layoutGrid(plan: DisplayPlan, occurrence: DisplayOccurrence, measured: 
   return { width: x, height, runs, caretStops };
 }
 
+function layoutComment(occurrence: DisplayOccurrence, measured: ReadonlyMap<string, { width: number; height: number }>) {
+  const caretStops: RowCaretStop[] = [];
+  let width = 0;
+  let height = 0;
+  for (const unit of segmentVisualUnits(occurrence.text)) {
+    caretStops.push({ pos: width, sourceOffset: unit.sourceStart });
+    const size = measured.get(`${occurrence.id}:comment:u${unit.sourceStart}-${unit.sourceEnd}`) ?? { width: 0, height: 0 };
+    width += size.width;
+    height = Math.max(height, size.height);
+  }
+  caretStops.push({ pos: width, sourceOffset: occurrence.text.length });
+  return { width, height, caretStops };
+}
+
 /** Natural-width FIT_PAGE layout. It is pure and performs no DOM access. */
 export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: SongLayoutOptions): SongLayoutResult {
   const measured = resultMap(measurer, measurementRequests(plan));
@@ -431,7 +454,8 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
     }
 
     const grid = occurrence.kind === "grid" ? layoutGrid(plan, occurrence, measured) : undefined;
-    const blockSize = grid ?? measured.get(`${occurrence.id}:block`) ?? { width: 0, height: 0 };
+    const comment = occurrence.kind === "comment" ? layoutComment(occurrence, measured) : undefined;
+    const blockSize = grid ?? comment ?? measured.get(`${occurrence.id}:block`) ?? { width: 0, height: 0 };
     const extraCommentHeight = occurrence.kind === "comment" ? plan.display.chordLineHeight / 2 : 0;
     const measuredAbcHeight = occurrence.kind === "abc" ? options.abcHeights?.get(occurrence.id) : undefined;
     const blockHeight =
@@ -448,6 +472,7 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
       tagWidth,
       tagSeparation,
       ...(grid ? { grid } : {}),
+      ...(comment ? { blockCaretStops: comment.caretStops } : {}),
       blockWidth,
       blockHeight,
     });

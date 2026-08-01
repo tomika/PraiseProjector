@@ -308,6 +308,12 @@ function bindEditor(editorDiv: HTMLDivElement) {
       if (!instance) return;
       instance.tagSelection(tagName, tagValue);
     },
+    toggleCommentType: () => {
+      const instance = getBoundEditor();
+      if (!instance) return;
+      instance.toggleCommentType();
+    },
+    insertAbcAtCursor: () => getBoundEditor()?.insertAbcAtCursor() ?? false,
     makeSelectionTitle: () => {
       const instance = getBoundEditor();
       if (!instance) return;
@@ -464,6 +470,12 @@ export const chordProAPI = {
   },
   tagSelection(tagName: string, tagValue?: string) {
     getRequiredEditor().tagSelection(tagName, tagValue);
+  },
+  toggleCommentType() {
+    getRequiredEditor().toggleCommentType();
+  },
+  insertAbcAtCursor() {
+    return getRequiredEditor().insertAbcAtCursor();
   },
   makeSelectionTitle() {
     getRequiredEditor().makeSelectionTitle();

@@ -54,6 +54,7 @@ interface ChordProEditorState {
   activeTab: "wysiwyg" | "meta" | "chordpro";
   chordProText: string;
   metaData: Map<string, string>;
+  commentBlockedByChords: boolean;
 }
 
 type ChordProAPIBound = {
@@ -79,6 +80,8 @@ type ChordProAPIBound = {
   transpose: (shift: number) => void;
   enableEdit: (enable: boolean, multiChordChangeEnabled?: boolean) => void;
   tagSelection: (tagName: string, tagValue?: string) => void;
+  toggleCommentType: () => void;
+  insertAbcAtCursor: () => boolean;
   makeSelectionTitle: () => void;
   highlight: (from: number, to: number) => void;
   updateDocument: (chp: string) => void;
@@ -243,6 +246,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       activeTab: "wysiwyg",
       chordProText: "",
       metaData: new Map(),
+      commentBlockedByChords: false,
     };
     this.isEditable = props.initialEditMode ?? false;
   }
@@ -799,6 +803,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       OnCopy: () => {
         console.debug("Editor", "OnCopy called");
       },
+      OnSelectionChange: ({ commentBlockedByChords }) => {
+        if (this.state.commentBlockedByChords !== commentBlockedByChords) this.setState({ commentBlockedByChords });
+      },
     };
   }
 
@@ -1138,12 +1145,12 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.callWysiwygAPI("tagSelection", "start_of_grid");
   };
 
-  handleShiftDown = () => {
-    this.callWysiwygAPI("transpose", -1);
+  handleCommentClick = () => {
+    this.callWysiwygAPI("toggleCommentType");
   };
 
-  handleShiftUp = () => {
-    this.callWysiwygAPI("transpose", 1);
+  handleNotationClick = () => {
+    this.callWysiwygAPI("insertAbcAtCursor");
   };
 
   private handleTabChange = (tab: ChordProEditorState["activeTab"]) => {
@@ -1195,11 +1202,23 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
             <button type="button" className="btn btn-light ms-1" title="Grid" disabled={!this.isEditable} onClick={this.handleGridClick}>
               <Icon type={IconType.GRID} />
             </button>
-            <button type="button" className="btn btn-light" title="Shift Down" disabled={!this.isEditable} onClick={this.handleShiftDown}>
-              <Icon type={IconType.SHIFT_DOWN} />
+            <button
+              type="button"
+              className="btn btn-light"
+              title={this.props.tt?.("editor_set_comment")}
+              disabled={!this.isEditable || this.state.commentBlockedByChords}
+              onClick={this.handleCommentClick}
+            >
+              <Icon type={IconType.COMMENT} />
             </button>
-            <button type="button" className="btn btn-light ms-1" title="Shift Up" disabled={!this.isEditable} onClick={this.handleShiftUp}>
-              <Icon type={IconType.SHIFT_UP} />
+            <button
+              type="button"
+              className="btn btn-light ms-1"
+              title={this.props.tt?.("editor_insert_abc")}
+              disabled={!this.isEditable}
+              onClick={this.handleNotationClick}
+            >
+              <Icon type={IconType.NOTATION} />
             </button>
           </div>
         )}

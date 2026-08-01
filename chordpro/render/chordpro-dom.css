@@ -161,6 +161,11 @@
   vertical-align: middle;
 }
 
+.chp-dom-comment-text {
+  display: inline-block;
+  white-space: pre;
+}
+
 .chp-dom-grid-chord {
   position: relative;
   display: inline-flex;
@@ -271,6 +276,7 @@
   color: var(--chp-selected-fg, currentColor) !important;
 }
 
+.chp-dom-comment-text.chp-dom-selected,
 .chp-dom-grid-text.chp-dom-selected,
 .chp-dom-grid-chord.chp-dom-selected {
   background-color: var(--chp-selected-bg, transparent);

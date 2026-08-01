@@ -52,6 +52,8 @@
   "editor_set_chorus": "Set selected lines Chorus",
   "editor_set_bridge": "Set selected lines Bridge",
   "editor_set_grid": "Set selected lines Grid (instrumental)",
+  "editor_set_comment": "Toggle selected lines as comments (unavailable when they contain chords)",
+  "editor_insert_abc": "Insert ABC notation at the cursor. Double-click an existing ABC block to edit it.",
   "editor_set_title": "Set selection as title",
 
   "instructions_clear": "Clear",

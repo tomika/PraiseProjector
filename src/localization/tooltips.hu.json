@@ -52,6 +52,8 @@
   "editor_set_chorus": "A kiválasztott sorok legyenek: Kórus",
   "editor_set_bridge": "A kiválasztott sorok legyenek: Híd",
   "editor_set_grid": "A kiválasztott sorok legyenek: Hangszeres",
+  "editor_set_comment": "A kijelölt sorok megjegyzéssé alakítása (akkordot tartalmazó soroknál nem érhető el)",
+  "editor_insert_abc": "ABC kotta beszúrása a kurzornál. A már meglévő ABC blokkok dupla kattintással szerkeszthetők.",
   "editor_set_title": "Kiválasztott szövegrészlet címként való alkalmazása",
 
   "instructions_clear": "Törlés",

@@ -28,6 +28,8 @@
   "ChpMenuBridge": "Bridge",
   "ChpMenuGrid": "Instrumentális",
   "ChpMenuComment": "Megjegyzés",
+  "ChpMenuTransposeUp": "Transzponálás felfelé",
+  "ChpMenuTransposeDown": "Transzponálás lefelé",
   "ChpMenuClearTag": "Jelölés törlése",
   "Collapse": "Összecsukás",
   "Confirm": "Megerősítés",

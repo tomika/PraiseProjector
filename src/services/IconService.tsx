@@ -46,6 +46,8 @@ export enum IconType {
   CHORUS = "chorus",
   BRIDGE = "bridge",
   GRID = "grid",
+  COMMENT = "comment",
+  NOTATION = "notation",
   SHIFT_UP = "shift_up",
   SHIFT_DOWN = "shift_down",
 
@@ -294,6 +296,16 @@ const iconMap: Record<IconType, IconConfig> = {
     ),
     imagePath: "assets/trumpet.png",
     alt: "Grid",
+  },
+  [IconType.COMMENT]: {
+    faIcon: "fa fa-comment-o",
+    imagePath: "assets/comment.png",
+    alt: "Comment",
+  },
+  [IconType.NOTATION]: {
+    faIcon: "fa fa-music",
+    imagePath: "assets/notation.png",
+    alt: "ABC notation",
   },
   [IconType.SHIFT_UP]: { faIcon: "fa fa-arrow-up", imagePath: "assets/shift_up.png", alt: "Up" },
   [IconType.SHIFT_DOWN]: {

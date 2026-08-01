@@ -589,6 +589,7 @@ export class ChordProLine {
     if (i >= 0) {
       const nl = new ChordProLine(this.doc);
       this.styles.forEach((value, name) => nl.styles.set(name, value));
+      nl.setCommentDirectiveType(this.getCommentType());
 
       this.doc.lines.splice(i + 1, 0, nl);
 
