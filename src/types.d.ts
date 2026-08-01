@@ -28,6 +28,7 @@ export interface Settings {
   keepAwake: boolean;
   fullscreen: boolean;
   disableHardwareAccelerationOnStartup: boolean;
+  suggestTutorialAtStartup: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
   backgroundImageFit: "touchInner" | "touchOuter" | "stretch" | "touchInnerMargins" | "touchOuterMargins" | "stretchMargins";

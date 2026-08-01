@@ -211,6 +211,8 @@ function PrintWindowShell() {
           onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
           showCancel={messageBox.showCancel ?? true}
           confirmText={messageBox.confirmText}
+          noText={messageBox.noText}
+          cancelText={messageBox.cancelText}
           confirmDanger={messageBox.confirmDanger}
         />
       )}

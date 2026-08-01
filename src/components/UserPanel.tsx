@@ -13,6 +13,7 @@ import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression
 import { setSyncStatus } from "../state/syncStatusStore";
 import { useUpdate } from "../contexts/UpdateContext";
 import { getAssetPath } from "../utils/assetPath";
+import { requestTutorialContinueWhenUnblocked } from "../tutorial/tutorialEvents";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
@@ -20,7 +21,7 @@ const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
 interface UserPanelProps {
   onOpenLeaderSettings?: (leaderId: string | null) => void;
   onOpenSessions?: () => void;
-  onSyncClick?: () => void;
+  onSyncClick?: (continueTutorialAfterSync?: boolean) => void;
   onRemoteChangeCountChange?: (count: number) => void;
   onExportDatabase?: () => void;
   onImportDatabase?: () => void;
@@ -74,6 +75,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   // Tracks which action to perform after successful login (null = none).
   const pendingActionAfterLoginRef = useRef<(() => void) | null>(null);
   const deferredPostLoginActionRef = useRef<(() => void) | null>(null);
+  const continueTutorialOnAuthCancelRef = useRef(false);
   // Keep refs to the latest callbacks so deferred calls after login
   // always use the re-rendered callback with fresh auth state.
   const onSyncClickRef = useRef(onSyncClick);
@@ -239,13 +241,16 @@ const UserPanel: React.FC<UserPanelProps> = ({
   useEffect(() => {
     const handleOpenAuthDialog = (e: Event) => {
       const action = (e as CustomEvent).detail?.action;
+      const continueTutorialAfterSync = (e as CustomEvent).detail?.continueTutorialAfterSync === true;
       // Re-auth flow (e.g. token expired): prefill current username.
       setAuthDialogInitialUsername(user?.login || username || "");
       if (action === "songCheck") {
         pendingActionAfterLoginRef.current = () => onSongCheckClickRef.current?.();
+        continueTutorialOnAuthCancelRef.current = false;
       } else {
         // Default: sync
-        pendingActionAfterLoginRef.current = () => onSyncClickRef.current?.();
+        pendingActionAfterLoginRef.current = () => onSyncClickRef.current?.(continueTutorialAfterSync);
+        continueTutorialOnAuthCancelRef.current = continueTutorialAfterSync;
       }
       setShowAuthDialog(true);
     };
@@ -263,6 +268,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const handleUserButtonClick = () => {
     // Explicit account switch flow: start with empty username.
     setAuthDialogInitialUsername("");
+    continueTutorialOnAuthCancelRef.current = false;
     setShowAuthDialog(true);
   };
 
@@ -295,6 +301,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
           pendingActionAfterLoginRef.current = null;
           deferredPostLoginActionRef.current = action;
         }
+        continueTutorialOnAuthCancelRef.current = false;
       } else {
         showMessage(t("LoginFailed"), t("LoginFailedCheckCredentials"));
       }
@@ -313,6 +320,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
     pendingActionAfterLoginRef.current = null;
     deferredPostLoginActionRef.current = null;
     setShowAuthDialog(false);
+    if (continueTutorialOnAuthCancelRef.current) {
+      continueTutorialOnAuthCancelRef.current = false;
+      requestAnimationFrame(() => requestTutorialContinueWhenUnblocked("full", ".auth-dialog-backdrop, .messagebox-overlay"));
+    }
     fetchPeek();
   };
 
@@ -343,7 +354,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   }, [isAuthenticated, localChangeCount, remoteChangeCount, pendingSongCount, hasUpdate, showCloudAccessFailed]);
 
   return (
-    <div>
+    <div data-tutorial-id="full-profile-database">
       <div className="form-group d-flex align-items-center mb-1">
         <button className="btn btn-light mr-1 sidebar-icon-btn" aria-label="User" onClick={handleUserButtonClick}>
           <Icon type={IconType.USER} />
@@ -364,7 +375,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
               className="btn btn-light user-sync-main-btn"
               aria-label="Sync"
               title={tt("toolbar_sync")}
-              onClick={onSyncClick}
+              onClick={() => onSyncClick?.()}
               onContextMenu={(event) => {
                 event.preventDefault();
                 setShowSyncMenu(true);
@@ -512,6 +523,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
             pendingActionAfterLoginRef.current = null;
             deferredPostLoginActionRef.current = null;
             setShowAuthDialog(false);
+            if (continueTutorialOnAuthCancelRef.current) {
+              continueTutorialOnAuthCancelRef.current = false;
+              requestAnimationFrame(() => requestTutorialContinueWhenUnblocked("full", ".auth-dialog-backdrop, .messagebox-overlay"));
+            }
           }}
           showOffline={true}
           onLogout={handleLogout}

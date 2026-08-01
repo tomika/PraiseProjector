@@ -11,6 +11,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useClientViewStore } from "../controller/ClientViewContext";
 import { getClientViewAboutLicenseSections, type LicenseSection } from "../../about-licenses";
 import type { DeviceInfo } from "../api/ClientApi";
+import { requestTutorialStart } from "../../tutorial/tutorialEvents";
+import { useLocalization } from "../../localization/LocalizationContext";
 
 declare const __APP_VERSION__: string;
 declare const __APP_COMMIT__: string;
@@ -49,6 +51,7 @@ function getDeviceInfoLines(info: DeviceInfo | null): DeviceInfoLine[] {
 
 export function AboutDialog() {
   const store = useClientViewStore();
+  const { t } = useLocalization();
 
   const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
   const commit = typeof __APP_COMMIT__ !== "undefined" ? __APP_COMMIT__ : "";
@@ -86,6 +89,12 @@ export function AboutDialog() {
 
         <div className="cv-about-body">
           <p className="cv-about-version">App version: {versionDisplay}</p>
+
+          <div className="cv-dialog-actions cv-about-tutorial-actions">
+            <button type="button" className="cv-about-tutorial-button" onClick={() => requestTutorialStart("client")}>
+              {t("TutorialStartupStart")}
+            </button>
+          </div>
 
           <p className="cv-about-section-title">Third-party license references:</p>
           {sections.map((section) => (

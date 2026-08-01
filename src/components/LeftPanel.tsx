@@ -49,7 +49,7 @@ interface LeftPanelProps {
   remotePlaylist?: Playlist | null; // Remote playlist when watching another session
   onOpenLeaderSettings?: (leaderId: string | null) => void;
   onOpenSessions?: () => void;
-  onSyncClick?: () => void;
+  onSyncClick?: (continueTutorialAfterSync?: boolean) => void;
   onRemoteChangeCountChange?: (count: number) => void;
   onSettingsClick?: () => void;
   onExportDatabase?: () => void;

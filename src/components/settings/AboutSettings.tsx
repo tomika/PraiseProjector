@@ -5,6 +5,7 @@ import { cloudApi } from "../../../common/cloudApi";
 import { useUpdate } from "../../contexts/UpdateContext";
 import { getSettingsAboutLicenseSections } from "../../about-licenses";
 import "./AboutSettings.css";
+import { requestTutorialStart } from "../../tutorial/tutorialEvents";
 
 // Version is injected by Vite from package.json
 declare const __APP_VERSION__: string;
@@ -113,6 +114,23 @@ const AboutSettings: React.FC = () => {
       )}
       {renderUpdateStatus()}
       {renderUpdateActions()}
+      <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => requestTutorialStart("full")}>
+          {t("TutorialStartupStart")}
+        </button>
+        <div className="form-check mb-0">
+          <input
+            id="suggestTutorialAtStartup"
+            className="form-check-input"
+            type="checkbox"
+            checked={settings?.suggestTutorialAtStartup ?? true}
+            onChange={(event) => updateSettingWithAutoSave("suggestTutorialAtStartup", event.target.checked)}
+          />
+          <label className="form-check-label" htmlFor="suggestTutorialAtStartup">
+            {t("TutorialStartupSuggestCheckbox")}
+          </label>
+        </div>
+      </div>
       <p>
         {t("AboutMoreInfo")}{" "}
         <a href={siteUrl} target="_blank" rel="noopener noreferrer">

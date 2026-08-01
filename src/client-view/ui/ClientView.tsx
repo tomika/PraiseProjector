@@ -25,6 +25,8 @@ import { PullRefreshSpinner } from "./PullRefreshSpinner";
 import { usePullToRefresh } from "./usePullToRefresh";
 import { UNIFORM_BUTTON_BORDERS } from "./uiConfig";
 import { useClientViewInput } from "../input/useClientViewInput";
+import { TutorialHost } from "../../tutorial/TutorialHost";
+import type { TutorialCommand } from "../../tutorial/tutorialTypes";
 
 export function ClientView({ onHome }: { onHome?: () => void }) {
   const state = useClientViewState();
@@ -34,6 +36,35 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
   const songViewRef = useRef<SongViewHandle>(null);
   const navigateSong = useCallback((next: boolean) => songViewRef.current?.navigate(next), []);
   useClientViewInput(store, navigateSong);
+  const prepareClientTutorial = useCallback(() => {
+    const previousOptionsOpen = state.optionsOpen;
+    const previousListMode = state.listMode;
+    const previousZoomOpen = state.zoomDialogOpen;
+    store.closeAbout();
+    store.closeInstructionsEditor();
+    store.closeLoginDialog();
+    store.closeSessionsDialog();
+    store.closeZoomDialog();
+    store.toggleOptions(false);
+    return () => {
+      store.setListMode(previousListMode);
+      store.toggleOptions(previousOptionsOpen);
+      if (previousZoomOpen) store.openZoomDialog();
+      else store.closeZoomDialog();
+    };
+  }, [state.listMode, state.optionsOpen, state.zoomDialogOpen, store]);
+  const handleTutorialCommand = useCallback(
+    (command: TutorialCommand) => {
+      if (command !== "switch-full") return;
+      if (onHome) {
+        store.syncHostSelectionToFullView();
+        onHome();
+      } else {
+        store.openFullEditor();
+      }
+    },
+    [onHome, store]
+  );
   // Pull-down-from-the-toolbar refresh: a released pull just reloads the page
   // (database synchronization is a full-view-only concern now — see ClientViewStore
   // pullRefresh). A single level, so no escalation.
@@ -44,6 +75,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
 
   return (
     <div id="mainView" className={`split${state.optionsOpen ? " options-open" : ""}${state.isDark ? " dark" : ""}${bordered}`}>
+      <TutorialHost view="client" onBeforeStart={prepareClientTutorial} onCommand={handleTutorialCommand} />
       <OptionsOverlay onHome={onHome} />
       <div className="mainTable">
         <MainToolbar

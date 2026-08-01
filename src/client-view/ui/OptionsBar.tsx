@@ -141,7 +141,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
   return (
     <div className="cv-options-bar">
       <div className="cv-options-row">
-        <div ref={chordBoxWrapRef} className={`cv-chordbox-wrap${hotkeyClass("chord-box")}`}>
+        <div ref={chordBoxWrapRef} className={`cv-chordbox-wrap${hotkeyClass("chord-box")}`} data-tutorial-id="client-chord-box">
           <button
             type="button"
             className={`cv-iconbtn${chordBoxMenuOpen ? " cv-toolbtn-on" : ""}`}
@@ -175,6 +175,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
         </div>
 
         <select
+          data-tutorial-id="client-chord-mode"
           className={`cv-select${hotkeyClass("chord-mode")}`}
           title="Minor chord display"
           value={s.chordMode}
@@ -187,7 +188,11 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           ))}
         </select>
 
-        <label className={`cv-opt cv-secdup-opt${hotkeyClass("no-sec-chord-dup")}`} title="No duplicate section chords">
+        <label
+          className={`cv-opt cv-secdup-opt${hotkeyClass("no-sec-chord-dup")}`}
+          title="No duplicate section chords"
+          data-tutorial-id="client-section-chord-repeat"
+        >
           <input type="checkbox" checked={s.noSecChordDup} onChange={(e) => store.setDisplaySetting("noSecChordDup", e.target.checked)} />
           {/* "V1 Am / V2 Am(struck)" — sits side-by-side on wide screens, stacks on
             narrow ones (see .cv-secdup), exactly like the original. */}
@@ -199,14 +204,18 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           </span>
         </label>
 
-        <label className={`cv-opt${hotkeyClass("subscript")}`} title="Subscript chord modifiers">
+        <label className={`cv-opt${hotkeyClass("subscript")}`} title="Subscript chord modifiers" data-tutorial-id="client-subscript">
           <input type="checkbox" checked={s.subscript} onChange={(e) => store.setDisplaySetting("subscript", e.target.checked)} />
           <span>
             A<sup>m7</sup>
           </span>
         </label>
 
-        <label className={`cv-opt${hotkeyClass("auto-tone")}`} title="Auto key (transpose chords into the song key)">
+        <label
+          className={`cv-opt${hotkeyClass("auto-tone")}`}
+          title="Auto key (transpose chords into the song key)"
+          data-tutorial-id="client-auto-tone"
+        >
           <input type="checkbox" checked={s.autoTone} onChange={(e) => store.setDisplaySetting("autoTone", e.target.checked)} />
           <span>Ab</span>
         </label>
@@ -219,7 +228,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
 
       <div className="cv-options-row">
         {showLampButton && (
-          <div ref={lampWrapRef} className={`cv-lamp-wrap${hotkeyClass("highlight")}`}>
+          <div ref={lampWrapRef} className={`cv-lamp-wrap${hotkeyClass("highlight")}`} data-tutorial-id="client-highlight">
             <button type="button" className="cv-iconbtn" title={highlightTitle} {...lampPress}>
               {state.highlightPending ? (
                 <img className="cv-opt-icon cv-toggle-icon cv-highlight-loader" src={icon("gear.svg")} alt="Waiting for permission" />
@@ -235,12 +244,16 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           </div>
         )}
 
-        <label className={`cv-opt${hotkeyClass("bb")}`} title="B♭ notation">
+        <label
+          className={`cv-opt${hotkeyClass("bb")}`}
+          title="English ABCDEFG / Hungarian-German AHCDEFG note names"
+          data-tutorial-id="client-b-flat"
+        >
           <input type="checkbox" checked={s.bb} onChange={(e) => store.setDisplaySetting("bb", e.target.checked)} />
           <span>Bb</span>
         </label>
 
-        <label className={`cv-opt${hotkeyClass("simplified")}`} title="Simplify complex chords">
+        <label className={`cv-opt${hotkeyClass("simplified")}`} title="Simplify complex chords" data-tutorial-id="client-simplified">
           <input type="checkbox" checked={s.simplified} onChange={(e) => store.setDisplaySetting("simplified", e.target.checked)} />
           <span>
             A
@@ -253,7 +266,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
         {/* Zoom (maxText): short press toggles; long press / right-click opens the
             inline settings panel below. Use a button (like highlight) so pointer
             handling is consistent across click/tap devices. */}
-        <div ref={zoomWrapRef} className="cv-zoom-wrap">
+        <div ref={zoomWrapRef} className="cv-zoom-wrap" data-tutorial-id="client-zoom">
           <button
             type="button"
             className={`cv-iconbtn cv-zoom-btn${s.maxText ? " cv-zoom-btn-on" : ""}${hotkeyClass("max-text")}`}
@@ -268,6 +281,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
 
         <button
           type="button"
+          data-tutorial-id="client-theme"
           className={`cv-iconbtn${hotkeyClass("theme")}`}
           title="Dark mode (auto / light / dark)"
           onClick={() => store.cycleDarkMode()}
@@ -281,6 +295,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
         {state.capabilities.leaderModeAvailable && (
           <button
             type="button"
+            data-tutorial-id="client-leader-mode"
             className={`cv-iconbtn cv-leaderbtn${state.leaderMode ? " cv-toolbtn-on" : ""}`}
             title={state.leaderMode ? "Leader mode on — tap to follow" : "Leader mode off — tap to lead"}
             aria-pressed={state.leaderMode}

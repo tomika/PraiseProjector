@@ -83,6 +83,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       keepAwake: false,
       fullscreen: false,
       disableHardwareAccelerationOnStartup: false,
+      suggestTutorialAtStartup: true,
       showTooltips: true,
       pictureFolder: "",
       selectedBackgroundImageId: null,

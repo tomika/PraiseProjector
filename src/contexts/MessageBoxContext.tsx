@@ -2,6 +2,8 @@ import React, { createContext, useContext, ReactNode, useCallback, useRef } from
 
 export interface ConfirmOptions {
   confirmText?: string;
+  noText?: string;
+  cancelText?: string;
   confirmDanger?: boolean;
 }
 
@@ -34,6 +36,8 @@ export interface MessageBoxConfig {
   showCancel?: boolean;
   /** Custom text for the confirm/OK button */
   confirmText?: string;
+  noText?: string;
+  cancelText?: string;
   /** When true the confirm button will be styled as a danger (red) button */
   confirmDanger?: boolean;
 }
@@ -111,6 +115,7 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
         },
         showCancel: true,
         confirmText: options?.confirmText,
+        cancelText: options?.cancelText,
         confirmDanger: options?.confirmDanger,
       });
     },
@@ -133,6 +138,7 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
           },
           showCancel: true,
           confirmText: options?.confirmText,
+          cancelText: options?.cancelText,
           confirmDanger: options?.confirmDanger,
         });
       });
@@ -160,6 +166,8 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
           },
           showCancel: true,
           confirmText: options?.confirmText,
+          noText: options?.noText,
+          cancelText: options?.cancelText,
           confirmDanger: options?.confirmDanger,
         });
       });

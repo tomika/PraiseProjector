@@ -85,6 +85,9 @@ import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
+import { TutorialHost } from "./tutorial/TutorialHost";
+import { requestTutorialContinueWhenUnblocked, requestVisibleTutorialStart } from "./tutorial/tutorialEvents";
+import type { TutorialCommand } from "./tutorial/tutorialTypes";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -425,6 +428,7 @@ const AppContent: React.FC = () => {
   const [showImportWizard, setShowImportWizard] = useState(false);
   const [importWizardInitialFiles, setImportWizardInitialFiles] = useState<File[] | null>(null);
   const [showDBSync, setShowDBSync] = useState(false);
+  const continueTutorialAfterSyncRef = useRef(false);
   const [remoteChangeCount, setRemoteChangeCount] = useState(0);
   // CompareDialog state for similarity check when saving new songs
   const [compareDialogState, setCompareDialogState] = useState<{
@@ -467,6 +471,22 @@ const AppContent: React.FC = () => {
   const projectedSong = useProjectedSong();
   const [currentSongText, updateCurrentSongText] = useState<string>("");
   const { showConfirm, showConfirmAsync, showYesNoCancelAsync, showMessage } = useMessageBox();
+  const tutorialStartupSuggestionCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (!settings || !eulaAccepted || tutorialStartupSuggestionCheckedRef.current) return;
+    tutorialStartupSuggestionCheckedRef.current = true;
+    if (!settings.suggestTutorialAtStartup) return;
+
+    void showYesNoCancelAsync(t("TutorialStartupSuggestionTitle"), t("TutorialStartupSuggestionMessage"), {
+      confirmText: t("TutorialStartupStart"),
+      noText: t("TutorialStartupSkip"),
+      cancelText: t("TutorialStartupDisable"),
+    }).then((choice) => {
+      if (choice === "yes") requestVisibleTutorialStart();
+      if (choice === "cancel") updateSettingWithAutoSave("suggestTutorialAtStartup", false);
+    });
+  }, [eulaAccepted, settings, showYesNoCancelAsync, t, updateSettingWithAutoSave]);
 
   const openSettings = useCallback((initialTab?: string | null) => {
     setSettingsInitialTab(initialTab ?? null);
@@ -2020,91 +2040,124 @@ const AppContent: React.FC = () => {
     return result !== "cancel";
   }, [showYesNoCancelAsync, t]);
 
+  const openDBSyncDialog = useCallback((continueTutorialAfterSync: boolean) => {
+    continueTutorialAfterSyncRef.current = continueTutorialAfterSync;
+    setShowDBSync(true);
+  }, []);
+
+  const continueTutorialAfterSyncFlow = useCallback((shouldContinue: boolean) => {
+    if (!shouldContinue) return;
+    requestAnimationFrame(() => {
+      requestTutorialContinueWhenUnblocked("full", ".dbsync-dialog-backdrop, .auth-dialog-backdrop, .messagebox-overlay");
+    });
+  }, []);
+
   // Check if user can start sync (matching C# IsLoadedSongUnmodified and SyncDatabase)
-  const handleSyncClick = useCallback(async () => {
-    saveErrorNotifiedRef.current = false;
-    // Snapshot scheduled leaders before sync (matching C# prev = CollectScheduledLeaders())
-    preSyncScheduledLeadersRef.current = collectScheduledLeaders();
+  const handleSyncRequest = useCallback(
+    async (continueTutorialAfterSync: boolean) => {
+      saveErrorNotifiedRef.current = false;
+      // Snapshot scheduled leaders before sync (matching C# prev = CollectScheduledLeaders())
+      preSyncScheduledLeadersRef.current = collectScheduledLeaders();
 
-    // If in edit mode with unsaved changes, ask to discard first
-    if (isEditing && canSaveSong) {
-      showConfirm(
-        t("UnsavedChanges"),
-        t("AskDiscardChangesBeforeSync"),
-        async () => {
-          // User chose to discard - leave edit mode and start sync
-          editorPanelRef.current?.leaveEditMode?.();
-          setIsEditing(false);
-          if (await checkAndSaveScheduledPlaylist()) {
-            setShowDBSync(true);
-          }
-        },
-        undefined,
-        { confirmText: t("DiscardAndSync"), confirmDanger: true }
-      );
-      return;
-    }
-
-    // If in edit mode but no changes, just leave edit mode
-    if (isEditing) {
-      editorPanelRef.current?.leaveEditMode?.();
-      setIsEditing(false);
-    }
-
-    // If in guest mode, ask about guest sync before opening dialog
-    if (isGuest) {
-      showConfirm(
-        t("AuthenticationRequired"),
-        t("NotLoggedInFetchPublicSongs"),
-        async () => {
-          if (await checkAndSaveScheduledPlaylist()) {
-            setShowDBSync(true);
-          }
-        },
-        undefined,
-        { confirmText: t("DownloadPublicSongs") }
-      );
-      return;
-    }
-
-    if (!isAuthenticated) {
-      if (networkUnavailable) {
-        const reachable = await recheckNetworkAvailability();
-        if (!reachable) {
-          suppressCloudNetworkToast();
-          showMessage(t("SyncError"), t("CloudNetworkErrorMessage"));
-          return;
-        }
-      }
-
-      const restored = await restoreStoredSession();
-      if (restored) {
-        if (await checkAndSaveScheduledPlaylist()) {
-          setShowDBSync(true);
-        }
+      // If in edit mode with unsaved changes, ask to discard first
+      if (isEditing && canSaveSong) {
+        showConfirm(
+          t("UnsavedChanges"),
+          t("AskDiscardChangesBeforeSync"),
+          async () => {
+            // User chose to discard - leave edit mode and start sync
+            editorPanelRef.current?.leaveEditMode?.();
+            setIsEditing(false);
+            if (await checkAndSaveScheduledPlaylist()) {
+              openDBSyncDialog(continueTutorialAfterSync);
+            } else {
+              continueTutorialAfterSyncFlow(continueTutorialAfterSync);
+            }
+          },
+          () => continueTutorialAfterSyncFlow(continueTutorialAfterSync),
+          { confirmText: t("DiscardAndSync"), confirmDanger: true }
+        );
         return;
       }
 
-      window.dispatchEvent(new CustomEvent("pp-open-auth-dialog"));
-      return;
-    }
+      // If in edit mode but no changes, just leave edit mode
+      if (isEditing) {
+        editorPanelRef.current?.leaveEditMode?.();
+        setIsEditing(false);
+      }
 
-    if (await checkAndSaveScheduledPlaylist()) {
-      setShowDBSync(true);
-    }
-  }, [
-    isEditing,
-    canSaveSong,
-    showConfirm,
-    showMessage,
-    t,
-    networkUnavailable,
-    recheckNetworkAvailability,
-    restoreStoredSession,
-    isAuthenticated,
-    isGuest,
-    checkAndSaveScheduledPlaylist,
-  ]);
+      // If in guest mode, ask about guest sync before opening dialog
+      if (isGuest) {
+        showConfirm(
+          t("AuthenticationRequired"),
+          t("NotLoggedInFetchPublicSongs"),
+          async () => {
+            if (await checkAndSaveScheduledPlaylist()) {
+              openDBSyncDialog(continueTutorialAfterSync);
+            } else {
+              continueTutorialAfterSyncFlow(continueTutorialAfterSync);
+            }
+          },
+          () => continueTutorialAfterSyncFlow(continueTutorialAfterSync),
+          { confirmText: t("DownloadPublicSongs") }
+        );
+        return;
+      }
+
+      if (!isAuthenticated) {
+        if (networkUnavailable) {
+          const reachable = await recheckNetworkAvailability();
+          if (!reachable) {
+            suppressCloudNetworkToast();
+            showMessage(t("SyncError"), t("CloudNetworkErrorMessage"));
+            continueTutorialAfterSyncFlow(continueTutorialAfterSync);
+            return;
+          }
+        }
+
+        const restored = await restoreStoredSession();
+        if (restored) {
+          if (await checkAndSaveScheduledPlaylist()) {
+            openDBSyncDialog(continueTutorialAfterSync);
+          } else {
+            continueTutorialAfterSyncFlow(continueTutorialAfterSync);
+          }
+          return;
+        }
+
+        window.dispatchEvent(new CustomEvent("pp-open-auth-dialog", { detail: { continueTutorialAfterSync } }));
+        return;
+      }
+
+      if (await checkAndSaveScheduledPlaylist()) {
+        openDBSyncDialog(continueTutorialAfterSync);
+      } else {
+        continueTutorialAfterSyncFlow(continueTutorialAfterSync);
+      }
+    },
+    [
+      isEditing,
+      canSaveSong,
+      showConfirm,
+      showMessage,
+      t,
+      networkUnavailable,
+      recheckNetworkAvailability,
+      restoreStoredSession,
+      isAuthenticated,
+      isGuest,
+      checkAndSaveScheduledPlaylist,
+      continueTutorialAfterSyncFlow,
+      openDBSyncDialog,
+    ]
+  );
+
+  const handleSyncClick = useCallback(
+    (continueTutorialAfterSync = false) => {
+      void handleSyncRequest(continueTutorialAfterSync);
+    },
+    [handleSyncRequest]
+  );
 
   const handleSongCheckClick = useCallback(async () => {
     if (isGuest) return; // Song check not available for guests
@@ -2615,8 +2668,65 @@ const AppContent: React.FC = () => {
     if (current) updateEditedSong((song: Song) => song.updateChordProText(newText));
   }
 
+  const prepareFullTutorial = useCallback(() => {
+    if (
+      showSessionsForm ||
+      showDBSync ||
+      showImportWizard ||
+      compareDialogState !== null ||
+      showSongCheck ||
+      showEulaView ||
+      isImporting ||
+      !eulaAccepted ||
+      document.querySelector(".auth-dialog-backdrop")
+    ) {
+      return false;
+    }
+    const previousPanel = activePanel;
+    const previousPreviewTab = previewTab;
+    const editorTabs = Array.from(document.querySelectorAll<HTMLAnchorElement>(".editor-tabs-header .nav-link"));
+    const previousEditorTab = editorTabs.findIndex((tab) => tab.classList.contains("active"));
+    if (showSettings) closeSettings();
+    return () => {
+      setActivePanel(previousPanel);
+      setPreviewTab(previousPreviewTab);
+      if (previousEditorTab >= 0) {
+        const tabs = Array.from(document.querySelectorAll<HTMLAnchorElement>(".editor-tabs-header .nav-link"));
+        const tab = tabs[previousEditorTab];
+        if (tab && !tab.classList.contains("active")) tab.click();
+      }
+    };
+  }, [
+    activePanel,
+    closeSettings,
+    compareDialogState,
+    eulaAccepted,
+    isImporting,
+    previewTab,
+    showDBSync,
+    showEulaView,
+    showImportWizard,
+    showSessionsForm,
+    showSettings,
+    showSongCheck,
+  ]);
+
+  const handleTutorialCommand = useCallback(
+    (command: TutorialCommand) => {
+      if (command === "sync-now") {
+        void handleSyncRequest(true).catch((error) => {
+          console.error("Tutorial", "Synchronization request failed", error);
+          continueTutorialAfterSyncFlow(true);
+        });
+      }
+      if (command === "switch-client") handleSwitchToMobileView();
+    },
+    [continueTutorialAfterSyncFlow, handleSwitchToMobileView, handleSyncRequest]
+  );
+
   return (
     <>
+      <TutorialHost view="full" onBeforeStart={prepareFullTutorial} onCommand={handleTutorialCommand} />
       <ResponsiveFontSizeManager />
       <UpdateNotification />
       <ShareDialogHost />
@@ -2859,14 +2969,25 @@ const AppContent: React.FC = () => {
               }
             >
               <DBSyncDialog
-                onClose={() => setShowDBSync(false)}
+                onClose={() => {
+                  const continueTutorial = continueTutorialAfterSyncRef.current;
+                  continueTutorialAfterSyncRef.current = false;
+                  setShowDBSync(false);
+                  continueTutorialAfterSyncFlow(continueTutorial);
+                }}
                 onComplete={async () => {
-                  // Update lastSyncDate when sync completes (matching C# DBSyncForm.SyncComplete)
-                  updateSettingWithAutoSave("lastSyncDate", new Date().toISOString());
-                  // Reload songs if they were changed during sync (matching C# RecheckLoadedSong)
-                  recheckLoadedSongs();
-                  // Check for newly available scheduled playlists (matching C# SyncDatabase - AskLoadTodayPlaylist)
-                  await checkAndOfferTodayPlaylist();
+                  const continueTutorial = continueTutorialAfterSyncRef.current;
+                  continueTutorialAfterSyncRef.current = false;
+                  try {
+                    // Update lastSyncDate when sync completes (matching C# DBSyncForm.SyncComplete)
+                    updateSettingWithAutoSave("lastSyncDate", new Date().toISOString());
+                    // Reload songs if they were changed during sync (matching C# RecheckLoadedSong)
+                    recheckLoadedSongs();
+                    // Check for newly available scheduled playlists (matching C# SyncDatabase - AskLoadTodayPlaylist)
+                    await checkAndOfferTodayPlaylist();
+                  } finally {
+                    continueTutorialAfterSyncFlow(continueTutorial);
+                  }
                 }}
                 database={Database.getInstance()}
                 updateableLeaders={updateableLeadersRef.current}
@@ -2990,6 +3111,8 @@ const App: React.FC = () => {
                       onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
                       showCancel={messageBox.showCancel ?? true}
                       confirmText={messageBox.confirmText}
+                      noText={messageBox.noText}
+                      cancelText={messageBox.cancelText}
                       confirmDanger={messageBox.confirmDanger}
                     />
                   )}

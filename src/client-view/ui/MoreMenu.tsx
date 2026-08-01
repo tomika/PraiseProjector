@@ -110,6 +110,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     <div className="cv-more" ref={rootRef}>
       <button
         type="button"
+        data-tutorial-id="client-more-button"
         className="cv-iconbtn cv-more-btn"
         title="More"
         aria-haspopup="menu"
@@ -124,6 +125,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
           {visible.map((item) => (
             <button
               key={item.id}
+              data-tutorial-id={`client-more-${item.id}`}
               type="button"
               role="menuitem"
               className="cv-more-item"

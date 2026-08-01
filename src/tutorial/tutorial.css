@@ -1,0 +1,285 @@
+.pp-tutorial-host-marker {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pp-tutorial-start-blocked {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 32000;
+  width: min(520px, calc(100vw - 24px));
+  padding: 11px 15px;
+  border: 1px solid rgba(129, 184, 224, 0.78);
+  border-radius: 8px;
+  color: #fff;
+  background: #17344c;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.46);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pp-tutorial-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30000;
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.pp-tutorial-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: rgba(5, 10, 20, 0.76);
+  pointer-events: auto;
+}
+
+.pp-tutorial-layer.has-target .pp-tutorial-blocker {
+  background: transparent;
+}
+
+.pp-tutorial-spotlight {
+  position: fixed;
+  z-index: 1;
+  border: 2px solid rgba(121, 200, 255, 0.98);
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 9999px rgba(5, 10, 20, 0.76),
+    0 0 0 4px rgba(121, 200, 255, 0.24),
+    0 0 24px rgba(121, 200, 255, 0.7);
+  pointer-events: none;
+  transition:
+    left 150ms ease,
+    top 150ms ease,
+    width 150ms ease,
+    height 150ms ease;
+}
+
+.pp-tutorial-wizard {
+  position: fixed;
+  z-index: 2;
+  width: min(370px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 18px 18px 15px;
+  border: 1px solid rgba(129, 184, 224, 0.7);
+  border-radius: 12px;
+  color: #edf7ff;
+  background: linear-gradient(155deg, #17344c, #0d2030 72%);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.48);
+}
+
+.pp-tutorial-resume {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pp-tutorial-waiting {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pp-tutorial-wizard h2 {
+  margin: 3px 82px 9px 0;
+  font-size: 1.24rem;
+  line-height: 1.25;
+  color: #fff;
+}
+
+.pp-tutorial-wizard p {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.48;
+  color: #e2edf5;
+}
+
+.pp-tutorial-layer-label {
+  color: #8fd3ff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pp-tutorial-exit {
+  position: absolute;
+  right: 9px;
+  top: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  color: #e9f6ff;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pp-tutorial-exit span:last-child {
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.pp-tutorial-exit:hover,
+.pp-tutorial-exit:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  outline: 2px solid #8fd3ff;
+}
+
+.pp-tutorial-progress {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 15px 0 2px;
+}
+
+.pp-tutorial-command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pp-tutorial-command {
+  color: #eaf7ff;
+  background: #245879;
+  border-color: #78c9f5;
+}
+
+.pp-tutorial-command:hover,
+.pp-tutorial-command:focus-visible {
+  background: #32749d;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.pp-tutorial-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(210, 233, 248, 0.33);
+}
+
+.pp-tutorial-dot.active {
+  background: #69c5ff;
+  box-shadow: 0 0 0 3px rgba(105, 197, 255, 0.18);
+}
+
+.pp-tutorial-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.pp-tutorial-actions-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-tutorial-branch-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.pp-tutorial-branch {
+  width: 100%;
+}
+
+.pp-tutorial-resume-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pp-tutorial-resume-actions > .pp-tutorial-button {
+  width: 100%;
+}
+
+.pp-tutorial-resume-from-focus {
+  grid-column: 1 / -1;
+}
+
+.pp-tutorial-button {
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.pp-tutorial-primary {
+  color: #082035;
+  background: #76cbff;
+  border-color: #9bd9ff;
+}
+
+.pp-tutorial-primary:hover,
+.pp-tutorial-primary:focus-visible {
+  background: #a5ddff;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.pp-tutorial-secondary {
+  color: #edf7ff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(211, 235, 250, 0.4);
+}
+
+.pp-tutorial-secondary:hover,
+.pp-tutorial-secondary:focus-visible {
+  background: rgba(255, 255, 255, 0.17);
+  outline: 2px solid #8fd3ff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px), (max-height: 520px) {
+  .pp-tutorial-wizard:not(.pp-tutorial-resume) {
+    left: 8px !important;
+    right: 8px;
+    bottom: 8px;
+    top: auto !important;
+    width: auto;
+    max-height: min(46vh, 330px);
+  }
+
+  .pp-tutorial-waiting {
+    transform: none;
+  }
+
+  .pp-tutorial-wizard {
+    padding: 15px 14px 12px;
+  }
+
+  .pp-tutorial-wizard h2 {
+    font-size: 1.08rem;
+  }
+
+  .pp-tutorial-wizard p {
+    font-size: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-tutorial-spotlight {
+    transition: none;
+  }
+}

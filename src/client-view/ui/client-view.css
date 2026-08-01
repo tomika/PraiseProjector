@@ -2367,6 +2367,27 @@ body,
   font-weight: 600;
 }
 
+.cv-about-tutorial-actions {
+  justify-content: flex-start;
+  margin: 4px 0 12px;
+}
+
+.cv-about-tutorial-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--cv-accent);
+  border-radius: 6px;
+  color: inherit;
+  background: rgba(47, 123, 255, 0.14);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cv-about-tutorial-button:hover,
+.cv-about-tutorial-button:focus-visible {
+  background: rgba(47, 123, 255, 0.24);
+}
+
 .cv-about-section-title {
   font-weight: 600;
   margin-top: 12px;

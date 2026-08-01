@@ -47,6 +47,7 @@ export interface Settings {
   keepAwake: boolean;
   fullscreen: boolean;
   disableHardwareAccelerationOnStartup: boolean;
+  suggestTutorialAtStartup: boolean;
   showTooltips: boolean;
   pictureFolder: string;
   selectedBackgroundImageId: string | null;
