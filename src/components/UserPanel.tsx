@@ -483,7 +483,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
         )}
       </div>
       <div className="form-group d-flex align-items-center mb-1">
-        <button className="btn btn-light mr-1 sidebar-icon-btn" aria-label="Leader" onClick={handleLeaderSettingsClick}>
+        <button
+          className="btn btn-light mr-1 sidebar-icon-btn"
+          data-tutorial-id="full-leader-settings"
+          aria-label="Leader"
+          onClick={handleLeaderSettingsClick}
+        >
           <Icon type={IconType.LEADER} />
         </button>
         <div className="flex-grow-1 user-leader-select-wrapper">

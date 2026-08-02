@@ -1186,6 +1186,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
               ▶
             </button>
           )}
+          {!canAddCurrentSongToPlaylist && (
+            <span className="cv-navigation-mode cv-navigation-add-current cv-play-btn cv-navigation-tutorial-placeholder" aria-hidden="true">
+              ▶
+            </span>
+          )}
         </div>
       )}
       {/* Hidden chord-selector host required by the guitar chord-box renderer. */}

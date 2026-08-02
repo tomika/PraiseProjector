@@ -186,7 +186,7 @@ export function OptionsOverlay({ onHome }: { onHome?: () => void }) {
   }, []);
 
   return (
-    <div id="options" className={`overlay${state.optionsOpen ? " open" : ""}`}>
+    <div id="options" className={`overlay${state.optionsOpen ? " open" : ""}`} data-list-mode={state.listMode}>
       <div ref={contentRef} className="overlay-content">
         <div className="options">
           {/* OptionsBar holds the chord controls plus the panel chrome: close ends

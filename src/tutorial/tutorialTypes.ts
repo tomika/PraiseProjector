@@ -29,7 +29,9 @@ export interface TutorialStep {
   id: string;
   target: string | readonly string[];
   text: LocalizedTutorialText;
-  prepare?: () => void;
+  /** Additional targets that share one tutorial spotlight with the primary target. */
+  highlightTargets?: readonly string[];
+  prepare?: () => void | TutorialCleanup;
   details?: readonly TutorialStep[];
   branches?: readonly TutorialBranch[];
   actions?: readonly TutorialAction[];

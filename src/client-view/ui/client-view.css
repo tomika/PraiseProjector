@@ -493,6 +493,11 @@ body,
   pointer-events: none;
 }
 
+body[data-pp-tutorial-step="song-navigation"] .cv-navigation-actions,
+body[data-pp-tutorial-step="song-add"] .cv-navigation-actions {
+  opacity: 1;
+}
+
 .cv-navigation-mode {
   position: relative;
   display: flex;
@@ -523,6 +528,15 @@ body,
 .cv-navigation-add-current {
   font-size: 18px;
   padding-left: 4px !important;
+}
+
+.cv-navigation-mode.cv-navigation-tutorial-placeholder {
+  display: none;
+  pointer-events: none;
+}
+
+body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
+  display: flex;
 }
 
 #mainView.dark .cv-navigation-mode {

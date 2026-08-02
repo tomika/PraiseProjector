@@ -47,7 +47,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-login-input-wrapper",
             tx(
               "Felhasználói fiók",
-              "A fiók választja ki a helyi és felhős adatbázist. A felhasználó vezérlővel bejelentkezhetsz, fiókot válthatsz vagy kijelentkezhetsz.",
+              "A fiók választja ki a helyi és felhős adatbázist. A felhasználói vezérlő bejelentkezésre, fiókváltásra és kijelentkezésre szolgál.",
               "User account",
               "Your account selects the local and cloud database. Use the user control to sign in, switch account or sign out."
             )
@@ -68,9 +68,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-sync-group",
             tx(
               "Állapotjelvények",
-              "Az ↑ a helyi, feltöltésre váró, a ↓ a letöltendő változatokat jelzi. A piros jelvény ellenőrzendő dalra, a hibajel új bejelentkezésre figyelmeztet.",
+              "Az ↑ a helyi, feltöltésre váró, a ↓ a letöltendő változatokat jelzi. A piros jelvény ellenőrzendő dalra, a hibajel az online funkciók elérésének hiányára figyelmeztet.",
               "Status badges",
-              "↑ marks local changes waiting to upload and ↓ marks downloads. A red badge means songs need review; an error badge asks you to sign in again."
+              "↑ marks local changes waiting to upload and ↓ marks downloads. A red badge means songs need review; an error badge warns you about a lack of online access."
             )
           ),
           s(
@@ -78,11 +78,21 @@ export const fullViewTutorial: TutorialDefinition = {
             [".sync-dropdown-menu", ".sync-menu-toggle"],
             tx(
               "Szinkronizálási menü",
-              "A menüben dalellenőrzés, exportálás, importálás és teljes adatbáziscsere is található. Az importálás és csere adatot módosít, ezért a bemutató ezeket nem indítja el.",
+              "A menüben dalellenőrzés, exportálás, importálás és teljes adatbáziscsere is található.",
               "Synchronization menu",
-              "The menu also contains song review, export, import and complete database replacement. Import and replacement modify data, so the tutorial never starts them."
+              "The menu also contains song review, export, import and complete database replacement."
             ),
             { prepare: () => clickVisible(".sync-menu-toggle") }
+          ),
+          s(
+            "profiles-leader-settings",
+            "[data-tutorial-id='full-leader-settings']",
+            tx(
+              "Dicsőítésvezetők kezelése",
+              "A dicsőítésvezető gomb közvetlenül a Beállítások Dicsőítésvezetők oldalára visz. Ott tarthatók karban a dicsőítésvezetői profilok.",
+              "Manage worship leaders",
+              "The leader button opens the Leaders page in Settings directly. There you can manage worship leader profiles."
+            )
           ),
           s(
             "profiles-leader",
@@ -99,7 +109,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-session-btn",
             tx(
               "Munkamenetek",
-              "Helyi, webes és felhős kapcsolatokat indíthatsz vagy követhetsz más eszközökkel.",
+              "Ez a vezérlő helyi, webes és felhős kapcsolatok más eszközökkel való indítására és követésére szolgál.",
               "Sessions",
               "Start or follow local, web and cloud sessions with other devices."
             )
@@ -122,7 +132,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".song-list-panel",
       tx(
         "Dalkönyvtár",
-        "A dalkönyvtárban kereshetsz, szűrhetsz és csoportosíthatsz. A kiválasztott dal szerkeszthető, illetve a műsortárhoz adható és vetíthető.",
+        "A dalkönyvtár keresésre, szűrésre és csoportosításra szolgál. A kiválasztott dal szerkeszthető, a műsortárhoz adható és vetíthető.",
         "Song library",
         "Search, filter and group songs here. A selected song can be edited, added to the playlist and projected."
       ),
@@ -134,7 +144,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preferred-filter-btn",
             tx(
               "Kedveltségi szűrő",
-              "Válts az összes, a kedvelt, illetve a figyelmen kívül hagyott dalokat is tartalmazó nézet között.",
+              "Ez a vezérlő az összes dal, a kedvelt dalok és a figyelmen kívül hagyott dalokat is megjelenítő nézet között vált.",
               "Preference filter",
               "Switch between all songs, preferred songs and a view that also includes ignored songs."
             )
@@ -144,7 +154,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".song-filter-input",
             tx(
               "Keresés",
-              "Címre, dalszövegre vagy – a beállított módtól függően – más metaadatra is kereshetsz.",
+              "A keresés címre, dalszövegre, valamint a beállított módtól függően más metaadatra is kiterjedhet.",
               "Search",
               "Search by title, lyrics or other metadata, depending on your search settings."
             )
@@ -164,9 +174,19 @@ export const fullViewTutorial: TutorialDefinition = {
             [".song-list-panel .song-item", ".song-list-panel"],
             tx(
               "Dalok és csoportok",
-              "A mappák összetartozó változatokat jelölnek. A dalokat másik dalhoz csoportosíthatod vagy a műsortárhoz adhatod.",
+              "A mappák összetartozó változatokat jelölnek; a dalok csoportosítására és műsortárhoz adására is lehetőséget adnak.",
               "Songs and groups",
               "Folders represent related versions. Songs can be grouped with another song or added to the playlist."
+            )
+          ),
+          s(
+            "song-drag-and-drop",
+            ".song-list-panel",
+            tx(
+              "Áthúzás és fájlimportálás",
+              "A dal Műsortárba húzásával a kívánt pozícióba a listához adható. Külső fájl is behúzható a Dalkönyvtárba: az importáló a .chp, .txt, .pdf, .docx, .htm és .html formátumokat támogatja. Dalok egymásra vagy csoportmappára húzásával csoportok is létrehozhatók.",
+              "Drag and drop",
+              "Drag a song to the playlist to add it quickly. You can also drop external files into the song library: the importer supports .chp, .txt, .pdf, .docx, .htm and .html files. Drag songs onto another song or a group folder to group them."
             )
           ),
           s(
@@ -197,7 +217,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".playlist-panel-container",
       tx(
         "Műsortár",
-        "Itt állíthatod össze az előadás sorrendjét. A dalonkénti transzponálás, capo, saját cím és instrukció nem írja át az eredeti dalt.",
+        "Itt állítható össze az előadás sorrendje. A dalonkénti transzponálás, capo, egyedi cím és instrukciók em módosítják az eredeti dalt.",
         "Playlist",
         "Build the running order here. Per-entry transpose, capo, custom title and instructions do not modify the original song."
       ),
@@ -209,110 +229,58 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-items-container",
             tx(
               "Műsortári sorok",
-              "A kiválasztott dal megjelenik; több sor együtt is kijelölhető és átrendezhető.",
+              "A kiválasztott dal megjelenik; több sor együtt is kijelölhető és átrendezhető. A dalokhoz egyesével definiálható egyedi cím, hangnem, capo beállítás és instrukciók.",
               "Playlist rows",
-              "The selected song is displayed; multiple rows can be selected together and reordered."
+              "The selected song is displayed; multiple rows can be selected together and reordered. An individual title, key, capo setting and instructions can be defined separately for each song."
             )
           ),
           s(
-            "playlist-load",
-            ".playlist-buttons button[aria-label='Load Playlist']",
+            "playlist-load-save",
+            ".playlist-buttons button[aria-label='Load Playlist'], .playlist-buttons button[aria-label='Save Playlist']",
             tx(
-              "Műsortár betöltése",
-              "Vezetői profilnál ütemezett listát, más módban mentett fájlt tölthetsz be.",
-              "Load playlist",
-              "Load a scheduled leader list or a saved file, depending on the active mode."
-            )
+              "Műsortár betöltése és mentése",
+              "A Betöltés gomb vezetői profilhoz tartozó ütemezett lista vagy mentett fájl megnyitására szolgál. A Mentés a munkalistát az aktív módtól függően a vezetői profilhoz vagy fájlba tárolja.",
+              "Load and save playlists",
+              "Use Load to open a scheduled leader playlist or a saved file. Save stores the working list in the leader profile or in a file, depending on the active mode."
+            ),
+            {
+              highlightTargets: [".playlist-buttons button[aria-label='Load Playlist']", ".playlist-buttons button[aria-label='Save Playlist']"],
+            }
           ),
           s(
-            "playlist-save",
-            ".playlist-buttons button[aria-label='Save Playlist']",
+            "playlist-move",
+            ".playlist-buttons button[aria-label='Move Up'], .playlist-buttons button[aria-label='Move Down']",
             tx(
-              "Műsortár mentése",
-              "A munkalistát a vezetői profilhoz vagy fájlba menti az aktív módtól függően.",
-              "Save playlist",
-              "Save the working list to the leader profile or a file, depending on the active mode."
-            )
+              "Műsortételek mozgatása",
+              "A kijelölt műsortételek a fel és le nyilakkal egy pozícióval előrébb vagy hátrébb helyezhetők.",
+              "Move playlist entries",
+              "Use the up and down arrows to move the selected playlist entries one position earlier or later."
+            ),
+            { highlightTargets: [".playlist-buttons button[aria-label='Move Up']", ".playlist-buttons button[aria-label='Move Down']"] }
           ),
           s(
-            "playlist-up",
-            ".playlist-buttons button[aria-label='Move Up']",
+            "playlist-transpose",
+            ".playlist-buttons button[aria-label='Transpose Up'], .playlist-buttons button[aria-label='Transpose Down']",
             tx(
-              "Mozgatás felfelé",
-              "A kijelölt műsortételeket egy hellyel előrébb mozgatja.",
-              "Move up",
-              "Move the selected playlist entries one position earlier."
-            )
+              "Transzponálás",
+              "A kijelölt műsortételek egyedi transzponálási értéke a fel és le nyilakkal félhangonként módosítható.",
+              "Transpose",
+              "Use the up and down arrows to raise or lower the selected playlist entries' per-entry transpose by one semitone."
+            ),
+            {
+              highlightTargets: [".playlist-buttons button[aria-label='Transpose Up']", ".playlist-buttons button[aria-label='Transpose Down']"],
+            }
           ),
           s(
-            "playlist-down",
-            ".playlist-buttons button[aria-label='Move Down']",
+            "playlist-capo",
+            ".playlist-buttons button[aria-label='Capo Up'], .playlist-buttons button[aria-label='Capo Down']",
             tx(
-              "Mozgatás lefelé",
-              "A kijelölt műsortételeket egy hellyel hátrébb mozgatja.",
-              "Move down",
-              "Move the selected playlist entries one position later."
-            )
-          ),
-          s(
-            "playlist-transpose-up",
-            ".playlist-buttons button[aria-label='Transpose Up']",
-            tx(
-              "Transzponálás felfelé",
-              "A kijelölt műsortételek saját transzponálását egy félhanggal emeli.",
-              "Transpose up",
-              "Raise the per-entry transpose of selected playlist items by one semitone."
-            )
-          ),
-          s(
-            "playlist-transpose-down",
-            ".playlist-buttons button[aria-label='Transpose Down']",
-            tx(
-              "Transzponálás lefelé",
-              "A kijelölt műsortételek saját transzponálását egy félhanggal csökkenti.",
-              "Transpose down",
-              "Lower the per-entry transpose of selected playlist items by one semitone."
-            )
-          ),
-          s(
-            "playlist-capo-up",
-            ".playlist-buttons button[aria-label='Capo Up']",
-            tx(
-              "Capo növelése",
-              "A kijelölt műsortételek capo-értékét növeli.",
-              "Increase capo",
-              "Increase the capo value of selected playlist entries."
-            )
-          ),
-          s(
-            "playlist-capo-down",
-            ".playlist-buttons button[aria-label='Capo Down']",
-            tx(
-              "Capo csökkentése",
-              "A kijelölt műsortételek capo-értékét csökkenti.",
-              "Decrease capo",
-              "Decrease the capo value of selected playlist entries."
-            )
-          ),
-          s(
-            "playlist-pitch",
-            ".playlist-items-container",
-            tx(
-              "Transzponálás és capo",
-              "A T és C érték műsortételenként tárolódik, így ugyanaz a dal alkalmonként más hangnemben használható.",
-              "Transpose and capo",
-              "T and C are stored per playlist entry, so the same song can use a different key for each event."
-            )
-          ),
-          s(
-            "playlist-instructions",
-            ".playlist-items-container",
-            tx(
-              "Cím és instrukciók",
-              "A műsortétel saját címet és előadási instrukciót kaphat az adatbázisban lévő dal átírása nélkül.",
-              "Title and instructions",
-              "A playlist entry can have its own title and performance instructions without changing the database song."
-            )
+              "Capo",
+              "A kijelölt műsortételek capoértéke a fel és le nyilakkal módosítható.",
+              "Capo",
+              "Use the up and down arrows to increase or decrease the capo value of selected playlist entries."
+            ),
+            { highlightTargets: [".playlist-buttons button[aria-label='Capo Up']", ".playlist-buttons button[aria-label='Capo Down']"] }
           ),
           s(
             "playlist-remove",
@@ -329,9 +297,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-buttons button[aria-label='Edit']",
             tx(
               "Műsortétel szerkesztése",
-              "A kijelölt tétel saját címét, transzponálását, capóját és instrukcióit szerkesztheted.",
+              "Ez a vezérlő a kijelölt műsortétel egyedi címének szerkesztésére szolgál.",
               "Edit playlist entry",
-              "Edit the selected entry's custom title, transpose, capo and instructions."
+              "Edit the selected entry's custom title."
             )
           ),
           s(
@@ -342,6 +310,16 @@ export const fullViewTutorial: TutorialDefinition = {
               "A dalkönyvtárban kijelölt dalt hozzáadja az aktuális műsortárhoz.",
               "Add song",
               "Add the selected library song to the current playlist."
+            )
+          ),
+          s(
+            "playlist-instructions",
+            ".playlist-items-container",
+            tx(
+              "Cím és instrukciók",
+              "A műsortétel saját címet és előadási instrukciót kaphat az adatbázisban lévő dal átírása nélkül. Az instrukciók szerkesztése sorvégi dupla kattintással is megnyitható.",
+              "Title and instructions",
+              "A playlist entry can have its own title and performance instructions without changing the database song. The instructions editor can be opened by double-clicking at the end of lines."
             )
           ),
           s(
@@ -359,7 +337,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-items-container",
             tx(
               "Instrukciószerkesztő",
-              "A Forrás, Szerkesztő és Előnézet panelek összecsukhatók. Törölhetsz, visszaállíthatsz, menthetsz, és a változatot a vezető profiljában is tárolhatod.",
+              "A Forrás, Szerkesztő és Előnézet panelek összecsukhatók. A szöveg törölhető, visszaállítható és menthető, a változat pedig a vezető profiljában is tárolható.",
               "Instructions editor",
               "Source, Editor and Preview panes can be collapsed. Clear, reset and save the text, optionally storing it in the leader profile."
             )
@@ -369,7 +347,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-items-container",
             tx(
               "Billentyűzet",
-              "Shift-tel bővítheted a kijelölést, Ctrl/Cmd+A mindent kijelöl. Delete töröl, Ctrl+Fel/Le átrendez, Alt+Fel/Le transzponál; a műveletek visszavonhatók.",
+              "A Shift bővíti a kijelölést, a Ctrl/Cmd+A mindent kijelöl. A Delete töröl, a Ctrl+Fel/Le átrendez, az Alt+Fel/Le transzponál; a műveletek visszavonhatók.",
               "Keyboard",
               "Extend selection with Shift or select all with Ctrl/Cmd+A. Delete removes, Ctrl+Up/Down reorders and Alt+Up/Down transposes; edits can be undone."
             )
@@ -382,7 +360,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".btn-toolbar",
       tx(
         "Dalkezelő eszköztár",
-        "Innen töltheted újra és mentheted a dalt, indíthatsz új dalt vagy importálást, nyomtathatsz, client-view-ra válthatsz és megnyithatod a beállításokat.",
+        "Ez az eszköztár az aktuálus dal újratöltésére és mentésére, új dal vagy importálás indítására, nyomtatásra, kliens nézetre váltásra és a beállítások megnyitására szolgál.",
         "Song toolbar",
         "Reload and save songs, create or import a song, print, switch to client view and open settings from here."
       ),
@@ -402,19 +380,14 @@ export const fullViewTutorial: TutorialDefinition = {
           s(
             "toolbar-save",
             ".btn-toolbar button[aria-label='Save Song']",
-            tx(
-              "Dal mentése",
-              "Rögzíti az aktuális szerkesztést a saját daladatbázisodban.",
-              "Save song",
-              "Store the current edit in your own song database."
-            )
+            tx("Dal mentése", "Rögzíti az aktuális szerkesztést a dal adatbázisban.", "Save song", "Store the current edit in the song database.")
           ),
           s(
             "toolbar-new",
             ".btn-toolbar button[aria-label='New Song']",
             tx(
               "Új dal",
-              "Egy új, üres dal létrehozásával közvetlenül a szerkesztőben kezdhetsz dolgozni.",
+              "Ez a vezérlő új, üres dalt hoz létre, amely közvetlenül a szerkesztőben szerkeszthető.",
               "New song",
               "Create an empty song and start working directly in the editor."
             )
@@ -424,27 +397,22 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Import from Word']",
             tx(
               "Importálás",
-              "Szöveg-, ChordPro-, Word- vagy PDF-forrásból a többlépéses importáló készít ellenőrizhető dalbejegyzést.",
+              "Szöveg-, ChordPro-, Word- vagy PDF-forrásból az importáló varázslót indít.",
               "Import",
-              "The multi-step importer builds a reviewable song from text, ChordPro, Word or PDF sources."
+              "Start the import wizard from text, ChordPro, Word or PDF sources."
             )
           ),
           s(
             "toolbar-print",
             ".btn-toolbar button[aria-label='Print']",
-            tx(
-              "Nyomtatás",
-              "Az aktuális dalt külön nyomtatási előnézetben nyithatod meg.",
-              "Print",
-              "Open the current song in a dedicated print preview."
-            )
+            tx("Nyomtatás", "Az aktuális dal nyomtatható ki itt.", "Print", "The current song can be printed here.")
           ),
           s(
             "toolbar-client",
             ".btn-toolbar button[aria-label='Mobile View']",
             tx(
-              "Client-view",
-              "Válts az előadás közbeni, egyszerűsített client-view felületre. A lenti gombbal a bemutató közvetlenül ott folytatódik.",
+              "Kliens nézet",
+              "Az előadás közbeni használatra készült, egyszerűsített kliens nézetre vált. A lenti gombbal a bemutató közvetlenül ott folytatódik.",
               "Client view",
               "Switch to the streamlined client view for use during a performance. The action below continues the tutorial there."
             ),
@@ -490,7 +458,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".editor-tabs-header .nav-item:nth-child(1) .nav-link",
             tx(
               "Dal szerkesztő",
-              "A vizuális nézetben a dalszöveget és az akkordokat a kész megjelenéshez hasonló formában szerkesztheted.",
+              "A vizuális nézetben a dalszöveg és az akkordok a kész megjelenéshez hasonló formában szerkeszthetők.",
               "Song editor",
               "Edit lyrics and chords in a visual layout that resembles the finished song."
             )
@@ -520,7 +488,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".editor-toolbar button:nth-child(5)",
             tx(
               "Akkordrács",
-              "A kijelölt sorokat hangszeres akkordrácsként jelöli.",
+              "A kijelölt sorokat csak hangszeres akkordmenetként jelöli.",
               "Chord grid",
               "Mark the selected lines as an instrumental chord grid."
             )
@@ -540,9 +508,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".editor-toolbar button:nth-child(7)",
             tx(
               "ABC-kotta",
-              "A kurzornál új ABC-kottablokkot szúr be. A már meglévő ABC-blokk megnyitva tovább szerkeszthető.",
+              "A kurzornál új ABC-kottablokkot szúr be. A már meglévő ABC-blokk azon dupla kattintással megnyitva tovább szerkeszthető.",
               "ABC notation",
-              "Insert a new ABC notation block at the caret. Existing ABC blocks can be opened for further editing."
+              "Insert a new ABC notation block at the caret. Existing ABC blocks can be opened for further editing by double-clicking them."
             )
           ),
           s(
@@ -575,16 +543,6 @@ export const fullViewTutorial: TutorialDefinition = {
               "The raw ChordPro view gives complete access to directives and notation when you need more control than the visual editor provides."
             )
           ),
-          s(
-            "editor-navigation",
-            ".editor-iframe-container",
-            tx(
-              "Dalok lapozása",
-              "Szerkesztési módon kívül a lapozási művelettel az előző vagy következő dalra léphetsz. Szerkesztés közben a dalváltás le van tiltva, hogy ne szakítsa meg a munkát.",
-              "Song paging",
-              "Outside edit mode, paging moves to the previous or next song. Song switching is disabled while editing so it cannot interrupt your work."
-            )
-          ),
         ],
         branches: [
           {
@@ -596,7 +554,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "Online szerkesztés",
-                  "Bejelentkezés után szinkronizálhatsz, új dalokat és javításokat küldhetsz be. Saját adatbázisodban a változás azonnal él; a publikus adatbázisba csak üzemeltetői jóváhagyás után kerül.",
+                  "A bejelentkezés szinkronizálást, valamint új dalok és javítások beküldését teszi lehetővé. A helyi felhasználói adatbázisban a változás azonnal megjelenik, a publikus adatbázisban viszont csak üzemeltetői jóváhagyás után.",
                   "Online editing",
                   "After signing in you can synchronize and submit new songs or corrections. Changes apply to your own database immediately and reach the public database only after operator approval."
                 )
@@ -606,7 +564,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "1. Eredeti hangnem",
-                  "Nem saját szerzeményt az eredeti hangnemben rögzíts. A saját előadási hangnemhez transzponálást és vezetői profilt használj.",
+                  "Nem saját szerzemények rögzítése az eredeti hangnemben történjen; az előadási hangnemet transzponálási beállítás és vezetői profil kezelje.",
                   "1. Original key",
                   "Store songs you did not write in their original key. Use transpose and leader profiles for your performance key."
                 )
@@ -616,7 +574,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "2. Akkordmenet",
-                  "Ha lehetséges, a dalszöveg mellett a teljes akkordmenetet is rögzítsd, hogy a közösségi adatbázis jól használható legyen.",
+                  "Lehetőség szerint a dalszöveg mellett a teljes akkordmenet is kerüljön rögzítésre, hogy a közösségi adatbázis jól használható maradjon.",
                   "2. Chord progression",
                   "Whenever possible, enter the complete chord progression as well as the lyrics so the shared database remains useful."
                 )
@@ -626,7 +584,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "3. Meglévő dal",
-                  "Egyéni használat miatt ne transzponáld és ne nevezd át az adatbázis dalát. Csak az eredeti szerző szerinti adat helyreállítása indokol ilyen javítást.",
+                  "Egyéni használat miatt az adatbázis dala ne kapjon más transzponálást vagy címet. Ilyen javítást csak az eredeti szerző szerinti adatok helyreállítása indokol.",
                   "3. Existing songs",
                   "Do not transpose or rename a database song for personal use. Such a correction is appropriate only when restoring the author's original data."
                 )
@@ -635,8 +593,8 @@ export const fullViewTutorial: TutorialDefinition = {
                 "principle-duplicate",
                 ".editor-panel-wrapper",
                 tx(
-                  "4. Ne duplikálj részeket",
-                  "Az ismétléseket és az előadás sorrendjét instrukciókkal add meg, ne a dalrészek másolásával.",
+                  "4. Ismétlődő dalrészek nélkül",
+                  "Az ismétlések és az előadási sorrend leírására instrukciók szolgálnak; a dalrészek másolása kerülendő.",
                   "4. Do not duplicate sections",
                   "Describe repeats and performance order with instructions instead of copying song sections."
                 )
@@ -646,7 +604,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "5. Csak dalszöveg",
-                  "A dalszövegmezőbe csak dalszöveg kerüljön. Előadási utasításokat és megjegyzéseket az instrukciókban tárolj.",
+                  "A dalszövegmező csak dalszöveget tartalmazzon. Az előadási utasítások és megjegyzések az instrukciókban szerepeljenek.",
                   "5. Lyrics only",
                   "Keep only lyrics in lyric fields. Put performance directions and notes in instructions."
                 )
@@ -655,8 +613,8 @@ export const fullViewTutorial: TutorialDefinition = {
                 "principle-ellipsis",
                 ".editor-panel-wrapper",
                 tx(
-                  "6. Ne használj három pontot",
-                  "Ne helyettesíts ismétlődő sorvéget „…” jellel; akkor is írd ki a teljes sort vagy dalrészt, ha az előzővel megegyezik.",
+                  "6. Ismétlődő sorvégek teljes kiírása",
+                  "Az ismétlődő sorvégek ne legyenek „…” jellel helyettesítve; az előzővel egyező sor vagy dalrész is teljesen kiírandó.",
                   "6. Avoid ellipses",
                   "Do not replace repeated line endings with ‘…’; write the complete line or section even when it matches the previous one."
                 )
@@ -666,7 +624,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "7. Ismétlődő akkordok",
-                  "Az előzővel egyező akkordmenetet is add meg a helyes pozíciókban. Az alkalmazás elrejtheti, de a hiányzó pozíciókat nem tudja kitalálni.",
+                  "A helyes pozíciókban az előzővel egyező akkordmenetet is rögzíteni kell. Az alkalmazás az ismétlést el tudja rejteni, de hiányzó pozíciókat nem képes kitalálni.",
                   "7. Repeated chords",
                   "Enter repeated chord progressions at their correct positions. The app can hide them, but cannot infer missing positions."
                 )
@@ -676,7 +634,7 @@ export const fullViewTutorial: TutorialDefinition = {
                 ".editor-panel-wrapper",
                 tx(
                   "8. Ismert akkordformátum",
-                  "Csak felismert akkordjelölést használj, különben a transzponálás és capo-kezelés hibás lesz. Hiányzó, szabályos akkordtípust jelezz az üzemeltetőnek.",
+                  "Csak felismert akkordjelölés használható, különben a transzponálás és a capo kezelése hibás lesz. Hiányzó, szabályos akkordtípust a fejlesztőnek kell jelezni.",
                   "8. Recognized chord syntax",
                   "Use recognized chord notation so transpose and capo work correctly. Report a valid but unsupported chord type to the operator."
                 )
@@ -691,7 +649,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".preview-sections-container",
       tx(
         "Szakaszlista",
-        "A feldolgozott dal vetíthető egységei itt jelennek meg. Válassz egy szakaszt a vetítéshez, a jelölőnégyzettel pedig kihagyhatsz részeket.",
+        "A feldolgozott dal vetíthető egységei itt jelennek meg. Egy szakasz kijelölhető vetítéshez, a jelölőnégyzettel pedig részek zárhatóak ki a navigációból.",
         "Section list",
         "The projectable sections of the processed song appear here. Select a section for projection or use checkboxes to omit sections."
       ),
@@ -723,7 +681,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".section-checkbox",
             tx(
               "Kihagyás",
-              "A jelölőnégyzettel egy szakaszt az adatbázis módosítása nélkül kihagyhatsz a vetítésből.",
+              "A jelölőnégyzettel egy szakasz az adatbázis módosítása nélkül kihagyható a vetítésből.",
               "Omit",
               "Uncheck a section to omit it from projection without modifying the database song."
             )
@@ -738,16 +696,6 @@ export const fullViewTutorial: TutorialDefinition = {
               "Arrows, Page Up/Down, Space, Home and End navigate; number keys select directly and Escape clears selection."
             )
           ),
-          s(
-            "sections-highlight",
-            ".preview-sections-list",
-            tx(
-              "Kiemelés",
-              "Megfelelő jogosultsággal egy dalszövegrészt kijelölve kiemelést küldhetsz a kapcsolódó kijelzőkre.",
-              "Highlight",
-              "With the required permission, select lyrics to send a highlight to connected displays."
-            )
-          ),
         ],
       }
     ),
@@ -756,7 +704,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".projecting-formats-container",
       tx(
         "Formátum és tartalom",
-        "A Formátum, Kép, Üzenet és Vezérlők lapokkal a kivetített tartalom megjelenését és kiegészítő elemeit állíthatod.",
+        "A Formátum, Kép, Üzenet és Vezérlők lapok a kivetített tartalom megjelenésének és kiegészítő elemeinek beállítására szolgálnak.",
         "Format and content",
         "Use the Format, Image, Message and Controls tabs to configure projected appearance and additional content."
       ),
@@ -779,7 +727,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preview-tab-content",
             tx(
               "Kép",
-              "Válassz hátteret, illesztési módot és képhez kapcsolódó beállításokat.",
+              "Háttér, illesztési mód és képhez kapcsolódó beállítások választhatók.",
               "Image",
               "Choose a background, fit mode and image-related settings."
             ),
@@ -790,9 +738,9 @@ export const fullViewTutorial: TutorialDefinition = {
             [".message-textarea", ".preview-tab-content"],
             tx(
               "Üzenet",
-              "A dal fölött megjelenő rövid üzenetet itt írhatod meg; a külön Üzenet kapcsolóval teheted láthatóvá.",
+              "Itt írható be a dal helyett megjelenő rövid üzenet, amely a külön Üzenet kapcsolóval jeleníthető meg.",
               "Message",
-              "Write a short overlay message here and show it with the separate Message toggle."
+              "Write a short message here and show it with the separate Message toggle."
             ),
             { prepare: () => activatePreviewTab(2) }
           ),
@@ -801,9 +749,9 @@ export const fullViewTutorial: TutorialDefinition = {
             [".preview-controls-grid", ".preview-tab-content"],
             tx(
               "Vezérlők",
-              "A környezettől függő kivetítési és kijelzővezérlők ezen a lapon jelennek meg.",
+              "A kivetítési és kijelzővezérlők ezen a lapon jelennek meg, a gombok a szakaszlistán használható billentyűzet gombok funkcióit implementálják.",
               "Controls",
-              "Runtime-dependent projection and display controls appear on this tab."
+              "Projection and display controls appear on this tab; the buttons implement the functions of the keyboard controls available in the section list."
             ),
             { prepare: () => activatePreviewTab(3) }
           ),
@@ -812,7 +760,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preview-layout-cycle-btn",
             tx(
               "Panel elrendezése",
-              "Ezzel több lépésben összecsukhatod a beállításokat vagy az előnézetet, hogy több hely maradjon a fontos területnek.",
+              "Ezzel több lépésben összecsukhatók a beállítások vagy az előnézet, hogy több hely maradjon a fontos területnek.",
               "Panel layout",
               "Cycle through collapsed layouts to give more room to either settings or the preview."
             )
@@ -867,9 +815,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preview-button-column button[aria-label='Content Based Format']",
             tx(
               "Tartalomalapú formázás",
-              "A dalban megadott szakaszformázásokat alkalmazza a vetítésre.",
+              "A vetítés szakasztördelését automatikusan, a dal tartalma alapján végzi.",
               "Content-based formatting",
-              "Apply section formatting defined by the song to the projection."
+              "Apply automatic section breaks according to the song's content."
             )
           ),
           s(
@@ -887,7 +835,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preview-button-column button[aria-label='Freeze']",
             tx(
               "Fagyasztás",
-              "A kimeneten megtartja a jelenlegi képet, miközben az alkalmazásban előkészítheted a következőt.",
+              "A vetítőn megtartja a jelenlegi képet, miközben az alkalmazásban előkészíthető a következő tartalom.",
               "Freeze",
               "Keep the current output visible while preparing the next content in the app."
             )
@@ -910,7 +858,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".preview-display-container",
       tx(
         "Vetítési előnézet",
-        "Itt ellenőrizheted a kivetítésre kerülő képet. Ha van megosztható cím, az előnézet QR-kódot is megjeleníthet.",
+        "Az előnézet a kivetítésre kerülő kép ellenőrzésére szolgál; megosztható cím esetén QR-kódot is megjeleníthet.",
         "Projection preview",
         "Check the exact projected image here. When a shareable address exists, the preview can also show a QR code."
       ),

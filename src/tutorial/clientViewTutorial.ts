@@ -3,7 +3,9 @@ import {
   closeClientTutorialPopovers,
   closeClientZoomPanel,
   ensureClientOptions,
+  ensureClientListMode,
   openClientMoreMenu,
+  openClientTutorialValuePicker,
   openClientZoomPanel,
   tutorialLabel as tl,
   tutorialStep as s,
@@ -14,6 +16,18 @@ const song = () => ensureClientOptions(false);
 const options = () => {
   ensureClientOptions(true);
   closeClientZoomPanel();
+};
+const databaseList = () => {
+  options();
+  return ensureClientListMode("database");
+};
+const playlistList = () => {
+  options();
+  return ensureClientListMode("playlist");
+};
+const leaderLists = () => {
+  options();
+  return ensureClientListMode("leaderlists");
 };
 
 export const clientViewTutorial: TutorialDefinition = {
@@ -26,7 +40,7 @@ export const clientViewTutorial: TutorialDefinition = {
       ["#swipe-handler", "#editor"],
       tx(
         "Dalnézet",
-        "Itt jelenik meg az aktuális dal ChordPro-formázással, akkordokkal és instrukciókkal. A lapozási vezérléssel válthatsz a dalok között.",
+        "Itt jelenik meg az aktuális dal ChordPro-formázással, akkordokkal és instrukciókkal. A lapozási vezérlővel lehet a dalok között váltani.",
         "Song view",
         "The current song appears here with ChordPro formatting, chords and instructions. Use paging controls to change songs."
       ),
@@ -38,7 +52,7 @@ export const clientViewTutorial: TutorialDefinition = {
             "#editor",
             tx(
               "Dal tartalma",
-              "A megjelenés az akkord-, capo-, transzponálás-, téma- és nagyításbeállításokat követi. Követő módban a vezető dalát látod.",
+              "A megjelenés az akkord-, capo-, transzponálás-, téma- és nagyításbeállításokat követi. Követő módban a vezető aktuális dala látható.",
               "Song content",
               "Appearance follows chord, capo, transpose, theme and zoom settings. In follower mode you see the leader's song."
             )
@@ -58,29 +72,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Kétujjas koppintás",
-              "Koppints két ujjal mozdítás nélkül. A módok Ki → Teljes oldal → Szélesség → Automatikus kitöltés → Kézi sorrendben váltanak, az új mód röviden megjelenik.",
+              "Mozdítás nélküli kétujjas koppintással a módok Ki → Teljes oldal → Szélesség → Automatikus kitöltés → Kézi sorrendben váltanak; az új mód röviden megjelenik.",
               "Two-finger tap",
               "Tap with two fingers without moving. Modes cycle Off → Fit page → Fit width → Auto fill → Manual, and the new mode briefly appears."
-            )
-          ),
-          s(
-            "song-pinch",
-            "#swipe-handler",
-            tx(
-              "Csippentéses nagyítás",
-              "Kézi módban két ujjal összecsípve csökkentheted, széthúzva növelheted a betűméretet 10 és 64 px között. Automatikus módban a gesztus nem írja felül az illesztést.",
-              "Pinch zoom",
-              "In Manual mode, pinch to reduce or spread to increase font size between 10 and 64 px. Automatic modes keep their calculated fit."
-            )
-          ),
-          s(
-            "song-wheel",
-            "#swipe-handler",
-            tx(
-              "Egérgörgő",
-              "Kézi módban Ctrl+görgő állítja a betűméretet, Ctrl+Shift+görgő váltja a zoommódot. Módosító nélkül a túlnyúló dal függőlegesen görgethető.",
-              "Mouse wheel",
-              "In Manual mode Ctrl+wheel changes font size and Ctrl+Shift+wheel cycles zoom modes. Without modifiers it scrolls overflowing songs vertically."
             )
           ),
           s(
@@ -88,9 +82,19 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Zoommódok",
-              "A Teljes oldal mindkét irányban illeszt; a Szélesség kitölti a szélességet és görgethető; az Automatikus kitöltés a legnagyobb használható méretet keresi; a Kézi közvetlen méretet használ.",
+              "A Teljes oldal mindkét irányban illeszt; a Szélesség kitölti a szélességet és görgethető; az Automatikus kitöltés a legnagyobb használható méretet keresi; a Kézi közvetlen méretet használ. Két ujjas érintés vagy Ctrl+Shift+görgő váltja a zoommódot.",
               "Zoom modes",
-              "Fit page fits both dimensions; Fit width fills the width and scrolls; Auto fill finds the largest usable size; Manual uses an explicit size."
+              "Fit page fits both dimensions; Fit width fills the width and scrolls; Auto fill finds the largest usable size; Manual uses an explicit size. A two-finger tap or Ctrl+Shift+wheel cycles zoom modes."
+            )
+          ),
+          s(
+            "song-pinch",
+            "#swipe-handler",
+            tx(
+              "Csippentéses nagyítás",
+              "Kézi módban kétujjas összecsippentéssel csökkenthető, széthúzással növelhető a betűméret; egérrel a Ctrl+görgő is használható. Automatikus módban a gesztus nem írja felül az illesztést.",
+              "Pinch zoom",
+              "In Manual mode, pinch to reduce or spread to increase font size or use CTRL+mouse wheel combination. Automatic modes keep their calculated fit."
             )
           ),
           s(
@@ -98,9 +102,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ".cv-navigation-mode",
             tx(
               "Navigáció forrása",
-              "Az ikon jelzi, hogy adatbázis-, keresési vagy műsortári sorrendben lapozol. A vezérlővel visszatérhetsz az aktuális dal műsortári helyéhez.",
+              "Az ikon az adatbázis-, keresési vagy műsortári lapozási sorrendet jelzi. A vezérlővel a műsortár nézet állítható vissza.",
               "Navigation source",
-              "The icon identifies database, search or playlist order. Use it to return to the current song's playlist position."
+              "The icon identifies database, search or playlist order. Use it to return to the playlist view mode."
             )
           ),
           s(
@@ -108,7 +112,7 @@ export const clientViewTutorial: TutorialDefinition = {
             [".cv-navigation-add-current", ".cv-navigation-mode", "#editor"],
             tx(
               "Dal hozzáadása",
-              "Ha adatbázisból vagy keresésből nyitottál meg egy még nem műsortári dalt, ezzel hozzáadhatod és műsortári navigációra válthatsz.",
+              "Adatbázisból vagy keresésből megnyitott, még nem műsortári dal itt adható a műsortárhoz, és a navigáció műsortári sorrendre állítható.",
               "Add song",
               "If a database or search result is not yet in the playlist, add it and switch to playlist navigation here."
             )
@@ -118,7 +122,7 @@ export const clientViewTutorial: TutorialDefinition = {
             "#editor",
             tx(
               "Kiemelés",
-              "Kiemelésvezérlő módban egy dalszövegrészt kiválasztva azt a vezető és az engedélyezett követők kijelzőjén is kiemelheted.",
+              "Kiemelésvezérlő módban a dalszöveg kijelölt része a vezetői és az engedélyezett követői kijelzőkön egyaránt megjeleníthető kiemelve.",
               "Highlight",
               "In highlight-control mode, select lyrics to highlight them on the leader and permitted follower displays."
             )
@@ -163,7 +167,7 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#btnInstructions", "#mainToolbar"],
             tx(
               "Instrukciók",
-              "Rövid koppintással vagy kattintással megjelenítheted, illetve elrejtheted a dal instrukcióit.",
+              "A dal instrukciói rövid koppintással vagy kattintással kapcsolhatók be és ki.",
               "Instructions",
               "Tap or click briefly to show or hide the song instructions."
             )
@@ -173,7 +177,7 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#btnInstructions", "#mainToolbar"],
             tx(
               "Instrukciószerkesztő",
-              "Vezérlési jogosultsággal ugyanezt a gombot hosszan nyomva vagy jobb gombbal kattintva nyithatod meg az instrukciószerkesztőt. A Forrás, Szerkesztő és Előnézet panelekben a tartalom összevethető, módosítható és menthető.",
+              "Vezérlési jogosultság esetén a hosszú nyomás vagy a jobb gombos kattintás nyitja meg az instrukciószerkesztőt. A Forrás, Szerkesztő és Előnézet panelek a tartalom összevetésére, módosítására és mentésére szolgálnak.",
               "Instructions editor",
               "With control permission, hold this same button or right-click it to open the instructions editor. Compare, edit and save the content in its Source, Editor and Preview panes."
             )
@@ -183,9 +187,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#capo", "#mainToolbar"],
             tx(
               "Capo",
-              "Rövid koppintással vagy kattintással be- és kikapcsolhatod a capót. Hosszú nyomással, jobb kattintással vagy a külön lenyíló vezérlővel közvetlen capoértéket választhatsz.",
+              "Rövid koppintás vagy kattintás kapcsolja be és ki a capót. Hosszú nyomással, jobb kattintással, a külön lenyíló vezérlővel vagy vízszintes elhúzással közvetlen capoérték választható.",
               "Capo",
-              "Tap or click briefly to toggle capo. Hold, right-click or use the separate dropdown control to choose a capo value directly."
+              "Tap or click briefly to toggle capo. Hold, right-click, use the separate dropdown control or just drag horizontally to choose a capo value directly."
             )
           ),
           s(
@@ -193,20 +197,21 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#transpose", "#mainToolbar"],
             tx(
               "Transzponálás",
-              "Koppintással vagy kattintással nyisd meg az értékválasztót, majd félhangonként állítsd az aktuális műsortétel hangnemét. Vezérlőként a módosítás az aktuális vetítésen és a munkamenet minden csatlakozott nézőjénél egyszerre jelenik meg.",
+              "Koppintás, kattintás vagy vízszintes elhúzás nyitja meg az értékválasztót; itt félhangonként állítható az aktuális műsortétel hangneme. Vezérlő módban a módosítás egyszerre jelenik meg az aktuális vetítésen és a munkamenet valamennyi csatlakozott nézőjénél.",
               "Transpose",
-              "Tap or click to open the value picker, then change the current playlist entry by semitones. When you are controlling the display, the change appears simultaneously on the current projection and for every connected session viewer."
+              "Tap, click or just drag horizontally to open the value picker, then change the current playlist entry by semitones. When you are controlling the display, the change appears simultaneously on the current projection and for every connected session viewer."
             )
           ),
           s(
             "toolbar-picker",
-            [".cv-wheel", "#capo", "#mainToolbar"],
+            "#transpose, #capo",
             tx(
               "Értékválasztó",
-              "Az értékek húzással, a látható lehetőségekkel vagy billentyűzettel léptethetők; a transzponálás és a capo vezérlőjéről indított húzás közvetlenül is megnyitja a választót. Enter és Esc az aktuális értékkel zárja be.",
+              "Az értékek húzással, a látható lehetőségekkel vagy billentyűzettel léptethetők; a transzponálás és a capo vezérlőjéről indított húzás közvetlenül is megnyitja a választót. Az Enter billentyű vagy egy konkrét értékre való kattintás az új értéket érvényesíti, az Esc vagy az értékválasztó mellé kattintás az eredeti értéket állítja vissza.",
               "Value picker",
-              "Drag, use the visible choices or use the keyboard to step through values; dragging from the transpose or capo control also opens the picker directly. Enter and Escape close it with the current value."
-            )
+              "Drag, use the visible choices or use the keyboard to step through values; dragging from the transpose or capo control also opens the picker directly. Pressing Enter or clicking a specific value applies that new value; pressing Escape or clicking outside the value picker closes it and restores the original value."
+            ),
+            { prepare: openClientTutorialValuePicker, highlightTargets: ["#transpose", "#capo", ".cv-wheel"] }
           ),
           s(
             "toolbar-highlight",
@@ -216,16 +221,6 @@ export const clientViewTutorial: TutorialDefinition = {
               "A gomb csak akkor látható, amikor az aktív kiemelés a jelenlegi jogosultsággal törölhető.",
               "Clear highlight",
               "This control appears only when the active highlight can be cleared with your current permission."
-            )
-          ),
-          s(
-            "toolbar-network",
-            ["#netstatus", "#mainToolbar"],
-            tx(
-              "Hálózati állapot",
-              "Az ikon kapcsolódást, követést, vezetést vagy hibát jelez. Kapcsolati hiba esetén ugyanitt kérhetsz újracsatlakozást.",
-              "Network status",
-              "The icon indicates connection, following, leading or error. Reconnection can be requested from the same control."
             )
           ),
           s(
@@ -239,24 +234,23 @@ export const clientViewTutorial: TutorialDefinition = {
             )
           ),
           s(
-            "toolbar-home",
-            ["#btnHome", "#mainToolbar"],
-            tx(
-              "Vissza a full-view-ra",
-              "Beágyazott módban visszatér a teljes szerkesztői felületre, és átadja az aktuális dalválasztást.",
-              "Back to full view",
-              "In embedded mode, return to the full editor and carry over the current song selection."
-            ),
-            { actions: [{ id: "switch-full", label: tl("Visszatérés a full-view-ra", "Return to full view"), command: "switch-full" }] }
-          ),
-          s(
             "toolbar-refresh",
             "#mainToolbar",
             tx(
               "Frissítés",
-              "A frissítési művelet újratölti a client-view-t és a háttérből érkező adatokat.",
+              "Az eszköztár lehúzása és elengedése újratölti a kliensnézetet és a háttéradatokat.",
               "Pull to refresh",
               "Pull the toolbar down and release to reload the client view and background data."
+            )
+          ),
+          s(
+            "toolbar-network",
+            ["#netstatus", "#mainToolbar"],
+            tx(
+              "Hálózati állapot",
+              "Az ikon a kapcsolódás, követés, vezetés vagy hiba állapotát mutatja; hiba esetén itt kezdeményezhető újracsatlakozás.",
+              "Network status",
+              "The icon indicates connection, following, leading or error. Reconnection can be requested from the same control."
             )
           ),
           s(
@@ -288,7 +282,7 @@ export const clientViewTutorial: TutorialDefinition = {
       "#filterRow",
       tx(
         "Keresés és listaváltás",
-        "Keress a daladatbázisban, szűrd a műsortárat, vagy válts adatbázis-, műsortár- és vezetői listák között.",
+        "A daladatbázis keresése, a műsortárban való keresés, valamint az adatbázis-, műsortár- és vezetői listák közötti váltás itt érhető el.",
         "Search and list mode",
         "Search the song database, filter the playlist or switch among database, playlist and leader lists."
       ),
@@ -297,7 +291,7 @@ export const clientViewTutorial: TutorialDefinition = {
         details: [
           s(
             "search-mode",
-            ["#listModeToggle", "#filterRow"],
+            "#listModeToggle",
             tx(
               "Listamód",
               "A gomb az adatbázis, az aktuális műsortár és a vezetők dátumozott listái között léptet. Az ikon az aktuális módot mutatja.",
@@ -307,62 +301,65 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "search-filter",
-            "#filter",
+            "#options[data-list-mode='database'] #filter",
             tx(
               "Kereső és szűrő",
               "Adatbázis módban dalokat keres, műsortárban először a helyi listát szűri. Esc vagy a törlés ikon kiüríti.",
               "Search and filter",
               "In database mode it searches songs; in playlist mode it first filters locally. Escape or Clear empties the field."
-            )
+            ),
+            { prepare: databaseList }
           ),
           s(
             "search-database",
-            ["#playlist-search", "#filterRow"],
+            "#options[data-list-mode='playlist'] #playlist-search",
             tx(
               "Adatbázis-keresés",
-              "Műsortári szűrés közben ugyanarra a kifejezésre az egész daladatbázisban is kereshetsz.",
+              "Műsortári szűrés közben ugyanarra a kifejezésre a teljes daladatbázisban is lehet keresni.",
               "Database search",
               "While filtering the playlist, search the complete song database for the same phrase."
-            )
+            ),
+            { prepare: playlistList }
           ),
           s(
             "search-leaders",
-            [".cv-leaderlists-controls", "#filterRow"],
+            "#options[data-list-mode='leaderlists'] .cv-leaderlists-controls",
             tx(
               "Vezetői listák",
-              "Válassz vezetőt és dátumot, vagy keress a vezető listáiban. A csere gomb a helyi műsortárat cseréli le, a forrást nem írja át.",
+              "A vezető és a dátum kiválasztása után a vezető listáiban is kereshető a kívánt tartalom. A Csere gomb csak a helyi műsortárat módosítja, a forráslistát nem.",
               "Leader lists",
               "Choose a leader and date or search their lists. Replace updates the local working playlist without changing the source."
-            )
+            ),
+            { prepare: leaderLists }
           ),
         ],
       }
     ),
     s(
       "song-list",
-      "#list",
+      "#options[data-list-mode='database'] #list",
       tx(
         "Dallista",
-        "Válassz egy sort a dal megjelenítéséhez. Szerkeszthető módban hozzáadhatod a műsortárhoz vagy rögtön műsortári navigációban nyithatod meg.",
+        "Egy sor kiválasztása megjeleníti a dalt. Szerkeszthető módban a dal a műsortárhoz adható, vagy közvetlenül műsortári navigációban nyitható meg.",
         "Song list",
         "Select a row to display a song. In editable mode add it to the playlist or open it directly in playlist navigation."
       ),
       {
-        prepare: options,
+        prepare: databaseList,
         details: [
           s(
             "list-row",
-            "#list",
+            "#options[data-list-mode='database'] #list",
             tx(
               "Találati sor",
-              "A kiválasztott dal megjelenik, és a találati sorrendben lapozhatsz tovább. A kijelölt sor kiemelve marad.",
+              "A kiválasztott dal megjelenik, és a lapozás a találati sorrendben folytatódik. A kijelölt sor kiemelve marad.",
               "Result row",
               "The selected song is displayed and paging continues in result order. The selected row remains highlighted."
             )
           ),
           s(
             "list-add",
-            [".cv-add-btn", "#list"],
+            ["#options[data-list-mode='database'] .cv-add-btn", "#options[data-list-mode='database'] #list"],
             tx(
               "Hozzáadás",
               "A plusz hozzáadja a dalt a műsortárhoz; a pipa jelzi, hogy már szerepel benne, és ugyanazzal a vezérlővel eltávolítható.",
@@ -372,7 +369,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "list-play",
-            [".cv-play-btn", "#list"],
+            ["#options[data-list-mode='database'] #list .cv-play-btn", "#options[data-list-mode='database'] #list"],
             tx(
               "Azonnali lejátszás",
               "Szükség esetén hozzáadja a dalt, megjeleníti és műsortári navigációra vált.",
@@ -382,7 +379,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "list-found",
-            [".cv-found-marker", "#list"],
+            ["#options[data-list-mode='database'] .cv-found-marker", "#options[data-list-mode='database'] #list"],
             tx(
               "Találat helye",
               "A jelölő mutatja, hogy a keresett rész címben, dalszövegben, fejlécben vagy más mezőben található.",
@@ -392,12 +389,12 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "list-size",
-            "#list",
+            "#options[data-list-mode='database'] #list",
             tx(
               "Lista nagyítása",
-              "A lista sormérete külön állítható, és a választás ezen az eszközön megmarad.",
+              "A lista sormérete külön állítható Ctrl+egérgörgő használatával vagy csippentéssel, és a választás ezen az eszközön megmarad.",
               "List size",
-              "List row size can be adjusted separately, and the setting persists on this device."
+              "List row size can be adjusted separately by CTRL+mouse wheel or pinch zoom, and the setting persists on this device."
             )
           ),
         ],
@@ -405,19 +402,19 @@ export const clientViewTutorial: TutorialDefinition = {
     ),
     s(
       "playlist",
-      "#list",
+      "#options[data-list-mode='playlist'] #list",
       tx(
         "Aktuális műsortár",
-        "Az előadás dalai itt választhatók ki és rendezhetők; dalonként külön transzponálást vagy capót is megadhatsz.",
+        "Az előadás dalai itt választhatók ki és rendezhetők; dalonként külön transzponálás vagy capo is beállítható.",
         "Current playlist",
         "Select and arrange performance songs here, with per-song transpose and capo settings."
       ),
       {
-        prepare: options,
+        prepare: playlistList,
         details: [
           s(
             "playlist-open",
-            "#list",
+            "#options[data-list-mode='playlist'] #list",
             tx(
               "Dal megnyitása",
               "A műsortári sor megjeleníti a dalt, és a további lapozás a műsortár sorrendjét követi.",
@@ -427,7 +424,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "playlist-reorder",
-            "#list",
+            "#options[data-list-mode='playlist'] #list",
             tx(
               "Átrendezés",
               "Szerkeszthető műsortárban a sorok tetszőleges sorrendbe rendezhetők. A követői és mentett forráslisták olvashatók maradnak.",
@@ -437,7 +434,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "playlist-transpose",
-            "#list",
+            "#options[data-list-mode='playlist'] #list",
             tx(
               "Transzponálás és capo",
               "A sor saját vezérlői csak ezt a műsortételt módosítják, az adatbázis dalát nem.",
@@ -447,22 +444,22 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "playlist-remove",
-            "#list",
+            "#options[data-list-mode='playlist'] #list",
             tx(
               "Eltávolítás",
-              "A sort az eltávolítási területre húzva csak az aktuális munkalistából veszed ki a dalt; az adatbázisban megmarad.",
+              "A sor eltávolítási területre húzásával a dal csak az aktuális munkalistából kerül ki; az adatbázisban megmarad.",
               "Remove",
               "Drag the row to the removal target to remove it only from the current working list; the database song remains."
             )
           ),
           s(
             "playlist-size",
-            "#list",
+            "#options[data-list-mode='playlist'] #list",
             tx(
               "Lista sormérete",
-              "A műsortár sorainak mérete külön állítható és ezen az eszközön megmarad.",
+              "A műsortár sorainak mérete csippentéssel vagy Ctrl+görgő használatával állítható és ezen az eszközön megmarad.",
               "Playlist row size",
-              "Playlist row size can be adjusted separately and persists on this device."
+              "Playlist row size can be adjusted by pinching or Ctrl+mouse wheel combination and persists on this device."
             )
           ),
         ],
@@ -485,7 +482,7 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-chord-box']",
             tx(
               "Akkordmegjelenítés",
-              "Sorba írt akkordok, gitár- vagy zongorafogások, illetve akkordok nélküli nézet közül választhatsz; a közvetlen választómenü ugyanezeket az opciókat mutatja.",
+              "Sorba írt akkordok, gitár- vagy zongorafogások, illetve akkordok nélküli nézet választható; a közvetlen választómenü ugyanezeket az opciókat mutatja.",
               "Chord display",
               "Choose inline chords, guitar or piano diagrams, or a lyrics-only view; the direct picker offers the same options."
             )
@@ -495,7 +492,7 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-chord-mode']",
             tx(
               "Moll akkordok írásmódja",
-              "Az Am, am és a jelölési változatok közül választhatsz.",
+              "Az Am, am és a rendelkezésre álló jelölési változatok választhatók.",
               "Minor chord spelling",
               "Choose among Am, am and the available minor-chord spellings."
             )
@@ -575,28 +572,37 @@ export const clientViewTutorial: TutorialDefinition = {
             [".cv-zoom-panel", "[data-tutorial-id='client-zoom']", ".cv-options-bar"],
             tx(
               "Nagyítási panel",
-              "A cím, metaadat és szakaszcímke külön szabályozható. Válassz illesztési módot; Kézi módban 10–64 px-es csúszka jelenik meg.",
+              "A cím, metaadat és szakaszcímke külön szabályozható. Illesztési mód választható; Kézi módban csúszka jelenik meg.",
               "Zoom panel",
-              "Control title, metadata and section labels separately. Select a sizing mode; Manual shows a 10–64 px slider."
+              "Control title, metadata and section labels separately. Select a sizing mode; Manual shows a slider."
             ),
             { prepare: openClientZoomPanel }
           ),
           s(
             "display-theme",
             "[data-tutorial-id='client-theme']",
-            tx("Téma", "Automatikus, világos és sötét megjelenés között válthatsz.", "Theme", "Cycle among automatic, light and dark appearance.")
+            tx("Téma", "A megjelenés automatikus, világos vagy sötét módra állítható.", "Theme", "Cycle among automatic, light and dark appearance.")
           ),
           s(
             "display-leader",
             ["[data-tutorial-id='client-leader-mode']", ".cv-options-bar"],
             tx(
               "Vezető mód",
-              "Ha a környezet engedi, követő és vezető mód között válthatsz. Vezetőként a kliens a közös kijelző állapotát is módosíthatja.",
+              "A környezet támogatásától/jogosultságtól függően a kliens követő vagy vezető módban használható; vezető módban a közös kijelző állapota is módosítható.",
               "Leader mode",
               "Where supported, switch between follower and leader. A leader can modify shared display state."
             )
           ),
-          s("display-close", "#closeOptions", tx("Bezárás", "Visszatér a teljes dalnézethez.", "Close", "Return to the full song view.")),
+          s(
+            "display-close",
+            "#closeOptions",
+            tx(
+              "Bezárás",
+              "Bezárja a beállítások panelt és visszatér a dalnézethez.",
+              "Close",
+              "Close options panel and return to the full song view."
+            )
+          ),
         ],
       }
     ),
@@ -639,7 +645,7 @@ export const clientViewTutorial: TutorialDefinition = {
             ["[data-tutorial-id='client-more-sessions']", ".cv-more-menu"],
             tx(
               "Munkamenetek és kapcsolat",
-              "A kapcsolatok keresésére, indítására és követésére szolgáló központot nyitja meg. Itt helyi, közeli és felhős munkameneteket kezelhetsz, megosztási QR-kódot kaphatsz, követéskor pedig visszatérhetsz a saját listáidhoz. A fő vezérlősáv hálózati jelzője az aktuális kapcsolati állapotot mutatja.",
+              "A kapcsolatok keresésére, indítására és követésére szolgáló dialógust nyitja meg. Itt helyi, közeli és felhős munkamenetek kezelhetők, megosztási QR-kód kérhető, követéskor pedig vissza lehet térni a helyi listákhoz. A fő vezérlősáv hálózati jelzője az aktuális kapcsolati állapotot mutatja.",
               "Sessions and connection",
               "Open the hub for discovering, starting and following connections. It manages local, nearby and cloud sessions, can provide a sharing QR code, and lets you return to your own lists while following. The main toolbar network indicator shows the current connection state."
             ),
@@ -664,7 +670,7 @@ export const clientViewTutorial: TutorialDefinition = {
             ["[data-tutorial-id='client-more-about']", ".cv-more-menu"],
             tx(
               "Névjegy",
-              "Az alkalmazás verzióját, licenceit és eszközinformációit mutatja. Innen is bármikor újraindíthatod ezt a bemutatót.",
+              "Az alkalmazás verzióját, licenceit és eszközinformációit mutatja. A bemutató innen bármikor újraindítható.",
               "About",
               "Shows app version, licenses and device information. You can restart this tutorial here at any time."
             ),

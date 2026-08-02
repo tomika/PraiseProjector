@@ -252,17 +252,9 @@
 }
 
 @media (max-width: 560px), (max-height: 520px) {
+  /* Keep left/top under the target-aware placement logic on compact screens. */
   .pp-tutorial-wizard:not(.pp-tutorial-resume) {
-    left: 8px !important;
-    right: 8px;
-    bottom: 8px;
-    top: auto !important;
-    width: auto;
     max-height: min(46vh, 330px);
-  }
-
-  .pp-tutorial-waiting {
-    transform: none;
   }
 
   .pp-tutorial-wizard {

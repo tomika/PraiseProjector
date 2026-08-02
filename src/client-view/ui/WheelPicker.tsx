@@ -23,7 +23,7 @@ export interface WheelPickerProps {
   onChange: (v: number) => void;
   /** Fired on outside pointerdown, Escape or Enter. Never fired by value selection. */
   onClose: () => void;
-  /** Toolbar button the popup is anchored to (also excluded from outside-click). */
+  /** Toolbar button the popup is positioned against and focused when it closes. */
   anchor: HTMLElement;
   /** Wheel direction. The original vertical picker remains the default. */
   orientation?: "vertical" | "horizontal";
@@ -283,6 +283,7 @@ export function WheelPicker({
     const onDocumentEvent = (event: Event) => {
       const target = event.target;
       if (target instanceof Node && wheelRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest(".pp-tutorial-layer")) return;
       blockEvent(event);
       const beginsInteraction = event.type === "pointerdown" || event.type === "mousedown" || event.type === "touchstart";
       if (beginsInteraction && !closing) {

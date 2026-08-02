@@ -73,6 +73,12 @@ function findTarget(step: TutorialStep): HTMLElement | null {
   return null;
 }
 
+function findHighlightTargets(step: TutorialStep, primaryTarget: HTMLElement): HTMLElement[] {
+  if (!step.highlightTargets?.length) return [primaryTarget];
+  const targets = step.highlightTargets.flatMap((selector) => Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(isVisible));
+  return targets.length ? Array.from(new Set(targets)) : [primaryTarget];
+}
+
 function findTutorialCursorForElement(definition: TutorialDefinition, sourceElement: Element | null): TutorialCursor | null {
   if (!(sourceElement instanceof HTMLElement) || sourceElement === document.body) return null;
 
@@ -173,12 +179,12 @@ function waitForTarget(step: TutorialStep, signal: AbortSignal): Promise<HTMLEle
   });
 }
 
-function paddedRect(element: HTMLElement): Rect {
-  const rect = element.getBoundingClientRect();
-  const left = Math.max(4, rect.left - TARGET_PADDING);
-  const top = Math.max(4, rect.top - TARGET_PADDING);
-  const right = Math.min(window.innerWidth - 4, rect.right + TARGET_PADDING);
-  const bottom = Math.min(window.innerHeight - 4, rect.bottom + TARGET_PADDING);
+function paddedBounds(elements: readonly HTMLElement[]): Rect {
+  const rects = elements.map((element) => element.getBoundingClientRect());
+  const left = Math.max(4, Math.min(...rects.map((rect) => rect.left)) - TARGET_PADDING);
+  const top = Math.max(4, Math.min(...rects.map((rect) => rect.top)) - TARGET_PADDING);
+  const right = Math.min(window.innerWidth - 4, Math.max(...rects.map((rect) => rect.right)) + TARGET_PADDING);
+  const bottom = Math.min(window.innerHeight - 4, Math.max(...rects.map((rect) => rect.bottom)) + TARGET_PADDING);
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
@@ -217,8 +223,10 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
   const markerRef = useRef<HTMLSpanElement>(null);
   const wizardRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLElement | null>(null);
+  const highlightTargetsRef = useRef<HTMLElement[]>([]);
   const targetRecoveryUsedRef = useRef(false);
   const cleanupRef = useRef<TutorialCleanup | null>(null);
+  const stepCleanupRef = useRef<TutorialCleanup | null>(null);
   const initialFocusRef = useRef<HTMLElement | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const blockedToastTimerRef = useRef<number | null>(null);
@@ -235,7 +243,10 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
   const phaseRef = useRef<TutorialPhase>("closed");
   const cursorRef = useRef(cursor);
 
-  useEffect(() => {
+  // Keep event-driven starts in sync with the DOM commit. In particular, a
+  // MutationObserver may request continuation as soon as a blocking dialog is
+  // removed, before passive effects would publish the latest onBeforeStart.
+  useLayoutEffect(() => {
     beforeStartRef.current = onBeforeStart;
     commandRef.current = onCommand;
     cursorRef.current = cursor;
@@ -274,12 +285,27 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
     [definition, resumeFocusCursor]
   );
   const localized = resolved?.step.text[language];
+  const activeStepId = phase === "tour" ? resolved?.step.id : undefined;
+
+  useLayoutEffect(() => {
+    if (!activeStepId) return;
+    document.body.dataset.ppTutorialStep = activeStepId;
+    return () => {
+      if (document.body.dataset.ppTutorialStep === activeStepId) delete document.body.dataset.ppTutorialStep;
+    };
+  }, [activeStepId]);
 
   const hostIsVisible = useCallback(() => !!markerRef.current?.getClientRects().length, []);
 
   const restoreApplication = useCallback(() => {
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
+    cleanup?.();
+  }, []);
+
+  const cleanupPreparedStep = useCallback(() => {
+    const cleanup = stepCleanupRef.current;
+    stepCleanupRef.current = null;
     cleanup?.();
   }, []);
 
@@ -300,6 +326,7 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       const current = cursorRef.current;
       if (completed) clearTutorialProgress(definition);
       else if (current) saveTutorialProgress(definition, current);
+      cleanupPreparedStep();
       definition.cleanup?.();
       targetRef.current = null;
       setMissingTarget(false);
@@ -311,7 +338,7 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       restoreApplication();
       restoreInitialFocus();
     },
-    [definition, restoreApplication, restoreInitialFocus, updatePhase]
+    [cleanupPreparedStep, definition, restoreApplication, restoreInitialFocus, updatePhase]
   );
 
   const begin = useCallback(
@@ -558,14 +585,27 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
     const targetAbort = new AbortController();
 
     const prepareTarget = async () => {
+      // The previous step's cleanup runs first, and the prepare() calls below
+      // follow within the same tick. A cleanup that dismisses a modal surface can
+      // leave a short input fence behind (see openClientTutorialValuePicker), which
+      // would swallow a synthetic click issued by the prepare() of this step.
+      cleanupPreparedStep();
+      const stepCleanups: TutorialCleanup[] = [];
+      const registerCleanup = (cleanup: void | TutorialCleanup) => {
+        if (!cleanup) return;
+        stepCleanups.push(cleanup);
+        stepCleanupRef.current = () => {
+          for (let index = stepCleanups.length - 1; index >= 0; index -= 1) stepCleanups[index]();
+        };
+      };
       targetRef.current = null;
       targetRecoveryUsedRef.current = false;
       setMissingTarget(false);
       setTargetRect(null);
-      resolved.primary.prepare?.();
+      registerCleanup(resolved.primary.prepare?.());
       await nextFrame();
       if (cancelled) return;
-      if (resolved.detailIndex !== null) resolved.step.prepare?.();
+      if (resolved.detailIndex !== null) registerCleanup(resolved.step.prepare?.());
       await nextFrame();
       if (cancelled) return;
       const target = await waitForTarget(resolved.step, targetAbort.signal);
@@ -578,15 +618,17 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       await nextFrame();
       if (cancelled) return;
       targetRef.current = target;
-      setTargetRect(paddedRect(target));
+      highlightTargetsRef.current = findHighlightTargets(resolved.step, target);
+      setTargetRect(paddedBounds(highlightTargetsRef.current));
     };
 
     void prepareTarget();
     return () => {
       cancelled = true;
       targetAbort.abort();
+      cleanupPreparedStep();
     };
-  }, [cursor, definition, phase, resolved]);
+  }, [cleanupPreparedStep, cursor, definition, phase, resolved]);
 
   useEffect(() => {
     if (phase !== "tour" || !missingTarget || !resolved) return;
@@ -601,7 +643,8 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       targetRecoveryUsedRef.current = true;
       recoveredTarget.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
       targetRef.current = recoveredTarget;
-      setTargetRect(paddedRect(recoveredTarget));
+      highlightTargetsRef.current = findHighlightTargets(resolved.step, recoveredTarget);
+      setTargetRect(paddedBounds(highlightTargetsRef.current));
       setMissingTarget(false);
     }, MISSING_TARGET_DISPLAY_MS);
     return () => window.clearTimeout(timer);
@@ -631,11 +674,12 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       const target = targetRef.current;
       const wizard = wizardRef.current;
       if (!target || !wizard) return;
-      if (!isVisible(target)) {
+      const visibleHighlightTargets = highlightTargetsRef.current.filter(isVisible);
+      if (!visibleHighlightTargets.length) {
         confirmTargetDisappeared();
         return;
       }
-      const nextRect = paddedRect(target);
+      const nextRect = paddedBounds(visibleHighlightTargets);
       setTargetRect((current) =>
         current &&
         current.left === nextRect.left &&
@@ -658,7 +702,7 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
 
     update();
     const observer = new ResizeObserver(scheduleUpdate);
-    if (targetRef.current) observer.observe(targetRef.current);
+    highlightTargetsRef.current.forEach((target) => observer.observe(target));
     window.addEventListener("resize", scheduleUpdate);
     window.addEventListener("scroll", scheduleUpdate, true);
     return () => {

@@ -465,6 +465,7 @@ export class ClientViewStore {
   private searchSeq = 0;
   private playlistSearchTimer: ReturnType<typeof setTimeout> | undefined;
   private playlistSearchSeq = 0;
+  private leaderSelectionRevision = 0;
   private disposed = false;
   private lifecycleToken = 0;
   /** Where "open full editor" navigates; captured from init config. */
@@ -1521,20 +1522,35 @@ export class ClientViewStore {
     if (mode === "leaderlists") void this.loadLeaderPlaylists();
   }
 
+  /** Restore the options-panel collection state after a temporary guided view.
+   *  This deliberately bypasses list loading and navigation side effects. */
+  restoreListViewState(
+    snapshot: Pick<ClientViewState, "listMode" | "navigationMode" | "leaderFilterText" | "selectedLeaderId" | "selectedPlaylistLabel">
+  ): void {
+    // A leader-profile request started by the guided view may still be in flight.
+    // Its data may be cached, but it must not reconcile over this exact snapshot.
+    this.leaderSelectionRevision += 1;
+    this.set(snapshot);
+  }
+
   // ── leader playlists picker (legacy selPlaylists droplist) ───────────────────────
 
-  /** Fetch the leader profiles backing the picker and seed the leader/date
-   *  selection (most recent leader + their newest dated playlist), preserving the
-   *  current selection when it still exists. Mirrors legacy updatePlaylistDroplist
-   *  / updateLeaderPlaylist. Non-fatal on failure (offline / not authed). */
+  /** Fetch the leader profiles backing the picker. While leader-list mode remains
+   *  active and no guided-view restore superseded this request, reconcile the
+   *  selection (most recent leader + newest dated playlist), preserving a valid
+   *  current choice. Mirrors legacy updatePlaylistDroplist / updateLeaderPlaylist.
+   *  Non-fatal on failure (offline / not authed). */
   async loadLeaderPlaylists(): Promise<void> {
+    const selectionRevision = this.leaderSelectionRevision;
     this.set({ leaderProfilesLoading: true });
     try {
       // Only leaders that actually have dated playlists are worth listing — a
       // leader with an empty schedule would give an empty date select.
       const profiles = (await this.api.playlist.getLeaderPlaylists()).filter((profile) => profile.playlists.length > 0);
       this.set({ leaderProfiles: profiles, leaderProfilesLoading: false });
-      this.reconcileLeaderSelection(profiles);
+      if (this.state.listMode === "leaderlists" && selectionRevision === this.leaderSelectionRevision) {
+        this.reconcileLeaderSelection(profiles);
+      }
     } catch {
       this.set({ leaderProfilesLoading: false });
     }

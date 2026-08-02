@@ -38,7 +38,13 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
   useClientViewInput(store, navigateSong);
   const prepareClientTutorial = useCallback(() => {
     const previousOptionsOpen = state.optionsOpen;
-    const previousListMode = state.listMode;
+    const previousListViewState = {
+      listMode: state.listMode,
+      navigationMode: state.navigationMode,
+      leaderFilterText: state.leaderFilterText,
+      selectedLeaderId: state.selectedLeaderId,
+      selectedPlaylistLabel: state.selectedPlaylistLabel,
+    };
     const previousZoomOpen = state.zoomDialogOpen;
     store.closeAbout();
     store.closeInstructionsEditor();
@@ -47,12 +53,21 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
     store.closeZoomDialog();
     store.toggleOptions(false);
     return () => {
-      store.setListMode(previousListMode);
+      store.restoreListViewState(previousListViewState);
       store.toggleOptions(previousOptionsOpen);
       if (previousZoomOpen) store.openZoomDialog();
       else store.closeZoomDialog();
     };
-  }, [state.listMode, state.optionsOpen, state.zoomDialogOpen, store]);
+  }, [
+    state.leaderFilterText,
+    state.listMode,
+    state.navigationMode,
+    state.optionsOpen,
+    state.selectedLeaderId,
+    state.selectedPlaylistLabel,
+    state.zoomDialogOpen,
+    store,
+  ]);
   const handleTutorialCommand = useCallback(
     (command: TutorialCommand) => {
       if (command !== "switch-full") return;
