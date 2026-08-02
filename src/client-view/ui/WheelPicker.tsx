@@ -397,7 +397,11 @@ export function WheelPicker({
     } else if (e.key === decrementKey) {
       e.preventDefault();
       settleTo(currentIndexRef.current - 1);
-    } else if (e.key === "Escape" || e.key === "Enter") {
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      revertToOpeningValue();
+      onClose();
+    } else if (e.key === "Enter") {
       e.preventDefault();
       onClose();
     }
