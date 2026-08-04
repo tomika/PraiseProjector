@@ -35,13 +35,20 @@ const WebAppBundleSettings: React.FC = () => {
     let cancelled = false;
 
     const refreshStatus = async () => {
-      const read = window.hostDevice?.getWebAppBundleStatus;
-      if (!read) return;
+      const bridge = window.hostDevice;
+      if (!bridge?.getWebAppBundleStatus) return;
       try {
-        const next = parseStatus(await Promise.resolve(read()));
+        // Called on the bridge object, never through a detached reference: Android rejects
+        // an injected Java method invoked with a foreign receiver ("Java bridge method can't
+        // be invoked on a non-injected object"), and that throw would leave the status
+        // unknown for the whole session.
+        const next = parseStatus(await Promise.resolve(bridge.getWebAppBundleStatus()));
         if (!cancelled) setStatus(next);
-      } catch {
-        /* the bridge can disappear during a bundle switch — the next event refreshes it */
+      } catch (error) {
+        // The bridge really can disappear during a bundle switch and the next event
+        // refreshes it — but swallowing this silently is what hid the receiver bug above,
+        // so a failure has to leave a trace.
+        console.warn("Cannot read the webapp bundle status", error);
       }
     };
     void refreshStatus();
@@ -75,10 +82,22 @@ const WebAppBundleSettings: React.FC = () => {
     void Promise.resolve(window.hostDevice?.applyPendingWebAppUpdate?.())?.catch(() => undefined);
   };
 
-  const runningVersion = status?.runningVersion ?? "?";
-  const runningLabel = status?.runningIsFactory
-    ? t("WebAppBundleRunningFactory").replace("{version}", runningVersion)
-    : t("WebAppBundleRunningDownloaded").replace("{version}", runningVersion);
+  // An unreadable status must not be dressed up as a running downloaded release: the
+  // optional-chained `runningIsFactory` of a null status is falsy, which used to render the
+  // "downloaded update (?)" line on a device that was plainly running the factory bundle.
+  const renderRunning = () => {
+    if (!status) return <p className="text-muted mb-1">{t("WebAppBundleStatusUnknown")}</p>;
+    const version = status.runningVersion ?? "?";
+    const label = status.runningIsFactory
+      ? t("WebAppBundleRunningFactory").replace("{version}", version)
+      : t("WebAppBundleRunningDownloaded").replace("{version}", version);
+    return (
+      <p className="mb-1">
+        {label}
+        {status.runningIsTrial ? <span className="badge text-bg-info ms-2">{t("WebAppBundleTrial")}</span> : null}
+      </p>
+    );
+  };
 
   // A switch is not always a downloaded release: when the server serves exactly what the
   // APK ships, the native side retires the stored copy and the next launch reverts to the
@@ -116,10 +135,7 @@ const WebAppBundleSettings: React.FC = () => {
     <div className="mb-3">
       <hr />
       <h5>{t("WebAppBundleTitle")}</h5>
-      <p className="mb-1">
-        {runningLabel}
-        {status?.runningIsTrial ? <span className="badge text-bg-info ms-2">{t("WebAppBundleTrial")}</span> : null}
-      </p>
+      {renderRunning()}
       {status?.pendingReleaseId ? (
         <p className="text-warning mb-1">{t("WebAppBundlePending").replace("{version}", status.pendingVersion ?? "?")}</p>
       ) : canApply ? (

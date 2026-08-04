@@ -787,6 +787,7 @@
   "WebAppBundleRunningFactory": "A telepített alkalmazásba épített kezelőfelület fut ({version})",
   "WebAppBundleRunningDownloaded": "Letöltött kezelőfelület-frissítés fut ({version})",
   "WebAppBundleTrial": "próbaindítás alatt",
+  "WebAppBundleStatusUnknown": "A kezelőfelület csomag állapota nem olvasható",
   "WebAppBundlePending": "A(z) {version} kezelőfelület-frissítés készen áll, a következő indításkor lép életbe",
   "WebAppBundleFactoryPending": "Ismét a telepített alkalmazásba épített kezelőfelület ({version}) az aktuális, a következő indításkor lép életbe",
   "WebAppBundleApply": "Indítás most",

@@ -787,6 +787,7 @@
   "WebAppBundleRunningFactory": "Running the interface built into the installed app ({version})",
   "WebAppBundleRunningDownloaded": "Running a downloaded interface update ({version})",
   "WebAppBundleTrial": "on trial",
+  "WebAppBundleStatusUnknown": "The state of the interface package could not be read",
   "WebAppBundlePending": "Interface update {version} is ready and starts at the next app launch",
   "WebAppBundleFactoryPending": "The interface built into the installed app ({version}) is current again and starts at the next app launch",
   "WebAppBundleApply": "Start it now",
