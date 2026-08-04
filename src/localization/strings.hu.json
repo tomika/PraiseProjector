@@ -733,7 +733,7 @@
   "AboutTitle": "PraiseProjector",
   "AboutDescription": "A PraiseProjector egy Reacttel készült, többplatformos dicsőítés-kivetítő alkalmazás.",
   "AboutVersion": "Verzió: {version}",
-  "AboutMoreInfo": "További információkért látogasson el ide:",
+  "AboutMoreInfo": "További információkért valamint kapcsolatfelvételért látogasson el ide:",
   "AboutLicensesTitle": "Harmadik féltől származó licencek hivatkozásai",
   "TutorialStartupSuggestionTitle": "Szeretné megismerni az alkalmazást?",
   "TutorialStartupSuggestionMessage": "A beépített bemutató bármikor elindítható az F1 billentyűvel, illetve a Beállítások → Névjegy oldalon található Bemutató indítása gombbal. Szeretné most elindítani?",

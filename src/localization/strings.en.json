@@ -733,7 +733,7 @@
   "AboutTitle": "PraiseProjector",
   "AboutDescription": "PraiseProjector is a cross-platform praise presentation app built with React.",
   "AboutVersion": "Version: {version}",
-  "AboutMoreInfo": "For more information, visit",
+  "AboutMoreInfo": "For more information and/or to contact, visit",
   "AboutLicensesTitle": "Third-party license references",
   "TutorialStartupSuggestionTitle": "Would you like a quick tour?",
   "TutorialStartupSuggestionMessage": "You can start the built-in tutorial at any time with F1 or from Settings → About using the Start tutorial button. Would you like to start it now?",
