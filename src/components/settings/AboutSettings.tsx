@@ -4,6 +4,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { cloudApi } from "../../../common/cloudApi";
 import { useUpdate } from "../../contexts/UpdateContext";
 import { getSettingsAboutLicenseSections } from "../../about-licenses";
+import WebAppBundleSettings from "./WebAppBundleSettings";
 import "./AboutSettings.css";
 import { requestTutorialStart } from "../../tutorial/tutorialEvents";
 
@@ -114,6 +115,7 @@ const AboutSettings: React.FC = () => {
       )}
       {renderUpdateStatus()}
       {renderUpdateActions()}
+      <WebAppBundleSettings />
       <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
         <button type="button" className="btn btn-primary btn-sm" onClick={() => requestTutorialStart("full")}>
           {t("TutorialStartupStart")}

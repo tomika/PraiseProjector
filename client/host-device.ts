@@ -227,6 +227,14 @@ export class HostDevice {
     this.device.startNavigationTimeout?.(navigationTimeoutMs, message);
   }
   pageLoadedSuccessfully() {
+    // Prefer the Android host's launch-scoped bridge: it is injected once per webapp bundle
+    // launch, so it binds to a single document and the host can tell which bundle booted.
+    // The hostDevice method is shared by every document and cannot say that.
+    const scoped = (window as { ppWebAppLaunch?: { pageLoadedSuccessfully?: () => void } }).ppWebAppLaunch;
+    if (typeof scoped?.pageLoadedSuccessfully === "function") {
+      scoped.pageLoadedSuccessfully();
+      return;
+    }
     this.device.pageLoadedSuccessfully?.();
   }
   keepScreenOn(enabled: boolean) {

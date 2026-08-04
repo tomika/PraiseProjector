@@ -24,6 +24,7 @@ import type { Settings } from "./types";
 import { disableDefaultZoom } from "./utils/disableDefaultZoom";
 import { shouldUsePagingLayout } from "./utils/viewLayout";
 import { installUiAnimationPreference } from "./shared/performanceSettings";
+import { reportPageLoadedSuccessfully } from "./services/webAppLaunchReport";
 import "./shared/performance.css";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
@@ -94,7 +95,7 @@ function RootView() {
   const previousPagingLayoutRef = useRef(isPagingLayout);
 
   useEffect(() => {
-    window.hostDevice?.pageLoadedSuccessfully?.();
+    reportPageLoadedSuccessfully();
   }, []);
 
   // Single setter that also persists, so every switch path (events + the client

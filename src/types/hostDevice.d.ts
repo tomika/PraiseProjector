@@ -51,11 +51,65 @@ export interface ElectronHostDevice {
   connectNearby?: (endpointId: string) => boolean | Promise<boolean>;
   sendNearbyMessage?: (endpointId: string, message: string) => boolean | Promise<boolean>;
   closeNearby?: (endpointId: string) => boolean | Promise<boolean>;
+  /** JSON `WebAppBundleStatus` — Android only, where the frontend is a native-managed
+   *  bundle that updates independently of the store binary. Local read, no network. */
+  getWebAppBundleStatus?: () => string | Promise<string>;
+  /** Forced server check; the outcome arrives as a `pp-webapp-bundle-event`. */
+  checkWebAppUpdateNow?: () => void | Promise<void>;
+  /** Trial-launches an already downloaded release immediately (reloads the WebView). */
+  applyPendingWebAppUpdate?: () => void | Promise<void>;
+}
+
+/** Mirrors `WebAppBundleStatus` in `WebAppBundleManager.kt`. */
+export interface WebAppBundleStatus {
+  /** Release baked into the installed APK. */
+  factoryReleaseId?: string;
+  factoryVersion?: string;
+  /** Downloaded release promoted after a successful trial launch. */
+  activeReleaseId?: string;
+  activeVersion?: string;
+  /** Downloaded and verified, waiting for its trial launch. */
+  pendingReleaseId?: string;
+  pendingVersion?: string;
+  runningReleaseId: string;
+  runningVersion?: string;
+  runningIsFactory: boolean;
+  runningIsTrial: boolean;
+  /**
+   * A different bundle than `runningReleaseId` is already selected for the next launch, so
+   * `applyPendingWebAppUpdate()` can switch to it right away. Covers a downloaded
+   * `pendingReleaseId`, but also a revert *back* to the factory bundle, where nothing is
+   * pending. Optional: this bundle can run on an older APK whose bridge never sends it.
+   */
+  activationPending?: boolean;
+  /** Release discarded after a failed launch; retried no earlier than the timestamp. */
+  retryBlockedReleaseId?: string;
+  /** Epoch ms, 0 when nothing is blocked. */
+  retryAvailableAt: number;
+}
+
+export interface WebAppBundleEventDetail {
+  phase: "checking" | "result" | "error";
+  result?: "UPDATED" | "CURRENT" | "INCOMPATIBLE";
+  message?: string;
+  /** JSON-encoded `WebAppBundleStatus`, as produced by the native bridge. */
+  status?: string;
+}
+
+/**
+ * Android-only bridge that the native host injects once per webapp bundle launch. Because
+ * the binding is created with the document, a report through it tells the host *which*
+ * bundle booted — `hostDevice.pageLoadedSuccessfully()` cannot, and a late report from an
+ * outgoing page there can be credited to the bundle replacing it.
+ */
+export interface WebAppLaunchBridge {
+  pageLoadedSuccessfully?: () => void;
 }
 
 declare global {
   interface Window {
     hostDevice?: ElectronHostDevice;
+    ppWebAppLaunch?: WebAppLaunchBridge;
     webServerNativeWire?: WebServerNativeWireInterface;
   }
 }

@@ -15,6 +15,7 @@ import { ClientView } from "../ui/ClientView";
 import { assetBase } from "../ui/assets";
 import { cloudApiBaseUrl } from "../../config";
 import { LocalizationProvider } from "../../localization/LocalizationContext";
+import { reportPageLoadedSuccessfully } from "../../services/webAppLaunchReport";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 
 function readLaunchConfigFromUrl(): Pick<
@@ -84,7 +85,7 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
     </LocalizationProvider>
   );
 
-  window.hostDevice?.pageLoadedSuccessfully?.();
+  reportPageLoadedSuccessfully();
 
   return store;
 }
