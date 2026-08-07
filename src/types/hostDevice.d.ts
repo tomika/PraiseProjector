@@ -73,6 +73,7 @@ export interface WebAppBundleStatus {
   pendingVersion?: string;
   runningReleaseId: string;
   runningVersion?: string;
+  runningCommit?: string;
   runningIsFactory: boolean;
   runningIsTrial: boolean;
   /**

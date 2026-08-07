@@ -88,9 +88,10 @@ const WebAppBundleSettings: React.FC = () => {
   const renderRunning = () => {
     if (!status) return <p className="text-muted mb-1">{t("WebAppBundleStatusUnknown")}</p>;
     const version = status.runningVersion ?? "?";
+    const versionDisplay = status.runningCommit ? `${version} (${status.runningCommit})` : version;
     const label = status.runningIsFactory
-      ? t("WebAppBundleRunningFactory").replace("{version}", version)
-      : t("WebAppBundleRunningDownloaded").replace("{version}", version);
+      ? t("WebAppBundleRunningFactory").replace("{version}", versionDisplay)
+      : t("WebAppBundleRunningDownloaded").replace("{version}", versionDisplay);
     return (
       <p className="mb-1">
         {label}

@@ -30,10 +30,46 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { execSync } = require("child_process");
 
 const projectRoot = path.resolve(__dirname, "..");
 const distDir = path.join(projectRoot, "dist", "web");
 const releaseManifestName = "release-manifest.json";
+
+/**
+ * Same source/suppression rule as vite.config.ts's __APP_COMMIT__/__APP_SHOW_COMMIT__:
+ * a build produced right on a "vX.Y.Z" release commit omits the redundant hash. Sharing
+ * the env var names (PP_COMMIT_SHA/PP_COMMIT_MESSAGE) lets one CI step feed both builds.
+ */
+function resolveReleaseCommit() {
+  const commit =
+    process.env.PP_COMMIT_SHA ||
+    process.env.GIT_COMMIT ||
+    (() => {
+      try {
+        return execSync("git rev-parse --short HEAD", { cwd: projectRoot, stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim();
+      } catch {
+        return "";
+      }
+    })();
+  const commitMessage =
+    process.env.PP_COMMIT_MESSAGE ||
+    process.env.GIT_COMMIT_MESSAGE ||
+    (() => {
+      try {
+        return execSync("git log -1 --pretty=%s", { cwd: projectRoot, stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim();
+      } catch {
+        return "";
+      }
+    })();
+  const packageVersion = require("../package.json").version;
+  const showCommit = Boolean(commit) && commitMessage !== `v${packageVersion}`;
+  return showCommit ? commit : "";
+}
 
 function rmrf(target) {
   fs.rmSync(target, { recursive: true, force: true });
@@ -138,10 +174,12 @@ function emitReleaseManifest() {
   }
 
   const packageVersion = require("../package.json").version;
+  const commit = resolveReleaseCommit();
   const manifest = {
     schemaVersion: 1,
     releaseId: `${packageVersion}-${releaseHash.digest("hex").slice(0, 32)}`,
     packageVersion,
+    ...(commit ? { commit } : {}),
     minAndroidVersionCode,
     entryPoint: "index.html",
     files,
