@@ -24,6 +24,7 @@ import { useUpdate } from "../contexts/UpdateContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { TypesenseClient } from "../../common/typesense-client";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
+import { getAssetPath } from "../utils/assetPath";
 
 interface SettingsFormProps {
   onClose: () => void;
@@ -242,6 +243,15 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
     resetSettingsToDefaults();
   };
 
+  const handleExitApp = async () => {
+    const confirmed = await showConfirmAsync(t("ExitAppConfirmTitle"), t("ExitAppConfirm"), {
+      confirmText: t("ExitApp"),
+      confirmDanger: true,
+    });
+    if (!confirmed) return;
+    window.hostDevice?.exit?.();
+  };
+
   const handleAddLeader = (name: string) => {
     const newLeader = new Leader(uuidv4(), name); // Leader constructor is (id, name, version)
     const newLeaders = leaders.clone();
@@ -424,6 +434,12 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <i className="fa fa-undo me-1"></i>
             {t("ResetToDefaults")}
           </button>
+          {!window.electronAPI && typeof window.hostDevice?.exit === "function" && (
+            <button type="button" className="btn settings-exit-button" onClick={handleExitApp} title={t("ExitApp")}>
+              <img src={getAssetPath("images/power.svg")} alt="" className="settings-exit-icon me-1" />
+              <span className="settings-exit-label">{t("ExitApp")}</span>
+            </button>
+          )}
           <div className="settings-footer-spacer"></div>
           <button type="button" className="btn btn-secondary" title={tt("settings_cancel")} onClick={handleCancel}>
             {t("Cancel")}

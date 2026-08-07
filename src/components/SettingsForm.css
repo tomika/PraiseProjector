@@ -74,6 +74,14 @@
   .settings-modal-footer {
     padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
+
+  .settings-exit-label {
+    display: none;
+  }
+
+  .settings-exit-icon {
+    margin-right: 0 !important;
+  }
 }
 
 .settings-modal-header {
@@ -211,6 +219,25 @@
   flex: 1;
 }
 
+.settings-exit-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.settings-exit-button {
+  background: transparent;
+  border: 0.0625rem solid var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+.settings-exit-button:hover,
+.settings-exit-button:focus,
+.settings-exit-button:active {
+  background: transparent !important;
+  border-color: var(--bs-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
 /* Resize handle */
 .dialog-resize-handle {
   position: absolute;
@@ -240,6 +267,10 @@
 
 [data-theme="dark"] .settings-modal-body {
   background-color: var(--pp-modal-bg);
+}
+
+[data-theme="dark"] .settings-exit-icon {
+  filter: invert(1);
 }
 
 [data-theme="dark"] .settings-modal-body .nav-tabs {

@@ -973,6 +973,9 @@
   "ResetToDefaults": "Alapértelmezett beállítások",
   "ResetSettingsConfirmTitle": "Beállítások visszaállítása",
   "ResetSettingsConfirm": "Biztosan vissza szeretné állítani az összes beállítást az alapértelmezett értékekre?",
+  "ExitApp": "Kilépés",
+  "ExitAppConfirmTitle": "Kilépés az alkalmazásból",
+  "ExitAppConfirm": "Biztosan ki szeretne lépni az alkalmazásból?",
   "UpdatePlaylistConfirm": "Lejátszási lista frissítése",
   "LoadPlaylistConfirm": "Lejátszási lista betöltése",
 
