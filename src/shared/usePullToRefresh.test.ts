@@ -5,10 +5,10 @@
  * type-stripping (zero new deps):
  *
  *   cd public
- *   node --experimental-strip-types --test src/client-view/ui/usePullToRefresh.test.ts
+ *   node --experimental-strip-types --test src/shared/usePullToRefresh.test.ts
  *
  * The file is also type-checked + linted by the normal gate (it lives under
- * src/client-view, which tsc and eslint already cover).
+ * src/shared, which tsc and eslint already cover).
  */
 
 import { test } from "node:test";

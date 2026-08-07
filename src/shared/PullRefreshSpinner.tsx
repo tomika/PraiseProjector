@@ -4,6 +4,10 @@
  * with a dark-blue reload arc inside (an SVG circle driven by `strokeDashoffset`),
  * NOT an outline ring. See #loading-circle in public/public/app/praiseprojector.css.
  *
+ * Shared between client-view (MainToolbar, LeaderPlaylistPicker) and the
+ * full-view paging-mode tab header (App.tsx) — Electron-free, presentational
+ * only, like the other components in src/shared/.
+ *
  * While pulling below the arm distance the arc winds up as you pull down and
  * unwinds as you pull back up (`progress` 0..1, the legacy `perc`-driven
  * strokeDashoffset). Once the pull arms, the disc spins (legacy `animate` class)
@@ -17,6 +21,7 @@
 
 import type { CSSProperties } from "react";
 import type { PullPhase } from "./usePullToRefresh";
+import "./PullRefreshSpinner.css";
 
 // Circumference of the r=16 arc circle (2π·16), so strokeDashoffset = C·(1−frac).
 const ARC_CIRCUMFERENCE = 2 * Math.PI * 16;

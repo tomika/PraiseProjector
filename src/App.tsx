@@ -88,6 +88,8 @@ import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 import { TutorialHost } from "./tutorial/TutorialHost";
 import { requestTutorialContinueWhenUnblocked, requestVisibleTutorialStart } from "./tutorial/tutorialEvents";
 import type { TutorialCommand } from "./tutorial/tutorialTypes";
+import { PullRefreshSpinner } from "./shared/PullRefreshSpinner";
+import { usePullToRefresh } from "./shared/usePullToRefresh";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -2648,6 +2650,12 @@ const AppContent: React.FC = () => {
   // Always use 3-panel layout in landscape mode.
   const usePagingMode = shouldUsePagingLayoutForOrientation(width, orientation);
 
+  // Pull-down-from-the-tab-header refresh (paging mode only): same gesture and
+  // single-level "just reload" behaviour as the client-view main-toolbar pull
+  // (see ClientView.tsx / ClientViewStore.pullRefresh) — the same outcome F5 /
+  // Ctrl+R already produce unconditionally (see electron/main.ts's before-input-event).
+  const pagingPull = usePullToRefresh({ maxLevel: 1, onRelease: () => window.location.reload() });
+
   // Refresh editor display when switching to editor tab in paging mode
   // This fixes dark mode rendering issues when the editor canvas was hidden
   useEffect(() => {
@@ -2734,7 +2742,7 @@ const AppContent: React.FC = () => {
         <div className="container-fluid vh-100 d-flex flex-column pp-app-shell p-1">
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}
           <div style={{ display: usePagingMode ? "flex" : "none", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
-            <div className="main-paging-buttons btn-group mb-2">
+            <div className="main-paging-buttons btn-group mb-2" ref={pagingPull.containerRef}>
               <button className={`btn ${activePanel === "side" ? "btn-primary" : "btn-secondary"}`} onClick={() => setActivePanel("side")}>
                 {t("TabSongs")}
               </button>
@@ -2744,6 +2752,7 @@ const AppContent: React.FC = () => {
               <button className={`btn ${activePanel === "preview" ? "btn-primary" : "btn-secondary"}`} onClick={() => setActivePanel("preview")}>
                 {t("TabProjection")}
               </button>
+              <PullRefreshSpinner phase={pagingPull.phase} offset={pagingPull.offset} progress={pagingPull.progress} level={pagingPull.level} />
             </div>
             <div className="flex-grow-1 min-height-0">
               <div style={{ display: activePanel === "side" ? "block" : "none", height: "100%" }}>

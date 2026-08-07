@@ -14,8 +14,8 @@
 
 import { useRef } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { PullRefreshSpinner } from "./PullRefreshSpinner";
-import { usePullToRefresh } from "./usePullToRefresh";
+import { PullRefreshSpinner } from "../../shared/PullRefreshSpinner";
+import { usePullToRefresh } from "../../shared/usePullToRefresh";
 
 export function LeaderPlaylistPicker() {
   const store = useClientViewStore();

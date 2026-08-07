@@ -1,10 +1,14 @@
 /**
- * usePullToRefresh — the client-view "pull down from the top" gesture, ported
- * faithfully from the legacy client's loadingCircle handlers in
+ * usePullToRefresh — the "pull down from the top" gesture, ported faithfully
+ * from the legacy client's loadingCircle handlers in
  * public/client/praiseprojector.ts (installPullToRefreshInputHandlers +
  * mainToolbarReloadHandler + moveLoadingCircle / updateLoadingCircle /
  * checkLoadingCircle). Touch AND mouse, armed only when the scroll container is at
  * the top (scrollTop ≤ 2).
+ *
+ * Shared between client-view (MainToolbar, LeaderPlaylistPicker) and the
+ * full-view paging-mode tab header (App.tsx) — Electron-free, like the other
+ * hooks/components in src/shared/.
  *
  * Legacy behaviour this reproduces (the parts that were wrong before):
  *
