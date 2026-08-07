@@ -1887,10 +1887,19 @@ class Database {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  /**
+   * Pull songs (and optionally leader profiles) from the server and merge them.
+   *
+   * When an `options.signal` is supplied the operation is cancellable: all
+   * fetching happens first and the merge/save only starts once the signal is
+   * known to be un-aborted, so a cancelled call applies nothing at all rather
+   * than leaving a half-merged database behind.
+   */
   public async updateFromServer(
     incrementalVersion?: number,
     fetchLeaders: boolean = true,
-    conflictMode: "keep-local" | "overwrite" | "select" = "select"
+    conflictMode: "keep-local" | "overwrite" | "select" = "select",
+    options?: { signal?: AbortSignal }
   ): Promise<{
     songsUpdated: number;
     leadersUpdated: number;
@@ -1905,9 +1914,22 @@ class Database {
     };
     const version = incrementalVersion ?? this.version;
 
+    const signal = options?.signal;
+
     try {
-      // Use version parameter for incremental updates - server returns only songs newer than version
-      const serverSongs = await cloudApi.fetchSongs(version);
+      // Fetch everything first. Use version parameter for incremental updates -
+      // server returns only songs newer than version.
+      const serverSongs = await cloudApi.fetchSongs(version, { signal });
+      const serverProfiles = fetchLeaders ? await cloudApi.fetchLeaders(version, { signal }) : null;
+      if (!fetchLeaders) {
+        console.info("Database", "Leader fetching disabled for this sync");
+      }
+
+      // Last cancellation point: nothing has been merged yet, so aborting here
+      // leaves the database exactly as it was. Everything below runs
+      // synchronously through to forceSave().
+      signal?.throwIfAborted();
+
       const mergeResult = this.mergeSongsWithConflicts(serverSongs, conflictMode);
       result.songsUpdated = mergeResult.updated;
       result.songConflicts = mergeResult.conflicts;
@@ -1919,20 +1941,16 @@ class Database {
         console.info("Database", `Song conflicts detected: ${result.songConflicts.length}`);
       }
 
-      // Leaders endpoint - conditionally fetch based on fetchLeaders flag
-      if (fetchLeaders) {
-        const serverProfiles = await cloudApi.fetchLeaders(version);
-        const mergeResult = this.mergeProfilesWithConflicts(serverProfiles, conflictMode);
-        result.leadersUpdated = mergeResult.updated;
-        result.leaderConflicts = mergeResult.conflicts;
+      if (serverProfiles) {
+        const profileMergeResult = this.mergeProfilesWithConflicts(serverProfiles, conflictMode);
+        result.leadersUpdated = profileMergeResult.updated;
+        result.leaderConflicts = profileMergeResult.conflicts;
         if (result.leadersUpdated > 0) {
           console.info("Database", `Database updated from server: ${result.leadersUpdated} leaders`);
         }
         if (result.leaderConflicts.length > 0) {
           console.info("Database", `Leader conflicts detected: ${result.leaderConflicts.length}`);
         }
-      } else {
-        console.info("Database", "Leader fetching disabled for this sync");
       }
 
       // Always save and emit event if any updates occurred

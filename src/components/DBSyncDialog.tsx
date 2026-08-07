@@ -72,7 +72,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   const { showMessage, showConfirmAsync } = useMessageBox();
   const { t } = useLocalization();
   const { tt } = useTooltips();
-  const [state, setState] = useState<SyncState>(SyncState.Idle);
+  // With autoStart the sync begins in the mount effect below, so start in the
+  // Syncing state instead of flashing the Idle (Synchronize/Close) buttons.
+  const [state, setState] = useState<SyncState>(autoStart ? SyncState.Syncing : SyncState.Idle);
   const [items, setItems] = useState<SyncListItem[]>([]);
   const [progress, setProgress] = useState({ current: 0, max: 100 });
   const [progressStyle, setProgressStyle] = useState<"marquee" | "blocks">("marquee");
@@ -145,8 +147,23 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
   // Track in-flight sync cancellation
   const syncAbortRef = useRef<AbortController | null>(null);
-  const syncCancelledRef = useRef(false);
   const syncInProgressRef = useRef(false);
+  // Monotonic id of the current sync run. Cancelling (or closing) bumps it, so
+  // a request that resolves or rejects afterwards can no longer touch dialog
+  // state — it must not re-open a progress bar, pop an error box or call
+  // onClose() on top of whatever the user is doing now.
+  const syncRunIdRef = useRef(0);
+
+  const isStaleRun = (runId: number) => syncRunIdRef.current !== runId;
+
+  // Abandon the in-flight run: invalidate it, release the re-entrancy guard so
+  // the Synchronize button responds immediately, and abort the HTTP request.
+  const abandonInFlightSync = () => {
+    syncRunIdRef.current += 1;
+    syncInProgressRef.current = false;
+    syncAbortRef.current?.abort();
+    syncAbortRef.current = null;
+  };
 
   // Collapsed groups state
   const [collapsedGroups, setCollapsedGroups] = useState<Set<SyncItemGroup>>(new Set());
@@ -229,13 +246,18 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
 
   // Fetch public songs without authentication (incremental update)
   // Now with conflict detection for local songs with version=0 (matching C# DBSyncForm)
-  const fetchPublicSongs = async (): Promise<void> => {
+  const fetchPublicSongs = async (runId: number): Promise<void> => {
     setState(SyncState.Syncing);
     setProgressStyle("marquee");
     setIsGuestMode(true); // Mark as guest mode for conflict resolution
 
+    syncAbortRef.current?.abort();
+    const abortController = new AbortController();
+    syncAbortRef.current = abortController;
+
     try {
-      const result = await database.updateFromServer(undefined, guestFetchingLeaders, "select");
+      const result = await database.updateFromServer(undefined, guestFetchingLeaders, "select", { signal: abortController.signal });
+      if (isStaleRun(runId)) return; // cancelled while fetching
       // Guests get every leader's playlists as read-only "public" sources;
       // non-blocking, failure is silent (offline).
       void database.updatePublicLeaders();
@@ -287,7 +309,10 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         }
 
         setItems(conflictItems);
-        setState(SyncState.Processing);
+        // Complete (not Processing): the bulk conflict-resolution buttons and
+        // the Close button only render in Complete, so Processing would leave
+        // the dialog with no way forward at all.
+        setState(SyncState.Complete);
       } else if (total > 0) {
         const message = t("FetchedPublicSongs").replace("{songs}", String(result.songsUpdated)).replace("{leaders}", String(result.leadersUpdated));
         showMessage(t("SyncComplete"), message);
@@ -299,6 +324,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         onClose();
       }
     } catch (error) {
+      if (isStaleRun(runId)) return; // cancelled — the failure is no longer relevant
       console.error("Sync", "Failed to fetch public songs", error);
       if (isCloudApiErrorKind(error, "network")) {
         suppressCloudNetworkToast();
@@ -310,7 +336,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     }
   };
 
-  const syncDB = async (): Promise<boolean> => {
+  const syncDB = async (runId: number): Promise<boolean> => {
     if (loopCountRef.current >= 5) {
       showSyncFailureAndClose(t("SyncLimitReached"), t("SyncCountLimitReached"));
       return false;
@@ -319,7 +345,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     if (!token) {
       // Not logged in - guest sync was already confirmed before dialog opened
       // Start fetching public songs directly
-      await fetchPublicSongs();
+      await fetchPublicSongs(runId);
       return false;
     }
 
@@ -424,16 +450,12 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         profiles: uploadedLeaders.map((l) => l.toJSON()),
       };
 
-      syncCancelledRef.current = false;
       syncAbortRef.current?.abort();
       const abortController = new AbortController();
       syncAbortRef.current = abortController;
 
       const response = await cloudApi.syncDatabase(request, { signal: abortController.signal });
-      if (syncCancelledRef.current) {
-        setState(SyncState.Idle);
-        return false;
-      }
+      if (isStaleRun(runId)) return false; // cancelled while the request was in flight
       console.debug("Sync", "Got response", response);
       await processDBResponse(response, uploadedSongs, uploadedLeaders);
       // Refresh the read-only public-leader mirror alongside the synced DB;
@@ -441,6 +463,10 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       void database.updatePublicLeaders();
       return true;
     } catch (error: unknown) {
+      // A cancelled run must stay silent: no error box, no state change, no
+      // onClose() — the dialog may already be showing a newer sync attempt.
+      if (isStaleRun(runId)) return false;
+
       console.error("Sync", "Sync error", error);
       const err = error as Error;
 
@@ -837,6 +863,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       return;
     }
     syncInProgressRef.current = true;
+    const runId = ++syncRunIdRef.current;
 
     if (!skipConflictCheck) {
       const conflicts = items.filter((item) => item.group === SyncItemGroup.Conflict);
@@ -845,6 +872,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
           confirmText: t("KeepLocalVersions"),
           confirmDanger: true,
         });
+        if (isStaleRun(runId)) return; // dialog closed / cancelled while confirming
         if (choice) {
           applyPendingVersion();
           // Keep local versions
@@ -859,9 +887,11 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     setItems([]);
     loopCountRef.current = 0;
     try {
-      await syncDB();
+      await syncDB(runId);
     } finally {
-      syncInProgressRef.current = false;
+      // Only the run that still owns the guard may release it: a cancelled run
+      // already released it, and a newer run may be holding it by now.
+      if (!isStaleRun(runId)) syncInProgressRef.current = false;
     }
   };
 
@@ -878,15 +908,21 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     }, 0);
     return () => {
       clearTimeout(timer);
-      syncAbortRef.current?.abort();
+      abandonInFlightSync();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStop = () => {
-    syncCancelledRef.current = true;
-    syncAbortRef.current?.abort();
+    abandonInFlightSync();
     setState(SyncState.Idle);
+  };
+
+  // Always available escape hatch: cancel whatever is running, then close.
+  const closeDialog = (complete: boolean) => {
+    abandonInFlightSync();
+    if (complete) onComplete?.();
+    onClose();
   };
 
   const handleItemDoubleClick = (item: SyncListItem) => {
@@ -1314,9 +1350,9 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   // Only show close when sync is complete AND no conflicts/checking items remain
   // This matches C# behavior: user must resolve all conflicts before closing
   const hasPendingItems = items.some((item) => item.group === SyncItemGroup.Conflict || item.group === SyncItemGroup.Checking);
-  const showClose =
-    (state === SyncState.Complete && !hasPendingItems) ||
-    (state === SyncState.Idle && items.length > 0 && items.every((item) => item.group === SyncItemGroup.Denied));
+  // Idle is also reachable by cancelling a running sync, so it must offer Close
+  // as well - otherwise a cancelled sync leaves the dialog with no way out.
+  const showClose = (state === SyncState.Complete || state === SyncState.Idle) && !hasPendingItems;
 
   // Show cancel button when there are pending conflicts and we have a backup to restore
   const showCancelSync = hasPendingItems && initialDatabaseStateRef.current !== null && state === SyncState.Complete;
@@ -1326,6 +1362,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     const confirmed = await showConfirmAsync(t("CancelSync"), t("CancelSyncConfirm"), { confirmText: t("DiscardAndRestore"), confirmDanger: true });
 
     if (confirmed && initialDatabaseStateRef.current) {
+      abandonInFlightSync();
       database.restoreFromBackup(initialDatabaseStateRef.current);
       database.forceSave();
       initialDatabaseStateRef.current = null;
@@ -1333,6 +1370,29 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       setItems([]);
       onClose();
     }
+  };
+
+  // Header close (×). While conflicts are unresolved the non-conflicting server
+  // changes are already saved, so closing outright would leave a half-applied
+  // sync behind. Never close silently in that state - confirm first.
+  const handleHeaderClose = async () => {
+    if (hasPendingItems) {
+      if (initialDatabaseStateRef.current !== null) {
+        // A restore point exists: offer the full rollback, the only in-dialog undo.
+        await handleCancelSync();
+        return;
+      }
+      // No restore point - a guest fetch never captures one. Closing here keeps
+      // the local side of every unresolved conflict, so ask for that explicitly.
+      // The pending version stays unapplied on purpose: leaving the database
+      // version behind makes the next sync re-detect these same conflicts.
+      const keepLocal = await showConfirmAsync(t("SyncConflicts"), t("AskKeepLocalOrResolve"), {
+        confirmText: t("KeepLocalVersions"),
+        confirmDanger: true,
+      });
+      if (!keepLocal) return;
+    }
+    closeDialog(false);
   };
 
   // Prepare props for CompareDialog
@@ -1399,6 +1459,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">{t("SyncFormTitle") || "Synchronize Database"}</h5>
+                <button type="button" className="btn-close" aria-label={t("Close")} onClick={handleHeaderClose}></button>
               </div>
               <div className="modal-body">
                 <div className="sync-controls">
@@ -1426,13 +1487,10 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
                       </button>
                     )}
                     {showClose && (
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          onComplete?.();
-                          onClose();
-                        }}
-                      >
+                      // A finished sync reports completion; a cancelled one (Idle)
+                      // must not, or it would stamp lastSyncDate for a sync that
+                      // never ran.
+                      <button className="btn btn-secondary" onClick={() => closeDialog(state === SyncState.Complete)}>
                         {t("Close")}
                       </button>
                     )}
