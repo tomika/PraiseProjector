@@ -5,10 +5,10 @@
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   padding: 4px 0;
-  min-width: 150px;
-  max-height: calc(100vh - 12px);
-  overflow-y: auto;
-  overflow-x: auto;
+  /* Never let the min width push the menu out of a narrow client area. */
+  min-width: min(150px, calc(100vw - 8px));
+  /* Position, size caps and scrollbars come from useMenuViewportFit. */
+  overflow: auto;
   z-index: 10001;
 }
 

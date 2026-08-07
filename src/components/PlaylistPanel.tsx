@@ -177,7 +177,7 @@ interface PlaylistPanelState {
   showScheduleDialog: boolean;
   scheduleDialogMode: "save" | "load" | null;
   playlistOrigin: PlaylistOrigin | null; // Exact leader/date/label the working playlist was loaded from or saved to
-  contextMenu: { position: { x: number; y: number }; targetIndex: number; maxHeight: number; maxWidth: number } | null;
+  contextMenu: { position: { x: number; y: number }; targetIndex: number; showShortcutHints: boolean } | null;
 }
 
 class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelState> {
@@ -983,8 +983,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor } = this.state;
     const item = currentPlaylist.items[index];
 
-    const placement = this.computeContextMenuPlacement(clientX, clientY);
-
     const shouldSelect = !selectedItems.has(index);
     const nextSelectedItems = shouldSelect ? new Set<number>([index]) : selectedItems;
     const nextFocusedIndex = shouldSelect ? index : focusedIndex;
@@ -996,10 +994,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         focusedIndex: nextFocusedIndex,
         selectionAnchor: nextSelectionAnchor,
         contextMenu: {
-          position: { x: placement.x, y: placement.y },
+          position: { x: clientX, y: clientY },
           targetIndex: index,
-          maxHeight: placement.maxHeight,
-          maxWidth: placement.maxWidth,
+          showShortcutHints: PlaylistPanel.hasRoomForShortcutHints(clientX),
         },
       },
       () => {
@@ -1014,42 +1011,23 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     event.preventDefault();
     event.stopPropagation();
 
-    const placement = this.computeContextMenuPlacement(event.clientX, event.clientY);
-    const targetIndex = -1;
-
     this.setState({
       contextMenu: {
-        position: { x: placement.x, y: placement.y },
-        targetIndex,
-        maxHeight: placement.maxHeight,
-        maxWidth: placement.maxWidth,
+        position: { x: event.clientX, y: event.clientY },
+        targetIndex: -1,
+        showShortcutHints: PlaylistPanel.hasRoomForShortcutHints(event.clientX),
       },
     });
   }
 
-  private computeContextMenuPlacement(clientX: number, clientY: number): { x: number; y: number; maxHeight: number; maxWidth: number } {
-    const menuWidthEstimate = 260;
-    const edgePadding = 4;
-    const minMenuHeight = 60;
-
-    // Clamp against whole app client area (window viewport), not just playlist panel bounds.
-    const left = 0;
-    const right = window.innerWidth;
-    const top = 0;
-    const bottom = window.innerHeight;
-
-    const minX = left + edgePadding;
-    const maxX = Math.max(minX, right - edgePadding - menuWidthEstimate);
-    const x = Math.min(Math.max(clientX, minX), maxX);
-
-    const minY = top + edgePadding;
-    const maxY = Math.max(minY, bottom - edgePadding - minMenuHeight);
-    const y = Math.min(Math.max(clientY, minY), maxY);
-
-    // Allow using the full app client height; actual top is already clamped.
-    const maxHeight = Math.max(minMenuHeight, Math.floor(bottom - top - edgePadding * 2));
-    const maxWidth = Math.max(140, Math.floor(right - x - edgePadding));
-    return { x, y, maxHeight, maxWidth };
+  /**
+   * Keyboard-shortcut hints widen the menu noticeably, so they are only added
+   * when there is room for them next to the click point. The menu itself is
+   * kept inside the client area by ContextMenu/useMenuViewportFit.
+   */
+  private static hasRoomForShortcutHints(clientX: number): boolean {
+    const hintedMenuWidth = 254;
+    return window.innerWidth - clientX >= hintedMenuWidth;
   }
 
   hideContextMenu() {
@@ -2149,7 +2127,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const t = this.props.t || ((key: string) => key);
     const contextTargetItem = contextMenu && contextMenu.targetIndex >= 0 ? currentPlaylist.items[contextMenu.targetIndex] : null;
     const contextOnItem = !!contextMenu && contextMenu.targetIndex >= 0;
-    const showShortcutHints = (contextMenu?.maxWidth ?? 0) >= 250;
+    const showShortcutHints = contextMenu?.showShortcutHints ?? false;
 
     const currentTranspose = contextTargetItem?.transpose ?? 0;
     const currentCapo = contextTargetItem?.capo ?? -1;
@@ -2445,8 +2423,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
             <ContextMenu
               items={contextMenuItems}
               position={contextMenu.position}
-              maxHeight={contextMenu.maxHeight}
-              maxWidth={contextMenu.maxWidth}
               onSelect={(value) => {
                 if (value.startsWith("transpose_set:")) {
                   const newVal = parseInt(value.split(":")[1], 10);

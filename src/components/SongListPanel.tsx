@@ -16,6 +16,7 @@ import { SongPreference } from "../../db-common/SongPreference";
 import { Leader } from "../../db-common/Leader";
 import { convertHistoryEntriesToSongsWithHistory } from "./compareDialogUtils";
 import { buildSongShareUrl, sharePublicLink } from "../services/shareService";
+import { useMenuViewportFit, type MenuAnchor } from "./ContextMenu/menuPlacement";
 import "./SongListPanel.css";
 
 const CompareDialog = React.lazy(() => import("./CompareDialog"));
@@ -60,6 +61,113 @@ let persistedHistoryDialogState: PersistedHistoryDialogState | null = null;
 
 export const setAddSongToPlaylist = (callback: (song: Song) => void) => {
   addSongToPlaylistCallback = callback;
+};
+
+/**
+ * The song-tree context menu body. Rendered as a small function component so the
+ * class can reuse the shared placement hook: the menu is moved to stay inside
+ * the client area and gets a scrollbar when it is bigger than the client area.
+ */
+const SongListContextMenuPanel: React.FC<{ anchor: { x: number; y: number }; children: React.ReactNode }> = ({ anchor, children }) => {
+  const { ref, style } = useMenuViewportFit<HTMLDivElement>(anchor);
+
+  return (
+    <div
+      ref={ref}
+      className="songlist-context-menu"
+      style={style}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {children}
+    </div>
+  );
+};
+
+/**
+ * A submenu row of the song-tree context menu. The flyout is positioned with the
+ * shared placement hook (fixed positioning) instead of `left: 100%`, so it is
+ * neither clipped by the scrollable parent menu nor pushed outside the client
+ * area; it opens leftwards/upwards when there is no room on the preferred side.
+ */
+const SongListSubmenu: React.FC<{ iconClass: string; label: React.ReactNode; children: React.ReactNode }> = ({ iconClass, label, children }) => {
+  const itemRef = React.useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = React.useState<MenuAnchor | null>(null);
+  const closeSubmenu = React.useCallback(() => setAnchor(null), []);
+
+  const openSubmenu = () => {
+    const rect = itemRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Opens to the right of the row, or with its right edge on the row's left
+    // edge when it has to flip; same idea vertically.
+    setAnchor({ x: rect.right, y: rect.top - 4, flipX: rect.left, flipY: rect.bottom + 4 });
+  };
+
+  const isOpen = anchor !== null;
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    // A press anywhere outside this row (the flyout is a DOM child of it) closes
+    // the flyout — needed on touch, where nothing ever "leaves" the row.
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!itemRef.current?.contains(e.target as Node)) closeSubmenu();
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [isOpen, closeSubmenu]);
+
+  return (
+    <div
+      ref={itemRef}
+      className="songlist-context-menu-item songlist-context-menu-submenu"
+      // Hover-open for mouse only: on touch the browser also emits an enter
+      // event before the click, which would immediately re-toggle the flyout shut.
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") openSubmenu();
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") closeSubmenu();
+      }}
+      onClick={(e) => {
+        // Toggle on tap without closing the whole menu.
+        e.stopPropagation();
+        if (isOpen) closeSubmenu();
+        else openSubmenu();
+      }}
+    >
+      <i className={`${iconClass} me-2`}></i>
+      <span>{label}</span>
+      <i className="fa fa-chevron-right ms-auto"></i>
+      {isOpen && (
+        <SongListSubmenuFlyout anchor={anchor} onDismiss={closeSubmenu}>
+          {children}
+        </SongListSubmenuFlyout>
+      )}
+    </div>
+  );
+};
+
+const SongListSubmenuFlyout: React.FC<{ anchor: MenuAnchor; onDismiss: () => void; children: React.ReactNode }> = ({
+  anchor,
+  onDismiss,
+  children,
+}) => {
+  const { ref, style } = useMenuViewportFit<HTMLDivElement>(anchor);
+
+  React.useEffect(() => {
+    // Scrolling the parent menu moves the anchor row away from the flyout;
+    // scroll events do not bubble, hence the capturing window listener.
+    window.addEventListener("scroll", onDismiss, true);
+    return () => window.removeEventListener("scroll", onDismiss, true);
+  }, [onDismiss]);
+
+  return (
+    <div ref={ref} className="songlist-context-submenu" style={style}>
+      {children}
+    </div>
+  );
 };
 
 interface GroupFolder {
@@ -1056,47 +1164,22 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   handleContextMenu(event: React.MouseEvent) {
     event.preventDefault();
 
-    const { x, y } = this.computeContextMenuPosition(event.clientX, event.clientY);
-
+    // Raw click point; SongListContextMenuPanel measures the menu and keeps it
+    // inside the client area.
     this.setState({
       contextMenuVisible: true,
-      contextMenuX: x,
-      contextMenuY: y,
+      contextMenuX: event.clientX,
+      contextMenuY: event.clientY,
     });
   }
 
-  private computeContextMenuPosition(clientX: number, clientY: number): { x: number; y: number } {
-    // Calculate position that keeps menu within viewport
-    const menuHeight = 300; // Approximate max height of context menu
-    const menuWidth = 200; // Approximate width of context menu
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-
-    let x = clientX;
-    let y = clientY;
-
-    // Adjust Y if menu would go below viewport
-    if (y + menuHeight > viewportHeight) {
-      y = Math.max(0, viewportHeight - menuHeight);
-    }
-
-    // Adjust X if menu would go outside right edge
-    if (x + menuWidth > viewportWidth) {
-      x = Math.max(0, viewportWidth - menuWidth);
-    }
-
-    return { x, y };
-  }
-
   private openSongContextMenuAt(song: Song, clientX: number, clientY: number) {
-    const { x, y } = this.computeContextMenuPosition(clientX, clientY);
-
     // Select the song and show the context menu
     this.setState({
       selectedSong: song,
       contextMenuVisible: true,
-      contextMenuX: x,
-      contextMenuY: y,
+      contextMenuX: clientX,
+      contextMenuY: clientY,
     });
 
     // Also notify parent about the selection
@@ -1774,14 +1857,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             this.hideContextMenu();
           }}
         />
-        <div
-          className="songlist-context-menu"
-          style={{ left: `${contextMenuX}px`, top: `${contextMenuY}px` }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
+        <SongListContextMenuPanel anchor={{ x: contextMenuX, y: contextMenuY }}>
           {/* Preference row — only shown when a leader and song are selected */}
           {leader && selectedSong && (
             <>
@@ -1824,84 +1900,74 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
               <div className="songlist-context-menu-divider"></div>
             </>
           )}
-          <div className="songlist-context-menu-item songlist-context-menu-submenu">
-            <i className="fa fa-filter me-2"></i>
-            <span>{t?.("SongListFilterMenu")}</span>
-            <i className="fa fa-chevron-right ms-auto"></i>
-            <div className="songlist-context-submenu">
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ showMarked: !showMarked }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${showMarked ? "check-" : ""}square-o me-2`}></i>
-                {t?.("SongListShowMarkedItems") || "Show marked items"}
-              </div>
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ showSongs: !showSongs }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${showSongs ? "check-" : ""}square-o me-2`}></i>
-                {t?.("SongListShowSongItems") || "Show song items"}
-              </div>
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ showTextOnly: !showTextOnly }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${showTextOnly ? "check-" : ""}square-o me-2`}></i>
-                {t?.("SongListShowTextOnlyItems") || "Show text-only items"}
-              </div>
+          <SongListSubmenu iconClass="fa fa-filter" label={t?.("SongListFilterMenu")}>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ showMarked: !showMarked }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${showMarked ? "check-" : ""}square-o me-2`}></i>
+              {t?.("SongListShowMarkedItems") || "Show marked items"}
             </div>
-          </div>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ showSongs: !showSongs }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${showSongs ? "check-" : ""}square-o me-2`}></i>
+              {t?.("SongListShowSongItems") || "Show song items"}
+            </div>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ showTextOnly: !showTextOnly }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${showTextOnly ? "check-" : ""}square-o me-2`}></i>
+              {t?.("SongListShowTextOnlyItems") || "Show text-only items"}
+            </div>
+          </SongListSubmenu>
           <div className="songlist-context-menu-divider"></div>
-          <div className="songlist-context-menu-item songlist-context-menu-submenu">
-            <i className="fa fa-sort me-2"></i>
-            <span>{t?.("SongListOrdering") || "Ordering"}</span>
-            <i className="fa fa-chevron-right ms-auto"></i>
-            <div className="songlist-context-submenu">
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ orderMode: "alphabetical" }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${orderMode === "alphabetical" ? "check-" : ""}square-o me-2`}></i>
-                <i className="fa fa-sort-alpha-asc me-2"></i>
-                {t?.("SongListOrderAlphabetical") || "Alphabetical"}
-              </div>
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ orderMode: "recent" }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${orderMode === "recent" ? "check-" : ""}square-o me-2`}></i>
-                <i className="fa fa-clock-o me-2"></i>
-                {t?.("SongListOrderMoreRecent") || "More recent"}
-              </div>
-              <div
-                className="songlist-context-menu-item"
-                onClick={() => {
-                  this.setState({ orderMode: "cost" }, () => this.updateCategories());
-                  this.hideContextMenu();
-                }}
-              >
-                <i className={`fa fa-${orderMode === "cost" ? "check-" : ""}square-o me-2`}></i>
-                <i className="fa fa-star-o me-2"></i>
-                {t?.("SongListOrderMatchingValue") || "Matching value"}
-              </div>
+          <SongListSubmenu iconClass="fa fa-sort" label={t?.("SongListOrdering") || "Ordering"}>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ orderMode: "alphabetical" }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${orderMode === "alphabetical" ? "check-" : ""}square-o me-2`}></i>
+              <i className="fa fa-sort-alpha-asc me-2"></i>
+              {t?.("SongListOrderAlphabetical") || "Alphabetical"}
             </div>
-          </div>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ orderMode: "recent" }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${orderMode === "recent" ? "check-" : ""}square-o me-2`}></i>
+              <i className="fa fa-clock-o me-2"></i>
+              {t?.("SongListOrderMoreRecent") || "More recent"}
+            </div>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ orderMode: "cost" }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${orderMode === "cost" ? "check-" : ""}square-o me-2`}></i>
+              <i className="fa fa-star-o me-2"></i>
+              {t?.("SongListOrderMatchingValue") || "Matching value"}
+            </div>
+          </SongListSubmenu>
           <div className="songlist-context-menu-divider"></div>
           {!this.props.isGuest && (
             <div
@@ -1950,7 +2016,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
               </div>
             </>
           )}
-        </div>
+        </SongListContextMenuPanel>
       </>
     );
 
