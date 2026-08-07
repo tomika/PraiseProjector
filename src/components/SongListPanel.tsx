@@ -632,8 +632,56 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   private scrollSelectedSongIntoView = () => {
     if (this.selectedItemElement) {
       this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
+      return;
     }
+    // The tree is virtualized: a selected row outside the rendered window has no
+    // DOM node to scroll to, so fall back to its computed offset.
+    this.scrollSongRowIntoView(this.state.selectedSong?.Id ?? null);
   };
+
+  /**
+   * Scrolls a song row into view using the virtual row layout instead of a DOM node.
+   * Does nothing when the song is not part of the current tree (filtered out).
+   */
+  private scrollSongRowIntoView(songId: string | null) {
+    const container = this.scrollContainerRef;
+    if (!container || !songId) return;
+
+    const placement = this.findSongRowPlacement(songId);
+    if (!placement) return;
+
+    const viewportHeight = container.clientHeight;
+    if (viewportHeight <= 0) return;
+
+    const scrollTop = container.scrollTop;
+    if (placement.top < scrollTop) {
+      container.scrollTop = placement.top;
+    } else if (placement.top + placement.height > scrollTop + viewportHeight) {
+      container.scrollTop = placement.top + placement.height - viewportHeight;
+    } else {
+      return; // already inside the viewport
+    }
+
+    this.syncVirtualViewport();
+
+    // Row heights are estimates; once the row is really mounted let the DOM correct it.
+    requestAnimationFrame(() => {
+      if (this.selectedItemElement && this.state.selectedSong?.Id === songId) {
+        this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
+      }
+    });
+  }
+
+  /** Offset/height of a song row in the current virtual layout, or null when the row is not part of it. */
+  private findSongRowPlacement(songId: string): { top: number; height: number } | null {
+    const rowKey = `song-${songId}`;
+    let top = 0;
+    for (const row of this.buildVirtualRows(!!this.props.selectedLeader, this.state.selectedSong)) {
+      if (row.key === rowKey) return { top, height: row.height };
+      top += row.height;
+    }
+    return null;
+  }
 
   static addSongToPlaylist(song: Song) {
     if (addSongToPlaylistCallback) {
@@ -660,7 +708,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     }
     if (song) {
       this.setState({ selectedSong: song }, () => {
-        this.expandCategoryForSong(song!);
+        this.expandNodesForSong(song!);
         requestAnimationFrame(this.scrollSelectedSongIntoView);
       });
     }
@@ -840,8 +888,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     if (prevProps.selectedSong !== this.props.selectedSong && this.props.selectedSong) {
       const newSong = this.props.selectedSong;
       this.setState({ selectedSong: newSong }, () => {
-        // Expand category containing the selected song and scroll into view
-        this.expandCategoryForSong(newSong);
+        // Expand the nodes containing the selected song and scroll into view
+        this.expandNodesForSong(newSong);
         requestAnimationFrame(this.scrollSelectedSongIntoView);
       });
     } else if (prevProps.selectedSong !== this.props.selectedSong) {
@@ -929,17 +977,42 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     updater("traditionalSearchWholeWords", !(this.props.settings.traditionalSearchWholeWords ?? false));
   };
 
-  // Expand the category containing the given song
-  expandCategoryForSong(song: Song) {
-    this.setState((prevState) => ({
-      categories: prevState.categories.map((cat) => {
-        const containsSong = cat.songs.some((sf) => sf.song.Id === song.Id);
-        if (containsSong && !cat.expanded) {
-          return { ...cat, expanded: true };
+  // Expand the category — and the group folder — containing the given song, so a
+  // programmatic selection is actually reachable in the tree.
+  expandNodesForSong(song: Song) {
+    this.setState((prevState) => {
+      let needsCategoryExpand = false;
+      let collapsedGroupId: string | null = null;
+
+      for (const cat of prevState.categories) {
+        if (!cat.songs.some((sf) => sf.song.Id === song.Id)) continue;
+        if (!cat.expanded) needsCategoryExpand = true;
+        for (const item of cat.items) {
+          if (item.type !== "group" || item.folder.expanded) continue;
+          if (item.folder.songs.some((sf) => sf.song.Id === song.Id)) {
+            collapsedGroupId = item.folder.groupId;
+          }
         }
-        return cat;
-      }),
-    }));
+      }
+
+      if (!needsCategoryExpand && !collapsedGroupId) return null;
+
+      const groupId = collapsedGroupId;
+      const categories = prevState.categories.map((cat) => {
+        const expanded = cat.expanded || cat.songs.some((sf) => sf.song.Id === song.Id);
+        const items = groupId
+          ? cat.items.map((item) =>
+              item.type === "group" && item.folder.groupId === groupId ? { ...item, folder: { ...item.folder, expanded: true } } : item
+            )
+          : cat.items;
+        return expanded === cat.expanded && items === cat.items ? cat : { ...cat, expanded, items };
+      });
+
+      return {
+        categories,
+        expandedGroups: groupId ? { ...prevState.expandedGroups, [groupId]: true } : prevState.expandedGroups,
+      };
+    });
   }
 
   handleFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
