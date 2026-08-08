@@ -630,46 +630,88 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   private scrollSelectedSongIntoView = () => {
+    const songId = this.state.selectedSong?.Id ?? null;
+    if (!songId) return;
+
     if (this.selectedItemElement) {
-      this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
+      this.alignRowIntoView(this.selectedItemElement);
       return;
     }
     // The tree is virtualized: a selected row outside the rendered window has no
-    // DOM node to scroll to, so fall back to its computed offset.
-    this.scrollSongRowIntoView(this.state.selectedSong?.Id ?? null);
+    // DOM node to scroll to yet, so jump to its estimated offset first.
+    if (this.scrollSongRowIntoView(songId)) {
+      this.correctScrollOnceRowMounts(songId);
+    }
   };
 
   /**
-   * Scrolls a song row into view using the virtual row layout instead of a DOM node.
-   * Does nothing when the song is not part of the current tree (filtered out).
+   * Scrolls `scrollContainerRef` the minimum amount needed to bring `el` fully into
+   * view, from measured geometry. Deliberately not `Element.scrollIntoView`: its
+   * "nearest" mode can leave an element partially visible at the viewport edge.
    */
-  private scrollSongRowIntoView(songId: string | null) {
+  private alignRowIntoView(el: HTMLDivElement) {
     const container = this.scrollContainerRef;
-    if (!container || !songId) return;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    const top = rect.top - containerRect.top + container.scrollTop;
+    const bottom = top + rect.height;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (top < viewTop) {
+      container.scrollTop = top;
+    } else if (bottom > viewBottom) {
+      container.scrollTop = bottom - container.clientHeight;
+    }
+  }
+
+  /**
+   * Row heights used for the virtual-layout estimate (below) are constants, while
+   * actual rows are sized from rem-based CSS — they drift apart whenever the
+   * effective root font size isn't 16px (Android font-scale, Electron page zoom).
+   * Once the real row mounts, re-align precisely from its measured geometry. A
+   * single rAF isn't reliably enough on a busy/mobile render pipeline, so retry
+   * across a few frames until the row actually shows up.
+   */
+  private correctScrollOnceRowMounts(songId: string, attemptsLeft = 10) {
+    requestAnimationFrame(() => {
+      if (this.state.selectedSong?.Id !== songId) return; // selection moved on, abandon
+      if (this.selectedItemElement) {
+        this.alignRowIntoView(this.selectedItemElement);
+        return;
+      }
+      if (attemptsLeft > 0) {
+        this.correctScrollOnceRowMounts(songId, attemptsLeft - 1);
+      }
+    });
+  }
+
+  /**
+   * Scrolls a song row into view using the estimated virtual row layout instead of a
+   * DOM node (which doesn't exist yet). Returns whether the song is part of the
+   * current tree at all (false when filtered out, e.g. — nothing to scroll to).
+   */
+  private scrollSongRowIntoView(songId: string): boolean {
+    const container = this.scrollContainerRef;
+    if (!container) return false;
 
     const placement = this.findSongRowPlacement(songId);
-    if (!placement) return;
+    if (!placement) return false;
 
     const viewportHeight = container.clientHeight;
-    if (viewportHeight <= 0) return;
+    if (viewportHeight <= 0) return false;
 
     const scrollTop = container.scrollTop;
     if (placement.top < scrollTop) {
       container.scrollTop = placement.top;
     } else if (placement.top + placement.height > scrollTop + viewportHeight) {
       container.scrollTop = placement.top + placement.height - viewportHeight;
-    } else {
-      return; // already inside the viewport
     }
 
     this.syncVirtualViewport();
-
-    // Row heights are estimates; once the row is really mounted let the DOM correct it.
-    requestAnimationFrame(() => {
-      if (this.selectedItemElement && this.state.selectedSong?.Id === songId) {
-        this.selectedItemElement.scrollIntoView({ behavior: "instant", block: "nearest" });
-      }
-    });
+    return true;
   }
 
   /** Offset/height of a song row in the current virtual layout, or null when the row is not part of it. */
