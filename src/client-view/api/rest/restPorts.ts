@@ -9,7 +9,7 @@
  */
 
 import { cloudApi } from "../../../../common/cloudApi";
-import { getLocalBroadcastAddresses, getLocalNetworkAddresses } from "../../../services/hostDevicePpd";
+import { getLocalBroadcastAddresses, getLocalNetworkAddresses, onHostDeviceSessionsChanged } from "../../../services/hostDevicePpd";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { LicenseSection } from "../../../about-licenses";
@@ -252,7 +252,7 @@ export function createSessionApi(core: RestCore): SessionApi {
     core.refreshCapabilities();
   };
   return {
-    scanLocalServers: (address) => core.scanLocal(address),
+    scanLocalServers: (address, options) => core.scanLocal(address, options),
     localNetworkAddresses: () => getLocalNetworkAddresses(),
     scanAddresses: () => getLocalBroadcastAddresses(),
     searchExternal: async (mode) => {
@@ -267,7 +267,8 @@ export function createSessionApi(core: RestCore): SessionApi {
       if (mode === "NEARBY" || mode === "BOTH") {
         results.push(...core.collectLocalSessions());
       }
-      core.sessionEvents.emit(results);
+      // No emit here: `results` may mix cloud entries in, while sessionEvents is the
+      // LOCAL discovery channel (collectLocalSessions publishes it on its own).
       return results;
     },
     startLocal: () => core.startLocalHost(),
@@ -292,7 +293,16 @@ export function createSessionApi(core: RestCore): SessionApi {
     reconnect: () => core.reconnect(),
     netDisplayUrl: () => core.netDisplayUrl(),
     subscribeNetworkState: (callback) => core.networkEvents.add(callback),
-    subscribeSessions: (callback) => core.sessionEvents.add(callback),
+    // Local discovery is event-shaped: republish as each offer/withdrawal lands so the
+    // list does not wait for the next poll tick to show a peer that already answered.
+    subscribeSessions: (callback) => {
+      const unsubscribeEvents = core.sessionEvents.add(callback);
+      const unsubscribeDiscovery = onHostDeviceSessionsChanged(() => core.collectLocalSessions());
+      return () => {
+        unsubscribeEvents();
+        unsubscribeDiscovery();
+      };
+    },
   };
 }
 

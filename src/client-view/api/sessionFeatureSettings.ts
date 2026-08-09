@@ -56,8 +56,9 @@ export function readClientViewSessionsFoundPopup(): ClientViewAutoScanMode {
 }
 
 /**
- * Map the auto-scan preference to the {@link ExternalSearchMode} used by
- * `refreshSessions`, or `null` when startup scanning is disabled (`"off"`).
+ * Map the auto-scan preference to the {@link ExternalSearchMode} gating which of
+ * SessionsDialog's two discovery loops run (`refreshLocalSessions` /
+ * `refreshOnlineSessions`), or `null` when startup scanning is disabled (`"off"`).
  */
 export function autoScanExternalMode(mode: ClientViewAutoScanMode): ExternalSearchMode | null {
   switch (mode) {

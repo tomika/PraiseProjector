@@ -397,10 +397,10 @@ export class RestCore {
 
   // ── session discovery ────────────────────────────────────────────────────────
 
-  async scanLocal(address?: string): Promise<OnlineSessionEntry[]> {
+  async scanLocal(address?: string, options?: { broad?: boolean }): Promise<OnlineSessionEntry[]> {
     if (isHostDevicePpdAvailable()) {
       try {
-        await scanHostDeviceSessions(address);
+        await scanHostDeviceSessions(address, options);
       } catch {
         /* scan failures are non-fatal — return whatever is already known */
       }

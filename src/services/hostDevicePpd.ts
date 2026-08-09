@@ -30,8 +30,39 @@ type WatchDetails = {
   hostId: string;
 };
 
+/** Every port a PPD host may bind. Used verbatim for LISTENING, and for the
+ *  periodic "wide" scan round — a peer only lands on 1975+ when an earlier port was
+ *  already taken on its machine, so probing the whole range every round is mostly
+ *  wasted broadcast bandwidth (see SCAN_WIDE_EVERY). */
 const UDP_PORT_SPEC = "1974-1983";
-const STALE_MS = 3000;
+/** The port a first-instance PPD host binds, and therefore the only one worth
+ *  probing on an ordinary scan round. */
+const PRIMARY_SCAN_PORT = 1974;
+/** Probe the full UDP_PORT_SPEC on every Nth round so a peer parked on a higher
+ *  port is still refreshed well inside STALE_UDP_MS. */
+const SCAN_WIDE_EVERY = 4;
+const GLOBAL_BROADCAST = "255.255.255.255";
+
+/** How long a discovered peer survives without a fresh offer.
+ *
+ * These are the list's stability budget: at the ~1 Hz scan cadence the UDP window
+ * tolerates several consecutive lost/late offers before a row disappears, which is
+ * what keeps a busy network (where broadcast frames are routinely dropped) from
+ * flickering rows in and out. It deliberately does NOT delay a clean shutdown — an
+ * explicit `off` message or a nearby `disappeared` event removes the peer at once.
+ *
+ * Nearby/BLE gets a far longer window because one discovery→connect→scan→offer
+ * round-trip legitimately takes seconds, so a UDP-sized budget would expire a
+ * healthy bluetooth peer between rounds. */
+const STALE_UDP_MS = 8000;
+const STALE_NEARBY_MS = 30000;
+/** How long the derived scan-target list (per-NIC broadcasts) is reused before the
+ *  host bridge is asked again. Interface enumeration is a native round-trip. */
+const SCAN_TARGET_TTL_MS = 30000;
+/** Upper bound on the randomised delay before answering a `scan`. Without it every
+ *  host on the network answers a broadcast in the same instant, and on Wi-Fi the
+ *  resulting burst is exactly what gets dropped. */
+const SCAN_REPLY_JITTER_MS = 150;
 const DEVICE_ID_PREFERENCE = "ppdDeviceId";
 
 /** Stop Nearby/BLE discovery this long after the last scan request. The sessions
@@ -53,7 +84,13 @@ let deviceId = "";
 // (a followed session keeps sending `view`/`ack` long after the scan ended).
 const nearbyEndpoints = new Set<string>();
 const connectedNearbyEndpoints = new Set<string>();
+/** Whether native discovery is actually RUNNING. */
 let nearbyDiscovering = false;
+/** Whether discovery is WANTED. Tracked separately because the two diverge exactly
+ *  when it matters: the first attempt is refused while the runtime permission prompt
+ *  is still open, so "running" is false even though the caller asked for it. The
+ *  permission grant arrives later and has to retry off the intent. */
+let nearbyDiscoveryRequested = false;
 let nearbyDiscoveryStopTimer: ReturnType<typeof setTimeout> | null = null;
 let nearbyPermissionRequested = false;
 
@@ -69,6 +106,70 @@ const nearbyChangeListeners = new Set<NearbyChangeCallback>();
 const now = () => Date.now();
 
 const randomId = () => Math.random().toString(36).slice(2);
+
+// ── Discovered-session liveness + change notification ──────────────────────────
+//
+// The list used to be polled: a caller scanned, then immediately read whatever had
+// already arrived, so a freshly-answered offer only surfaced one poll tick later.
+// Discovery is inherently event-shaped, so offers/withdrawals are published the
+// moment they land and the poll timer only drives the OUTGOING scan.
+
+type SessionsChangeCallback = () => void;
+const sessionsChangeListeners = new Set<SessionsChangeCallback>();
+let sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
+
+const staleWindowFor = (session: P2PSessionInfo): number => (session.transport === "bluetooth" ? STALE_NEARBY_MS : STALE_UDP_MS);
+
+const isSessionFresh = (session: P2PSessionInfo, at = now()): boolean => at - session.detected <= staleWindowFor(session);
+
+/** Everything a consumer renders. Liveness (`detected`) is deliberately excluded so
+ *  a peer that keeps answering does not re-notify — and re-render — every round. */
+const sessionSignature = (session: P2PSessionInfo): string =>
+  [session.name, session.url, session.transport, session.address ?? "", session.port ?? ""].join("|");
+
+const notifySessionsChanged = (): void => {
+  for (const callback of sessionsChangeListeners) {
+    try {
+      callback();
+    } catch {
+      /* listener errors are intentionally ignored */
+    }
+  }
+};
+
+/** Drop every peer past its transport's liveness window. Returns whether anything went. */
+const sweepStaleSessions = (): boolean => {
+  const at = now();
+  let removed = false;
+  for (const [id, session] of discoveredSessions) {
+    if (!isSessionFresh(session, at)) {
+      discoveredSessions.delete(id);
+      removed = true;
+    }
+  }
+  return removed;
+};
+
+/**
+ * Subscribe to discovered-session changes (a peer appearing, changing, or expiring).
+ * The sweep timer that ages peers out runs only while someone is listening, so an
+ * app with no sessions UI open pays nothing.
+ */
+export const onHostDeviceSessionsChanged = (callback: SessionsChangeCallback): (() => void) => {
+  sessionsChangeListeners.add(callback);
+  if (!sessionSweepTimer) {
+    sessionSweepTimer = setInterval(() => {
+      if (sweepStaleSessions()) notifySessionsChanged();
+    }, 1000);
+  }
+  return () => {
+    sessionsChangeListeners.delete(callback);
+    if (sessionsChangeListeners.size === 0 && sessionSweepTimer) {
+      clearInterval(sessionSweepTimer);
+      sessionSweepTimer = null;
+    }
+  };
+};
 
 const resolvePromise = async <T>(value: T | Promise<T>) => value;
 
@@ -288,12 +389,21 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
   switch (message.op) {
     case "scan":
       if (message.id) {
-        void getAdvertisedWebServerUrl()
-          .catch(() => undefined)
-          .then((url) => {
+        // Stagger the answer: a broadcast scan reaches every host at once, and
+        // synchronised replies are what overwhelms a Wi-Fi cell's broadcast budget
+        // once more than a handful of devices are present.
+        setTimeout(() => {
+          void (async () => {
+            // Re-check at SEND time. Hosting can be stopped inside the delay window,
+            // and the advertised url has to describe the state now — otherwise a
+            // just-stopped session still answers and scanners list a dead endpoint
+            // until it ages out.
+            if (!hosting) return;
+            const url = await getAdvertisedWebServerUrl().catch(() => undefined);
             hostAdvertisedWebServerUrl = url;
-            return sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port);
-          });
+            await sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port);
+          })();
+        }, Math.random() * SCAN_REPLY_JITTER_MS);
       }
       return true;
     case "view":
@@ -420,7 +530,7 @@ const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
   // was only found over Bluetooth.
   if (!sessionDeviceId && (nearby || !message.url)) return;
   if (sessionDeviceId && sessionDeviceId === deviceId) {
-    discoveredSessions.delete(`udp_${sessionDeviceId}`);
+    if (discoveredSessions.delete(`udp_${sessionDeviceId}`)) notifySessionsChanged();
     return;
   }
   const sessionId = sessionDeviceId ? `udp_${sessionDeviceId}` : `web_${message.url}`;
@@ -456,6 +566,9 @@ const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
     detected: now(),
   };
   discoveredSessions.set(sessionId, session);
+  // Publish only a genuine appearance/change — a peer that simply keeps answering
+  // must not re-render the list once per scan round.
+  if (!existing || sessionSignature(existing) !== sessionSignature(session)) notifySessionsChanged();
 };
 
 // ── Nearby discovery lifecycle ─────────────────────────────────────────────────
@@ -512,6 +625,9 @@ export const stopHostDeviceNearbyDiscovery = (): void => {
     clearTimeout(nearbyDiscoveryStopTimer);
     nearbyDiscoveryStopTimer = null;
   }
+  // Drop the intent first, so a permission grant still in flight does not start
+  // discovery we have just asked to stop.
+  nearbyDiscoveryRequested = false;
   if (!nearbyDiscovering) return;
   nearbyDiscovering = false;
   void applyNearbyDiscovery(false);
@@ -526,10 +642,16 @@ const startHostDeviceNearbyDiscovery = async (): Promise<void> => {
   // Re-scan links that are already up. Their offers expire after STALE_MS, so a peer
   // connected in an earlier round would drop out of the list without this ping — and
   // a live connection is never re-announced by onEndpointFound.
+  nearbyDiscoveryRequested = true;
   for (const endpointId of connectedNearbyEndpoints) void sendNearbyScan(endpointId);
   if (nearbyDiscovering) return;
-  nearbyDiscovering = true;
-  await applyNearbyDiscovery(true);
+  // Latch on the ACTUAL result. Setting the flag first meant a discovery refused for
+  // a missing runtime permission (the prompt resolves asynchronously, so the first
+  // call always returns false) latched "discovering" without ever having started —
+  // and every later round then short-circuited on the flag, leaving Nearby dead for
+  // the rest of the runtime. The intent is carried by nearbyDiscoveryRequested above,
+  // which is what the permission-grant handler retries from.
+  nearbyDiscovering = await applyNearbyDiscovery(true);
 };
 
 const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessage) => {
@@ -542,7 +664,7 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
       return;
     case "off":
       if (message.device) {
-        discoveredSessions.delete(`udp_${message.device}`);
+        if (discoveredSessions.delete(`udp_${message.device}`)) notifySessionsChanged();
       }
       if (watchedSession && message.device === watchedSession.id) {
         const ended = watchedEndedCallback;
@@ -600,7 +722,18 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
     // call triggered it returned false at the time, so redo it now that we may.
     if (typeof data.granted === "boolean") {
       if (data.granted) {
-        if (nearbyDiscovering) void applyNearbyDiscovery(true);
+        // Retry off the INTENT, not off "is running": the call that triggered this
+        // prompt was refused for the very permission just granted, so it never
+        // latched nearbyDiscovering. A continuously-open dialog would paper over the
+        // miss on its next round, but a one-shot API scan has no next round and would
+        // simply never report its Nearby peers.
+        if (nearbyDiscoveryRequested && !nearbyDiscovering) {
+          void applyNearbyDiscovery(true).then((started) => {
+            // Honour a stop that landed while this was in flight.
+            if (nearbyDiscoveryRequested) nearbyDiscovering = started;
+            else if (started) void applyNearbyDiscovery(false);
+          });
+        }
         if (hosting) void resolvePromise(getHostDevice()?.advertiseNearby?.(true) ?? false);
       }
       return;
@@ -643,6 +776,7 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
           transport: "udp",
           detected: Date.now(),
         });
+        notifySessionsChanged();
       }
       for (const cb of nearbyChangeListeners) {
         try {
@@ -673,10 +807,11 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
       // Keep the endpoint in nearbyEndpoints: a session we are already following
       // still has to route its view/ack over the nearby link, and Nearby drops
       // discovery entries as soon as scanning stops.
-      discoveredSessions.delete(data.id);
+      let removed = discoveredSessions.delete(data.id);
       for (const [id, session] of discoveredSessions) {
-        if (session.transport === "bluetooth" && session.address === data.id) discoveredSessions.delete(id);
+        if (session.transport === "bluetooth" && session.address === data.id) removed = discoveredSessions.delete(id) || removed;
       }
+      if (removed) notifySessionsChanged();
       for (const cb of nearbyChangeListeners) {
         try {
           cb("disappeared", data.id, data.name);
@@ -762,7 +897,59 @@ export const disposeHostDevicePpd = () => {
   initialized = false;
 };
 
-export const scanHostDeviceSessions = async (address?: string): Promise<{ success: boolean; address?: string; error?: string }> => {
+// ── Scan targeting ─────────────────────────────────────────────────────────────
+//
+// Scanning a single directed subnet broadcast is not enough in practice: a
+// multi-homed host (Wi-Fi + Ethernet + VPN, or Android's Wi-Fi + p2p interface) only
+// ever probed one of its subnets, and plenty of access points drop directed
+// broadcasts outright while still passing 255.255.255.255. The chosen address is
+// therefore the *primary* target rather than the only one.
+
+let scanRound = 0;
+let scanTargetsCache: { at: number; targets: string[] } | null = null;
+
+/** Primary (user-chosen) target first, then every other NIC's broadcast, then the
+ *  global broadcast as the AP-drops-directed-broadcasts fallback. */
+const buildScanTargets = async (address?: string): Promise<string[]> => {
+  const preferred = address?.trim();
+  // "*" delegates target selection to the native bridge (its own no-interface-info
+  // fallback); widening it here would second-guess that.
+  if (preferred === "*") return ["*"];
+
+  if (!scanTargetsCache || now() - scanTargetsCache.at > SCAN_TARGET_TTL_MS) {
+    const { options } = await getLocalBroadcastAddresses();
+    scanTargetsCache = { at: now(), targets: options.map((option) => option.value) };
+  }
+
+  // Nothing to widen from and no explicit choice: let the native bridge resolve a
+  // broadcast itself, which is better informed than a blind global broadcast.
+  if (!preferred && scanTargetsCache.targets.length === 0) return ["*"];
+
+  const seen = new Set<string>();
+  return [preferred ?? "", ...scanTargetsCache.targets, GLOBAL_BROADCAST].filter((target) => target && !seen.has(target) && seen.add(target));
+};
+
+/** Ports probed this round. See PRIMARY_SCAN_PORT / SCAN_WIDE_EVERY. */
+const scanPortSpec = (wide: boolean): string => {
+  if (wide) return UDP_PORT_SPEC;
+  const ports = new Set<number>([PRIMARY_SCAN_PORT]);
+  if (listenPort) ports.add(listenPort);
+  return [...ports].join(",");
+};
+
+/**
+ * Broadcast one PPD `scan` round and start/extend Nearby discovery.
+ *
+ * `broad` sends to every candidate target on every port — use it for the opening
+ * burst when a dialog is first shown, where finding peers fast matters more than
+ * bandwidth. An ordinary round probes the primary target plus one rotating
+ * secondary on the primary port only, so steady-state traffic stays roughly flat
+ * while coverage still cycles through every subnet within a few seconds.
+ */
+export const scanHostDeviceSessions = async (
+  address?: string,
+  options?: { broad?: boolean }
+): Promise<{ success: boolean; address?: string; error?: string }> => {
   if (!isHostDevicePpdAvailable()) {
     return { success: false, error: "HostDevice unavailable" };
   }
@@ -780,25 +967,32 @@ export const scanHostDeviceSessions = async (address?: string): Promise<{ succes
   }
   const selfDevice = await getSelfDeviceId();
   const selfName = await getSelfDeviceName();
-  const host = address && address.trim() ? address.trim() : "*";
-  const sentAddress = await sendPpd(
-    {
-      op: "scan",
-      id: scanId,
-      port,
-      device: selfDevice,
-      name: selfName || selfDevice,
-    },
-    host,
-    UDP_PORT_SPEC
-  );
 
-  const cutoff = now() - STALE_MS;
-  for (const [id, session] of discoveredSessions) {
-    if (session.detected < cutoff) {
-      discoveredSessions.delete(id);
-    }
+  const round = scanRound++;
+  const broad = options?.broad === true;
+  const targets = await buildScanTargets(address);
+  // Rotate through the secondaries so every subnet is covered within a few rounds
+  // without multiplying per-round broadcast traffic by the interface count.
+  const roundTargets = broad || targets.length <= 1 ? targets : [...new Set([targets[0], targets[1 + (round % (targets.length - 1))]])];
+  const portSpec = scanPortSpec(broad || round % SCAN_WIDE_EVERY === 0);
+
+  const request: PpdMessage = {
+    op: "scan",
+    id: scanId,
+    port,
+    device: selfDevice,
+    name: selfName || selfDevice,
+  };
+
+  // Only the PRIMARY target decides the reported address / success: it is the one the
+  // user picked, and the widened fallbacks succeeding must not mask a bad choice.
+  let sentAddress = "";
+  for (const [index, target] of roundTargets.entries()) {
+    const result = await sendPpd(request, target, portSpec);
+    if (index === 0) sentAddress = result;
   }
+
+  if (sweepStaleSessions()) notifySessionsChanged();
 
   return { success: !!sentAddress, address: sentAddress || undefined };
 };
@@ -904,10 +1098,10 @@ export const getLocalBroadcastAddresses = async (): Promise<{ options: ScanAddre
 };
 
 export const getHostDeviceDiscoveredSessions = (): P2PSessionInfo[] => {
-  const cutoff = now() - STALE_MS;
+  const at = now();
   const sessions: P2PSessionInfo[] = [];
   for (const session of discoveredSessions.values()) {
-    if (session.detected >= cutoff) sessions.push(session);
+    if (isSessionFresh(session, at)) sessions.push(session);
   }
   return sessions;
 };

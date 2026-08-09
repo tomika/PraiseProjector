@@ -32,8 +32,15 @@ import { useLocalization } from "../../localization/LocalizationContext";
 import { readPersistedSettings } from "../../services/settingsStore";
 import { icon } from "./assets";
 
-/** Re-discover sessions this often while the dialog is open (mirrors the desktop hub). */
-const SESSION_POLL_MS = 2000;
+/** Emit a local (UDP/Nearby) scan round this often while the dialog is open. */
+const LOCAL_SCAN_MS = 1000;
+/** Cloud session-list cadence. Separate from the local scan on purpose: the two used
+ *  to share one poll and one in-flight guard, so a slow cloud request (up to its 3 s
+ *  timeout) delayed the next local scan past the peers' liveness window and rows kept
+ *  dropping out and coming back. */
+const CLOUD_FETCH_MS = 5000;
+/** Wide scan rounds right after opening, so the first hit does not wait a full period. */
+const OPENING_BURST_MS = [0, 250, 750];
 const STARTUP_AUTO_CLOSE_MS = 10_000;
 const FALLBACK_BROADCAST = "255.255.255.255";
 
@@ -59,7 +66,6 @@ export function SessionsDialog() {
   const state = useClientViewState();
 
   const [searched, setSearched] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [broadcastAddress, setBroadcastAddress] = useState(FALLBACK_BROADCAST);
   const [addressError, setAddressError] = useState(false);
   const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
@@ -73,7 +79,8 @@ export function SessionsDialog() {
   addressRef.current = broadcastAddress;
   const addressErrorRef = useRef(addressError);
   addressErrorRef.current = addressError;
-  const refreshInFlightRef = useRef(false);
+  const localScanInFlightRef = useRef(false);
+  const cloudFetchInFlightRef = useRef(false);
   // While the dialog runs hidden as the startup auto-scan, probe only the sources
   // chosen in Settings (startupScanMode); once it's a visible/manual hub, scan BOTH.
   const startupScanModeRef = useRef<ExternalSearchMode | null>(null);
@@ -122,31 +129,62 @@ export function SessionsDialog() {
     setSessionToggleSettings(readSessionToggleSettings());
   };
 
-  const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
-    try {
+  // Emit a local scan round. Only SENDS — the answering offers land in hostDevicePpd
+  // and reach the store through the change subscription below, so a peer shows up as
+  // soon as it replies instead of on the following poll tick.
+  const scanLocal = useCallback(
+    async (broad: boolean) => {
       const mode: ExternalSearchMode = startupScanModeRef.current ?? "BOTH";
-      await store.refreshSessions(mode, addressErrorRef.current ? undefined : addressRef.current);
-    } finally {
-      refreshInFlightRef.current = false;
-      if (mountedRef.current) {
-        setSearched(true);
+      if (mode !== "BOTH" && mode !== "NEARBY") return;
+      if (localScanInFlightRef.current) return;
+      localScanInFlightRef.current = true;
+      try {
+        await store.refreshLocalSessions(addressErrorRef.current ? FALLBACK_BROADCAST : addressRef.current, { broad });
+      } finally {
+        localScanInFlightRef.current = false;
+        if (mountedRef.current) setSearched(true);
       }
-    }
-  }, [store]);
+    },
+    [store]
+  );
 
-  // Discover sessions on open, then keep the list fresh while the dialog is up.
+  // Local discovery: burst, then settle into a steady cadence. Answering offers reach
+  // the store through its ClientApi session subscription, so this only drives sending.
   useEffect(() => {
     mountedRef.current = true;
-    setScanning(true);
-    void refresh();
-    const timer = setInterval(() => void refresh(), SESSION_POLL_MS);
+    const burstTimers = OPENING_BURST_MS.map((delay) => setTimeout(() => void scanLocal(true), delay));
+    const timer = setInterval(() => void scanLocal(false), LOCAL_SCAN_MS);
     return () => {
       mountedRef.current = false;
+      for (const burstTimer of burstTimers) clearTimeout(burstTimer);
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [scanLocal]);
+
+  // Cloud session list on its own, slower loop (see CLOUD_FETCH_MS).
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOnline = async () => {
+      // Re-read per round, not once at setup: a hidden startup scan can be revealed
+      // into a full manual hub, which widens the mode from WEB/NEARBY to BOTH.
+      const mode: ExternalSearchMode = startupScanModeRef.current ?? "BOTH";
+      if (mode !== "BOTH" && mode !== "WEB") return;
+      if (cloudFetchInFlightRef.current) return;
+      cloudFetchInFlightRef.current = true;
+      try {
+        await store.refreshOnlineSessions();
+      } finally {
+        cloudFetchInFlightRef.current = false;
+        if (!cancelled && mountedRef.current) setSearched(true);
+      }
+    };
+    void fetchOnline();
+    const timer = setInterval(() => void fetchOnline(), CLOUD_FETCH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [store]);
 
   useEffect(() => {
     if (!state.sessionsDialogStartupHidden) return;
@@ -199,7 +237,12 @@ export function SessionsDialog() {
     webclient: icon("wifi.svg"),
     ppd: icon("tablet.svg"),
   };
-  const rows: SessionRow[] = connectionRows.map(({ row }) => ({ ...row, icon: sessionKindIcon[row.kind] }));
+  // Stable order — discovery order re-shuffles as offers arrive, which reads as rows
+  // vanishing and returning. Mirrors the desktop hub.
+  const kindOrder: Record<SessionRow["kind"], number> = { ppd: 0, webclient: 1, online: 2 };
+  const rows: SessionRow[] = connectionRows
+    .map(({ row }) => ({ ...row, icon: sessionKindIcon[row.kind] }))
+    .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   const hasWebServerBackend = caps.hasWebServerBackend;
   const hasPpdBackend = caps.hasHostBridge;
   // Online hosting needs a live OnlineSession controller to drive. Its provider is
@@ -248,7 +291,9 @@ export function SessionsDialog() {
       sessions={rows}
       onConnect={handleConnect}
       connectLabel={t("SessionsConnect")}
-      scanning={scanning}
+      // Discovery runs continuously while the dialog is open, so the indicator
+      // reflects that state rather than an individual round (mirrors the desktop hub).
+      scanning={hasPpdBackend}
       scanIcon={icon("radar.svg")}
       details={
         caps.hasHostBridge

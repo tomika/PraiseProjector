@@ -410,8 +410,10 @@ export type ExternalSearchMode = "NEARBY" | "WEB" | "BOTH";
 export type SessionFeatureKey = "externalWebDisplayEnabled" | "iWebEnabled" | "ppdSessionEnabled";
 
 export interface SessionApi {
-  /** Scan the LAN for local PraiseProjector servers (UDP/PPD). */
-  scanLocalServers(address?: string): Promise<OnlineSessionEntry[]>;
+  /** Scan the LAN for local PraiseProjector servers (UDP/PPD). `broad` widens the
+   *  round to every candidate broadcast target and every PPD port — worth the extra
+   *  frames when a dialog has just opened, wasteful as a steady state. */
+  scanLocalServers(address?: string, options?: { broad?: boolean }): Promise<OnlineSessionEntry[]>;
   /** Local IPv4 addresses suitable for links shared with another LAN device. */
   localNetworkAddresses(): Promise<string[]>;
   /**

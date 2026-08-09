@@ -11,6 +11,7 @@ import {
   getLocalBroadcastAddresses,
   initHostDevicePpd,
   isHostDevicePpdAvailable,
+  onHostDeviceSessionsChanged,
   scanHostDeviceSessions,
   stopHostDeviceNearbyDiscovery,
 } from "../services/hostDevicePpd";
@@ -51,6 +52,16 @@ interface SessionDisplay {
   lastUpdate?: string;
 }
 
+/** Local (UDP/Nearby) scan cadence while the dialog is open. */
+const LOCAL_SCAN_MS = 1000;
+/** Cloud session-list cadence. Deliberately slower and on its OWN timer: it used to
+ *  share a tick (and an in-flight guard) with the local scan, so a slow or timing-out
+ *  cloud request stalled local discovery for seconds at a time. */
+const CLOUD_FETCH_MS = 5000;
+/** Extra wide scans right after opening, so the first result does not wait a full
+ *  scan period. Offsets in ms from mount. */
+const OPENING_BURST_MS = [0, 250, 750];
+
 /**
  * Desktop GUI sessions hub. Thin wrapper over the shared <SessionsForm>: owns the
  * data wiring (continuous local-UDP scan + cloud online-session fetch, host
@@ -72,7 +83,6 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   const [addressOptions, setAddressOptions] = useState<{ value: string; label: string }[]>([]);
   const [scanAddress, setScanAddress] = useState<string | null>(null);
   const [hasHostDevicePpd, setHasHostDevicePpd] = useState(false);
-  const [scanning, setScanning] = useState(false);
   // Host-supplied default broadcast address, used to (re)seed and to reset to.
   const defaultAddressRef = useRef("255.255.255.255");
 
@@ -94,9 +104,17 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // every address change, and tearing discovery down there would restart it constantly.
   useEffect(() => stopHostDeviceNearbyDiscovery, []);
 
-  // Scan timer ref
-  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const scanInFlightRef = useRef(false);
+  // Live values for the scan loops. Held in refs (not deps) so that typing in the
+  // address field — or the first resolved scan address — does not tear down and
+  // restart the timers on every keystroke.
+  const localScanInFlightRef = useRef(false);
+  const cloudFetchInFlightRef = useRef(false);
+  const broadcastAddressRef = useRef(broadcastAddress);
+  broadcastAddressRef.current = broadcastAddress;
+  const scanAddressRef = useRef(scanAddress);
+  scanAddressRef.current = scanAddress;
+  const hasHostDevicePpdRef = useRef(hasHostDevicePpd);
+  hasHostDevicePpdRef.current = hasHostDevicePpd;
 
   // Initialize the broadcast address + the picker's options from the host bridge
   // (Electron multi-NIC lister / Android info), falling back to the global broadcast.
@@ -156,16 +174,12 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
   // Update local session list from UDP scan results
   const updateLocalSessionList = useCallback((localSessions: P2PSessionInfo[]) => {
     setSessions((prevSessions) => {
-      // Filter out stale local sessions (older than 3 seconds)
-      const now = Date.now();
-      const staleThreshold = 3000;
-
-      // Create map of new local sessions
+      // Liveness is owned by hostDevicePpd (transport-specific windows, applied in
+      // getHostDeviceDiscoveredSessions). Re-applying a threshold here meant a peer
+      // had to satisfy two independent expiry clocks to stay visible.
       const localMap = new Map<string, P2PSessionInfo>();
       for (const session of localSessions) {
-        if (now - session.detected < staleThreshold) {
-          localMap.set(session.id, session);
-        }
+        localMap.set(session.id, session);
       }
 
       // Keep cloud sessions, replace local sessions with fresh data
@@ -219,62 +233,86 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     });
   }, []);
 
-  // Scan timer tick (matching C# OnTimerTick)
-  const onTimerTick = useCallback(async () => {
-    if (scanInFlightRef.current) return;
-    scanInFlightRef.current = true;
-    setScanning(true);
-    try {
-      // 1. Scan for local sessions via HostDevice (Android/Electron parity)
-      if (hasHostDevicePpd) {
-        const tryAddress = broadcastAddress;
-        const result = await scanHostDeviceSessions(tryAddress);
+  // Publish whatever discovery currently knows. Driven by hostDevicePpd's change
+  // events, so an offer shows up as soon as it lands rather than on the next tick.
+  const publishLocalSessions = useCallback(() => {
+    updateLocalSessionList(getHostDeviceDiscoveredSessions());
+  }, [updateLocalSessionList]);
+
+  // Emit one local (UDP + Nearby) scan round. This only SENDS; the replies surface
+  // through the change subscription below.
+  const runLocalScan = useCallback(
+    async (broad: boolean) => {
+      if (!hasHostDevicePpdRef.current || localScanInFlightRef.current) return;
+      localScanInFlightRef.current = true;
+      try {
+        const tryAddress = broadcastAddressRef.current;
+        const result = await scanHostDeviceSessions(tryAddress, { broad });
 
         if (result.success) {
-          if (result.address && result.address !== scanAddress) {
+          if (result.address && result.address !== scanAddressRef.current) {
             setScanAddress(result.address);
             setAddressError(false);
           }
-        } else if (tryAddress !== scanAddress) {
+        } else if (tryAddress !== scanAddressRef.current) {
           setAddressError(true);
         }
-
-        const discovered = getHostDeviceDiscoveredSessions();
-        updateLocalSessionList(discovered);
+      } finally {
+        localScanInFlightRef.current = false;
       }
+    },
+    // Every input is read through a ref, so the loop below is never rebuilt.
+    []
+  );
 
-      // 2. Fetch online sessions from cloud (works in both Electron and web mode)
+  // Local discovery: subscribe first, then burst, then settle into a steady cadence.
+  useEffect(() => {
+    const unsubscribe = onHostDeviceSessionsChanged(publishLocalSessions);
+    publishLocalSessions();
+
+    // Widen the very first rounds: finding peers quickly matters more on open than
+    // the extra broadcast frames it costs.
+    const burstTimers = OPENING_BURST_MS.map((delay) => setTimeout(() => void runLocalScan(true), delay));
+    const timer = setInterval(() => void runLocalScan(false), LOCAL_SCAN_MS);
+
+    return () => {
+      unsubscribe();
+      for (const burstTimer of burstTimers) clearTimeout(burstTimer);
+      clearInterval(timer);
+    };
+    // hasHostDevicePpd is detected asynchronously on mount; re-running here replays
+    // the opening burst the moment the bridge shows up, instead of waiting for the
+    // next steady-cadence tick.
+  }, [publishLocalSessions, runLocalScan, hasHostDevicePpd]);
+
+  // Cloud session list — an INDEPENDENT loop. Its request can take seconds (up to
+  // the 3 s timeout) or fail outright; sharing a tick with local discovery meant an
+  // unreachable cloud froze the local list past its liveness window, so rows kept
+  // dropping out and reappearing.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOnline = async () => {
+      if (cloudFetchInFlightRef.current) return;
+      cloudFetchInFlightRef.current = true;
       try {
         const onlineSessions = await cloudApi.fetchOnlineSessions({ timeoutMs: 3_000 });
+        if (cancelled) return;
         console.debug("App", `SessionsForm: Fetched online sessions: ${onlineSessions.length}`);
         updateOnlineSessionList(onlineSessions);
       } catch (error) {
         console.error("App", "Failed to fetch online sessions", error);
-      }
-    } finally {
-      scanInFlightRef.current = false;
-      setScanning(false);
-    }
-  }, [hasHostDevicePpd, broadcastAddress, scanAddress, updateLocalSessionList, updateOnlineSessionList]);
-
-  // Start/stop scan timer
-  useEffect(() => {
-    // Initial scan - use setTimeout to avoid calling setState synchronously in effect
-    const initialTimeout = setTimeout(() => {
-      onTimerTick();
-    }, 0);
-
-    // Start periodic scanning (every 1 second, matching C# scanTimer.Interval = 1000)
-    scanTimerRef.current = setInterval(onTimerTick, 1000);
-
-    return () => {
-      clearTimeout(initialTimeout);
-      if (scanTimerRef.current) {
-        clearInterval(scanTimerRef.current);
-        scanTimerRef.current = null;
+      } finally {
+        cloudFetchInFlightRef.current = false;
       }
     };
-  }, [onTimerTick]);
+
+    void fetchOnline();
+    const timer = setInterval(() => void fetchOnline(), CLOUD_FETCH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [updateOnlineSessionList]);
 
   // Connect to a specific session row (the per-row plug button). Enables "watch
   // mode" for that session (matching C# SessionsForm Connect).
@@ -330,7 +368,12 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
     webclient: icon("wifi.svg"),
     ppd: icon("tablet.svg"),
   };
-  const rows: SessionRow[] = sessions.map((s) => ({ id: s.rowId, name: s.name, kind: s.kind, icon: sessionKindIcon[s.kind] }));
+  // Stable order. Left to discovery order the rows re-shuffle whenever an offer
+  // arrives in a different sequence, which reads as rows vanishing and returning.
+  const KIND_ORDER: Record<SessionKind, number> = { ppd: 0, webclient: 1, online: 2 };
+  const rows: SessionRow[] = sessions
+    .map((s) => ({ id: s.rowId, name: s.name, kind: s.kind, icon: sessionKindIcon[s.kind] }))
+    .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
   const hasWebServerBackend = isWebServerRuntimeAvailable();
   const onlineStatusText =
@@ -358,7 +401,10 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
       sessions={rows}
       onConnect={handleConnect}
       connectLabel={t("SessionsConnect")}
-      scanning={scanning}
+      // Discovery runs continuously for as long as the dialog is open, so the
+      // indicator reflects that state. Toggling it per scan round instead just
+      // restarted the animation ~once a second without telling the user anything.
+      scanning={hasHostDevicePpd}
       scanIcon={icon("radar.svg")}
       webModeNotice={hasHostDevicePpd ? null : `🌐 ${t("WebModeSessionsNotice") || "Local network sessions are only available in the desktop app."}`}
       details={

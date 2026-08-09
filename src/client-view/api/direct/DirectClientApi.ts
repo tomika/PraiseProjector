@@ -30,6 +30,7 @@ import { getSyncStatus, subscribeSyncStatus } from "../../../state/syncStatusSto
 import type { SyncStatus } from "../../../state/syncStatusStore";
 import {
   getHostDeviceDiscoveredSessions,
+  onHostDeviceSessionsChanged,
   getLocalBroadcastAddresses,
   getLocalNetworkAddresses,
   isHostDevicePpdAvailable,
@@ -447,10 +448,10 @@ export class DirectClientApi implements ClientApi {
     return {
       // The embed can discover nearby PPD peers + cloud sessions (the sessions hub
       // works here too), in addition to HOSTING its own (start/stop below).
-      scanLocalServers: async (address) => {
+      scanLocalServers: async (address, options) => {
         if (isHostDevicePpdAvailable()) {
           try {
-            await scanHostDeviceSessions(address);
+            await scanHostDeviceSessions(address, options);
           } catch {
             /* scan failures are non-fatal — return whatever is already known */
           }
@@ -528,7 +529,10 @@ export class DirectClientApi implements ClientApi {
         callback(this.networkState);
         return () => this.networkListeners.delete(callback);
       },
-      subscribeSessions: () => () => undefined,
+      // Local discovery is event-shaped: publish each offer/withdrawal as it lands so
+      // the list does not have to wait for the next poll tick to show a peer that has
+      // already answered.
+      subscribeSessions: (callback) => onHostDeviceSessionsChanged(() => callback(this.collectLocalSessions())),
     };
   }
 

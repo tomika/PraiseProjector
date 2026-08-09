@@ -907,7 +907,9 @@ export class ClientViewStore {
         });
       }),
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
-      this.api.session.subscribeSessions((sessions) => this.set({ sessions })),
+      // This port is the LOCAL discovery channel; replacing the whole list here would
+      // drop the cloud rows, which refresh on their own (slower) schedule.
+      this.api.session.subscribeSessions((sessions) => this.setSessionGroup(sessions, "local")),
       this.api.auth.subscribeAuth((authed) => this.set({ authed, leader: this.api.auth.currentLeader() })),
       this.api.subscribeCapabilities((capabilities) => {
         this.set({ capabilities });
@@ -2165,25 +2167,36 @@ export class ClientViewStore {
     this.set({ startupSessionScan: { address } });
   }
 
-  async refreshSessions(mode: ExternalSearchMode = "BOTH", address?: string): Promise<void> {
-    // Trigger a fresh local (UDP/nearby) scan on the chosen broadcast address before
-    // collecting — searchExternal's NEARBY leg only reads already-discovered peers.
-    if (address && (mode === "BOTH" || mode === "NEARBY")) {
-      await this.api.session.scanLocalServers(address);
-    }
-    if (mode === "BOTH") {
-      // Publish nearby results before touching the cloud so a broken WAN cannot
-      // hide peers that are already available on the local network.
-      const nearby = await this.api.session.searchExternal("NEARBY");
-      this.set({ sessions: nearby });
-      const online = await this.api.session.searchExternal("WEB");
-      const merged = new Map(nearby.map((session) => [session.id, session]));
-      for (const session of online) merged.set(session.id, session);
-      this.set({ sessions: [...merged.values()] });
-      return;
-    }
-    const sessions = await this.api.session.searchExternal(mode);
-    this.set({ sessions });
+  /** Locally-discovered peers carry a transport-prefixed id; cloud entries are keyed
+   *  by leader id. That split is what lets the two discovery legs refresh on their
+   *  own schedules without either wiping the other's rows. */
+  private static isLocalSessionEntry(session: OnlineSessionEntry): boolean {
+    return session.id.startsWith("udp_") || session.id.startsWith("web_");
+  }
+
+  /** Replace one discovery leg's rows, preserving the other leg's. */
+  private setSessionGroup(next: OnlineSessionEntry[], group: "local" | "cloud"): void {
+    const isLocal = ClientViewStore.isLocalSessionEntry;
+    const retained = this.state.sessions.filter((session) => (group === "local" ? !isLocal(session) : isLocal(session)));
+    const merged = new Map(retained.map((session) => [session.id, session]));
+    for (const session of next) merged.set(session.id, session);
+    this.set({ sessions: [...merged.values()] });
+  }
+
+  /**
+   * Refresh the locally-discovered (UDP/Nearby) peers. With `address` it also emits a
+   * fresh scan round; without one it only republishes what discovery already knows,
+   * which is what the change-event subscription uses.
+   */
+  async refreshLocalSessions(address?: string, options?: { broad?: boolean }): Promise<void> {
+    if (address) await this.api.session.scanLocalServers(address, options);
+    this.setSessionGroup(await this.api.session.searchExternal("NEARBY"), "local");
+  }
+
+  /** Refresh the cloud session list. Runs on its own cadence — a slow or timing-out
+   *  cloud request must never hold up local discovery. */
+  async refreshOnlineSessions(): Promise<void> {
+    this.setSessionGroup(await this.api.session.searchExternal("WEB"), "cloud");
   }
 
   /** Candidate scan-address options ({ value, label }) + default for the picker. */

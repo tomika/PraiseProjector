@@ -50,6 +50,15 @@ const udpMessageCodec = t.intersection([
 
 type UdpMessage = t.TypeOf<typeof udpMessageCodec>;
 
+/** Upper bound on the randomised delay before answering a broadcast `scan`, so a
+ *  roomful of hosts does not reply in lockstep. Mirrors the web-side PPD host in
+ *  src/services/hostDevicePpd.ts. */
+const SCAN_REPLY_JITTER_MS = 150;
+
+/** How long a discovered peer survives without a fresh offer. Matches STALE_UDP_MS
+ *  in src/services/hostDevicePpd.ts — both maps feed the same session list. */
+const STALE_SESSION_MS = 8000;
+
 // Discovered local session info (from UDP scan)
 export interface LocalSessionInfo {
   id: string;
@@ -222,27 +231,36 @@ export class UdpServer {
   }
 
   private handleScanRequest(message: UdpMessage, rinfo: dgram.RemoteInfo): void {
-    // Get webserver settings to respond with
-    const settings = this.webServer.getSettings();
-    const webUrl = this.webServer.isRunning()
-      ? `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`
-      : undefined;
-    if (!this.ppdSessionEnabled && !webUrl) return;
-
-    const response: UdpMessage = {
-      id: message.id,
-      op: "offer",
-      name: settings.currentLeader,
-      // Only advertise an http url when the webserver is actually listening; with it
-      // down this is a pure PPD (UDP) session — sending a dead url makes scanners try
-      // to open a broken endpoint instead of following over UDP.
-      url: webUrl,
-      port: this.ppdSessionEnabled ? this.getPort() : undefined,
-      device: this.ppdSessionEnabled ? this.getHostId() : undefined,
-    };
-
     const targetPort = message.port || rinfo.port;
-    this.sendMessage(JSON.stringify(response), targetPort, rinfo.address);
+    // Stagger the reply. A broadcast scan lands on every host at the same instant, so
+    // answering immediately makes N hosts emit N offers in the same millisecond —
+    // precisely the burst a Wi-Fi cell drops once more than a few devices are around,
+    // which then reads at the scanner as a peer that keeps vanishing from the list.
+    setTimeout(() => {
+      // Everything advertised is resolved HERE rather than when the scan arrived.
+      // The reply is deferred, and the session can be stopped inside that window —
+      // a pre-built offer would then advertise a dead PPD endpoint that the scanner
+      // keeps listed for a full liveness window before ageing it out.
+      const settings = this.webServer.getSettings();
+      const webUrl = this.webServer.isRunning()
+        ? `http://${settings.webServerDomainName || this.webServer.getAddress()}:${this.webServer.getPort()}${settings.webServerPath}`
+        : undefined;
+      if (!this.ppdSessionEnabled && !webUrl) return;
+
+      const response: UdpMessage = {
+        id: message.id,
+        op: "offer",
+        name: settings.currentLeader,
+        // Only advertise an http url when the webserver is actually listening; with it
+        // down this is a pure PPD (UDP) session — sending a dead url makes scanners try
+        // to open a broken endpoint instead of following over UDP.
+        url: webUrl,
+        port: this.ppdSessionEnabled ? this.getPort() : undefined,
+        device: this.ppdSessionEnabled ? this.getHostId() : undefined,
+      };
+
+      this.sendMessage(JSON.stringify(response), targetPort, rinfo.address);
+    }, Math.random() * SCAN_REPLY_JITTER_MS);
   }
 
   public sendMessage(message: string, port: number, address: string): void {
@@ -313,11 +331,13 @@ export class UdpServer {
       }
     }
 
-    // Clean up stale sessions (older than 3 seconds)
+    // Age out peers that have stopped answering. The window spans several scan
+    // rounds on purpose: dropping a peer after a single missed offer made the list
+    // flicker whenever the network lost one broadcast frame. A clean shutdown is
+    // unaffected — an explicit `off` removes the peer immediately (handleOffMessage).
     const now = Date.now();
-    const staleThreshold = 3000;
     for (const [id, session] of this.discoveredSessions) {
-      if (now - session.detected > staleThreshold) {
+      if (now - session.detected > STALE_SESSION_MS) {
         this.discoveredSessions.delete(id);
       }
     }
