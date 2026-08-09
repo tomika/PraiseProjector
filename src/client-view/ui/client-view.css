@@ -181,6 +181,12 @@ body,
   inset: 0;
   width: 100vw;
   height: 100vh;
+  /* `100vh` may be the larger layout viewport in an installed mobile PWA,
+     including browser/system chrome that currently covers the app. The song
+     pane's ResizeObserver then fits ChordPro against too much height, clipping
+     its bottom until fullscreen. Prefer the live visible viewport where the
+     browser supports it, with 100vh retained as the fallback. */
+  height: 100dvh;
   overflow: hidden;
   font-family:
     "Segoe UI",
