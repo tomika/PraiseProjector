@@ -55,6 +55,7 @@ export enum IconType {
   USER = "user",
   LEADER = "leader",
   CLEAR = "clear",
+  SESSIONS = "sessions",
 
   // Song tree icons
   FOLDER = "folder",
@@ -335,6 +336,7 @@ const iconMap: Record<IconType, IconConfig> = {
   [IconType.USER]: { faIcon: "fa fa-user", imagePath: "assets/user.png", alt: "User" },
   [IconType.LEADER]: { faIcon: "fa fa-user-circle", imagePath: "assets/leader.png", alt: "Leader" },
   [IconType.CLEAR]: { faIcon: "fa fa-times", imagePath: "assets/clear.png", alt: "Clear" },
+  [IconType.SESSIONS]: { faIcon: "fa fa-wifi", imagePath: "assets/wifi.png", alt: "Sessions" },
 
   // Song tree
   [IconType.FOLDER]: { faIcon: "fa fa-folder", imagePath: "assets/folder.png", alt: "Folder" },

@@ -517,7 +517,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
             title={tt("toolbar_sessions_form")}
             onClick={onOpenSessions}
           >
-            <img src={getAssetPath("assets/wifi.png")} alt="" className="button-icon" aria-hidden="true" />
+            <Icon type={IconType.SESSIONS} />
           </button>
         )}
       </div>
