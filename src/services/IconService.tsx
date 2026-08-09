@@ -263,7 +263,24 @@ const iconMap: Record<IconType, IconConfig> = {
     alt: "Chorus",
   },
   [IconType.BRIDGE]: {
-    faIcon: "fa fa-music",
+    faContent: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 500 500"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="38"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <line x1="28.988" y1="314.324" x2="468.436" y2="313.16"></line>
+        <line x1="126.772" y1="30.28" x2="128.518" y2="467.986"></line>
+        <line x1="365.412" y1="32.026" x2="366.576" y2="469.733"></line>
+        <path d="M 127.244 27.952 C 128.388 313.616 367.136 312.7 364.139 27.952"></path>
+        <path d="M 25.967 313.16 L 126.08 27.952"></path>
+        <path d="M 471.818 313.742 L 364.721 28.534"></path>
+      </svg>
+    ),
     imagePath: "assets/bridge.png",
     alt: "Bridge",
   },
