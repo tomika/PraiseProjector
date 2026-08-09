@@ -107,7 +107,8 @@
 .chordpro-styles-preview-frame .wysiwyg-host,
 .chordpro-styles-preview-frame .wysiwyg-tab-content,
 .chordpro-styles-preview-frame .tab-pane,
-.chordpro-styles-preview-frame .editor-iframe-container {
+.chordpro-styles-preview-frame .editor-iframe-container,
+.chordpro-styles-preview-frame .wysiwyg-page {
   min-height: 16rem;
   background: transparent !important;
 }

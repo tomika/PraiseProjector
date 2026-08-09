@@ -11,6 +11,7 @@ import {
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useMessageBox } from "../../contexts/MessageBoxContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import ChordProEditor from "../ChordProEditor/ChordProEditor";
 import SafeSlider from "../SafeSlider";
 import "./ChordProStylesSettings.css";
@@ -397,7 +398,8 @@ const FontEditor: React.FC<{
 const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ settings, updateSetting }) => {
   const { t } = useLocalization();
   const { showConfirm } = useMessageBox();
-  const [themeMode, setThemeMode] = React.useState<ThemeMode>("light");
+  const { theme } = useTheme();
+  const [themeMode, setThemeMode] = React.useState<ThemeMode>(theme);
   const [previewSong] = React.useState(() => new Song(PREVIEW_SONG));
   const [fontTarget, setFontTarget] = React.useState<FontTargetKey>("tagFont");
   const [colorTargetIndex, setColorTargetIndex] = React.useState(0);
