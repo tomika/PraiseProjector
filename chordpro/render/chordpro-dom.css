@@ -31,7 +31,8 @@
  * so the ellipsis can clip INSIDE a long title instead of dropping the whole
  * atomic box. */
 .chp-dom-meta-clipped .chp-dom-meta-row {
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   text-overflow: ellipsis;
 }
 
