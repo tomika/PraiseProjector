@@ -143,6 +143,7 @@
   "MenuSessionManagement": "Session Management",
   "MenuMobileView": "Mobile view",
   "SessionsConnect": "Connect session",
+  "SessionConnectFailed": "Failed to connect to {0}",
   "SessionsNameCol": "Name",
   "SessionsTypeCol": "Type",
   "SessionsAddress": "Broadcast address",

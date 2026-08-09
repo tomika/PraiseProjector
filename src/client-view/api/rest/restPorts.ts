@@ -10,6 +10,7 @@
 
 import { cloudApi } from "../../../../common/cloudApi";
 import { getLocalBroadcastAddresses, getLocalNetworkAddresses, onHostDeviceSessionsChanged } from "../../../services/hostDevicePpd";
+import { openLanSessionUrl } from "../../../services/sessionNavigation";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { LicenseSection } from "../../../about-licenses";
@@ -231,7 +232,8 @@ export function createDisplayApi(core: RestCore): DisplayApi {
 /**
  * Attach to a session picked from the discovery list, dispatching by its url SCHEME
  * (legacy found-session selector, praiseprojector.ts:4934-4980 / sessionKind):
- *  - an http(s) url → a LAN webserver: open it in a browser;
+ *  - an http(s) url → a LAN webserver: open its web client (see
+ *    {@link openLanSessionUrl} for why a native shell loads it in place);
  *  - a udp:// or nrb:// url, or NO url → follow it ({@link RestCore.watch} picks the
  *    PPD transport for a locally-discovered peer, else a cloud long-poll).
  * Keying off the scheme (not "is it a discovered peer") is what makes a PPD host that
@@ -240,7 +242,7 @@ export function createDisplayApi(core: RestCore): DisplayApi {
 async function attachSession(core: RestCore, session: OnlineSessionEntry): Promise<void> {
   const url = session.localUrl;
   if (url && /^https?:\/\//i.test(url)) {
-    if (typeof window !== "undefined") window.open(url, "_blank");
+    openLanSessionUrl(url);
     return;
   }
   await core.watch(session);

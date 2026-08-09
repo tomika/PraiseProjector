@@ -19,6 +19,7 @@ import { SessionsForm as SharedSessionsForm, classifyOnlineSession, type Session
 import { filterOwnSessionEntries } from "../shared/sessionList";
 import { icon } from "../client-view/ui/assets";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
+import { openLanSessionUrl } from "../services/sessionNavigation";
 import { getAssetPath } from "../utils/assetPath";
 import { useOnlineSession } from "../contexts/OnlineSessionContext";
 
@@ -322,7 +323,7 @@ const SessionsForm: React.FC<SessionsFormProps> = ({ onClose, cloudHostBasePath,
       console.info("App", `Connecting to session: ${session.id} ${session.url} ${session.type}`);
 
       if (session.kind === "webclient" && /^https?:\/\//i.test(session.url)) {
-        window.open(session.url, "_blank");
+        openLanSessionUrl(session.url);
         onClose();
         return;
       }

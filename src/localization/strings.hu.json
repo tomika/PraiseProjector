@@ -143,6 +143,7 @@
   "MenuSessionManagement": "Munkamenetek kezelése",
   "MenuMobileView": "Mobil nézet",
   "SessionsConnect": "Csatlakozás",
+  "SessionConnectFailed": "Nem sikerült csatlakozni ehhez: {0}",
   "SessionsNameCol": "Név",
   "SessionsTypeCol": "Típus",
   "SessionsAddress": "Broadcast cím",

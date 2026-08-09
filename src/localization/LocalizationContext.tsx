@@ -58,6 +58,17 @@ function detectSystemLanguage(): Language {
   return "en";
 }
 
+/**
+ * Non-React string lookup for plain modules (services, client-view API ports) that run
+ * outside the provider. Same resolution as the hook's `t`, but it reads the persisted
+ * language setting instead of context state.
+ */
+export function translate(key: StringKey): string {
+  const setting = getLanguageFromSettings();
+  const language: Language = setting === "auto" ? detectSystemLanguage() : setting;
+  return translations[language][key] || translations.en[key] || key;
+}
+
 interface LocalizationContextType {
   language: Language;
   languageSetting: LanguageSetting;

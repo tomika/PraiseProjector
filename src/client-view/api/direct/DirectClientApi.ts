@@ -64,6 +64,7 @@ import type {
 import type { ClientApi } from "../ClientApi";
 import { readSessionToggleSettings, saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
+import { openLanSessionUrl } from "../../../services/sessionNavigation";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
 import { readPersistedSettings } from "../../../services/settingsStore";
 import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
@@ -496,11 +497,11 @@ export class DirectClientApi implements ClientApi {
       },
       watch: (session) => this.watch(session),
       // Dispatch by url SCHEME (legacy found-session selector): an http(s) url is a
-      // LAN webserver → open it; a udp://|nrb:// url or none → follow it.
+      // LAN webserver → open its web client; a udp://|nrb:// url or none → follow it.
       attach: async (session) => {
         const url = session.localUrl;
         if (url && /^https?:\/\//i.test(url)) {
-          if (typeof window !== "undefined") window.open(url, "_blank");
+          openLanSessionUrl(url);
           return;
         }
         await this.watch(session);
