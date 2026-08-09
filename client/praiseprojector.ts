@@ -611,7 +611,7 @@ export class App extends AppBase {
                 if (display) this.applyDisplay(display);
                 else this.log("Invalid display arrived: " + message.display);
               } else this.log("No display in 'display' packet");
-              sendResponse({ op: "ack", id: message.device });
+              sendResponse({ op: "ack", id: message.device, stylesRev: message.display?.chordProStylesRev ?? "" });
             }
             break;
           case "off":

@@ -64,6 +64,8 @@ import type { ClientApi } from "../ClientApi";
 import { readSessionToggleSettings, saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
+import { readPersistedSettings } from "../../../services/settingsStore";
+import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -83,6 +85,7 @@ export class DirectClientApi implements ClientApi {
   private hostStateUnsub: (() => void) | null = null;
   private readonly capabilityListeners = new Set<(capabilities: ClientCapabilities) => void>();
   private readonly authListeners = new Set<(authed: boolean) => void>();
+  private readonly displayListeners = new Set<(display: Display) => void>();
   // Session/network state for the embed's own hosting (a local PPD session, or an
   // online cloud session). Drives the toolbar indicator + the MoreMenu Start/Stop.
   private readonly networkListeners = new Set<(state: NetworkState) => void>();
@@ -108,9 +111,13 @@ export class DirectClientApi implements ClientApi {
   readonly device: DeviceApi = createDeviceApi();
   readonly hostView: HostViewApi = this.createHostViewApi();
 
+  private chordProStyles: ChordProStylesSettings | null = null;
+  private chordProStylesSignature = "";
   private capabilities: ClientCapabilities = this.computeCapabilities();
 
-  constructor(private authBridge?: DirectAuthBridge) {}
+  constructor(private authBridge?: DirectAuthBridge) {
+    this.refreshChordProStyles();
+  }
 
   setAuthBridge(authBridge: DirectAuthBridge): void {
     this.authBridge = authBridge;
@@ -178,9 +185,14 @@ export class DirectClientApi implements ClientApi {
   };
 
   private refreshHostState = (): void => {
+    const stylesChanged = this.refreshChordProStyles();
     this.capabilities = this.computeCapabilities();
     for (const cb of this.capabilityListeners) cb(this.capabilities);
     this.refreshAuthState();
+    if (stylesChanged) {
+      const display = this.withChordProStyles(getCurrentDisplay());
+      for (const cb of [...this.displayListeners]) cb(display);
+    }
   };
 
   refreshAuthState(): void {
@@ -215,6 +227,7 @@ export class DirectClientApi implements ClientApi {
     // Disposing this adapter must not make that app session undiscoverable.
     this.capabilityListeners.clear();
     this.authListeners.clear();
+    this.displayListeners.clear();
     this.networkListeners.clear();
   }
 
@@ -249,6 +262,24 @@ export class DirectClientApi implements ClientApi {
     window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail }));
   }
 
+  /** Refresh the cached style only when its persisted value really changed.
+   * `null` deliberately means the editor-native defaults: those are built by
+   * the same factories as SettingsContext's defaults, with the active locale. */
+  private refreshChordProStyles(): boolean {
+    const next = readPersistedSettings().chordProStyles ?? null;
+    const signature = next ? JSON.stringify(next) : "";
+    if (signature === this.chordProStylesSignature) return false;
+    this.chordProStyles = next;
+    this.chordProStylesSignature = signature;
+    return true;
+  }
+
+  /** Attach the full view's own cached style to the in-process display. This is
+   * local state sharing, so it is deliberately independent of stylesToClients. */
+  private withChordProStyles(display: Display): Display {
+    return { ...display, chordProStyles: this.chordProStyles ?? undefined };
+  }
+
   private createHostViewApi(): HostViewApi {
     return {
       getLoadedSongId: () => getEditedSong()?.Id ?? null,
@@ -262,7 +293,7 @@ export class DirectClientApi implements ClientApi {
     const dispatch = (detail: Record<string, unknown>) => this.dispatchDisplayUpdate(detail);
     const songId = () => getCurrentDisplay().songId;
     return {
-      getCurrent: () => getCurrentDisplay(),
+      getCurrent: () => this.withChordProStyles(getCurrentDisplay()),
       project: async (request) =>
         dispatch({
           command: "display_update",
@@ -292,7 +323,14 @@ export class DirectClientApi implements ClientApi {
       },
       setInstructions: async (instructions) => dispatch({ command: "song_update", id: songId(), instructions }),
       pushToFollowers: async () => undefined,
-      subscribeDisplay: (callback) => subscribeCurrentDisplayChange(callback),
+      subscribeDisplay: (callback) => {
+        this.displayListeners.add(callback);
+        const unsubscribe = subscribeCurrentDisplayChange((display) => callback(this.withChordProStyles(display)));
+        return () => {
+          this.displayListeners.delete(callback);
+          unsubscribe();
+        };
+      },
     };
   }
 

@@ -106,6 +106,7 @@ const bluetoothMessageCodec = t.intersection([
     url: t.string,
     device: t.string,
     display: displayCodec,
+    stylesRev: t.string,
   }),
 ]);
 

@@ -273,7 +273,10 @@ export const editSongResponseCodec = uniType({ version: t.number, song: t.string
  * The internal (pre-send / post-receive) PPD message shape — no transport fields.
  * `device` is omitted since it's a transport-level field added by the sender.
  */
-export const ppdMessageInternalCodec = uniType({ op: t.string }, { id: t.string, url: t.string, name: t.string, display: displayCodec });
+export const ppdMessageInternalCodec = uniType(
+  { op: t.string },
+  { id: t.string, url: t.string, name: t.string, display: displayCodec, stylesRev: t.string }
+);
 
 /**
  * Full PPD message with required `device` field (always set by the sender).
@@ -282,7 +285,7 @@ export const ppdMessageInternalCodec = uniType({ op: t.string }, { id: t.string,
  */
 export const ppdMessageCodec = uniType(
   { op: t.string, device: t.string },
-  { id: t.string, url: t.string, name: t.string, display: displayCodec, port: t.number }
+  { id: t.string, url: t.string, name: t.string, display: displayCodec, port: t.number, stylesRev: t.string }
 );
 
 // ── Song history ──────────────────────────────────────────────────────────────

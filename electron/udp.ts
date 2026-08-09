@@ -4,6 +4,7 @@ import { WebServer } from "./webserver";
 import { getMachineIpAddress } from "./utils";
 import * as t from "io-ts";
 import { PpdProtocolHandler, PpdSendFn, PpdHostInfo } from "./ppd-protocol";
+import type { Display } from "../common/pp-types";
 
 // Display codec for UDP messages - matches C# Display class
 const displayCodec = t.partial({
@@ -43,6 +44,7 @@ const udpMessageCodec = t.intersection([
     name: t.string,
     url: t.string,
     display: displayCodec,
+    stylesRev: t.string,
   }),
 ]);
 
@@ -104,6 +106,12 @@ export class UdpServer {
       getHostId: () => this.getHostId(),
       getHostName: () => this.webServer.getSettings().currentLeader || hostname(),
       shouldAdvertiseStyles: () => this.webServer.getSettings().stylesToClients,
+      getChordProStylesRev: () => this.webServer.getChordProStylesRev(),
+      getInlineChordProStyles: () => {
+        if (this.webServer.isRunning()) return undefined;
+        const styles = this.webServer.getSettings().chordProStyles;
+        return styles ? (styles as unknown as Display["chordProStyles"]) : undefined;
+      },
     };
     this.protocolHandler = new PpdProtocolHandler(hostInfo);
     // Start in leader mode by default (electron always hosts a session)

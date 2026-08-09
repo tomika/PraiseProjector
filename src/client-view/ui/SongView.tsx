@@ -40,6 +40,7 @@ import {
   CHORDFORMAT_SUBSCRIPT,
 } from "../../../chordpro/chord_drawer";
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
+import type { ChordProStylesSettings } from "../../../chordpro/chordpro_styles";
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
@@ -338,6 +339,7 @@ function renderSong(
   text: string,
   shift: number,
   settings: DisplaySettings,
+  chordProStyles: ChordProStylesSettings | null,
   dark: boolean,
   sizingMode: ZoomSizingMode,
   fitViewport?: HTMLElement | null
@@ -345,6 +347,7 @@ function renderSong(
   // suppressDraw: apply settings + transpose before the first paint; fitAndZoom()
   // below issues the single draw. Keeps preloaded neighbour pages flash-free too.
   api.load(text, false, undefined, undefined, true, CLIENT_VIEW_EDITOR_OPTIONS);
+  api.setStyles(chordProStyles, false);
   const maxText = settings.maxText;
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
@@ -365,6 +368,12 @@ function renderSong(
   void fitAndZoom(host, api, sizingMode, settings.zoomFontSize, fitViewport);
 }
 
+function getDisplayChordProStyles(display: Display): ChordProStylesSettings | null {
+  const styles = display.chordProStyles;
+  if (!styles || typeof styles !== "object" || !("light" in styles) || !("dark" in styles)) return null;
+  return styles as ChordProStylesSettings;
+}
+
 export const SongView = forwardRef<SongViewHandle, { display: Display; settings: DisplaySettings; dark: boolean }>(function SongView(
   { display, settings, dark },
   ref
@@ -380,6 +389,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
   const hasSongText = !!display.song?.trim();
+  const chordProStyles = getDisplayChordProStyles(display);
   const playlistReturnTitle = canUsePlaylistNavigation
     ? "Return to current song in playlist navigation"
     : state.playlist.length === 0
@@ -399,6 +409,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const nextApiRef = useRef<BoundEditor | null>(null);
 
   const loadedTextRef = useRef<string | null>(null);
+  const appliedStylesRef = useRef<ChordProStylesSettings | null | undefined>(undefined);
   const appliedTransposeRef = useRef(0);
   const sizingModeRef = useRef<ZoomSizingMode>("FIT_PAGE");
   const zoomFontSizeRef = useRef(settings.zoomFontSize);
@@ -932,6 +943,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       apiRef.current?.dispose();
       apiRef.current = null;
       loadedTextRef.current = null;
+      appliedStylesRef.current = undefined;
     };
   }, [store]);
 
@@ -977,6 +989,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // visible under the empty-state hint.
       if (loadedTextRef.current !== "") api.load("", false, undefined, undefined, undefined, CLIENT_VIEW_EDITOR_OPTIONS);
       loadedTextRef.current = "";
+      appliedStylesRef.current = undefined;
       appliedTransposeRef.current = 0;
       clearFit(host);
       api.setSectionRepeatCounts(undefined, false);
@@ -986,6 +999,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       return;
     }
     const renderStartedAt = performance.now();
+    let documentReloaded = false;
     if (loadedTextRef.current !== text) {
       loadedTextRef.current = text;
       // Construct without an initial paint (suppressDraw) so transpose/capo and
@@ -995,6 +1009,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       api.load(text, false, undefined, undefined, true, CLIENT_VIEW_EDITOR_OPTIONS);
       // A freshly loaded document starts at shift 0.
       appliedTransposeRef.current = 0;
+      documentReloaded = true;
+    }
+    // load() rebuilds the editor document, so styles must be restored after it.
+    // On display-only ticks preserve the layout caches unless the shared style
+    // object really changed. fitAndZoom() below owns the single paint.
+    if (documentReloaded || appliedStylesRef.current !== chordProStyles) {
+      api.setStyles(chordProStyles, false);
+      appliedStylesRef.current = chordProStyles;
     }
     // The editor's net shift is the manual transpose minus the capo: a capo on
     // fret N displays the chords N semitones lower (praiseprojector.ts capoChanged
@@ -1063,7 +1085,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
     });
-  }, [display, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, store]);
+  }, [display, chordProStyles, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
   useEffect(() => {
@@ -1087,7 +1109,17 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         const data = await store.getSongData(entry.songId);
         if (cancelled) return;
         const shift = (entry.transpose ?? 0) - (settings.useCapo ? Math.max(entry.capo ?? 0, 0) : 0);
-        renderSong(host, api, data.text, shift, settings, dark, sizingMode, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
+        renderSong(
+          host,
+          api,
+          data.text,
+          shift,
+          settings,
+          chordProStyles,
+          dark,
+          sizingMode,
+          prevPageRef.current ?? nextPageRef.current ?? swipeRef.current
+        );
       } catch {
         /* a neighbour that fails to load simply won't reveal during a flip */
       }
@@ -1101,6 +1133,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     flipActive,
     neighbourPreloadingEnabled,
     display.songId,
+    chordProStyles,
     state.navigationMode,
     state.songs,
     state.searchResults,

@@ -1331,7 +1331,7 @@ export class ChordProEditor extends ChordDrawer {
     }
   }
 
-  setStyles(styles: ChordProStylesSettings | null) {
+  setStyles(styles: ChordProStylesSettings | null, draw = true) {
     this.customStyles = styles;
     // Remember the root font size at which these styles were authored/applied.
     this.stylesBaseRootFontPx = getRootFontSizePx();
@@ -1339,7 +1339,7 @@ export class ChordProEditor extends ChordDrawer {
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
     for (const lo of this.chordPro?.lines || []) lo.invalidateCache();
     this.invalidateStyleSemantics();
-    this.draw();
+    if (draw) this.draw();
   }
 
   private scalePxTokens(value: string, factor: number): string {

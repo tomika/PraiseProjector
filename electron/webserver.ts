@@ -125,30 +125,6 @@ export class WebServer {
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 
-    this.app.get("/display_styles_query", (req, res) => {
-      this.setCommonHeaders(res);
-      const rev = (req.query.rev as string) || "";
-
-      if (!this.settings.stylesToClients) {
-        res.json({
-          rev: "",
-          changed: rev !== "",
-        });
-        return;
-      }
-
-      const currentRev = this.getChordProStylesRev();
-      if (rev && rev === currentRev) {
-        res.json({ rev: currentRev, changed: false });
-        return;
-      }
-      res.json({
-        rev: currentRev,
-        changed: true,
-        styles: this.settings.chordProStyles ?? undefined,
-      });
-    });
-
     //log all requests and response http codes
     this.app.use((req, res, next) => {
       res.on("finish", () => {
@@ -175,7 +151,7 @@ export class WebServer {
     }
   }
 
-  private getChordProStylesRev() {
+  getChordProStylesRev() {
     if (!this.settings.stylesToClients || !this.settings.chordProStyles) {
       return "";
     }
@@ -209,6 +185,30 @@ export class WebServer {
         }
       }
       next();
+    });
+
+    this.app.get("/display_styles_query", (req, res) => {
+      this.setCommonHeaders(res);
+      const rev = (req.query.rev as string) || "";
+
+      if (!this.settings.stylesToClients) {
+        res.json({
+          rev: "",
+          changed: rev !== "",
+        });
+        return;
+      }
+
+      const currentRev = this.getChordProStylesRev();
+      if (rev && rev === currentRev) {
+        res.json({ rev: currentRev, changed: false });
+        return;
+      }
+      res.json({
+        rev: currentRev,
+        changed: true,
+        styles: this.settings.chordProStyles ?? undefined,
+      });
     });
 
     // ── New self-contained client view (single /webapp build) ──────────────

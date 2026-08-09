@@ -12,9 +12,10 @@
  * absent (a plain browser served by the cloud), exactly like the legacy client.
  */
 
-import { cloudApi } from "../../../../common/cloudApi";
+import { CloudApiService, cloudApi } from "../../../../common/cloudApi";
 import { getEmptyDisplay } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry, SongData, SongEntry } from "../../../../common/pp-types";
+import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
 import type { P2PSessionInfo } from "../../../types/electron";
 import {
   getHostDeviceDiscoveredSessions,
@@ -69,6 +70,13 @@ function samePlaylist(a: PlaylistEntry[], b: PlaylistEntry[]): boolean {
   return true;
 }
 
+function getChordProStyles(display: Display): ChordProStylesSettings | null {
+  const styles = display.chordProStyles;
+  if (!styles || typeof styles !== "object") return null;
+  const candidate = styles as Partial<ChordProStylesSettings>;
+  return candidate.light && candidate.dark ? (styles as ChordProStylesSettings) : null;
+}
+
 export class RestCore {
   mode: ClientMode = "App";
   config: ClientConfig = {};
@@ -94,6 +102,9 @@ export class RestCore {
   private followToken = 0;
   private followAbort: AbortController | null = null;
   private followLeaderId: string | undefined;
+  private chordProStylesRev = "";
+  private pendingChordProStylesRev = "";
+  private chordProStyles: ChordProStylesSettings | null = null;
   /** What the active follow is tracking, so {@link reconnect} can restart the
    *  SAME target (the legacy goOnline() re-invoked the current watchDisplay). */
   private lastFollow: { kind: "cloud"; leaderId?: string } | { kind: "ppd"; info: P2PSessionInfo } | null = null;
@@ -210,6 +221,62 @@ export class RestCore {
 
   patchDisplay(patch: Partial<Display>): void {
     this.setDisplay({ ...this.display, ...patch });
+  }
+
+  private resetChordProStyles(clearDisplay = false): void {
+    this.pendingChordProStylesRev = "";
+    this.chordProStylesRev = "";
+    this.chordProStyles = null;
+    if (clearDisplay && (this.display.chordProStyles !== undefined || this.display.chordProStylesRev !== undefined)) {
+      this.patchDisplay({ chordProStyles: undefined, chordProStylesRev: undefined });
+    }
+  }
+
+  /** Port of the legacy client's style sync: display_query carries only the
+   * revision, while the actual style object comes from display_styles_query. */
+  private async syncChordProStyles(
+    stylesRev: string | undefined,
+    followToken: number,
+    signal: AbortSignal,
+    api: CloudApiService = cloudApi,
+    leaderId?: string,
+    // A PPD host may use a transport-local hash rather than the HTTP server's
+    // response rev. Cache under the announced hash to avoid a fetch every tick.
+    cacheRev?: string
+  ): Promise<void> {
+    if (!stylesRev) {
+      this.resetChordProStyles();
+      return;
+    }
+    if (this.chordProStylesRev === stylesRev || this.pendingChordProStylesRev === stylesRev) return;
+
+    this.pendingChordProStylesRev = stylesRev;
+    try {
+      // PPD revisions are transport-local hashes, not the server's MD5. Request
+      // the full payload once and cache it under cacheRev; a conditional rev
+      // query could therefore never produce changed:false on this path.
+      const response = await api.fetchDisplayStylesQuery({
+        leaderId,
+        rev: cacheRev ? undefined : this.chordProStylesRev,
+        signal,
+      });
+      if (signal.aborted || followToken !== this.followToken || this.pendingChordProStylesRev !== stylesRev) return;
+      const appliedRev = response.rev ? (cacheRev ?? response.rev) : "";
+      this.chordProStylesRev = appliedRev;
+      if (response.styles) {
+        this.chordProStyles = response.styles as ChordProStylesSettings;
+      } else if (!response.rev) {
+        this.chordProStyles = null;
+      }
+      this.patchDisplay({
+        chordProStylesRev: appliedRev || undefined,
+        chordProStyles: this.chordProStyles ?? undefined,
+      });
+    } catch (error) {
+      if (!signal.aborted && followToken === this.followToken) console.warn("ClientView", "Display styles query failed", error);
+    } finally {
+      if (this.pendingChordProStylesRev === stylesRev) this.pendingChordProStylesRev = "";
+    }
   }
 
   getPlaylist(): PlaylistEntry[] {
@@ -399,17 +466,41 @@ export class RestCore {
   }
 
   private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.resetChordProStyles(true);
     this.lastFollow = { kind: "ppd", info };
+    this.followLeaderId = undefined;
+    const token = ++this.followToken;
+    const controller = new AbortController();
+    this.followAbort = controller;
+    const stylesApi = /^https?:\/\//i.test(info.url) ? new CloudApiService() : null;
+    stylesApi?.setBaseUrl(info.url.replace(/\/+$/, ""));
     this.setNetworkState({ status: "startup" });
     this.ppdWatching = await startHostDeviceWatching(
       info.id,
       { address: info.address ?? "", port: info.port ?? 0, hostId: info.hostId },
       (display) => {
-        this.setDisplay(display);
+        const inlineStyles = getChordProStyles(display);
+        const stylesRev = display.chordProStylesRev;
+        if (inlineStyles) {
+          this.pendingChordProStylesRev = "";
+          this.chordProStylesRev = stylesRev ?? "";
+          this.chordProStyles = inlineStyles;
+          this.setDisplay({ ...display, chordProStyles: inlineStyles });
+        } else if (!stylesRev) {
+          this.resetChordProStyles();
+          this.setDisplay({ ...display, chordProStyles: undefined });
+        } else {
+          this.setDisplay({
+            ...display,
+            chordProStyles: this.chordProStylesRev === stylesRev ? (this.chordProStyles ?? undefined) : undefined,
+          });
+          if (stylesApi) void this.syncChordProStyles(stylesRev, token, controller.signal, stylesApi, undefined, stylesRev);
+        }
         this.setNetworkState({ status: "watching" });
       },
       () => {
         this.ppdWatching = false;
+        this.resetChordProStyles(true);
         this.setNetworkState({ status: "offline" });
       }
     );
@@ -424,6 +515,7 @@ export class RestCore {
    *   (used on startup and reconnect to avoid sitting through a long-poll timeout).
    */
   private startCloudFollow(leaderId?: string, forceFirst = false): void {
+    this.resetChordProStyles(true);
     this.lastFollow = { kind: "cloud", leaderId };
     this.followLeaderId = leaderId;
     const token = ++this.followToken;
@@ -444,7 +536,11 @@ export class RestCore {
           forced = false;
           if (token !== this.followToken) return;
           this.applyLeaderHeaders(ppHeaders);
-          this.setDisplay(display);
+          this.setDisplay({
+            ...display,
+            chordProStyles: display.chordProStylesRev ? (this.chordProStyles ?? undefined) : undefined,
+          });
+          void this.syncChordProStyles(display.chordProStylesRev, token, controller.signal, cloudApi, this.followLeaderId);
           this.setNetworkState({ status: "watching" });
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
@@ -470,5 +566,6 @@ export class RestCore {
       stopHostDeviceWatching();
       this.ppdWatching = false;
     }
+    this.resetChordProStyles(true);
   }
 }

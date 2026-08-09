@@ -94,6 +94,19 @@ import { usePullToRefresh } from "./shared/usePullToRefresh";
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
 
+/** Opaque local revision for the JS-hosted PPD transport. The REST endpoint may
+ * use a different hash; RestCore deliberately caches its response under this
+ * announced revision so unchanged PPD displays do not refetch it. */
+function getLocalChordProStylesRev(styles: Display["chordProStyles"]): string {
+  const serialized = JSON.stringify(styles);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < serialized.length; i++) {
+    hash ^= serialized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `ppd-${(hash >>> 0).toString(16).padStart(8, "0")}-${serialized.length.toString(16)}`;
+}
+
 // App state persistence codec for io-ts validation
 const AppStateCodec = t.type({
   selectedSongId: t.union([t.string, t.null]),
@@ -229,6 +242,15 @@ const AppContent: React.FC = () => {
   const lastDisplayFailureToastAtRef = useRef(0);
   const ppdHostingSyncRef = useRef<Promise<void>>(Promise.resolve());
   const ppdSessionEnabled = settings?.ppdSessionEnabled;
+  const ppdSharedStylesRef = useRef<{ styles: Display["chordProStyles"]; rev?: string }>({ styles: undefined });
+
+  useEffect(() => {
+    const styles = settings?.stylesToClients ? (settings.chordProStyles as unknown as Display["chordProStyles"]) : undefined;
+    ppdSharedStylesRef.current = {
+      styles,
+      rev: styles ? getLocalChordProStylesRev(styles) : undefined,
+    };
+  }, [settings?.stylesToClients, settings?.chordProStyles]);
 
   // Auto-fallback from Typesense to traditional search on connectivity failure
   const fallbackFiredRef = useRef(false);
@@ -401,7 +423,15 @@ const AppContent: React.FC = () => {
       })
       .then(async () => {
         if (shouldHost) {
-          await startHostDevicePpdHosting(() => getCurrentDisplay());
+          await startHostDevicePpdHosting(() => {
+            const display = getCurrentDisplay();
+            const { styles: chordProStyles, rev: chordProStylesRev } = ppdSharedStylesRef.current;
+            return {
+              ...display,
+              chordProStylesRev,
+              chordProStyles,
+            };
+          });
         } else {
           await stopHostDevicePpdHosting();
         }

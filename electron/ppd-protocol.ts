@@ -31,6 +31,10 @@ export interface PpdHostInfo {
   getHostName(): string;
   /** Whether style metadata should be advertised to clients. */
   shouldAdvertiseStyles(): boolean;
+  /** Current style revision for peers that can query it over HTTP. */
+  getChordProStylesRev(): string;
+  /** Inline fallback for pure UDP/Nearby peers with no HTTP endpoint. */
+  getInlineChordProStyles(): Display["chordProStyles"];
 }
 
 /** Tracks a remote viewer subscribed to our display (leader mode). */
@@ -41,6 +45,13 @@ interface PpdWatcher {
   lastDisplaySent: number;
   lastDisplayAcked: boolean;
   lastDisplay?: string;
+  lastDisplayIncludedInlineStyles?: boolean;
+  lastSentStylesRev?: string;
+  acknowledgedInlineStylesRev?: string;
+  pendingInlineStylesRev?: string;
+  blockedInlineStylesRev?: string;
+  inlineStylesRetransmits?: number;
+  queuedDisplay?: Display;
   unregisterDisplayListener?: () => void;
 }
 
@@ -192,17 +203,42 @@ export class PpdProtocolHandler {
 
     const watcher = this.watchers.get(message.device);
     if (watcher) {
+      if (message.stylesRev !== undefined && message.stylesRev !== watcher.lastSentStylesRev) {
+        console.debug(`[PPD] Ignoring stale ACK from ${message.device} for styles rev ${message.stylesRev}`);
+        return;
+      }
       watcher.lastDisplayAcked = true;
+      // Legacy viewers do not echo stylesRev. Preserve their old one-shot
+      // delivery semantics; revision-aware peers still reject a stale ACK above.
+      const acknowledgedStylesRev = message.stylesRev ?? watcher.pendingInlineStylesRev;
+      if (watcher.pendingInlineStylesRev !== undefined && watcher.pendingInlineStylesRev === acknowledgedStylesRev) {
+        watcher.acknowledgedInlineStylesRev = watcher.pendingInlineStylesRev;
+        watcher.pendingInlineStylesRev = undefined;
+        watcher.blockedInlineStylesRev = undefined;
+      }
+      const queuedDisplay = watcher.queuedDisplay;
+      watcher.queuedDisplay = undefined;
+      if (queuedDisplay) this.sendDisplayToWatcher(watcher, queuedDisplay);
       console.debug(`[PPD] ACK from ${message.device}`);
     }
   }
 
-  private sendDisplayToWatcher(watcher: PpdWatcher, display: Display): void {
+  private sendDisplayToWatcher(watcher: PpdWatcher, display: Display, allowInlineStyles = true): void {
     const now = Date.now();
-    const clientDisplay = this.prepareDisplayForClient(display);
+    if (allowInlineStyles && !watcher.lastDisplayAcked && watcher.lastDisplayIncludedInlineStyles) {
+      watcher.queuedDisplay = {
+        ...display,
+        playlist: display.playlist ? [...display.playlist] : display.playlist,
+      };
+      return;
+    }
+    const clientDisplay = this.prepareDisplayForClient(watcher, display, allowInlineStyles);
     const disp = JSON.stringify(clientDisplay);
     watcher.lastDisplaySent = now;
     watcher.lastDisplay = disp;
+    watcher.lastDisplayIncludedInlineStyles = !!clientDisplay.chordProStyles;
+    watcher.lastSentStylesRev = clientDisplay.chordProStylesRev ?? "";
+    watcher.inlineStylesRetransmits = 0;
     watcher.lastDisplayAcked = false;
     watcher.sendMessage({
       op: "display",
@@ -212,15 +248,29 @@ export class PpdProtocolHandler {
     });
   }
 
-  private prepareDisplayForClient(display: Display): Display {
+  private prepareDisplayForClient(watcher: PpdWatcher, display: Display, allowInlineStyles: boolean): Display {
     const clientDisplay: Display = {
       ...display,
       playlist: display.playlist ? [...display.playlist] : display.playlist,
     };
 
-    delete clientDisplay.chordProStyles;
-    if (!this.host.shouldAdvertiseStyles()) {
+    if (this.host.shouldAdvertiseStyles()) {
+      const stylesRev = this.host.getChordProStylesRev() || undefined;
+      const inlineStyles = this.host.getInlineChordProStyles();
+      clientDisplay.chordProStylesRev = stylesRev;
+      clientDisplay.chordProStyles =
+        allowInlineStyles &&
+        inlineStyles &&
+        stylesRev &&
+        watcher.acknowledgedInlineStylesRev !== stylesRev &&
+        watcher.blockedInlineStylesRev !== stylesRev
+          ? inlineStyles
+          : undefined;
+      watcher.pendingInlineStylesRev = clientDisplay.chordProStyles ? stylesRev : undefined;
+    } else {
+      delete clientDisplay.chordProStyles;
       delete clientDisplay.chordProStylesRev;
+      watcher.pendingInlineStylesRev = "";
     }
 
     return clientDisplay;
@@ -235,9 +285,25 @@ export class PpdProtocolHandler {
     for (const [id, watcher] of this.watchers) {
       if (watcher.lastRequestArrived < dropLimit) {
         toRemove.push(id);
-      } else if (!watcher.lastDisplayAcked && watcher.lastDisplay && watcher.lastDisplaySent < now - 500) {
-        // Retransmit unacked display
+      } else if (
+        !watcher.lastDisplayAcked &&
+        watcher.lastDisplay &&
+        watcher.lastDisplaySent < now - (watcher.lastDisplayIncludedInlineStyles ? 2000 : 500)
+      ) {
+        if (watcher.lastDisplayIncludedInlineStyles && (watcher.inlineStylesRetransmits ?? 0) >= 3) {
+          // A fragmented inline-style datagram can be impossible to ACK. Unblock
+          // the viewer with the latest display. Keep this revision blocked;
+          // changing the styles is the next safe retry trigger.
+          watcher.blockedInlineStylesRev = watcher.pendingInlineStylesRev;
+          const fallbackDisplay = watcher.queuedDisplay ?? getCurrentDisplay();
+          watcher.queuedDisplay = undefined;
+          this.sendDisplayToWatcher(watcher, fallbackDisplay, false);
+          continue;
+        }
+
+        // Retransmit unacked display.
         watcher.lastDisplaySent = now;
+        if (watcher.lastDisplayIncludedInlineStyles) watcher.inlineStylesRetransmits = (watcher.inlineStylesRetransmits ?? 0) + 1;
         try {
           watcher.sendMessage({
             op: "display",
@@ -302,6 +368,7 @@ export class PpdProtocolHandler {
       op: "ack",
       id: message.device, // leader's device ID
       device: this.host.getHostId(), // our device ID
+      stylesRev: message.display?.chordProStylesRev ?? "",
     });
   }
 

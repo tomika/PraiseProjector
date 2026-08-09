@@ -416,9 +416,9 @@ function bindEditor(editorDiv: HTMLDivElement) {
       instance.markFitsToPane();
       instance.update();
     },
-    setStyles: (styles: ChordProStylesSettings | null) => {
+    setStyles: (styles: ChordProStylesSettings | null, draw = true) => {
       const instance = getBoundEditor();
-      if (instance) instance.setStyles(styles);
+      if (instance) instance.setStyles(styles, draw);
     },
     handleExternalChordBoxTouch: (event: MouseEvent, down: boolean, showChordDialog?: boolean) =>
       getBoundEditor(true)?.handleExternalChordBoxTouch(event, down, showChordDialog) ?? false,
@@ -518,9 +518,9 @@ export const chordProAPI = {
     const instance = getEditorInstance();
     if (instance) instance.refreshDisplayProps();
   },
-  setStyles(styles: ChordProStylesSettings | null) {
+  setStyles(styles: ChordProStylesSettings | null, draw = true) {
     const instance = getEditorInstance();
-    if (instance) instance.setStyles(styles);
+    if (instance) instance.setStyles(styles, draw);
   },
 };
 

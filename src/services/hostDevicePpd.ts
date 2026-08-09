@@ -11,6 +11,7 @@ type PpdMessage = {
   name?: string;
   url?: string;
   display?: Display;
+  stylesRev?: string;
 };
 
 type HostDevicePacket = {
@@ -192,9 +193,24 @@ let hosting = false;
 let hostDisplayProvider: (() => Display) | null = null;
 let hostTimer: ReturnType<typeof setInterval> | null = null;
 let hostName = "";
+// Refreshed by scan/view requests. A viewer repeats view every 10 seconds, so
+// webserver toggles have a bounded staleness window rather than permanent state.
+let hostAdvertisedWebServerUrl: string | undefined;
 const hostWatchers = new Map<
   string,
-  { address: string; port?: number; lastRequestArrived: number; lastDisplaySent: number; lastDisplayAcked: boolean; lastDisplay?: string }
+  {
+    address: string;
+    port?: number;
+    lastRequestArrived: number;
+    lastDisplaySent: number;
+    lastDisplayAcked: boolean;
+    lastDisplay?: string;
+    lastSentStylesRev?: string;
+    acknowledgedStylesRev?: string;
+    pendingStylesRev?: string;
+    blockedInlineStylesRev?: string;
+    inlineStylesRetransmits?: number;
+  }
 >();
 
 // Send a host-originated PPD message (offer/display/off), augmenting it with our own
@@ -274,16 +290,37 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
       if (message.id) {
         void getAdvertisedWebServerUrl()
           .catch(() => undefined)
-          .then((url) => sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port));
+          .then((url) => {
+            hostAdvertisedWebServerUrl = url;
+            return sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port);
+          });
       }
       return true;
     case "view":
-      if (message.id === deviceId) registerHostWatcher(packet, message);
+      if (message.id === deviceId) {
+        void getAdvertisedWebServerUrl()
+          .catch(() => undefined)
+          .then((url) => {
+            hostAdvertisedWebServerUrl = url;
+            registerHostWatcher(packet, message);
+          });
+      }
       return true;
     case "ack":
       if (message.id === deviceId && message.device) {
         const watcher = hostWatchers.get(message.device);
-        if (watcher) watcher.lastDisplayAcked = true;
+        if (watcher) {
+          if (message.stylesRev !== undefined && message.stylesRev !== watcher.lastSentStylesRev) return true;
+          watcher.lastDisplayAcked = true;
+          // Viewers predating stylesRev still get the previous one-shot behavior.
+          // Revision-aware viewers remain protected by the stale-ACK check above.
+          const acknowledgedStylesRev = message.stylesRev ?? watcher.pendingStylesRev;
+          if (watcher.pendingStylesRev !== undefined && watcher.pendingStylesRev === acknowledgedStylesRev) {
+            watcher.acknowledgedStylesRev = watcher.pendingStylesRev;
+            watcher.pendingStylesRev = undefined;
+            watcher.blockedInlineStylesRev = undefined;
+          }
+        }
       }
       return true;
     default:
@@ -296,17 +333,56 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
 const pushDisplayToWatchers = async (): Promise<void> => {
   if (!hosting || !hostDisplayProvider) return;
   const nowMs = now();
-  const display = hostDisplayProvider();
-  const serialized = JSON.stringify(display);
+  const providedDisplay = hostDisplayProvider();
+  const chordProStyles = providedDisplay.chordProStyles;
+  const chordProStylesRev = providedDisplay.chordProStylesRev;
+  const display = { ...providedDisplay, chordProStyles: undefined };
+  const serializedDisplay = JSON.stringify(display);
   for (const [key, watcher] of [...hostWatchers]) {
     if (watcher.lastRequestArrived < nowMs - 120000) {
       hostWatchers.delete(key);
       continue;
     }
-    if (watcher.lastDisplaySent < nowMs - 200 && (!watcher.lastDisplayAcked || serialized !== watcher.lastDisplay)) {
+    if (!watcher.lastDisplayAcked && watcher.pendingStylesRev && watcher.lastDisplay) {
+      if (watcher.lastDisplaySent < nowMs - 2000) {
+        if ((watcher.inlineStylesRetransmits ?? 0) >= 3) {
+          // Do not let one fragmented styles packet freeze all later display
+          // updates. Send the newest state without the bulky inline payload and
+          // keep this revision blocked until the host styles change.
+          watcher.blockedInlineStylesRev = watcher.pendingStylesRev;
+          watcher.pendingStylesRev = undefined;
+          watcher.inlineStylesRetransmits = 0;
+          watcher.lastDisplaySent = nowMs;
+          watcher.lastDisplay = serializedDisplay;
+          watcher.lastSentStylesRev = chordProStylesRev ?? "";
+          watcher.lastDisplayAcked = false;
+          void sendHostPpd({ op: "display", display }, watcher.address, watcher.port);
+        } else {
+          watcher.lastDisplaySent = nowMs;
+          watcher.inlineStylesRetransmits = (watcher.inlineStylesRetransmits ?? 0) + 1;
+          void sendHostPpd({ op: "display", display: JSON.parse(watcher.lastDisplay) as Display }, watcher.address, watcher.port);
+        }
+      }
+      continue;
+    }
+    const canFetchStyles = !!hostAdvertisedWebServerUrl && !isNearbyEndpoint(watcher.address);
+    const includeStyles =
+      !canFetchStyles &&
+      !!chordProStyles &&
+      !!chordProStylesRev &&
+      watcher.acknowledgedStylesRev !== chordProStylesRev &&
+      watcher.blockedInlineStylesRev !== chordProStylesRev;
+    const displayToSend = includeStyles ? { ...display, chordProStyles } : display;
+    const serialized = includeStyles ? JSON.stringify(displayToSend) : serializedDisplay;
+    const displayChanged = serialized !== watcher.lastDisplay;
+    if (watcher.lastDisplaySent < nowMs - 200 && (!watcher.lastDisplayAcked || displayChanged)) {
       watcher.lastDisplaySent = nowMs;
       watcher.lastDisplay = serialized;
-      void sendHostPpd({ op: "display", display }, watcher.address, watcher.port);
+      watcher.lastSentStylesRev = displayToSend.chordProStylesRev ?? "";
+      watcher.pendingStylesRev = includeStyles ? chordProStylesRev : !chordProStylesRev ? "" : undefined;
+      watcher.inlineStylesRetransmits = 0;
+      watcher.lastDisplayAcked = false;
+      void sendHostPpd({ op: "display", display: displayToSend }, watcher.address, watcher.port);
     }
   }
 };
@@ -484,6 +560,7 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
           id: message.device,
           device: selfDevice,
           port: listenPort || undefined,
+          stylesRev: message.display.chordProStylesRev ?? "",
         },
         watchedSession.details.address,
         String(watchedSession.details.port)
@@ -669,6 +746,7 @@ export const disposeHostDevicePpd = () => {
   stopWatchingInternal();
   hosting = false;
   hostDisplayProvider = null;
+  hostAdvertisedWebServerUrl = undefined;
   hostWatchers.clear();
   if (hostTimer) {
     clearInterval(hostTimer);
@@ -908,6 +986,7 @@ export const stopHostDevicePpdHosting = async (): Promise<void> => {
   if (hosting) for (const watcher of hostWatchers.values()) void sendHostPpd({ op: "off" }, watcher.address, watcher.port);
   hosting = false;
   hostDisplayProvider = null;
+  hostAdvertisedWebServerUrl = undefined;
   hostWatchers.clear();
   if (hostTimer) {
     clearInterval(hostTimer);

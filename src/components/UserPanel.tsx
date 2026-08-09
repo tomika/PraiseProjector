@@ -12,7 +12,6 @@ import AuthDialog from "./AuthDialog";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
 import { setSyncStatus } from "../state/syncStatusStore";
 import { useUpdate } from "../contexts/UpdateContext";
-import { getAssetPath } from "../utils/assetPath";
 import { requestTutorialContinueWhenUnblocked } from "../tutorial/tutorialEvents";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
