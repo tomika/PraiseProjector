@@ -179,10 +179,10 @@ export class DirectClientApi implements ClientApi {
     return readSessionToggleSettings().ppdSessionEnabled;
   }
 
-  private setSessionFeatureEnabled = async (key: SessionFeatureKey, enabled: boolean): Promise<void> => {
+  private async setSessionFeatureEnabled(key: SessionFeatureKey, enabled: boolean): Promise<void> {
     saveSessionFeatureSetting(key, enabled);
     this.refreshHostState();
-  };
+  }
 
   private refreshHostState = (): void => {
     const stylesChanged = this.refreshChordProStyles();
@@ -484,7 +484,9 @@ export class DirectClientApi implements ClientApi {
         await stopHostDevicePpdHosting();
         this.setNetworkState({ status: "online" });
       },
-      setFeatureEnabled: this.setSessionFeatureEnabled,
+      // Resolve the method only when the user toggles it, while retaining this
+      // adapter as `this` (the session API is constructed during field setup).
+      setFeatureEnabled: (key, enabled) => this.setSessionFeatureEnabled(key, enabled),
       // The surrounding full App stays mounted while this embedded view is shown
       // and is the sole owner of cloud publishing. Re-sending here would lose its
       // guest-session/default-leader target and could update the wrong namespace.
