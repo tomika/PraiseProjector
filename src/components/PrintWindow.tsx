@@ -4,12 +4,12 @@ import { Settings } from "../types";
 import { ChordProEditor } from "./ChordProEditor/ChordProEditor";
 import ChordProEditorWithLocalization from "./ChordProEditor/ChordProEditor";
 import { useLocalization } from "../localization/LocalizationContext";
+import { readPersistedSettings, writePersistedSettings } from "../services/settingsStore";
 import { chordProAPI } from "../../chordpro/chordProApi";
 import "./PrintWindow.css";
 
 /** Key used to pass print data between the main window and the print window */
 const PRINT_DATA_KEY = "pp-print-data";
-const SETTINGS_KEY = "pp-settings";
 
 interface PrintData {
   songText: string;
@@ -51,17 +51,24 @@ const PrintWindow: React.FC = () => {
   const [editorReady, setEditorReady] = useState(false);
   const editorAreaRef = useRef<HTMLDivElement>(null);
 
+  /** Resolve the editor owned by this window instead of relying on the
+   * process-wide active ChordPro editor. */
+  const getPrintEditorApi = useCallback(() => {
+    const host = editorAreaRef.current?.querySelector(".wysiwyg-page-current .wysiwyg-host");
+    return host instanceof HTMLDivElement ? chordProAPI.bind(host) : null;
+  }, []);
+
   /** Print is allowed only after the DOM renderer has fonts, wrapping and ABC geometry. */
   const markEditorReadyWhenSettled = useCallback(async () => {
-    const host = editorAreaRef.current?.querySelector(".wysiwyg-host");
-    if (!(host instanceof HTMLDivElement)) return;
+    const api = getPrintEditorApi();
+    if (!api) return;
     try {
-      await chordProAPI.bind(host).whenLayoutSettled();
+      await api.whenLayoutSettled();
       setEditorReady(true);
     } catch {
       // A replacement/unmount rejects its waiter; the next mounted editor owns readiness.
     }
-  }, []);
+  }, [getPrintEditorApi]);
 
   // Force light mode + set document title
   useEffect(() => {
@@ -136,34 +143,42 @@ const PrintWindow: React.FC = () => {
     }
 
     // 2. Load stored settings to restore printer settings
-    const storedRaw = localStorage.getItem(SETTINGS_KEY);
-    if (storedRaw) {
-      try {
-        const stored: Settings = JSON.parse(storedRaw);
-        setSettings(stored);
-        // Restore individual printer settings from stored settings
-        setPrintingBB(stored.printingBB ?? false);
-        setPrintingTitle(stored.printingTitle ?? true);
-        setPrintingMetaData(stored.printingMetaData ?? true);
-        setPrintingSuperScript(stored.printingSuperScript ?? false);
-        setPrintingSectionLabels(stored.printingSectionLabels ?? "Full");
-        setPrintingMollMode(stored.printingMollMode ?? "Am");
-      } catch {
-        // Ignore – defaults are fine
-      }
-    }
+    const stored = readPersistedSettings();
+    setSettings(stored as Settings);
+    // Restore individual printer settings from stored settings
+    setPrintingBB(stored.printingBB ?? false);
+    setPrintingTitle(stored.printingTitle ?? true);
+    setPrintingMetaData(stored.printingMetaData ?? true);
+    setPrintingSuperScript(stored.printingSuperScript ?? false);
+    setPrintingSectionLabels(stored.printingSectionLabels ?? "Full");
+    setPrintingMollMode(stored.printingMollMode ?? "Am");
   }, []);
 
   // Build a settings object that reflects the current printer toggles so
   // ChordProEditor always sees up-to-date printer settings.
-  // Apply display settings whenever printer toggles change OR editor finishes loading.
+  // Apply display settings whenever printer toggles change, and once more when
+  // the editor's initial layout settles. ChordProEditor applies its own display
+  // defaults while mounting, so the settled pass is what makes persisted print
+  // defaults authoritative on first open.
   // Also ensure light mode is always active on the ChordPro API.
   useEffect(() => {
-    if (!editorReady) return;
+    if (!song) return;
+    const api = getPrintEditorApi();
+    if (!api) return;
     // Always force light mode in the print window
-    chordProAPI.darkMode?.(false);
-    chordProAPI.setDisplay(printingTitle, printingMetaData, printingSuperScript, printingBB, printingMollMode, printingSectionLabels, 1.0, false);
-  }, [editorReady, printingBB, printingTitle, printingMetaData, printingSuperScript, printingSectionLabels, printingMollMode]);
+    api.darkMode(false);
+    api.setDisplay(printingTitle, printingMetaData, printingSuperScript, printingBB, printingMollMode, printingSectionLabels, 1.0, false);
+  }, [
+    song,
+    editorReady,
+    printingBB,
+    printingTitle,
+    printingMetaData,
+    printingSuperScript,
+    printingSectionLabels,
+    printingMollMode,
+    getPrintEditorApi,
+  ]);
 
   // Print readiness comes from the renderer-owned settlement contract, never a
   // guessed delay. The second animation frame merely waits for React to mount
@@ -221,22 +236,14 @@ const PrintWindow: React.FC = () => {
 
   /** Persist current printer settings into localStorage so they survive across sessions */
   const savePrinterSettings = useCallback(() => {
-    const storedRaw = localStorage.getItem(SETTINGS_KEY);
-    if (!storedRaw) return;
-    try {
-      const stored: Settings = JSON.parse(storedRaw);
-      stored.printingBB = printingBB;
-      stored.printingTitle = printingTitle;
-      stored.printingMetaData = printingMetaData;
-      stored.printingSuperScript = printingSuperScript;
-      stored.printingSectionLabels = printingSectionLabels;
-      stored.printingMollMode = printingMollMode;
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
-      // Notify other windows / contexts
-      window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-    } catch {
-      /* ignore */
-    }
+    writePersistedSettings({
+      printingBB,
+      printingTitle,
+      printingMetaData,
+      printingSuperScript,
+      printingSectionLabels,
+      printingMollMode,
+    });
   }, [printingBB, printingTitle, printingMetaData, printingSuperScript, printingSectionLabels, printingMollMode]);
 
   /** Print handler: optionally save settings, then print */
