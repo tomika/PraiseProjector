@@ -65,7 +65,7 @@ import { isRight } from "fp-ts/lib/Either";
 import { DisplayUpdateRequest, WindowBounds } from "./types/electron";
 import { Settings } from "./types";
 import { enqueue } from "./utils/asyncQueue";
-import { Database, FormatFoundReason } from "../db-common/Database";
+import { Database, FormatFoundReason, SongOrder } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
@@ -1516,8 +1516,23 @@ const AppContent: React.FC = () => {
         } else if (apiRequest.method === "GET" && apiRequest.path === "/search") {
           const text = (apiRequest.query.text as string) || "";
           const limit = (apiRequest.query.limit as string) || "";
-          const maxResults = limit ? parseInt(limit) : 30;
-          const results = await db.filter(text, leader);
+          const songIdQuery = apiRequest.query.songId ?? apiRequest.query.songIds;
+          const songIds = (Array.isArray(songIdQuery) ? songIdQuery : [songIdQuery])
+            .flatMap((value) => (typeof value === "string" ? value.split(",") : []))
+            .map((value) => value.trim())
+            .filter(Boolean);
+          const parsedLimit = limit ? parseInt(limit) : NaN;
+          const maxResults = Number.isNaN(parsedLimit) ? (songIds.length > 0 ? songIds.length : 30) : parsedLimit;
+          const results = await db.filter(
+            text,
+            leader,
+            true,
+            true,
+            true,
+            SongOrder.LessCostMatch,
+            settingsRef.current,
+            songIds.length > 0 ? songIds : undefined
+          );
           const data: SongFound[] = results.slice(0, maxResults > 0 ? maxResults : undefined).map((found) => ({
             songId: found.song.Id,
             title: found.song.Title,
