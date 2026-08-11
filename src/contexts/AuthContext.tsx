@@ -494,7 +494,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const clientId = await getDeviceClientId();
       cloudApi.setClientId(clientId);
       cloudApi.invalidatePeekCache();
-      await cloudApi.fetchPeek();
+      await cloudApi.fetchPeek(true);
       setNetworkUnavailable(false);
       return true;
     } catch (error) {

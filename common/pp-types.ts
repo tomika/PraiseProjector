@@ -48,6 +48,8 @@ import {
   suggestRequestCodec,
   netDisplayDataCodec,
   displayStylesQueryResponseCodec,
+  pendingSongStateCodec,
+  songDBPendingEntryCodec,
 } from "./pp-codecs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,15 +82,10 @@ export type SongEntry = t.TypeOf<typeof songEntryCodec>;
 export type SongDBEntry = t.TypeOf<typeof songDBEntryCodec>;
 export type SongDBEntryWithData = t.TypeOf<typeof songDBEntryWithDataCodec>;
 
-export type PendingSongOperation = "APPROVE" | "REJECT" | "KEEP" | "REVOKE";
-export type PendingSongState = "PENDING" | "REJECTED" | "KEPT";
+export type PendingSongOperation = "APPROVE" | "REJECT" | "KEEP" | "REVOKE" | "TAKE_UPSTREAM" | "KEEP_MINE";
+export type PendingSongState = t.TypeOf<typeof pendingSongStateCodec>;
 
-export type SongDBPendingEntry = SongDBEntryWithData & {
-  current: string;
-  state: PendingSongState;
-  uploader: string;
-  created: string;
-};
+export type SongDBPendingEntry = t.TypeOf<typeof songDBPendingEntryCodec>;
 
 export type SongInfo = SongEntry & { created: string; uploader: string; owner: string };
 

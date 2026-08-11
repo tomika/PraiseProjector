@@ -31,6 +31,7 @@ import {
   editSongResponseCodec,
   netDisplayDataCodec,
   displayStylesQueryResponseCodec,
+  pendingSongsResponseCodec,
 } from "./pp-codecs";
 import type { NetDisplayData, SongHistoryEntry } from "./pp-types";
 import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
@@ -204,8 +205,15 @@ export class CloudApiService {
   // Default TTL (10 s) matches MIN_PEEK_INTERVAL_SECONDS in UserPanel.
   // Callers that want a guaranteed fresh result call invalidatePeekCache() first.
   static readonly DEFAULT_PEEK_CACHE_TTL_MS = 10_000;
-  private peekCache: { result: PeekResponse; expiresAt: number } | null = null;
-  private peekInFlight: Promise<PeekResponse> | null = null;
+  private peekCache: {
+    result: PeekResponse;
+    expiresAt: number;
+    includeUpstream: boolean;
+  } | null = null;
+  private peekInFlight: {
+    request: Promise<PeekResponse>;
+    includeUpstream: boolean;
+  } | null = null;
   private peekCacheTtlMs = CloudApiService.DEFAULT_PEEK_CACHE_TTL_MS;
 
   /** Override the peek cache TTL (milliseconds). Call with the user-configured
@@ -687,40 +695,47 @@ export class CloudApiService {
    * succession share a single network round-trip.  In-flight deduplication
    * ensures only one request is outstanding at a time.
    */
-  async fetchPeek(): Promise<PeekResponse> {
+  async fetchPeek(includeUpstream = false): Promise<PeekResponse> {
     const now = Date.now();
-    if (this.peekCache && now < this.peekCache.expiresAt) {
+    if (this.peekCache && this.peekCache.includeUpstream === includeUpstream && now < this.peekCache.expiresAt) {
       return this.peekCache.result;
     }
-    if (this.peekInFlight) {
-      return this.peekInFlight;
+    if (this.peekInFlight && this.peekInFlight.includeUpstream === includeUpstream) {
+      return this.peekInFlight.request;
     }
     const request = (async () => {
       try {
-        const response = await this.apiCall<unknown>("/peek");
+        const endpoint = includeUpstream ? "/peek?version=2" : "/peek";
+        const response = await this.apiCall<unknown>(endpoint);
         const result = this.parseResponse(peekResponseCodec, response);
-        this.peekCache = { result, expiresAt: Date.now() + this.peekCacheTtlMs };
+        this.peekCache = {
+          result,
+          expiresAt: Date.now() + this.peekCacheTtlMs,
+          includeUpstream,
+        };
         return result;
       } finally {
-        this.peekInFlight = null;
+        if (this.peekInFlight?.includeUpstream === includeUpstream) this.peekInFlight = null;
       }
     })();
-    this.peekInFlight = request;
+    this.peekInFlight = { request, includeUpstream };
     return request;
   }
 
   /**
    * Fetch list of pending songs awaiting review
    */
-  async fetchPendingSongs(): Promise<SongDBPendingEntry[]> {
-    return this.apiCall<SongDBPendingEntry[]>("/pending_songs");
+  async fetchPendingSongs(includeUpstream = false): Promise<SongDBPendingEntry[]> {
+    const endpoint = includeUpstream ? "/pending_songs?version=2" : "/pending_songs";
+    const response = await this.apiCall<unknown>(endpoint);
+    return this.parseResponse(pendingSongsResponseCodec, response);
   }
 
   /**
    * Fetch count of pending songs awaiting review
    */
-  async fetchPendingSongsCount(): Promise<number> {
-    const peek = await this.fetchPeek();
+  async fetchPendingSongsCount(includeUpstream = false): Promise<number> {
+    const peek = await this.fetchPeek(includeUpstream);
     return peek.pendingSongCount;
   }
 

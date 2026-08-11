@@ -131,7 +131,7 @@ export function createSongApi(core: RestCore): SongApi {
     suggestSong: async (songId, version, chordPro) => {
       await cloudApi.suggestSong(songId, version, chordPro);
     },
-    fetchPendingCount: () => cloudApi.fetchPendingSongsCount(),
+    fetchPendingCount: () => cloudApi.fetchPendingSongsCount(true),
   };
 }
 

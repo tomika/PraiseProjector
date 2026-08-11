@@ -22,6 +22,8 @@ const stateLabel = (state: PendingSongState, t: (key: StringKey) => string): str
       return t("SongCheckRejected");
     case "KEPT":
       return t("SongCheckKept");
+    case "UPSTREAM":
+      return t("SongCheckUpstream");
   }
 };
 
@@ -33,6 +35,8 @@ const stateIcon = (state: PendingSongState): string => {
       return "\u{1F6AB}";
     case "KEPT":
       return "\u{1F512}";
+    case "UPSTREAM":
+      return "\u{2B06}";
   }
 };
 
@@ -66,7 +70,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   const fetchPendingSongs = useCallback(async (): Promise<SongDBPendingEntry[]> => {
     try {
       setLoading(true);
-      const list = await cloudApi.fetchPendingSongs();
+      const list = await cloudApi.fetchPendingSongs(true);
       const sorted = sortPendingSongs(list);
       setPendingSongs(sorted);
       return sorted;
@@ -88,6 +92,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   };
 
   const determineOperation = (entry: SongDBPendingEntry, decision: SongCheckDecision): PendingSongOperation => {
+    if (entry.state === "UPSTREAM") return decision === "approve" ? "TAKE_UPSTREAM" : "KEEP_MINE";
     if (decision === "revoke") return "REVOKE";
     if (username === entry.uploader && decision === "reject") return "REVOKE";
     if (entry.state === "REJECTED") {
@@ -97,6 +102,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   };
 
   const getConfirmMessage = (decision: SongCheckDecision, state: PendingSongState): StringKey => {
+    if (state === "UPSTREAM") return decision === "approve" ? "SongCheckConfirmTakeUpstream" : "SongCheckConfirmKeepMine";
     if (state === "REJECTED" && decision === "approve") return "SongCheckConfirmKeep";
     if (state === "KEPT" || state === "REJECTED") return "SongCheckConfirmWithdraw";
     switch (decision) {

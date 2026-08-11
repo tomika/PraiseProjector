@@ -123,6 +123,20 @@ export const songDBEntryWithDataCodec = t.intersection([songDBEntryCodec, t.type
 
 export const songsResponseCodec = t.array(songDBEntryWithDataCodec);
 
+export const pendingSongStateCodec = t.union([t.literal("PENDING"), t.literal("REJECTED"), t.literal("KEPT"), t.literal("UPSTREAM")]);
+
+export const songDBPendingEntryCodec = t.intersection([
+  songDBEntryWithDataCodec,
+  t.type({
+    current: t.string,
+    state: pendingSongStateCodec,
+    uploader: t.string,
+    created: t.string,
+  }),
+]);
+
+export const pendingSongsResponseCodec = t.array(songDBPendingEntryCodec);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Playlist
 // ═══════════════════════════════════════════════════════════════════════════════

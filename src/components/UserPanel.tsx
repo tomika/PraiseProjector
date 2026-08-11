@@ -114,7 +114,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
       }
 
       try {
-        const peek = await cloudApi.fetchPeek();
+        const peek = await cloudApi.fetchPeek(true);
         setPendingSongCount(peek.pendingSongCount ?? 0);
         setCloudDbVersion(peek.dbVersion ?? null);
         setCloudAuthFailed(false);

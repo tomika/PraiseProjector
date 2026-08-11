@@ -501,6 +501,16 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   {t("SongCheckWithdraw")}
                 </button>
               )}
+              {isSongCheckMode && onSongCheckDecision && songCheckState === "UPSTREAM" && (
+                <>
+                  <button type="button" className="btn btn-success" onClick={() => onSongCheckDecision("approve")}>
+                    {t("SongCheckTakeUpstream")}
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={() => onSongCheckDecision("reject")}>
+                    {t("SongCheckKeepMine")}
+                  </button>
+                </>
+              )}
               <button className="btn btn-secondary" onClick={() => onClose()}>
                 {isImportMode ? t("Cancel") : t("Close")}
               </button>
