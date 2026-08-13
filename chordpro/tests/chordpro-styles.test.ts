@@ -61,3 +61,15 @@ test("normalization keeps the established persisted shape", () => {
   assert.deepEqual(Object.keys(normalized).sort(), ["dark", "light"]);
   assert.deepEqual(normalized, defaults);
 });
+
+test("empty directive alignment survives JSON persistence while undefined falls back", () => {
+  const styles = createDefaultChordProStylesSettings();
+  styles.light.directives.title.align = undefined;
+  styles.dark.directives.title.align = "";
+
+  const persisted = JSON.parse(JSON.stringify(styles)) as unknown;
+  const normalized = normalizeChordProStyles(persisted);
+
+  assert.equal(normalized.light.directives.title.align, "center");
+  assert.equal(normalized.dark.directives.title.align, "");
+});

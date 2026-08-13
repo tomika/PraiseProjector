@@ -871,7 +871,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     const patch: Partial<ChordProDirectiveStyle> = { font: buildFontSpec(font) };
     if ((!advancedMode || linkFontAndLineHeight) && font.size !== previousSize) {
       const currentHeight = selectedDirective.height ?? Math.round(previousSize * 1.2);
-      patch.height = Math.max(1, Math.round(currentHeight * (font.size / Math.max(1, previousSize))));
+      patch.height = currentHeight === 0 ? 0 : Math.max(1, Math.round(currentHeight * (font.size / Math.max(1, previousSize))));
     }
     updateDirectiveCommon(selectedDirectiveKey, patch);
   };
@@ -1011,6 +1011,21 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
         </aside>
 
         <div className="chordpro-styles-controls-column">
+          <section className="card chordpro-styles-card">
+            <div className="card-body">
+              <label className="form-check mb-1">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={!!settings.stylesToClients}
+                  onChange={(e) => updateSetting("stylesToClients", e.target.checked)}
+                />
+                <span className="form-check-label">{t("ChordProStylesAdvertiseToClients")}</span>
+              </label>
+              <p className="text-muted mb-0">{t("ChordProStylesAdvertiseToClientsHelp")}</p>
+            </div>
+          </section>
+
           {!advancedMode && (
             <>
               <section className="card chordpro-styles-card">
@@ -1360,7 +1375,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                           value={selectedDirective.align ?? ""}
                           onChange={(e) =>
                             updateDirectiveCommon(selectedDirectiveKey, {
-                              align: e.target.value || undefined,
+                              align: e.target.value,
                             })
                           }
                         >
@@ -1401,21 +1416,6 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                       baseFontSize={lyricsFontSize}
                     />
                   </div>
-                </div>
-              </section>
-
-              <section className="card chordpro-styles-card">
-                <div className="card-body">
-                  <label className="form-check mb-1">
-                    <input
-                      type="checkbox"
-                      className="form-check-input"
-                      checked={!!settings.stylesToClients}
-                      onChange={(e) => updateSetting("stylesToClients", e.target.checked)}
-                    />
-                    <span className="form-check-label">{t("ChordProStylesAdvertiseToClients")}</span>
-                  </label>
-                  <p className="text-muted mb-0">{t("ChordProStylesAdvertiseToClientsHelp")}</p>
                 </div>
               </section>
 

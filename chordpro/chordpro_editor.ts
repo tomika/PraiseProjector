@@ -5,6 +5,7 @@ import {
   ChordProStylesSettings,
   cloneDirectiveStyles,
   cloneDisplayProperties,
+  createDefaultChordProStylesSettings,
   defaultDisplayProperties,
   defaultStyles,
   normalizeChordProStyles,
@@ -721,6 +722,8 @@ export class ChordProEditor extends ChordDrawer {
 
   private directiveStyles: ChordProDirectiveStyles;
   private customStyles: ChordProStylesSettings | null = null;
+  private customStylesSource: ChordProStylesSettings | null = null;
+  private styleNormalizationDefaults: { rootFontPx: number; styles: ChordProStylesSettings } | null = null;
   private keyIsAuto = false;
 
   private inApplyState = false;
@@ -979,6 +982,10 @@ export class ChordProEditor extends ChordDrawer {
 
   installLocaleHandler(handler: (s: string) => string) {
     this.localeHandler = handler;
+    this.styleNormalizationDefaults = null;
+    if (this.customStylesSource) {
+      this.customStyles = normalizeChordProStyles(this.customStylesSource, undefined, this.getStyleNormalizationDefaults(this.stylesBaseRootFontPx));
+    }
     this.applyStylesForCurrentTheme();
     this.invalidateStyleSemantics();
     this.draw();
@@ -1333,14 +1340,34 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   setStyles(styles: ChordProStylesSettings | null, draw = true) {
-    this.customStyles = styles ? normalizeChordProStyles(styles, (key) => this.localeHandler?.(key) ?? key) : null;
     // Remember the root font size at which these styles were authored/applied.
     this.stylesBaseRootFontPx = getRootFontSizePx();
+    this.customStylesSource = styles;
+    this.customStyles = styles ? normalizeChordProStyles(styles, undefined, this.getStyleNormalizationDefaults(this.stylesBaseRootFontPx)) : null;
     this.applyStylesForCurrentTheme();
     this.chordsSizeCache = new VersionedMap<string, number, number>(-1);
     for (const lo of this.chordPro?.lines || []) lo.invalidateCache();
     this.invalidateStyleSemantics();
     if (draw) this.draw();
+  }
+
+  private getStyleNormalizationDefaults(rootFontPx = getRootFontSizePx()) {
+    const cached = this.styleNormalizationDefaults;
+    if (cached && Math.abs(cached.rootFontPx - rootFontPx) < 0.0001) return cached.styles;
+
+    const styles = createDefaultChordProStylesSettings((key) => this.localeHandler?.(key) ?? key);
+    // Factory defaults are created at the live root size. Store them at the
+    // requested base size so applyRootFontScale scales defaults and authored
+    // values exactly once using the same current/base factor.
+    const liveRootFontPx = getRootFontSizePx();
+    if (Number.isFinite(liveRootFontPx) && liveRootFontPx > 0 && Number.isFinite(rootFontPx) && rootFontPx > 0) {
+      const factor = rootFontPx / liveRootFontPx;
+      for (const theme of [styles.light, styles.dark]) {
+        this.applyMetricScale(theme.display, theme.directives, factor);
+      }
+    }
+    this.styleNormalizationDefaults = { rootFontPx, styles };
+    return styles;
   }
 
   private scalePxTokens(value: string, factor: number): string {
@@ -1394,38 +1421,21 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private applyStylesForCurrentTheme() {
-    const defaults = defaultDisplayProperties(this.isDark);
-    const defaultDirectiveStyles = defaultStyles(defaults.lyricsFont, this.isDark, (key) => this.localeHandler?.(key) ?? key);
     const currentTheme = this.isDark ? this.customStyles?.dark : this.customStyles?.light;
 
     if (currentTheme) {
-      this.displayProps = cloneDisplayProperties({
-        ...defaults,
-        ...currentTheme.display,
-        guitarChordSize: {
-          ...defaults.guitarChordSize,
-          ...(currentTheme.display?.guitarChordSize ?? {}),
-        },
-        pianoChordSize: {
-          ...defaults.pianoChordSize,
-          ...(currentTheme.display?.pianoChordSize ?? {}),
-        },
-      });
+      this.displayProps = cloneDisplayProperties(currentTheme.display);
     } else {
-      this.displayProps = defaults;
+      this.displayProps = defaultDisplayProperties(this.isDark);
     }
 
-    const directives = cloneDirectiveStyles(defaultDirectiveStyles);
+    let directives: ChordProDirectiveStyles;
     if (currentTheme) {
-      for (const [key, value] of Object.entries(currentTheme.directives ?? {})) {
-        directives[key] = {
-          ...(directives[key] ?? {}),
-          ...value,
-        };
-      }
-
+      directives = cloneDirectiveStyles(currentTheme.directives);
       // Keep custom styles visually aligned with UI font-size changes at runtime.
       this.applyRootFontScale(this.displayProps, directives);
+    } else {
+      directives = defaultStyles(this.displayProps.lyricsFont, this.isDark, (key) => this.localeHandler?.(key) ?? key);
     }
 
     this.applyContentFontSize(this.displayProps, directives);

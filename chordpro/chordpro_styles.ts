@@ -367,8 +367,12 @@ function normalizeThemeStyles(value: unknown, fallback: ChordProThemeStyles): Ch
  * shape. Known valid values win, missing/invalid known fields get current
  * defaults, and unknown fields/directives survive for forward compatibility.
  */
-export function normalizeChordProStyles(value: unknown, localize?: PrefixLocalizer): ChordProStylesSettings {
-  const defaults = createDefaultChordProStylesSettings(localize);
+export function normalizeChordProStyles(
+  value: unknown,
+  localize?: PrefixLocalizer,
+  suppliedDefaults?: ChordProStylesSettings
+): ChordProStylesSettings {
+  const defaults = suppliedDefaults ?? createDefaultChordProStylesSettings(localize);
   const source = isRecord(value) ? value : {};
   return {
     ...source,
