@@ -9,30 +9,6 @@
   container-type: size;
 }
 
-.chordpro-styles-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.9rem;
-  flex-wrap: wrap;
-}
-
-.chordpro-styles-toolbar-main,
-.chordpro-styles-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.chordpro-styles-theme-select {
-  min-width: 12rem;
-}
-
-.chordpro-styles-description {
-  margin: 0;
-}
-
 .chordpro-styles-main {
   display: flex;
   gap: 1rem;
@@ -50,6 +26,13 @@
   max-width: 42%;
   min-height: 0;
   overflow: hidden;
+  order: 1;
+}
+
+.chordpro-styles-preview-column.preview-collapsed {
+  flex-basis: 18rem;
+  min-width: 14rem;
+  max-width: 18rem;
 }
 
 .chordpro-styles-controls-column {
@@ -57,9 +40,11 @@
   flex-direction: column;
   gap: 1rem;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding-right: 0.25rem;
+  order: 2;
 }
 
 .chordpro-styles-card {
@@ -96,6 +81,83 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.chordpro-styles-preview-card.preview-collapsed {
+  flex: 0 0 auto;
+}
+
+.chordpro-styles-preview-card.preview-collapsed .chordpro-styles-section-header {
+  margin-bottom: 0;
+}
+
+.chordpro-styles-preview-header {
+  align-items: center;
+}
+
+.chordpro-styles-preview-header-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.chordpro-styles-preview-header-primary > h6 {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chordpro-styles-preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.chordpro-styles-mode-select {
+  width: 6.5rem;
+}
+
+.chordpro-styles-preview-theme-select {
+  width: 6rem;
+}
+
+.chordpro-styles-preview-toggle {
+  min-width: 2.25rem;
+}
+
+.chordpro-styles-preview-resize-handle {
+  display: none;
+  flex: 0 0 0.7rem;
+  width: 100%;
+  min-height: 0.7rem;
+  margin: 0.1rem 0 -0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ns-resize;
+  touch-action: none;
+  position: relative;
+}
+
+.chordpro-styles-preview-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3rem;
+  height: 0.2rem;
+  border-radius: 999px;
+  background: var(--pp-border-color);
+  transform: translate(-50%, -50%);
+}
+
+.chordpro-styles-preview-resize-handle:hover::after,
+.chordpro-styles-preview-resize-handle:focus-visible::after {
+  background: var(--bs-primary);
 }
 
 .chordpro-styles-preview-card > .card-body {
@@ -184,6 +246,10 @@
   gap: 0.75rem;
 }
 
+.chordpro-styles-grid > * {
+  min-width: 0;
+}
+
 .chordpro-styles-field {
   margin: 0;
   display: flex;
@@ -227,6 +293,33 @@
   padding: 0.7rem;
 }
 
+.chordpro-styles-basic-style-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chordpro-styles-basic-style-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--pp-border-color);
+  border-radius: 0.75rem;
+  background: var(--pp-panel-bg);
+}
+
+.chordpro-styles-basic-style-row > h6 {
+  min-width: 0;
+}
+
+.chordpro-styles-basic-style-row .chordpro-styles-font-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .chordpro-styles-toggle {
   display: flex;
   align-items: center;
@@ -264,14 +357,16 @@
 }
 
 .chordpro-styles-font-select {
-  min-width: 14rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /*
  * The settings dialog can be resized independently from the window, so this
  * layout must respond to its own available space instead of the viewport.
- * In stacked mode the preview stays in normal document flow: making it sticky
- * would paint it above the controls in a short dialog.
+ * In stacked mode the preview is sticky and can be collapsed from its compact
+ * header, while wide mode keeps the original side-by-side layout.
  */
 @container chordpro-styles (max-width: 700px) {
   .chordpro-styles-main {
@@ -283,19 +378,46 @@
     flex: 0 0 auto;
     min-width: 0;
     max-width: none;
-    position: static;
-    z-index: auto;
+    position: sticky;
+    top: 0;
+    z-index: 2;
     overflow: visible;
+    order: 1;
+  }
+
+  .chordpro-styles-preview-column.preview-collapsed {
+    flex-basis: auto;
+    min-width: 0;
+    max-width: none;
   }
 
   .chordpro-styles-preview-card {
     flex: 0 0 auto;
   }
 
+  .chordpro-styles-preview-card.preview-collapsed > .card-body {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .chordpro-styles-preview-card.preview-collapsed .chordpro-styles-preview-header {
+    gap: 0.4rem;
+  }
+
+  .chordpro-styles-preview-card.preview-collapsed .form-select-sm,
+  .chordpro-styles-preview-card.preview-collapsed .chordpro-styles-preview-toggle {
+    min-height: 2rem;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
+  }
+
   .chordpro-styles-preview-frame {
     flex: 0 0 auto;
     block-size: clamp(8rem, 30cqh, 16rem);
     min-height: 0;
+  }
+
+  .chordpro-styles-preview-resize-handle {
+    display: block;
   }
 
   .chordpro-styles-preview-frame .chordpro-editor-container,
@@ -310,6 +432,7 @@
   .chordpro-styles-controls-column {
     overflow-y: visible;
     padding-right: 0;
+    order: 2;
   }
 }
 
@@ -347,19 +470,34 @@
       flex: 0 0 auto;
       min-width: 0;
       max-width: none;
-      position: static;
-      z-index: auto;
+      position: sticky;
+      top: 0;
+      z-index: 2;
       overflow: visible;
+    }
+
+    .chordpro-styles-preview-column.preview-collapsed {
+      flex-basis: auto;
+      min-width: 0;
+      max-width: none;
     }
 
     .chordpro-styles-preview-card {
       flex: 0 0 auto;
     }
 
+    .chordpro-styles-preview-card.preview-collapsed > .card-body {
+      padding: 0.35rem 0.5rem;
+    }
+
     .chordpro-styles-preview-frame {
       flex: 0 0 auto;
       height: clamp(8rem, 30vh, 16rem);
       min-height: 0;
+    }
+
+    .chordpro-styles-preview-resize-handle {
+      display: block;
     }
 
     .chordpro-styles-preview-frame .chordpro-editor-container,

@@ -7,6 +7,7 @@ import {
   cloneDisplayProperties,
   defaultDisplayProperties,
   defaultStyles,
+  normalizeChordProStyles,
 } from "./chordpro_styles";
 import { getKeyCodeString } from "./keycodes";
 import { ChordSelector } from "./chord_selector";
@@ -1332,7 +1333,7 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   setStyles(styles: ChordProStylesSettings | null, draw = true) {
-    this.customStyles = styles;
+    this.customStyles = styles ? normalizeChordProStyles(styles, (key) => this.localeHandler?.(key) ?? key) : null;
     // Remember the root font size at which these styles were authored/applied.
     this.stylesBaseRootFontPx = getRootFontSizePx();
     this.applyStylesForCurrentTheme();

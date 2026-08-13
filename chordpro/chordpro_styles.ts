@@ -288,3 +288,91 @@ export function createDefaultChordProStylesSettings(localize?: PrefixLocalizer):
     },
   };
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validValue(value: unknown, fallback: unknown): boolean {
+  if (typeof fallback === "number") return typeof value === "number" && Number.isFinite(value);
+  return typeof value === typeof fallback;
+}
+
+function normalizeDisplayProperties(value: unknown, fallback: ChordProDisplayProperties): ChordProDisplayProperties {
+  const source = isRecord(value) ? value : {};
+  const normalized: Record<string, unknown> = { ...source };
+
+  for (const [key, defaultValue] of Object.entries(fallback)) {
+    if (key === "guitarChordSize" || key === "pianoChordSize") continue;
+    normalized[key] = validValue(source[key], defaultValue) ? source[key] : defaultValue;
+  }
+
+  for (const key of ["guitarChordSize", "pianoChordSize"] as const) {
+    const defaultSize = fallback[key];
+    const sourceSize = isRecord(source[key]) ? source[key] : {};
+    normalized[key] = {
+      ...sourceSize,
+      width: validValue(sourceSize.width, defaultSize.width) ? sourceSize.width : defaultSize.width,
+      height: validValue(sourceSize.height, defaultSize.height) ? sourceSize.height : defaultSize.height,
+    };
+  }
+
+  return normalized as ChordProDisplayProperties;
+}
+
+function normalizeDirectiveStyle(value: unknown, fallback: ChordProDirectiveStyle = {}): ChordProDirectiveStyle {
+  const source = isRecord(value) ? value : {};
+  const normalized: Record<string, unknown> = { ...source };
+  const schema = {
+    prefix: "string",
+    font: "string",
+    fg: "string",
+    bg: "string",
+    height: "number",
+    align: "string",
+    indent: "number",
+    hidden: "boolean",
+  } as const;
+
+  for (const [key, type] of Object.entries(schema)) {
+    const sourceValue = source[key];
+    const fallbackValue = fallback[key as keyof ChordProDirectiveStyle];
+    const sourceIsValid = typeof sourceValue === type && (type !== "number" || (typeof sourceValue === "number" && Number.isFinite(sourceValue)));
+    if (sourceIsValid) normalized[key] = sourceValue;
+    else if (fallbackValue !== undefined) normalized[key] = fallbackValue;
+    else delete normalized[key];
+  }
+
+  return normalized as ChordProDirectiveStyle;
+}
+
+function normalizeThemeStyles(value: unknown, fallback: ChordProThemeStyles): ChordProThemeStyles {
+  const source = isRecord(value) ? value : {};
+  const sourceDirectives = isRecord(source.directives) ? source.directives : {};
+  const directives: ChordProDirectiveStyles = {};
+
+  for (const key of new Set([...Object.keys(fallback.directives), ...Object.keys(sourceDirectives)])) {
+    directives[key] = normalizeDirectiveStyle(sourceDirectives[key], fallback.directives[key]);
+  }
+
+  return {
+    ...source,
+    display: normalizeDisplayProperties(source.display, fallback.display),
+    directives,
+  } as ChordProThemeStyles;
+}
+
+/**
+ * Upgrade partial or older style payloads without changing the persisted wire
+ * shape. Known valid values win, missing/invalid known fields get current
+ * defaults, and unknown fields/directives survive for forward compatibility.
+ */
+export function normalizeChordProStyles(value: unknown, localize?: PrefixLocalizer): ChordProStylesSettings {
+  const defaults = createDefaultChordProStylesSettings(localize);
+  const source = isRecord(value) ? value : {};
+  return {
+    ...source,
+    light: normalizeThemeStyles(source.light, defaults.light),
+    dark: normalizeThemeStyles(source.dark, defaults.dark),
+  } as ChordProStylesSettings;
+}

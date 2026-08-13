@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { Settings } from "../types";
-import { createDefaultChordProStylesSettings } from "../../chordpro/chordpro_styles";
+import { createDefaultChordProStylesSettings, normalizeChordProStyles } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
 import { syncSettingsToBackend } from "../services/settingsSync";
 import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
@@ -204,6 +204,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Merge defaults with loaded settings so new settings get their default values
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
+        merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));
         if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
         // Migrate old showPreferredOnly boolean to preferenceFilter string
         const raw = loadedSettings as unknown as Record<string, unknown>;
@@ -225,7 +226,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setSettings(defaultSettings);
         setInitialSettings(defaultSettings);
       });
-  }, [createDefaultSettings]);
+  }, [createDefaultSettings, t]);
 
   // Stay in sync when the session feature toggles are written from OUTSIDE this
   // context — the client view's saveSessionFeatureSetting (which has no

@@ -279,6 +279,7 @@ function humanizeDirectiveName(name: string): string {
 
 function cloneTheme(theme: ChordProThemeStyles): ChordProThemeStyles {
   return {
+    ...theme,
     display: cloneDisplayProperties(theme.display),
     directives: cloneDirectiveStyles(theme.directives),
   };
@@ -403,6 +404,13 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   const [previewSong] = React.useState(() => new Song(PREVIEW_SONG));
   const [fontTarget, setFontTarget] = React.useState<FontTargetKey>("tagFont");
   const [colorTargetIndex, setColorTargetIndex] = React.useState(0);
+  const [advancedMode, setAdvancedMode] = React.useState(false);
+  const [linkFontAndLineHeight, setLinkFontAndLineHeight] = React.useState(true);
+  const [previewVisible, setPreviewVisible] = React.useState(true);
+  const [stackedLayout, setStackedLayout] = React.useState(false);
+  const [stackedPreviewHeight, setStackedPreviewHeight] = React.useState<number | null>(null);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const previewManuallyToggledRef = React.useRef(false);
   const previewFrameRef = React.useRef<HTMLDivElement | null>(null);
   const [previewSize, setPreviewSize] = React.useState({ width: 1, height: 1 });
 
@@ -458,7 +466,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     const darkStripped = stripDirectiveBackgrounds(dark);
     lightStripped.display.backgroundColor = "white";
     darkStripped.display.backgroundColor = "black";
-    updateSetting("chordProStyles", { light: lightStripped, dark: darkStripped });
+    updateSetting("chordProStyles", { ...settings.chordProStyles, light: lightStripped, dark: darkStripped });
   };
 
   const updateCurrentTheme = (updater: (theme: ChordProThemeStyles) => void) => {
@@ -613,6 +621,21 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     });
   };
 
+  const resetSpacingAndMargins = () => {
+    updateBothThemes((light, dark) => {
+      const defaultDisplay = defaultStyles.light.display;
+
+      for (const theme of [light, dark]) {
+        theme.display.horizontalMargin = defaultDisplay.horizontalMargin;
+        theme.display.verticalMargin = defaultDisplay.verticalMargin;
+        theme.display.chordLineHeight = defaultDisplay.chordLineHeight;
+        theme.display.lyricsLineHeight = defaultDisplay.lyricsLineHeight;
+        theme.display.chordLyricSep = defaultDisplay.chordLyricSep;
+        theme.display.chordBorder = defaultDisplay.chordBorder;
+      }
+    });
+  };
+
   const resetDirectiveStyles = () => {
     updateBothThemes((light, dark) => {
       const lightDefaults = defaultStyles.light.directives;
@@ -644,16 +667,34 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
   const confirmFactoryDefaultsReset = (onConfirm: () => void) => {
     const snapshot = {
+      ...settings.chordProStyles,
       light: cloneTheme(settings.chordProStyles.light),
       dark: cloneTheme(settings.chordProStyles.dark),
     };
     showConfirm(t("Confirm"), t("ChordProStylesResetFactoryConfirm"), onConfirm, () =>
-      updateSetting("chordProStyles", {
-        light: cloneTheme(snapshot.light),
-        dark: cloneTheme(snapshot.dark),
-      })
+      updateSetting("chordProStyles", { ...snapshot, light: cloneTheme(snapshot.light), dark: cloneTheme(snapshot.dark) })
     );
   };
+
+  React.useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      const stacked = width <= 700;
+      setStackedLayout(stacked);
+      if (!stacked) {
+        previewManuallyToggledRef.current = false;
+        setPreviewVisible(true);
+      } else {
+        setStackedPreviewHeight((current) => (current === null ? null : Math.max(96, Math.min(current, Math.max(96, Math.round(height * 0.65))))));
+        if (!previewManuallyToggledRef.current) setPreviewVisible(height > 480);
+      }
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     const node = previewFrameRef.current;
@@ -669,7 +710,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [previewVisible]);
 
   React.useEffect(() => {
     const prev = prevUiFontSizeRef.current;
@@ -701,7 +742,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
         if (d.height) d.height = Math.max(1, Math.round(d.height * ratio));
       }
     }
-    updateSetting("chordProStyles", { light, dark });
+    updateSetting("chordProStyles", { ...settings.chordProStyles, light, dark });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only reacts to uiFontSize; including chordProStyles would loop
   }, [uiFontSize]);
 
@@ -711,7 +752,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     node.style.setProperty("--pp-chordpro-hmargin", `${selectedThemeStyles.display.horizontalMargin}px`);
     node.style.setProperty("--pp-chordpro-vmargin", `${selectedThemeStyles.display.verticalMargin}px`);
     node.style.setProperty("--pp-chordpro-preview-bg", themeMode === "dark" ? "black" : "white");
-  }, [selectedThemeStyles.display.horizontalMargin, selectedThemeStyles.display.verticalMargin, themeMode]);
+  }, [selectedThemeStyles.display.horizontalMargin, selectedThemeStyles.display.verticalMargin, themeMode, previewVisible]);
 
   const applyDraggedMargin = (edge: MarginEdge, clientX: number, clientY: number) => {
     const frame = previewFrameRef.current;
@@ -757,6 +798,34 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
     window.addEventListener("pointercancel", handleUp);
   };
 
+  const clampStackedPreviewHeight = (height: number) => {
+    const availableHeight = rootRef.current?.getBoundingClientRect().height ?? window.innerHeight;
+    return Math.max(96, Math.min(Math.round(height), Math.max(96, Math.round(availableHeight * 0.65))));
+  };
+
+  const startPreviewHeightDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = frame.getBoundingClientRect().height;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      setStackedPreviewHeight(clampStackedPreviewHeight(startHeight + moveEvent.clientY - startY));
+    };
+
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+  };
+
   const lyricsFontParts = parseFontSpec(selectedThemeStyles.display.lyricsFont, {
     family: "Arial",
     size: 14,
@@ -766,27 +835,66 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   const lyricsFontSize = lyricsFontParts.size;
   const lyricsLineHeight = selectedThemeStyles.display.lyricsLineHeight;
 
-  const handleDisplayFontChange = (font: FontParts) => {
-    if (fontTarget === "lyricsFont" && font.size !== lyricsFontSize && lyricsFontSize > 0) {
-      const ratio = font.size / lyricsFontSize;
-      updateBothThemes((light, dark) => {
-        light.display[fontTarget] = buildFontSpec(font);
-        dark.display[fontTarget] = buildFontSpec(font);
-        const defaultFallback: FontParts = { family: "Arial", size: 14, bold: false, italic: false };
-        for (const key of directiveKeys) {
-          for (const theme of [light, dark]) {
-            const d = theme.directives[key];
-            if (d?.font) {
-              const parsed = parseFontSpec(d.font, defaultFallback);
-              parsed.size = Math.max(1, Math.round(parsed.size * ratio));
-              d.font = buildFontSpec(parsed);
-            }
-          }
+  const handleDisplayFontChange = (target: FontTargetKey, font: FontParts) => {
+    const previous = parseFontSpec(selectedThemeStyles.display[target], {
+      family: "Arial",
+      size: 14,
+      bold: target === "tagFont",
+      italic: false,
+    });
+    const ratio = previous.size > 0 ? font.size / previous.size : 1;
+    updateBothThemes((light, dark) => {
+      for (const targetTheme of [light, dark]) {
+        const currentLyricsSize = parseFontSpec(targetTheme.display.lyricsFont, previous).size;
+        const currentTagSize = parseFontSpec(targetTheme.display.tagFont, previous).size;
+        targetTheme.display[target] = buildFontSpec(font);
+        if ((advancedMode && !linkFontAndLineHeight) || font.size === previous.size) continue;
+        if (target === "chordFont") {
+          targetTheme.display.chordLineHeight = Math.max(1, Math.round(targetTheme.display.chordLineHeight * ratio));
+        } else {
+          const oldContentSize = Math.max(currentLyricsSize, currentTagSize);
+          const nextContentSize = Math.max(
+            target === "lyricsFont" ? font.size : currentLyricsSize,
+            target === "tagFont" ? font.size : currentTagSize
+          );
+          targetTheme.display.lyricsLineHeight = Math.max(
+            1,
+            Math.round(targetTheme.display.lyricsLineHeight * (nextContentSize / Math.max(1, oldContentSize)))
+          );
         }
-      });
-    } else {
-      updateDisplayCommon(fontTarget, buildFontSpec(font));
+      }
+    });
+  };
+
+  const handleDirectiveFontChange = (font: FontParts) => {
+    const previousSize = directiveFont.size;
+    const patch: Partial<ChordProDirectiveStyle> = { font: buildFontSpec(font) };
+    if ((!advancedMode || linkFontAndLineHeight) && font.size !== previousSize) {
+      const currentHeight = selectedDirective.height ?? Math.round(previousSize * 1.2);
+      patch.height = Math.max(1, Math.round(currentHeight * (font.size / Math.max(1, previousSize))));
     }
+    updateDirectiveCommon(selectedDirectiveKey, patch);
+  };
+
+  const lineSpacing = (() => {
+    const chordSize = parseFontSpec(selectedThemeStyles.display.chordFont, lyricsFontParts).size;
+    const average = (lyricsLineHeight / Math.max(1, lyricsFontSize) + selectedThemeStyles.display.chordLineHeight / Math.max(1, chordSize)) / 2;
+    if (Math.abs(average - 1.05) < 0.08) return "compact";
+    if (Math.abs(average - 1.2) < 0.1) return "normal";
+    if (Math.abs(average - 1.5) < 0.12) return "relaxed";
+    return "custom";
+  })();
+
+  const applyLineSpacing = (value: string) => {
+    const multiplier = value === "compact" ? 1.05 : value === "relaxed" ? 1.5 : 1.2;
+    updateBothThemes((light, dark) => {
+      for (const targetTheme of [light, dark]) {
+        const targetLyricsSize = parseFontSpec(targetTheme.display.lyricsFont, lyricsFontParts).size;
+        const targetChordSize = parseFontSpec(targetTheme.display.chordFont, lyricsFontParts).size;
+        targetTheme.display.lyricsLineHeight = Math.max(1, Math.round(targetLyricsSize * multiplier));
+        targetTheme.display.chordLineHeight = Math.max(1, Math.round(targetChordSize * multiplier));
+      }
+    });
   };
 
   const currentFont = parseFontSpec(selectedThemeStyles.display[fontTarget], {
@@ -811,323 +919,522 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   const directiveTitle = directiveTitleKey ? t(directiveTitleKey as never) : humanizeDirectiveName(selectedDirectiveKey);
 
   return (
-    <div className="chordpro-styles-settings general-settings-root">
+    <div ref={rootRef} className="chordpro-styles-settings general-settings-root">
       <div className="chordpro-styles-main">
-        <aside className="chordpro-styles-preview-column">
-          <div className="card chordpro-styles-card chordpro-styles-preview-card">
+        <aside className={`chordpro-styles-preview-column${previewVisible ? "" : " preview-collapsed"}`}>
+          <div className={`card chordpro-styles-card chordpro-styles-preview-card${previewVisible ? "" : " preview-collapsed"}`}>
             <div className="card-body">
-              <div className="chordpro-styles-section-header">
-                <div>
-                  <h6 className="mb-1">{t("ChordProStylesPreview")}</h6>
+              <div className="chordpro-styles-section-header chordpro-styles-preview-header">
+                <div className="chordpro-styles-preview-header-primary">
+                  <h6 className="mb-0">{t("ChordProStylesPreview")}</h6>
+                  <select
+                    className="form-select form-select-sm chordpro-styles-preview-theme-select"
+                    value={themeMode}
+                    aria-label={t("ChordProStylesThemeMode")}
+                    title={t("ChordProStylesThemeMode")}
+                    onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+                  >
+                    <option value="light">{t("ThemeLight")}</option>
+                    <option value="dark">{t("ThemeDark")}</option>
+                  </select>
+                </div>
+                <div className="chordpro-styles-preview-header-actions">
+                  <select
+                    className="form-select form-select-sm chordpro-styles-mode-select"
+                    value={advancedMode ? "advanced" : "simple"}
+                    aria-label={t("ChordProStylesEditorMode")}
+                    title={t("ChordProStylesEditorMode")}
+                    onChange={(event) => setAdvancedMode(event.target.value === "advanced")}
+                  >
+                    <option value="simple">{t("ChordProStylesBasicMode")}</option>
+                    <option value="advanced">{t("ChordProStylesAdvancedMode")}</option>
+                  </select>
+                  {stackedLayout && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary chordpro-styles-preview-toggle"
+                      aria-expanded={previewVisible}
+                      aria-label={previewVisible ? t("ChordProStylesHidePreview") : t("ChordProStylesShowPreview")}
+                      title={previewVisible ? t("ChordProStylesHidePreview") : t("ChordProStylesShowPreview")}
+                      onClick={() => {
+                        previewManuallyToggledRef.current = true;
+                        setPreviewVisible((visible) => !visible);
+                      }}
+                    >
+                      <i className={`fa ${previewVisible ? "fa-chevron-up" : "fa-chevron-down"}`} aria-hidden="true"></i>
+                    </button>
+                  )}
                 </div>
               </div>
-              <div ref={previewFrameRef} className="chordpro-styles-preview-frame">
-                <ChordProEditor
-                  key={`preview-${themeMode}`}
-                  song={previewSong}
-                  settings={previewSettings}
-                  previewOnly={true}
-                  forceThemeMode={themeMode}
-                />
-                <div className="chordpro-styles-preview-overlay" aria-hidden="true">
-                  <div className="chordpro-styles-preview-canvas-border"></div>
-                  <div className="chordpro-styles-preview-margin-box"></div>
-                  <button type="button" className="chordpro-styles-margin-handle left" onPointerDown={startMarginDrag("left")}></button>
-                  <button type="button" className="chordpro-styles-margin-handle right" onPointerDown={startMarginDrag("right")}></button>
-                  <button type="button" className="chordpro-styles-margin-handle top" onPointerDown={startMarginDrag("top")}></button>
-                  <button type="button" className="chordpro-styles-margin-handle bottom" onPointerDown={startMarginDrag("bottom")}></button>
-                </div>
-              </div>
+              {previewVisible && (
+                <>
+                  <div
+                    ref={previewFrameRef}
+                    className="chordpro-styles-preview-frame"
+                    style={stackedLayout && stackedPreviewHeight !== null ? { blockSize: `${stackedPreviewHeight}px` } : undefined}
+                  >
+                    <ChordProEditor
+                      key={`preview-${themeMode}`}
+                      song={previewSong}
+                      settings={previewSettings}
+                      previewOnly={true}
+                      forceThemeMode={themeMode}
+                    />
+                    <div className="chordpro-styles-preview-overlay" aria-hidden="true">
+                      <div className="chordpro-styles-preview-canvas-border"></div>
+                      <div className="chordpro-styles-preview-margin-box"></div>
+                      <button type="button" className="chordpro-styles-margin-handle left" onPointerDown={startMarginDrag("left")}></button>
+                      <button type="button" className="chordpro-styles-margin-handle right" onPointerDown={startMarginDrag("right")}></button>
+                      <button type="button" className="chordpro-styles-margin-handle top" onPointerDown={startMarginDrag("top")}></button>
+                      <button type="button" className="chordpro-styles-margin-handle bottom" onPointerDown={startMarginDrag("bottom")}></button>
+                    </div>
+                  </div>
+                  {stackedLayout && (
+                    <button
+                      type="button"
+                      className="chordpro-styles-preview-resize-handle"
+                      aria-label={t("ChordProStylesResizePreview")}
+                      title={t("ChordProStylesResizePreview")}
+                      onPointerDown={startPreviewHeightDrag}
+                      onKeyDown={(event) => {
+                        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                        event.preventDefault();
+                        const currentHeight = previewFrameRef.current?.getBoundingClientRect().height ?? 160;
+                        setStackedPreviewHeight(clampStackedPreviewHeight(currentHeight + (event.key === "ArrowDown" ? 16 : -16)));
+                      }}
+                    />
+                  )}
+                </>
+              )}
             </div>
           </div>
         </aside>
 
         <div className="chordpro-styles-controls-column">
-          <section className="card chordpro-styles-card">
-            <div className="card-body">
-              <div className="chordpro-styles-section-header">
-                <div>
-                  <h6 className="mb-1">{t("ChordProStylesTextColorsSection")}</h6>
-                  <p className="text-muted mb-0">{t("ChordProStylesCommonSettingsHint")}</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => confirmFactoryDefaultsReset(resetSharedLayoutAndFonts)}
-                >
-                  {t("ChordProStylesResetShared")}
-                </button>
-              </div>
-
-              <div className="chordpro-styles-font-target-row">
-                <label className="form-label chordpro-styles-field">
-                  <span>{t("ChordProStylesFontTarget")}</span>
-                  <select className="form-select" value={fontTarget} onChange={(e) => setFontTarget(e.target.value as FontTargetKey)}>
-                    {FONT_TARGETS.map((target) => (
-                      <option key={target.key} value={target.key}>
-                        {t(target.label as never)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <FontEditor
-                  font={currentFont}
-                  onChange={handleDisplayFontChange}
-                  familyLabel={t("ChordProStylesFontFamily")}
-                  sizeLabel={t("ChordProStylesFontSize")}
-                  baseFontSize={uiFontSize}
-                />
-              </div>
-
-              <div className="chordpro-styles-grid">
-                <SliderField
-                  label={t("ChordProStylesHorizontalMargin")}
-                  value={selectedThemeStyles.display.horizontalMargin}
-                  min={0}
-                  max={120}
-                  onChange={(value) => updateDisplayCommon("horizontalMargin", value)}
-                />
-                <SliderField
-                  label={t("ChordProStylesVerticalMargin")}
-                  value={selectedThemeStyles.display.verticalMargin}
-                  min={0}
-                  max={120}
-                  onChange={(value) => updateDisplayCommon("verticalMargin", value)}
-                />
-                <SliderField
-                  label={t("ChordProStylesChordLineHeight")}
-                  value={selectedThemeStyles.display.chordLineHeight}
-                  min={10}
-                  max={70}
-                  onChange={(value) => updateDisplayCommon("chordLineHeight", value)}
-                />
-                <SliderField
-                  label={t("ChordProStylesLyricsLineHeight")}
-                  value={selectedThemeStyles.display.lyricsLineHeight}
-                  min={10}
-                  max={70}
-                  onChange={(value) => {
-                    if (lyricsLineHeight > 0 && value !== lyricsLineHeight) {
-                      const ratio = value / lyricsLineHeight;
-                      updateBothThemes((light, dark) => {
-                        light.display.lyricsLineHeight = value;
-                        dark.display.lyricsLineHeight = value;
-                        for (const key of Object.keys(light.directives)) {
-                          const ld = light.directives[key];
-                          if (ld.height) ld.height = Math.max(1, Math.round(ld.height * ratio));
-                          const dd = dark.directives[key];
-                          if (dd?.height) dd.height = Math.max(1, Math.round(dd.height * ratio));
-                        }
+          {!advancedMode && (
+            <>
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesTypographySection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesTypographyHelp")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => confirmFactoryDefaultsReset(resetSharedLayoutAndFonts)}
+                    >
+                      {t("ChordProStylesResetShared")}
+                    </button>
+                  </div>
+                  <div className="chordpro-styles-basic-style-list">
+                    {FONT_TARGETS.map((target) => {
+                      const font = parseFontSpec(selectedThemeStyles.display[target.key], {
+                        family: "Arial",
+                        size: 14,
+                        bold: target.key === "tagFont",
+                        italic: false,
                       });
-                    } else {
-                      updateDisplayCommon("lyricsLineHeight", value);
-                    }
-                  }}
-                />
-                <SliderField
-                  label={t("ChordProStylesChordLyricsGap")}
-                  value={selectedThemeStyles.display.chordLyricSep}
-                  min={0}
-                  max={30}
-                  onChange={(value) => updateDisplayCommon("chordLyricSep", value)}
-                />
-                <SliderField
-                  label={t("ChordProStylesChordBorder")}
-                  value={selectedThemeStyles.display.chordBorder}
-                  min={0}
-                  max={10}
-                  onChange={(value) => updateDisplayCommon("chordBorder", value)}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="card chordpro-styles-card">
-            <div className="card-body">
-              <div className="chordpro-styles-section-header">
-                <div>
-                  <h6 className="mb-1">{t("ChordProStylesColorSection")}</h6>
-                  <p className="text-muted mb-0">{t("ChordProStylesThemeOnlyHint")}</p>
-                </div>
-                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetThemeColors)}>
-                  {t("ChordProStylesResetThemeColors")}
-                </button>
-              </div>
-
-              <div className="chordpro-styles-color-target-row">
-                <label htmlFor="chordproStylesThemeMode" className="form-label chordpro-styles-field">
-                  <span>{t("ChordProStylesThemeMode")}</span>
-                  <select
-                    id="chordproStylesThemeMode"
-                    className="form-select chordpro-styles-theme-select"
-                    value={themeMode}
-                    onChange={(e) => setThemeMode(e.target.value as ThemeMode)}
-                  >
-                    <option value="light">{t("ThemeLight")}</option>
-                    <option value="dark">{t("ThemeDark")}</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="chordpro-styles-color-target-row">
-                <label className="form-label chordpro-styles-field">
-                  <span>{t("ChordProStylesColorTarget")}</span>
-                  <select className="form-select" value={colorTargetIndex} onChange={(e) => setColorTargetIndex(Number(e.target.value))}>
-                    {allColorTargets.map((target, index) => (
-                      <option key={target.type === "display" ? target.key : `dir-${target.directiveKey}`} value={index}>
-                        {t(target.label as never)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <ColorPickerField
-                  label={t("ChordProStylesColorSection")}
-                  value={getColorByTarget(selectedColorTarget)}
-                  onChange={(value) => updateColorByTarget(selectedColorTarget, value)}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="card chordpro-styles-card">
-            <div className="card-body">
-              <div className="chordpro-styles-section-header">
-                <div>
-                  <h6 className="mb-1">{t("ChordProStylesDirectiveSection")}</h6>
-                  <p className="text-muted mb-0">{t("ChordProStylesDirectiveHelp")}</p>
-                </div>
-                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetDirectiveStyles)}>
-                  {t("ChordProStylesResetDirectiveStyles")}
-                </button>
-              </div>
-
-              <div className="chordpro-styles-directive-pager">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => setDirectiveIndex((prev) => Math.max(0, prev - 1))}
-                  disabled={directiveIndex <= 0}
-                >
-                  {t("ChordProStylesPrevious")}
-                </button>
-                <label className="form-label mb-0 chordpro-styles-directive-select-wrap">
-                  <span className="visually-hidden">{t("ChordProStylesDirectiveSection")}</span>
-                  <select
-                    className="form-select"
-                    value={selectedDirectiveKey}
-                    onChange={(e) => setDirectiveIndex(Math.max(0, directiveKeys.indexOf(e.target.value)))}
-                  >
-                    {directiveKeys.map((directiveKey) => {
-                      const keyLabel = DIRECTIVE_LABELS[directiveKey];
-                      const label = keyLabel ? t(keyLabel as never) : humanizeDirectiveName(directiveKey);
+                      const colorKey = target.key === "lyricsFont" ? "lyricsTextColor" : target.key === "chordFont" ? "chordTextColor" : "tagColor";
                       return (
-                        <option key={directiveKey} value={directiveKey}>
-                          {label}
-                        </option>
+                        <div key={target.key} className="chordpro-styles-basic-style-row">
+                          <h6 className="mb-0">{t(target.label as never)}</h6>
+                          <FontEditor
+                            font={font}
+                            onChange={(next) => handleDisplayFontChange(target.key, next)}
+                            familyLabel={t("ChordProStylesFontFamily")}
+                            sizeLabel={t("ChordProStylesFontSize")}
+                            baseFontSize={uiFontSize}
+                          />
+                          <ColorPickerField
+                            label={t("ChordProStylesTextColor")}
+                            value={selectedThemeStyles.display[colorKey]}
+                            onChange={(value) => updateDisplayColor(colorKey, value)}
+                          />
+                        </div>
                       );
                     })}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => setDirectiveIndex((prev) => Math.min(directiveKeys.length - 1, prev + 1))}
-                  disabled={directiveIndex >= directiveKeys.length - 1}
-                >
-                  {t("ChordProStylesNext")}
-                </button>
-              </div>
-
-              <div className="chordpro-styles-directive-card compact">
-                <div className="chordpro-styles-directive-header">
-                  <h6 className="mb-0">{directiveTitle}</h6>
+                  </div>
                 </div>
+              </section>
 
-                {!selectedDirectiveKey.startsWith("start_of_") && (
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesLayoutSection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesLayoutHelp")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => confirmFactoryDefaultsReset(resetSpacingAndMargins)}
+                    >
+                      {t("ChordProStylesResetLayout")}
+                    </button>
+                  </div>
+                  <div className="chordpro-styles-grid">
+                    <label className="form-label chordpro-styles-field">
+                      <span>{t("ChordProStylesLineSpacing")}</span>
+                      <select className="form-select" value={lineSpacing} onChange={(e) => applyLineSpacing(e.target.value)}>
+                        {lineSpacing === "custom" && <option value="custom">{t("ChordProStylesLineSpacingCustom")}</option>}
+                        <option value="compact">{t("ChordProStylesLineSpacingCompact")}</option>
+                        <option value="normal">{t("ChordProStylesLineSpacingNormal")}</option>
+                        <option value="relaxed">{t("ChordProStylesLineSpacingRelaxed")}</option>
+                      </select>
+                    </label>
+                    <SliderField
+                      label={t("ChordProStylesHorizontalMargin")}
+                      value={selectedThemeStyles.display.horizontalMargin}
+                      min={0}
+                      max={120}
+                      onChange={(value) => updateDisplayCommon("horizontalMargin", value)}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesVerticalMargin")}
+                      value={selectedThemeStyles.display.verticalMargin}
+                      min={0}
+                      max={120}
+                      onChange={(value) => updateDisplayCommon("verticalMargin", value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesPaletteSection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesPaletteHelp")}</p>
+                    </div>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetThemeColors)}>
+                      {t("ChordProStylesResetThemeColors")}
+                    </button>
+                  </div>
+                  <div className="chordpro-styles-grid">
+                    <ColorPickerField
+                      label={t("ChordProStylesUnknownChordColor")}
+                      value={selectedThemeStyles.display.unknownChordTextColor}
+                      onChange={(value) => updateDisplayColor("unknownChordTextColor", value)}
+                    />
+                    <ColorPickerField
+                      label={t("ChordProStylesHighlightColor")}
+                      value={selectedThemeStyles.display.highlightColor}
+                      onChange={(value) => updateDisplayColor("highlightColor", value)}
+                    />
+                    <ColorPickerField
+                      label={t("ChordProStylesCommentBg")}
+                      value={selectedThemeStyles.display.commentBg}
+                      onChange={(value) => updateDisplayColor("commentBg", value)}
+                    />
+                    <ColorPickerField
+                      label={t("ChordProStylesCommentFg")}
+                      value={selectedThemeStyles.display.commentFg}
+                      onChange={(value) => updateDisplayColor("commentFg", value)}
+                    />
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
+
+          {advancedMode && (
+            <>
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesTextColorsSection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesCommonSettingsHint")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => confirmFactoryDefaultsReset(resetSharedLayoutAndFonts)}
+                    >
+                      {t("ChordProStylesResetShared")}
+                    </button>
+                  </div>
+
+                  <div className="chordpro-styles-font-target-row">
+                    <label className="form-label chordpro-styles-field">
+                      <span>{t("ChordProStylesFontTarget")}</span>
+                      <select className="form-select" value={fontTarget} onChange={(e) => setFontTarget(e.target.value as FontTargetKey)}>
+                        {FONT_TARGETS.map((target) => (
+                          <option key={target.key} value={target.key}>
+                            {t(target.label as never)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <FontEditor
+                      font={currentFont}
+                      onChange={(font) => handleDisplayFontChange(fontTarget, font)}
+                      familyLabel={t("ChordProStylesFontFamily")}
+                      sizeLabel={t("ChordProStylesFontSize")}
+                      baseFontSize={uiFontSize}
+                    />
+                  </div>
+
+                  <div className="chordpro-styles-grid">
+                    <SliderField
+                      label={t("ChordProStylesHorizontalMargin")}
+                      value={selectedThemeStyles.display.horizontalMargin}
+                      min={0}
+                      max={120}
+                      onChange={(value) => updateDisplayCommon("horizontalMargin", value)}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesVerticalMargin")}
+                      value={selectedThemeStyles.display.verticalMargin}
+                      min={0}
+                      max={120}
+                      onChange={(value) => updateDisplayCommon("verticalMargin", value)}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesChordLineHeight")}
+                      value={selectedThemeStyles.display.chordLineHeight}
+                      min={10}
+                      max={70}
+                      onChange={(value) => updateDisplayCommon("chordLineHeight", value)}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesLyricsLineHeight")}
+                      value={selectedThemeStyles.display.lyricsLineHeight}
+                      min={10}
+                      max={70}
+                      onChange={(value) => {
+                        if (lyricsLineHeight > 0 && value !== lyricsLineHeight) {
+                          const ratio = value / lyricsLineHeight;
+                          updateBothThemes((light, dark) => {
+                            light.display.lyricsLineHeight = value;
+                            dark.display.lyricsLineHeight = value;
+                            for (const key of Object.keys(light.directives)) {
+                              const ld = light.directives[key];
+                              if (ld.height) ld.height = Math.max(1, Math.round(ld.height * ratio));
+                              const dd = dark.directives[key];
+                              if (dd?.height) dd.height = Math.max(1, Math.round(dd.height * ratio));
+                            }
+                          });
+                        } else {
+                          updateDisplayCommon("lyricsLineHeight", value);
+                        }
+                      }}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesChordLyricsGap")}
+                      value={selectedThemeStyles.display.chordLyricSep}
+                      min={0}
+                      max={30}
+                      onChange={(value) => updateDisplayCommon("chordLyricSep", value)}
+                    />
+                    <SliderField
+                      label={t("ChordProStylesChordBorder")}
+                      value={selectedThemeStyles.display.chordBorder}
+                      min={0}
+                      max={10}
+                      onChange={(value) => updateDisplayCommon("chordBorder", value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesColorSection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesThemeOnlyHint")}</p>
+                    </div>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetThemeColors)}>
+                      {t("ChordProStylesResetThemeColors")}
+                    </button>
+                  </div>
+
+                  <div className="chordpro-styles-color-target-row">
+                    <label className="form-label chordpro-styles-field">
+                      <span>{t("ChordProStylesColorTarget")}</span>
+                      <select className="form-select" value={colorTargetIndex} onChange={(e) => setColorTargetIndex(Number(e.target.value))}>
+                        {allColorTargets.map((target, index) => (
+                          <option key={target.type === "display" ? target.key : `dir-${target.directiveKey}`} value={index}>
+                            {t(target.label as never)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <ColorPickerField
+                      label={t("ChordProStylesColorSection")}
+                      value={getColorByTarget(selectedColorTarget)}
+                      onChange={(value) => updateColorByTarget(selectedColorTarget, value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <div className="chordpro-styles-section-header">
+                    <div>
+                      <h6 className="mb-1">{t("ChordProStylesDirectiveSection")}</h6>
+                      <p className="text-muted mb-0">{t("ChordProStylesDirectiveHelp")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => confirmFactoryDefaultsReset(resetDirectiveStyles)}
+                    >
+                      {t("ChordProStylesResetDirectiveStyles")}
+                    </button>
+                  </div>
+
+                  <div className="chordpro-styles-directive-pager">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => setDirectiveIndex((prev) => Math.max(0, prev - 1))}
+                      disabled={directiveIndex <= 0}
+                    >
+                      {t("ChordProStylesPrevious")}
+                    </button>
+                    <label className="form-label mb-0 chordpro-styles-directive-select-wrap">
+                      <span className="visually-hidden">{t("ChordProStylesDirectiveSection")}</span>
+                      <select
+                        className="form-select"
+                        value={selectedDirectiveKey}
+                        onChange={(e) => setDirectiveIndex(Math.max(0, directiveKeys.indexOf(e.target.value)))}
+                      >
+                        {directiveKeys.map((directiveKey) => {
+                          const keyLabel = DIRECTIVE_LABELS[directiveKey];
+                          const label = keyLabel ? t(keyLabel as never) : humanizeDirectiveName(directiveKey);
+                          return (
+                            <option key={directiveKey} value={directiveKey}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => setDirectiveIndex((prev) => Math.min(directiveKeys.length - 1, prev + 1))}
+                      disabled={directiveIndex >= directiveKeys.length - 1}
+                    >
+                      {t("ChordProStylesNext")}
+                    </button>
+                  </div>
+
+                  <div className="chordpro-styles-directive-card compact">
+                    <div className="chordpro-styles-directive-header">
+                      <h6 className="mb-0">{directiveTitle}</h6>
+                    </div>
+
+                    {!selectedDirectiveKey.startsWith("start_of_") && (
+                      <label className="chordpro-styles-toggle">
+                        <input
+                          type="checkbox"
+                          className="form-check-input me-2"
+                          checked={!(selectedDirective.hidden ?? false)}
+                          onChange={(e) => updateDirectiveCommon(selectedDirectiveKey, { hidden: !e.target.checked })}
+                        />
+                        <span>{t("ChordProStylesMetaRowVisible")}</span>
+                      </label>
+                    )}
+
+                    <div className="chordpro-styles-grid">
+                      <label className="form-label chordpro-styles-field">
+                        <span>{t("ChordProStylesPrefix")}</span>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={selectedDirective.prefix ?? ""}
+                          onChange={(e) => updateDirectiveCommon(selectedDirectiveKey, { prefix: e.target.value })}
+                        />
+                      </label>
+                      <label className="form-label chordpro-styles-field">
+                        <span>{t("ChordProStylesAlign")}</span>
+                        <select
+                          className="form-select"
+                          value={selectedDirective.align ?? ""}
+                          onChange={(e) =>
+                            updateDirectiveCommon(selectedDirectiveKey, {
+                              align: e.target.value || undefined,
+                            })
+                          }
+                        >
+                          <option value="">{t("SettingsSectionSelNone")}</option>
+                          <option value="left">{t("ChordProStylesAlignLeft")}</option>
+                          <option value="center">{t("ChordProStylesAlignCenter")}</option>
+                          <option value="right">{t("ChordProStylesAlignRight")}</option>
+                        </select>
+                      </label>
+                      <SliderField
+                        label={t("ChordProStylesHeight")}
+                        value={
+                          lyricsLineHeight > 0
+                            ? Math.round(((selectedDirective.height ?? 0) / lyricsLineHeight) * 100)
+                            : (selectedDirective.height ?? 0)
+                        }
+                        min={0}
+                        max={400}
+                        step={5}
+                        onChange={(pct) =>
+                          updateDirectiveCommon(selectedDirectiveKey, { height: Math.max(0, Math.round((pct / 100) * lyricsLineHeight)) })
+                        }
+                      />
+                      <SliderField
+                        label={t("ChordProStylesIndent")}
+                        value={selectedDirective.indent ?? 0}
+                        min={0}
+                        max={40}
+                        onChange={(value) => updateDirectiveCommon(selectedDirectiveKey, { indent: value })}
+                      />
+                    </div>
+
+                    <FontEditor
+                      font={directiveFont}
+                      onChange={handleDirectiveFontChange}
+                      familyLabel={t("ChordProStylesFontFamily")}
+                      sizeLabel={t("ChordProStylesFontSize")}
+                      baseFontSize={lyricsFontSize}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  <label className="form-check mb-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      checked={!!settings.stylesToClients}
+                      onChange={(e) => updateSetting("stylesToClients", e.target.checked)}
+                    />
+                    <span className="form-check-label">{t("ChordProStylesAdvertiseToClients")}</span>
+                  </label>
+                  <p className="text-muted mb-0">{t("ChordProStylesAdvertiseToClientsHelp")}</p>
+                </div>
+              </section>
+
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
                   <label className="chordpro-styles-toggle">
                     <input
                       type="checkbox"
-                      className="form-check-input me-2"
-                      checked={!(selectedDirective.hidden ?? false)}
-                      onChange={(e) => updateDirectiveCommon(selectedDirectiveKey, { hidden: !e.target.checked })}
+                      className="form-check-input"
+                      checked={linkFontAndLineHeight}
+                      onChange={(e) => setLinkFontAndLineHeight(e.target.checked)}
                     />
-                    <span>{t("ChordProStylesMetaRowVisible")}</span>
+                    <span>{t("ChordProStylesLinkLineHeight")}</span>
                   </label>
-                )}
-
-                <div className="chordpro-styles-grid">
-                  <label className="form-label chordpro-styles-field">
-                    <span>{t("ChordProStylesPrefix")}</span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={selectedDirective.prefix ?? ""}
-                      onChange={(e) => updateDirectiveCommon(selectedDirectiveKey, { prefix: e.target.value })}
-                    />
-                  </label>
-                  <label className="form-label chordpro-styles-field">
-                    <span>{t("ChordProStylesAlign")}</span>
-                    <select
-                      className="form-select"
-                      value={selectedDirective.align ?? ""}
-                      onChange={(e) =>
-                        updateDirectiveCommon(selectedDirectiveKey, {
-                          align: e.target.value || undefined,
-                        })
-                      }
-                    >
-                      <option value="">{t("SettingsSectionSelNone")}</option>
-                      <option value="left">{t("ChordProStylesAlignLeft")}</option>
-                      <option value="center">{t("ChordProStylesAlignCenter")}</option>
-                      <option value="right">{t("ChordProStylesAlignRight")}</option>
-                    </select>
-                  </label>
-                  <SliderField
-                    label={t("ChordProStylesHeight")}
-                    value={
-                      lyricsLineHeight > 0 ? Math.round(((selectedDirective.height ?? 0) / lyricsLineHeight) * 100) : (selectedDirective.height ?? 0)
-                    }
-                    min={0}
-                    max={400}
-                    step={5}
-                    onChange={(pct) =>
-                      updateDirectiveCommon(selectedDirectiveKey, { height: Math.max(0, Math.round((pct / 100) * lyricsLineHeight)) })
-                    }
-                  />
-                  <SliderField
-                    label={t("ChordProStylesIndent")}
-                    value={selectedDirective.indent ?? 0}
-                    min={0}
-                    max={40}
-                    onChange={(value) => updateDirectiveCommon(selectedDirectiveKey, { indent: value })}
-                  />
+                  <p className="text-muted mt-2 mb-0">{t("ChordProStylesLinkLineHeightHelp")}</p>
                 </div>
-
-                <FontEditor
-                  font={directiveFont}
-                  onChange={(font) => updateDirectiveCommon(selectedDirectiveKey, { font: buildFontSpec(font) })}
-                  familyLabel={t("ChordProStylesFontFamily")}
-                  sizeLabel={t("ChordProStylesFontSize")}
-                  baseFontSize={lyricsFontSize}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="card chordpro-styles-card">
-            <div className="card-body">
-              <label className="form-check mb-1">
-                <input
-                  type="checkbox"
-                  className="form-check-input"
-                  checked={!!settings.stylesToClients}
-                  onChange={(e) => updateSetting("stylesToClients", e.target.checked)}
-                />
-                <span className="form-check-label">{t("ChordProStylesAdvertiseToClients")}</span>
-              </label>
-              <p className="text-muted mb-0">{t("ChordProStylesAdvertiseToClientsHelp")}</p>
-            </div>
-          </section>
+              </section>
+            </>
+          )}
         </div>
       </div>
     </div>
