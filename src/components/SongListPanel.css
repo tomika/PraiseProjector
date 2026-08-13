@@ -115,7 +115,7 @@
 }
 
 /* Indented song items inside a group folder */
-.song-item-indented {
+.song-item.song-item-indented {
   padding-left: 1rem;
 }
 
