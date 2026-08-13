@@ -290,7 +290,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     };
   },
 
-  onHighlightChanged: (callback: (data: { line: number }) => void) => {
+  onHighlightChanged: (callback: (data: { line: number; section?: number }) => void) => {
     const subscription = (_event: IpcRendererEvent, data: { line: number; section?: number }) => callback(data);
     ipcRenderer.on("highlight-changed", subscription);
     return () => {

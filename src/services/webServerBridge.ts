@@ -221,7 +221,7 @@ const createLegacyElectronAdapter = (electronAPI: IElectronAPI): WebServerInterf
       if (electronAPI.onHighlightChanged) {
         unsubs.push(
           electronAPI.onHighlightChanged((data) => {
-            callback({ kind: "highlightChanged", line: data.line });
+            callback({ kind: "highlightChanged", line: data.line, section: data.section });
           })
         );
       }

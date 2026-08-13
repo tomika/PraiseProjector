@@ -55,8 +55,8 @@ interface PreviewPanelProps {
   editorRef?: React.RefObject<{ highlightSectionInEditor: (from: number, to: number) => void } | null>;
   enableHighlight?: boolean;
   currentSongText?: string;
-  // Remote highlight controller - non-empty when a client controls highlighting (matching C# SectionListBox.Remote)
-  remoteHighlightController?: string;
+  // True while a controller is granted or direct remote highlight activity is recent.
+  remoteHighlightActive?: boolean;
   // Controlled section selection (optional - for state persistence)
   selectedSectionIndex?: number;
   onSelectedSectionIndexChange?: (index: number) => void;
@@ -170,7 +170,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       editorRef,
       enableHighlight = true,
       currentSongText = "",
-      remoteHighlightController = "",
+      remoteHighlightActive = false,
       selectedSectionIndex = -1,
       onSelectedSectionIndexChange,
       onSectionsReady,
@@ -212,6 +212,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     // Display settings state (not from Settings)
     const [contentBasedSections, setContentBasedSections] = useState(settings?.contentBasedSections ?? true);
     const [projectInstructions, setProjectInstructions] = useState(settings?.projectInstructions ?? false);
+    const [remoteHighlightControlEnabled, setRemoteHighlightControlEnabled] = useState(settings?.remoteHighlightControlEnabled ?? true);
     const [displayMessageEnabled, setDisplayMessageEnabled] = useState(false);
     const [freezePreview, setFreezePreview] = useState(false);
     const [showText, setShowText] = useState(settings?.showTextInPreview ?? true);
@@ -360,6 +361,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     useEffect(() => {
       setProjectInstructions(settings?.projectInstructions ?? false);
     }, [settings?.projectInstructions]);
+
+    useEffect(() => {
+      setRemoteHighlightControlEnabled(settings?.remoteHighlightControlEnabled ?? true);
+    }, [settings?.remoteHighlightControlEnabled]);
 
     useEffect(() => {
       setShowText(settings?.showTextInPreview ?? true);
@@ -1972,7 +1977,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const toggleButton = (
       currentState: boolean,
       setter: (value: boolean) => void,
-      settingKey?: keyof Pick<Settings, "contentBasedSections" | "projectInstructions" | "showTextInPreview" | "showImageInPreview">,
+      settingKey?: keyof Pick<
+        Settings,
+        "contentBasedSections" | "projectInstructions" | "remoteHighlightControlEnabled" | "showTextInPreview" | "showImageInPreview"
+      >,
       focusElement?: HTMLElement | null
     ) => {
       const newState = !currentState;
@@ -2758,9 +2766,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         >
           <Panel defaultSize={previewSplitSize ?? 60} minSize={20}>
             <div className="d-flex flex-grow-1 min-height-0 h-100">
-              <div className={`flex-grow-1 preview-sections-container ${remoteHighlightController ? "remote-controlled" : ""}`}>
+              <div className={`flex-grow-1 preview-sections-container ${remoteHighlightActive ? "remote-controlled" : ""}`}>
                 {/* Remote control indicator overlay - matching C# SectionListBox.Remote */}
-                {remoteHighlightController && <img src={remoteIndicatorOverlaySrc} alt="" className="remote-indicator-overlay" aria-hidden="true" />}
+                {remoteHighlightActive && <img src={remoteIndicatorOverlaySrc} alt="" className="remote-indicator-overlay" aria-hidden="true" />}
                 <div ref={sectionListRef} className="list-group preview-sections-list" tabIndex={0} onKeyDown={handleSectionListKeyDown}>
                   {sections.length === 0 ? (
                     <div className="text-muted text-center p-3">{t("NoSongSelected")}</div>
@@ -2902,6 +2910,15 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     onClick={() => toggleButton(projectInstructions, setProjectInstructions, "projectInstructions")}
                   >
                     <Icon type={IconType.INSTRUCTIONS} />
+                  </button>
+                  <button
+                    className={`btn ${remoteHighlightControlEnabled ? "btn-light btn-active" : "btn-light"}`}
+                    aria-label="Remote Control"
+                    aria-pressed={remoteHighlightControlEnabled}
+                    onClick={() => toggleButton(remoteHighlightControlEnabled, setRemoteHighlightControlEnabled, "remoteHighlightControlEnabled")}
+                    title={tt("display_remote_control")}
+                  >
+                    <Icon type={IconType.REMOTE_CONTROL} />
                   </button>
                 </div>
                 <div className="btn-group-vertical mt-auto">

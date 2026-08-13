@@ -509,6 +509,8 @@
   "SettingsTextShadowColorHelp": "Choose the color of the text shadow",
   "SettingsTextShadowOpacity": "Drop Shadow Opacity",
   "SettingsTextShadowOpacityHelp": "Opacity/transparency of the shadow",
+  "SettingsRemoteHighlightActivityTimeout": "Remote highlight activity timeout (seconds)",
+  "SettingsRemoteHighlightActivityTimeoutHelp": "Hide the tablet activity indicator this many seconds after the last authorized direct highlight request.",
   "SettingsSyncDeclineTimeoutMinutes": "Old sync reminder cooldown (minutes)",
   "SettingsSyncDeclineTimeoutMinutesDescription": "How long to wait before asking again after declining the sync prompt. Set to 0 to ask every time.",
   "SettingsShowCloudNetworkErrorToasts": "Show cloud network error toasts",

@@ -665,6 +665,27 @@ const ProjectingSettings: React.FC<ProjectingSettingsProps> = ({ settings, updat
               {t("SettingsWarningFlash")}
             </label>
           </div>
+          <div className="form-group mt-3">
+            <label className="form-label" htmlFor="remoteHighlightActivityTimeoutSeconds">
+              {t("SettingsRemoteHighlightActivityTimeout")}
+            </label>
+            <input
+              className="form-control"
+              type="number"
+              id="remoteHighlightActivityTimeoutSeconds"
+              min={1}
+              max={86400}
+              step={1}
+              value={settings.remoteHighlightActivityTimeoutSeconds}
+              onChange={(e) => {
+                const value = Number.parseInt(e.target.value, 10);
+                if (Number.isFinite(value)) {
+                  updateSetting("remoteHighlightActivityTimeoutSeconds", Math.max(1, Math.min(86400, value)));
+                }
+              }}
+            />
+            <small className="text-muted d-block mt-1">{t("SettingsRemoteHighlightActivityTimeoutHelp")}</small>
+          </div>
         </div>
       </div>
     </div>

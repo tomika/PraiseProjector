@@ -38,6 +38,7 @@ export enum IconType {
   MESSAGE = "message",
   CONTENT_FORMAT = "content_format",
   INSTRUCTIONS = "instructions",
+  REMOTE_CONTROL = "remote_control",
   FREEZE = "freeze",
 
   // Editor panel icons
@@ -244,6 +245,31 @@ const iconMap: Record<IconType, IconConfig> = {
     faIcon: "fa fa-info-circle",
     imagePath: "assets/instructions.png",
     alt: "Instructions",
+  },
+  [IconType.REMOTE_CONTROL]: {
+    faContent: (
+      <svg
+        className="pp-svg-icon pp-svg-icon-dense"
+        viewBox="0 0 48 48"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M10 10 Q24 -2 38 10" />
+        <path d="M16 14 Q24 7 32 14" />
+        <rect x="12" y="18" width="24" height="28" rx="6" />
+        <circle cx="24" cy="27" r="5" />
+        <circle cx="19" cy="37" r="2" fill="currentColor" stroke="none" />
+        <circle cx="29" cy="37" r="2" fill="currentColor" stroke="none" />
+        <circle cx="19" cy="42" r="2" fill="currentColor" stroke="none" />
+        <circle cx="29" cy="42" r="2" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    imagePath: "assets/remote-control.png",
+    alt: "Remote Control",
   },
   [IconType.FREEZE]: {
     faIcon: "fa fa-snowflake-o",

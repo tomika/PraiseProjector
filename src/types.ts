@@ -116,6 +116,8 @@ export interface Settings {
   checkSectionsProjectable: boolean;
   contentBasedSections: boolean; // Use content-based section splitting
   projectInstructions: boolean; // Use instructions from playlist items for section generation
+  remoteHighlightControlEnabled: boolean; // Allow authorized remote /highlight requests to change the projected section
+  remoteHighlightActivityTimeoutSeconds: number; // Hide transient direct /highlight activity after this many seconds
   displayFaultThreshold: number; // Tolerance for text overflow in pixels
   displayCroppedTextBgColor: string;
   displayAllowFontSizeReduction: boolean;

@@ -153,6 +153,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       checkSectionsProjectable: true,
       contentBasedSections: true, // C# default: true
       projectInstructions: false, // Default to false (don't use instructions by default)
+      remoteHighlightControlEnabled: true,
+      remoteHighlightActivityTimeoutSeconds: 120,
       displayFaultThreshold: 10, // C# default: 10 pixels tolerance
       displayAllowFontSizeReduction: true,
       displayCroppedTextBgColor: "#de9191", // RGB(222, 145, 145)

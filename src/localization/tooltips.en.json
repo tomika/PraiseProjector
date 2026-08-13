@@ -40,6 +40,7 @@
   "display_enabled_single_monitor": "Only one monitor detected — connect a second screen to project",
   "display_lyrics": "Toggle lyrics visibility",
   "display_image": "Toggle image visibility",
+  "display_remote_control": "Allow or block authorized clients from changing the projected section",
   "display_message": "Switch between message and lyrics",
   "display_freeze": "Toggle freezed state",
   "display_instructions": "Toggle instructions based section list",

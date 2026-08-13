@@ -106,7 +106,7 @@ export interface IElectronAPI {
 
   // Highlight access control - matching C# WebServer HighlightAccessRequest/HighlightChanged pattern
   onHighlightAccessRequest?: (callback: (data: { clientId: string }) => void) => () => void;
-  onHighlightChanged?: (callback: (data: { line: number }) => void) => () => void;
+  onHighlightChanged?: (callback: (data: { line: number; section?: number }) => void) => () => void;
   respondHighlightAccess?: (clientId: string, grant: boolean) => void;
   getRemoteHighlightController?: () => Promise<string>;
   onRemoteHighlightControllerChanged?: (callback: (data: { clientId: string }) => void) => () => void;

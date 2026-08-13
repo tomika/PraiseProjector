@@ -487,6 +487,8 @@ const AppContent: React.FC = () => {
   const [_editorInitialized, setEditorInitialized] = useState(false);
   // Remote highlight controller state - matching C# ProjectorForm.sectionListBox.Remote
   const [remoteHighlightController, setRemoteHighlightController] = useState<string>("");
+  const [remoteHighlightActivityActive, setRemoteHighlightActivityActive] = useState(false);
+  const remoteHighlightActivityTimerRef = useRef<number | null>(null);
   // Session watching mode state - matching C# ProjectorForm.watchedSessionOrDeviceId and related
   const [watchedSessionId, setWatchedSessionId] = useState<string | null>(null);
   const [_watchedSessionUrl, setWatchedSessionUrl] = useState<string | null>(null);
@@ -556,6 +558,28 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  const markRemoteHighlightActivity = useCallback(() => {
+    if (remoteHighlightActivityTimerRef.current !== null) {
+      window.clearTimeout(remoteHighlightActivityTimerRef.current);
+    }
+
+    setRemoteHighlightActivityActive(true);
+    const configuredSeconds = settingsRef.current?.remoteHighlightActivityTimeoutSeconds ?? 120;
+    const timeoutSeconds = Number.isFinite(configuredSeconds) ? Math.max(1, Math.min(86400, Math.round(configuredSeconds))) : 120;
+    remoteHighlightActivityTimerRef.current = window.setTimeout(() => {
+      remoteHighlightActivityTimerRef.current = null;
+      setRemoteHighlightActivityActive(false);
+    }, timeoutSeconds * 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (remoteHighlightActivityTimerRef.current !== null) {
+        window.clearTimeout(remoteHighlightActivityTimerRef.current);
+      }
+    };
+  }, []);
 
   // Track selected song ID for state persistence - initialized to null, restored after database loads
   const [_selectedSongId, setSelectedSongId] = useState<string | null>(null);
@@ -1616,8 +1640,18 @@ const AppContent: React.FC = () => {
       }
 
       if (event.kind === "highlightChanged") {
-        // Call selectSectionByLine on PreviewPanel - matching C# ChangeHighlightByLine
-        previewPanelRef.current?.selectSectionByLine(event.line, event.section);
+        markRemoteHighlightActivity();
+        // Keep authorized client activity visible even while remote execution is
+        // disabled, but only apply the requested section when the persisted host
+        // switch allows it.
+        if (settingsRef.current?.remoteHighlightControlEnabled !== false) {
+          previewPanelRef.current?.selectSectionByLine(event.line, event.section);
+        } else {
+          console.info("App", "Ignored remote highlight section change while remote control is disabled", {
+            line: event.line,
+            section: event.section,
+          });
+        }
         return;
       }
 
@@ -1629,7 +1663,7 @@ const AppContent: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [showConfirm, t]);
+  }, [markRemoteHighlightActivity, showConfirm, t]);
 
   // Handle playlist item selection - sets projectedSong and (if not editing) editedSong
   useEffect(() => {
@@ -2873,7 +2907,7 @@ const AppContent: React.FC = () => {
                     selectedPlaylistItem={selectedPlaylistItem}
                     enableHighlight={projectedSong?.Id === editedSong?.Id}
                     currentSongText={currentSongText}
-                    remoteHighlightController={remoteHighlightController}
+                    remoteHighlightActive={!!remoteHighlightController || remoteHighlightActivityActive}
                     selectedSectionIndex={selectedSectionIndex}
                     onSelectedSectionIndexChange={handleSelectedSectionIndexChange}
                     onSectionsReady={handleSectionsReady}
@@ -2978,7 +3012,7 @@ const AppContent: React.FC = () => {
                   selectedPlaylistItem={selectedPlaylistItem}
                   enableHighlight={projectedSong?.Id === editedSong?.Id}
                   currentSongText={currentSongText}
-                  remoteHighlightController={remoteHighlightController}
+                  remoteHighlightActive={!!remoteHighlightController || remoteHighlightActivityActive}
                   selectedSectionIndex={selectedSectionIndex}
                   onSelectedSectionIndexChange={handleSelectedSectionIndexChange}
                   onSectionsReady={handleSectionsReady}

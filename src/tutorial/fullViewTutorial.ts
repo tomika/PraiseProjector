@@ -773,9 +773,9 @@ export const fullViewTutorial: TutorialDefinition = {
       ".preview-button-column",
       tx(
         "Vetítési kapcsolók",
-        "A kijelző, szöveg, kép, háttér, tartalomalapú formázás, instrukciók, fagyasztás és üzenet gyorskapcsolói.",
+        "A kijelző, szöveg, kép, háttér, tartalomalapú formázás, instrukciók, távoli irányítás, fagyasztás és üzenet gyorskapcsolói.",
         "Projection switches",
-        "Quick controls for display output, text, image, background, content formatting, instructions, freeze and message."
+        "Quick controls for display output, text, image, background, content formatting, instructions, remote control, freeze and message."
       ),
       {
         prepare: preview,
@@ -828,6 +828,16 @@ export const fullViewTutorial: TutorialDefinition = {
               "Az előadási instrukciókból felépített sorrendet kapcsolja a szakaszlistára.",
               "Instruction-based list",
               "Use performance instructions to build the order shown in the section list."
+            )
+          ),
+          s(
+            "projection-remote-control",
+            ".preview-button-column button[aria-label='Remote Control']",
+            tx(
+              "Távoli irányítás",
+              "Engedélyezi vagy letiltja, hogy egy jogosult kliens távolról váltson a vetített szakaszok között. A kliens aktivitását jelző tablet kikapcsolt állapotban is látható marad; közvetlen kérésnél az időtúllépés a Vetítés beállításainak végén módosítható.",
+              "Remote control",
+              "Allow or block an authorized client from changing projected sections remotely. The tablet activity indicator remains visible while this switch is off; its direct-request timeout is configurable at the end of Projecting settings."
             )
           ),
           s(
