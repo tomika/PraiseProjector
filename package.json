@@ -30,7 +30,7 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "node scripts/format.cjs",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"client/**/*.ts\" \"common/**/*.ts\" \"chordpro/**/*.{ts,css}\" \"scripts/run-chordpro-tests.js\"",
-    "check:ts": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit",
+    "check:ts": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p client/tsconfig.json --noEmit",
     "test:chordpro": "node scripts/run-chordpro-tests.js"
   },
   "license": "PolyForm-Noncommercial-1.0.0",

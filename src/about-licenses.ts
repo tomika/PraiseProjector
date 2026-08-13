@@ -1,12 +1,11 @@
-import { getClientWebAppLicenseSections, type ThirdPartyEntry, type LicenseSection as ClientLicenseSection } from "../client/about-licenses";
+import { getClientWebAppLicenseSections, type LicenseSection as ClientLicenseSection } from "../client/about-licenses";
 import { getElectronBackendLicenseSections } from "../electron/about-licenses";
+import type { LicenseSectionOf, ThirdPartyEntry } from "../common/licenses";
 
-export type LicenseSection = {
-  id: "electron-frontend-webapp" | "electron-backend-runtime" | ClientLicenseSection["id"];
-  titleKey: "AboutSectionElectronFrontend" | "AboutSectionElectronBackend" | ClientLicenseSection["titleKey"];
-  title: string;
-  entries: ThirdPartyEntry[];
-};
+export type LicenseSection = LicenseSectionOf<
+  "electron-frontend-webapp" | "electron-backend-runtime" | ClientLicenseSection["id"],
+  "AboutSectionElectronFrontend" | "AboutSectionElectronBackend" | ClientLicenseSection["titleKey"]
+>;
 
 export type AboutRuntimeMode = "frontend-only" | "full-electron";
 

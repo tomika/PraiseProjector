@@ -1,11 +1,6 @@
-import type { ThirdPartyEntry } from "../client/about-licenses";
+import type { LicenseSectionOf, ThirdPartyEntry } from "../common/licenses";
 
-export type LicenseSection = {
-  id: "electron-backend-runtime";
-  titleKey: "AboutSectionElectronBackend";
-  title: string;
-  entries: ThirdPartyEntry[];
-};
+export type LicenseSection = LicenseSectionOf<"electron-backend-runtime", "AboutSectionElectronBackend">;
 
 const electronBackendRuntime: ThirdPartyEntry[] = [
   {

@@ -1,5 +1,5 @@
-import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
-import type { ClientViewInputProfile } from "./client-view/input/clientViewInput";
+import type { ChordProStylesSettings } from "../common/chordpro-styles";
+import type { ClientViewInputProfile } from "../common/client-view-input";
 
 /**
  * Startup session auto-scan preference for the client view. `off` disables the

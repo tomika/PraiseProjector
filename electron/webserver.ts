@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { Display, NetDisplayData } from "../common/pp-types";
 import { compareDisplays, deserializePlaylist } from "../common/pp-utils";
-import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
+import type { ChordProStylesSettings } from "../common/chordpro-styles";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";

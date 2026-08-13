@@ -34,7 +34,7 @@ import {
   pendingSongsResponseCodec,
 } from "./pp-codecs";
 import type { NetDisplayData, SongHistoryEntry } from "./pp-types";
-import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
+import type { ChordProStylesSettings } from "./chordpro-styles";
 
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 1000;

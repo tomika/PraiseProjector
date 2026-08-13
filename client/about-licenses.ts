@@ -1,16 +1,11 @@
-export type ThirdPartyEntry = {
-  name: string;
-  url: string;
-  licence: string;
-  licenceUrl: string;
-};
+import type { LicenseSectionOf, ThirdPartyEntry } from "../common/licenses";
 
-export type LicenseSection = {
-  id: "client-webapp-libraries" | "client-webapp-tools";
-  titleKey: "AboutSectionClientWebAppLibraries" | "AboutSectionClientWebAppTools";
-  title: string;
-  entries: ThirdPartyEntry[];
-};
+export type { ThirdPartyEntry } from "../common/licenses";
+
+export type LicenseSection = LicenseSectionOf<
+  "client-webapp-libraries" | "client-webapp-tools",
+  "AboutSectionClientWebAppLibraries" | "AboutSectionClientWebAppTools"
+>;
 
 const clientWebAppLibraries: ThirdPartyEntry[] = [
   {
