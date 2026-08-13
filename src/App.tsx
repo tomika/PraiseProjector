@@ -583,6 +583,12 @@ const AppContent: React.FC = () => {
 
   // Track selected song ID for state persistence - initialized to null, restored after database loads
   const [_selectedSongId, setSelectedSongId] = useState<string | null>(null);
+  // Song-tree neighbours of the current selection, pushed up by LeftPanel whenever
+  // they change (see getAdjacentSongForFlip). Used to pre-render the page-turn.
+  const [songTreeNeighbours, setSongTreeNeighbours] = useState<{ prev: Song | null; next: Song | null }>({ prev: null, next: null });
+  const handleAdjacentSongsChange = useCallback((prev: Song | null, next: Song | null) => {
+    setSongTreeNeighbours({ prev, next });
+  }, []);
   // Track selected section index for state persistence
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(-1);
   // Store pending section index to restore after sections are ready
@@ -2078,6 +2084,12 @@ const AppContent: React.FC = () => {
   // Resolve the adjacent song (without navigating) so the editor can pre-render
   // it behind the current page for the page-turn reveal. Uses playlist order
   // when a playlist item is selected, otherwise the song-tree order.
+  //
+  // The song-tree half is pushed up by LeftPanel instead of read off the ref here:
+  // the tree's selection and its visible order both settle in a later commit than
+  // this render (on startup the restore sets them after App's last render), so a
+  // ref read returned null and the editor kept blank neighbour pages until the
+  // next re-render — i.e. until the song was re-picked in the list by hand.
   const getAdjacentSongForFlip = (delta: 1 | -1): Song | null => {
     if (selectedPlaylistItem) {
       const playlist = leftPanelRef.current?.getCurrentPlaylist();
@@ -2088,7 +2100,7 @@ const AppContent: React.FC = () => {
       if (nextIdx < 0 || nextIdx >= playlist.items.length) return null;
       return Database.getInstance().getSongById(playlist.items[nextIdx].songId) ?? null;
     }
-    return leftPanelRef.current?.getAdjacentSong(delta) ?? null;
+    return delta < 0 ? songTreeNeighbours.prev : songTreeNeighbours.next;
   };
   const prevSongForFlip = getAdjacentSongForFlip(-1);
   const nextSongForFlip = getAdjacentSongForFlip(1);
@@ -2851,6 +2863,7 @@ const AppContent: React.FC = () => {
                     onSongCheckClick={handleSongCheckClick}
                     onExternalFilesDropped={handleSongTreeExternalFilesDropped}
                     selectedSong={editedSong}
+                    onAdjacentSongsChange={handleAdjacentSongsChange}
                     disabled={isWatching}
                     remotePlaylist={watchedPlaylist}
                     playlistPanelSize={playlistPanelSize}
@@ -2952,6 +2965,7 @@ const AppContent: React.FC = () => {
                       onSongCheckClick={handleSongCheckClick}
                       onExternalFilesDropped={handleSongTreeExternalFilesDropped}
                       selectedSong={editedSong}
+                      onAdjacentSongsChange={handleAdjacentSongsChange}
                       disabled={isWatching}
                       remotePlaylist={watchedPlaylist}
                       playlistPanelSize={playlistPanelSize}

@@ -583,6 +583,13 @@ interface SongListPanelProps {
   onSongSelected: (song: Song) => void;
   onExternalFilesDropped?: (files: File[]) => void;
   selectedSong?: Song | null;
+  /** Fires whenever the song-tree neighbours of the selection change (see
+   *  {@link SongListPanel.getAdjacentSong}). The tree owns the visible order and
+   *  the selection, and both settle asynchronously (categories are rebuilt off a
+   *  debounced query), so a parent that reads them imperatively during its own
+   *  render gets whatever was there one commit earlier — on startup, nothing.
+   *  Pushing the pair out instead keeps the parent's copy correct. */
+  onAdjacentSongsChange?: (prev: Song | null, next: Song | null) => void;
   settings: Settings;
   updateSettingWithAutoSave?: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   authToken?: string | null;
@@ -611,6 +618,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   private filterUpdateDebounceTimer: number | null = null;
   private updateCategoriesRequestSeq = 0;
   private virtualScrollRafId: number | null = null;
+  /** Last pair pushed through `onAdjacentSongsChange`, so it only fires on change. */
+  private lastAdjacentIds: { prev: string | null; next: string | null } = { prev: null, next: null };
 
   private static readonly KEYBOARD_SELECTION_DEBOUNCE_MS = 180;
   private static readonly FILTER_UPDATE_DEBOUNCE_MS = 140;
@@ -766,6 +775,21 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     return nextIdx >= 0 && nextIdx < visible.length ? visible[nextIdx] : null;
   }
 
+  /** Push the current neighbours to the parent, but only when they actually
+   *  changed. Called from the two updates that can move them: a new selection and
+   *  a rebuilt (re-filtered / re-ordered / expanded / collapsed) tree. */
+  private notifyAdjacentSongsChange(): void {
+    const onChange = this.props.onAdjacentSongsChange;
+    if (!onChange) return;
+    const prev = this.getAdjacentSong(-1);
+    const next = this.getAdjacentSong(1);
+    const prevId = prev?.Id ?? null;
+    const nextId = next?.Id ?? null;
+    if (prevId === this.lastAdjacentIds.prev && nextId === this.lastAdjacentIds.next) return;
+    this.lastAdjacentIds = { prev: prevId, next: nextId };
+    onChange(prev, next);
+  }
+
   public refreshLayout(): void {
     requestAnimationFrame(() => {
       this.updateInlineSearchOptionsVisibility();
@@ -779,7 +803,11 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.state = {
       filter: props.filter ?? "",
       categories: [],
-      selectedSong: null,
+      // Seed from the prop: only componentDidUpdate syncs it, so a panel that
+      // mounts with a selection already in place (App switches between paging and
+      // 3-panel modes by remounting the panel trees) would otherwise start with
+      // no selection at all — no highlight, and no adjacent songs.
+      selectedSong: props.selectedSong ?? null,
       showSongs: true, // Default checked (miShowSong)
       showTextOnly: true, // Default checked (miShowText)
       showMarked: true, // Default checked (miShowMarked)
@@ -942,6 +970,12 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     // It is updated on mount and window resize instead.
     if (prevState.categories !== this.state.categories) {
       this.syncVirtualViewport();
+    }
+
+    // Only these two move the neighbours; every other update (virtual scrolling
+    // above all) must not pay for the flat-visible-songs walk.
+    if (prevState.selectedSong !== this.state.selectedSong || prevState.categories !== this.state.categories) {
+      this.notifyAdjacentSongsChange();
     }
   }
 

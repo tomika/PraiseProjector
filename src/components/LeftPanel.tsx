@@ -45,6 +45,9 @@ interface LeftPanelProps {
   onPlaylistSelectionChange?: (selection: PlaylistSelectionEvent) => void;
   onSongSelected?: (song: Song | null) => void;
   selectedSong?: Song | null;
+  /** Song-tree neighbours of the current selection, pushed whenever they change
+   *  (the tree settles asynchronously, so they cannot be read during a render). */
+  onAdjacentSongsChange?: (prev: Song | null, next: Song | null) => void;
   disabled?: boolean; // Disables playlist editing when in watch mode
   remotePlaylist?: Playlist | null; // Remote playlist when watching another session
   onOpenLeaderSettings?: (leaderId: string | null) => void;
@@ -79,6 +82,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       onPlaylistSelectionChange,
       onSongSelected,
       selectedSong: externalSelectedSong,
+      onAdjacentSongsChange,
       disabled = false,
       remotePlaylist,
       onOpenLeaderSettings,
@@ -322,6 +326,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
                 onSongSelected={handleSongSelected}
                 onExternalFilesDropped={onExternalFilesDropped}
                 selectedSong={selectedSong}
+                onAdjacentSongsChange={onAdjacentSongsChange}
                 filter={songFilter}
                 onFilterChange={onSongFilterChange}
               />
