@@ -5,6 +5,8 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  container-name: chordpro-styles;
+  container-type: size;
 }
 
 .chordpro-styles-toolbar {
@@ -265,7 +267,13 @@
   min-width: 14rem;
 }
 
-@media (max-width: 600px) {
+/*
+ * The settings dialog can be resized independently from the window, so this
+ * layout must respond to its own available space instead of the viewport.
+ * In stacked mode the preview stays in normal document flow: making it sticky
+ * would paint it above the controls in a short dialog.
+ */
+@container chordpro-styles (max-width: 700px) {
   .chordpro-styles-main {
     flex-direction: column;
     overflow-y: auto;
@@ -273,12 +281,30 @@
 
   .chordpro-styles-preview-column {
     flex: 0 0 auto;
-    min-width: unset;
-    max-width: unset;
-    position: sticky;
-    top: 0;
-    z-index: 2;
+    min-width: 0;
+    max-width: none;
+    position: static;
+    z-index: auto;
     overflow: visible;
+  }
+
+  .chordpro-styles-preview-card {
+    flex: 0 0 auto;
+  }
+
+  .chordpro-styles-preview-frame {
+    flex: 0 0 auto;
+    block-size: clamp(8rem, 30cqh, 16rem);
+    min-height: 0;
+  }
+
+  .chordpro-styles-preview-frame .chordpro-editor-container,
+  .chordpro-styles-preview-frame .wysiwyg-host,
+  .chordpro-styles-preview-frame .wysiwyg-tab-content,
+  .chordpro-styles-preview-frame .tab-pane,
+  .chordpro-styles-preview-frame .editor-iframe-container,
+  .chordpro-styles-preview-frame .wysiwyg-page {
+    min-height: 0;
   }
 
   .chordpro-styles-controls-column {
@@ -287,13 +313,72 @@
   }
 }
 
-@media (max-width: 767px) {
-  .chordpro-styles-preview-frame,
-  .chordpro-styles-preview-frame .chordpro-editor-container,
-  .chordpro-styles-preview-frame .wysiwyg-host {
-    min-height: 16rem;
+@container chordpro-styles (max-width: 700px) and (max-height: 384px) {
+  .chordpro-styles-preview-card > .card-body {
+    padding: 0.65rem;
   }
 
+  .chordpro-styles-preview-card .chordpro-styles-section-header {
+    margin-bottom: 0.45rem;
+  }
+
+  .chordpro-styles-preview-frame {
+    block-size: clamp(6rem, 24cqh, 9rem);
+  }
+}
+
+@container chordpro-styles (max-width: 520px) {
+  .chordpro-styles-grid,
+  .chordpro-styles-font-target-row,
+  .chordpro-styles-color-target-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Viewport fallback for browsers without container query support. */
+@supports not (container-type: size) {
+  @media (max-width: 600px) {
+    .chordpro-styles-main {
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .chordpro-styles-preview-column {
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: none;
+      position: static;
+      z-index: auto;
+      overflow: visible;
+    }
+
+    .chordpro-styles-preview-card {
+      flex: 0 0 auto;
+    }
+
+    .chordpro-styles-preview-frame {
+      flex: 0 0 auto;
+      height: clamp(8rem, 30vh, 16rem);
+      min-height: 0;
+    }
+
+    .chordpro-styles-preview-frame .chordpro-editor-container,
+    .chordpro-styles-preview-frame .wysiwyg-host,
+    .chordpro-styles-preview-frame .wysiwyg-tab-content,
+    .chordpro-styles-preview-frame .tab-pane,
+    .chordpro-styles-preview-frame .editor-iframe-container,
+    .chordpro-styles-preview-frame .wysiwyg-page {
+      min-height: 0;
+    }
+
+    .chordpro-styles-controls-column {
+      overflow-y: visible;
+      padding-right: 0;
+    }
+  }
+}
+
+@media (max-width: 767px) {
   .chordpro-styles-grid,
   .chordpro-styles-font-target-row,
   .chordpro-styles-color-target-row {
