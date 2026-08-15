@@ -32,7 +32,7 @@ const leaderLists = () => {
 
 export const clientViewTutorial: TutorialDefinition = {
   view: "client",
-  version: 3,
+  version: 4,
   cleanup: closeClientTutorialPopovers,
   steps: [
     s(
@@ -248,9 +248,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#netstatus", "#mainToolbar"],
             tx(
               "Hálózati állapot",
-              "Az ikon a kapcsolódás, követés, vezetés vagy hiba állapotát mutatja; hiba esetén itt kezdeményezhető újracsatlakozás.",
+              "Az ikon a kapcsolódás, követés, engedélyezett vezetés vagy hiba állapotát mutatja; hiba esetén itt kezdeményezhető újracsatlakozás.",
               "Network status",
-              "The icon indicates connection, following, leading or error. Reconnection can be requested from the same control."
+              "The icon indicates connection, following, authorized leading or error. Reconnection can be requested from the same control."
             )
           ),
           s(

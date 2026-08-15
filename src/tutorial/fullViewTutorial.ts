@@ -26,7 +26,7 @@ const preview = () => {
 
 export const fullViewTutorial: TutorialDefinition = {
   view: "full",
-  version: 2,
+  version: 3,
   cleanup: closeFullTutorialPopovers,
   steps: [
     s(
@@ -88,10 +88,10 @@ export const fullViewTutorial: TutorialDefinition = {
             "profiles-leader-settings",
             "[data-tutorial-id='full-leader-settings']",
             tx(
-              "Dicsőítésvezetők kezelése",
-              "A dicsőítésvezető gomb közvetlenül a Beállítások Dicsőítésvezetők oldalára visz. Ott tarthatók karban a dicsőítésvezetői profilok.",
-              "Manage worship leaders",
-              "The leader button opens the Leaders page in Settings directly. There you can manage worship leader profiles."
+              "Dicsőítésvezető és vezető mód",
+              "Saját munkamenetben a gomb közvetlenül a Beállítások Dicsőítésvezetők oldalára visz. PPD-munkamenet követésekor, ha a házigazda engedélyezte, ugyanez a gomb a követő és vezető mód között vált; a kék kiemelés jelzi az aktív vezető módot.",
+              "Worship leader and leader mode",
+              "In your own session, the button opens the Leaders page in Settings. While following a PPD session, the same button switches between follower and leader mode when the host permits it; a blue highlight marks active leader mode."
             )
           ),
           s(
@@ -423,7 +423,7 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Settings']",
             tx(
               "Beállítások",
-              "A keresés, vetítés, képek, vezetők, szakaszok, ChordPro-stílusok, client-view vezérlés és hálózati funkciók itt szabhatók személyre.",
+              "A keresés, vetítés, képek, vezetők, szakaszok, ChordPro-stílusok, kliens jogosultság kezelés és hálózati funkciók itt szabhatók személyre.",
               "Settings",
               "Customize search, projection, images, leaders, sections, ChordPro styles, client controls and network features."
             )
