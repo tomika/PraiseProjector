@@ -1061,8 +1061,9 @@ export class CloudApiService {
   }
 
   /** Upload (store) a playlist to the server. Returns "OK", "OVERWRITE", or an error string */
-  async storeList(forced: boolean, data: { label: string; scheduled: number; songs: SongPreferenceEntry[] }): Promise<string> {
-    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}`, data, {
+  async storeList(forced: boolean, data: { label: string; scheduled: number; songs: SongPreferenceEntry[] }, leaderId?: string): Promise<string> {
+    const leaderParam = leaderId ? `&leader=${encodeURIComponent(leaderId)}` : "";
+    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}${leaderParam}`, data, {
       allowEmpty: true,
       headers: { "X-PP-Intent": "control-update" },
     });

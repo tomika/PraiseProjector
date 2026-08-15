@@ -24,6 +24,7 @@ import { Settings } from "../types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
+import { cloudApi } from "../../common/cloudApi";
 import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
 import { readPersistedSettings } from "../services/settingsStore";
 import { createPlaylistOrigin, findScheduledPlaylist, parsePlaylistOrigin, PlaylistOrigin, resolvePlaylistOrigin } from "../services/playlistOrigin";
@@ -1590,17 +1591,40 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
   // Share the exact leader playlist this working copy came from. Content equality only
   // validates that the working copy still represents that source; it never selects a source.
-  private handleSharePlaylist = () => {
+  private publishPlaylistForShare = async (leaderId: string, date: Date, playlist: Playlist): Promise<boolean> => {
+    try {
+      const result = await cloudApi.storeList(
+        true,
+        {
+          label: playlist.name,
+          scheduled: date.getTime(),
+          songs: playlist.items.map((item) => item.toJSON()),
+        },
+        leaderId
+      );
+      if (result === "OK") return true;
+      this.props.onError?.("SaveFailed", result || "The playlist could not be published before sharing.");
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      this.props.onError?.("SaveFailed", details);
+    }
+    return false;
+  };
+
+  private handleSharePlaylist = async () => {
     const resolved = this.resolveCurrentPlaylistOrigin();
     if (!resolved) return;
     const { leaderId, label } = resolved.origin;
-    void sharePublicLink(buildPlaylistShareUrl(leaderId, label), label, this.props.t("ShareLinkCopied"));
+    const isOwnLeader = Database.getInstance().getLeaderById(leaderId) !== undefined;
+    if (isOwnLeader && !(await this.publishPlaylistForShare(leaderId, resolved.date, resolved.playlist))) return;
+    await sharePublicLink(buildPlaylistShareUrl(leaderId, label), label, this.props.t("ShareLinkCopied"));
   };
 
   private handleShareScheduledPlaylist = async (date: Date, leader: Leader): Promise<void> => {
     const scheduled = findScheduledPlaylist(leader, date);
     if (!scheduled) return;
     const label = scheduled.playlist.name;
+    if (!(await this.publishPlaylistForShare(leader.id, scheduled.date, scheduled.playlist))) return;
     await sharePublicLink(buildPlaylistShareUrl(leader.id, label), label, this.props.t("ShareLinkCopied"));
   };
 
