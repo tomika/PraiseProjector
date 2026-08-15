@@ -65,6 +65,21 @@ function readToken(): string {
  *  updates as separate POSTs. */
 async function pushDisplay(core: RestCore, display: Display): Promise<void> {
   if (!core.canControlDisplay()) return;
+  if (core.isFollowingPpd()) {
+    await core.sendPpdDisplayUpdate({
+      command: "display_update",
+      id: display.songId,
+      from: display.from,
+      to: display.to,
+      section: display.section,
+      sectionRepeatCounts: display.sectionRepeatCounts,
+      sectionRepeatNonce: display.sectionRepeatNonce,
+      transpose: display.transpose,
+      capo: display.capo,
+      instructions: display.instructions,
+    });
+    return;
+  }
   const leaderId = displayUpdateLeaderId(core);
   await cloudApi.sendDisplayUpdate(
     {
@@ -91,6 +106,17 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
  *  neither). */
 async function pushPreference(core: RestCore, pref: { transpose?: number; capo?: number }): Promise<void> {
   if (!core.canControlDisplay()) return;
+  if (core.isFollowingPpd()) {
+    const display = core.getDisplay();
+    await core.sendPpdDisplayUpdate({
+      command: "song_update",
+      id: display.songId,
+      from: display.from,
+      to: display.to,
+      ...pref,
+    });
+    return;
+  }
   const leaderId = displayUpdateLeaderId(core);
   await cloudApi.sendDisplayPreference({ id: core.getDisplay().songId, ...pref }, leaderId ? { leaderId } : undefined);
 }
@@ -102,6 +128,18 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
 async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<void> {
   if (!core.canControlDisplay()) return;
   const display = core.getDisplay();
+  if (core.isFollowingPpd()) {
+    await core.sendPpdDisplayUpdate({
+      command: "display_update",
+      id: display.songId,
+      from: display.from,
+      to: display.to,
+      section: display.section,
+      transpose: display.transpose,
+      playlist,
+    });
+    return;
+  }
   const leaderId = displayUpdateLeaderId(core);
   await cloudApi.sendDisplayUpdate(
     {
@@ -193,6 +231,10 @@ export function createDisplayApi(core: RestCore): DisplayApi {
     highlight: async (from, to, section) => {
       // Reflect the highlight locally so this client's own song view updates.
       core.patchDisplay({ from, to, section });
+      if (core.isFollowingPpd()) {
+        await core.sendPpdHighlight(from, to, section);
+        return;
+      }
       // Push it through the legacy line-selection channel (`/highlight`), NOT a
       // full display_update. The Electron host's local webserver only moves the
       // projected section from `/highlight?line=…`; a display_update that carries
@@ -360,6 +402,7 @@ export function createAuthApi(core: RestCore): AuthApi {
       }
     },
     requestHighlightPermission: async (verifyOnly) => {
+      if (core.isFollowingPpd()) return core.requestPpdHighlightPermission(!!verifyOnly);
       const leaderId = core.leader?.id ?? core.config.leaderId ?? "";
       const result = await cloudApi.fetchHighlightPermission(leaderId, core.clientId, !!verifyOnly);
       return result === "GRANTED";

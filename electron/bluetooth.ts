@@ -97,6 +97,10 @@ const bluetoothMessageCodec = t.intersection([
       t.literal("off"),
       t.literal("hello"), // Initial handshake
       t.literal("goodbye"), // Disconnection notice
+      t.literal("session"),
+      t.literal("access"),
+      t.literal("command"),
+      t.literal("result"),
     ]),
   }),
   t.partial({
@@ -106,7 +110,22 @@ const bluetoothMessageCodec = t.intersection([
     url: t.string,
     device: t.string,
     display: displayCodec,
+    songId: t.string,
+    songData: t.unknown,
     stylesRev: t.string,
+    version: t.number,
+    requestId: t.string,
+    token: t.string,
+    capabilities: t.array(t.string),
+    leaderModeAvailable: t.boolean,
+    access: t.string,
+    mode: t.string,
+    granted: t.boolean,
+    status: t.string,
+    error: t.string,
+    command: t.string,
+    update: t.unknown,
+    highlight: t.unknown,
   }),
 ]);
 

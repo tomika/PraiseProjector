@@ -32,6 +32,8 @@ export interface P2PSessionInfo {
   address?: string;
   port?: number;
   detected: number;
+  protocolVersion?: number;
+  capabilities?: string[];
 }
 
 /**
@@ -193,6 +195,8 @@ export class P2PTransport {
           address: session.address,
           port: session.port,
           detected: session.detected,
+          protocolVersion: session.protocolVersion,
+          capabilities: session.capabilities,
         });
       }
     }

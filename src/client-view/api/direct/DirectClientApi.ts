@@ -39,8 +39,13 @@ import {
   startHostDevicePpdHosting,
   stopHostDeviceWatching,
   stopHostDevicePpdHosting,
+  sendHostDevicePpdDisplayUpdate,
+  sendHostDevicePpdHighlight,
+  requestHostDevicePpdHighlightPermission,
+  requestHostDevicePpdSongData,
 } from "../../../services/hostDevicePpd";
-import type { Display } from "../../../../common/pp-types";
+import type { PpdSessionAccess } from "../../../../common/ppd-control";
+import type { Display, SongData } from "../../../../common/pp-types";
 import type { P2PSessionInfo } from "../../../types/electron";
 import { createDeviceApi } from "../rest/restPorts";
 import { deriveCapabilities } from "../capabilities";
@@ -68,6 +73,7 @@ import { openLanSessionUrl } from "../../../services/sessionNavigation";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
 import { readPersistedSettings } from "../../../services/settingsStore";
 import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
+import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -103,6 +109,9 @@ export class DirectClientApi implements ClientApi {
   private followToken = 0;
   private followAbort: AbortController | null = null;
   private ppdWatching = false;
+  private ppdAccess: PpdSessionAccess | null = null;
+  private readonly ppdSongCache = new Map<string, SongData>();
+  private leaderMode = false;
   private lastFollow: { kind: "cloud"; leaderId?: string } | { kind: "ppd"; info: P2PSessionInfo } | null = null;
 
   readonly song: SongApi = this.createSongApi();
@@ -134,8 +143,9 @@ export class DirectClientApi implements ClientApi {
   // only while a leader is selected), and online hosting follows the
   // external-web-display toggle. It is the Electron renderer, not a PWA.
   private computeCapabilities(): ClientCapabilities {
+    const ppdFollower = this.isFollowingPpd();
     return deriveCapabilities({
-      role: "AppDirect",
+      role: ppdFollower ? "ClientServed" : "AppDirect",
       hasHostBridge: isHostDevicePpdAvailable(),
       hasHostHome: typeof window !== "undefined" && typeof window.hostDevice?.goHome === "function",
       hasWebServerBackend: isWebServerRuntimeAvailable(),
@@ -148,8 +158,8 @@ export class DirectClientApi implements ClientApi {
       externalWebDisplayEnabled: this.isExternalWebDisplayEnabled(),
       ppdSessionEnabled: this.isPpdSessionEnabled(),
       // No follower/leader toggle in an App role.
-      leaderRight: false,
-      leaderMode: false,
+      leaderRight: ppdFollower ? (this.ppdAccess?.leaderModeAvailable ?? false) : false,
+      leaderMode: ppdFollower && this.leaderMode,
       lockedToSession: false,
     });
   }
@@ -243,8 +253,15 @@ export class DirectClientApi implements ClientApi {
     return () => this.capabilityListeners.delete(callback);
   }
 
-  // The desktop embed is always in control; the leader/follower toggle is N/A.
-  setLeaderMode(): void {}
+  setLeaderMode(enabled: boolean): void {
+    if (this.leaderMode === enabled) return;
+    this.leaderMode = enabled;
+    this.refreshHostState();
+  }
+
+  private isFollowingPpd(): boolean {
+    return this.lastFollow?.kind === "ppd" && this.ppdWatching;
+  }
 
   // The desktop embed shares the host app's full view, whose UserPanel mirrors the
   // "todo" status into syncStatusStore. Expose it so the client view can badge it —
@@ -296,8 +313,8 @@ export class DirectClientApi implements ClientApi {
     const songId = () => getCurrentDisplay().songId;
     return {
       getCurrent: () => this.withChordProStyles(getCurrentDisplay()),
-      project: async (request) =>
-        dispatch({
+      project: async (request) => {
+        const update = {
           command: "display_update",
           id: request.songId,
           from: request.from ?? 0,
@@ -306,8 +323,15 @@ export class DirectClientApi implements ClientApi {
           transpose: request.transpose,
           capo: request.capo,
           instructions: request.instructions,
-        }),
+        } as const;
+        if (this.isFollowingPpd()) await sendHostDevicePpdDisplayUpdate(update);
+        else dispatch(update);
+      },
       highlight: async (from, to, section) => {
+        if (this.isFollowingPpd()) {
+          await sendHostDevicePpdHighlight({ from, to, section });
+          return;
+        }
         // When clearing the highlight (from=0, to=0), update CurrentDisplay directly.
         // App.tsx remoteDisplayUpdateHandler skips from/to when from=0 (falsy check),
         // so without this the display.from/to would remain stale after an unhighlight.
@@ -318,12 +342,49 @@ export class DirectClientApi implements ClientApi {
       // no separate server round-trip here, so the finalize (commit) call would
       // only re-dispatch the same value — skip it and act on the preview calls.
       setTranspose: async (value, commit) => {
+        if (this.isFollowingPpd()) {
+          if (commit) {
+            const current = getCurrentDisplay();
+            await sendHostDevicePpdDisplayUpdate({
+              command: "song_update",
+              id: current.songId,
+              from: current.from,
+              to: current.to,
+              transpose: value,
+            });
+          }
+          return;
+        }
         if (!commit) dispatch({ command: "song_update", id: songId(), transpose: value });
       },
       setCapo: async (value, commit) => {
+        if (this.isFollowingPpd()) {
+          if (commit) {
+            const current = getCurrentDisplay();
+            await sendHostDevicePpdDisplayUpdate({
+              command: "song_update",
+              id: current.songId,
+              from: current.from,
+              to: current.to,
+              capo: value,
+            });
+          }
+          return;
+        }
         if (!commit) dispatch({ command: "song_update", id: songId(), capo: value });
       },
-      setInstructions: async (instructions) => dispatch({ command: "song_update", id: songId(), instructions }),
+      setInstructions: async (instructions) => {
+        if (this.isFollowingPpd()) {
+          const current = getCurrentDisplay();
+          await sendHostDevicePpdDisplayUpdate({
+            command: "song_update",
+            id: current.songId,
+            from: current.from,
+            to: current.to,
+            instructions,
+          });
+        } else dispatch({ command: "song_update", id: songId(), instructions });
+      },
       pushToFollowers: async () => undefined,
       subscribeDisplay: (callback) => {
         this.displayListeners.add(callback);
@@ -359,8 +420,17 @@ export class DirectClientApi implements ClientApi {
       },
       listAllSongs: async () => allEntries(),
       getSongData: async (songId) => {
-        const song = Database.getInstance().getSongById(songId);
-        return { text: song?.Text ?? "", system: song?.System ?? getEmptyDisplay().system };
+        const data = await loadPpdSongLocalFirst({
+          songId,
+          followingPpd: this.isFollowingPpd(),
+          cache: this.ppdSongCache,
+          loadLocal: () => {
+            const song = Database.getInstance().getSongById(songId);
+            return song ? { text: song.Text, system: song.System } : undefined;
+          },
+          loadRemote: requestHostDevicePpdSongData,
+        });
+        return data ?? { text: "", system: getEmptyDisplay().system };
       },
       subscribeSongList: (callback) => {
         const db = Database.getInstance();
@@ -405,8 +475,20 @@ export class DirectClientApi implements ClientApi {
     // PlaylistPanel AND syncs CurrentSongStore (via savePlaylist → playlist_id),
     // so the embed's own subscribePlaylist fires too. Writing CurrentSongStore
     // directly here would update the projector but leave the full view stale.
-    const applyPlaylist = (entries: ReturnType<typeof playlistOf>) =>
-      this.dispatchDisplayUpdate({ command: "display_update", id: getCurrentDisplay().songId, playlist: entries });
+    const applyPlaylist = async (entries: ReturnType<typeof playlistOf>) => {
+      const current = getCurrentDisplay();
+      if (this.isFollowingPpd()) {
+        await sendHostDevicePpdDisplayUpdate({
+          command: "display_update",
+          id: current.songId,
+          from: current.from,
+          to: current.to,
+          playlist: entries,
+        });
+      } else {
+        this.dispatchDisplayUpdate({ command: "display_update", id: current.songId, playlist: entries });
+      }
+    };
     return {
       getPlaylist: () => getCurrentDisplay().playlist ?? [],
       setPlaylist: async (entries) => applyPlaylist(entries),
@@ -479,7 +561,13 @@ export class DirectClientApi implements ClientApi {
       // advertiseNearby + the udp.ts host gate). The host loop reads the live
       // projected display so followers mirror what the desktop is projecting.
       startLocal: async () => {
-        const started = await startHostDevicePpdHosting(() => getCurrentDisplay());
+        const started = await startHostDevicePpdHosting(
+          () => getCurrentDisplay(),
+          (songId) => {
+            const song = Database.getInstance().getSongById(songId);
+            return song ? { text: song.Text, system: song.System } : undefined;
+          }
+        );
         if (started) this.setNetworkState({ status: "leading" });
       },
       stopLocal: async () => {
@@ -559,6 +647,7 @@ export class DirectClientApi implements ClientApi {
   }
 
   private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.ppdSongCache.clear();
     this.lastFollow = { kind: "ppd", info };
     this.setNetworkState({ status: "startup" });
     this.ppdWatching = await startHostDeviceWatching(
@@ -570,10 +659,19 @@ export class DirectClientApi implements ClientApi {
       },
       () => {
         this.ppdWatching = false;
+        this.ppdAccess = null;
+        this.refreshHostState();
         this.setNetworkState({ status: "offline" });
+      },
+      (access) => {
+        this.ppdAccess = access;
+        this.refreshHostState();
       }
     );
-    if (this.ppdWatching) this.setNetworkState({ status: "watching" });
+    if (this.ppdWatching) {
+      this.refreshHostState();
+      this.setNetworkState({ status: "watching" });
+    }
   }
 
   /** Long-poll /display_query and project each response, mirroring RestCore's
@@ -613,6 +711,7 @@ export class DirectClientApi implements ClientApi {
   }
 
   private stopFollow(): void {
+    const stoppedPpdFollow = this.ppdWatching || this.ppdAccess !== null;
     this.followToken++;
     if (this.followAbort) {
       try {
@@ -626,6 +725,9 @@ export class DirectClientApi implements ClientApi {
       stopHostDeviceWatching();
       this.ppdWatching = false;
     }
+    this.ppdAccess = null;
+    this.ppdSongCache.clear();
+    if (stoppedPpdFollow) this.refreshHostState();
   }
 
   private createAuthApi(): AuthApi {
@@ -649,7 +751,7 @@ export class DirectClientApi implements ClientApi {
         await this.authBridge.restoreSession();
         this.refreshAuthState();
       },
-      requestHighlightPermission: async () => false,
+      requestHighlightPermission: async (verifyOnly) => (this.isFollowingPpd() ? requestHostDevicePpdHighlightPermission(!!verifyOnly) : false),
       subscribeAuth: (callback) => {
         this.authListeners.add(callback);
         callback(this.isAuthed());

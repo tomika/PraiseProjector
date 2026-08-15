@@ -26,12 +26,18 @@ import {
   startHostDevicePpdHosting,
   stopHostDeviceWatching,
   stopHostDevicePpdHosting,
+  sendHostDevicePpdDisplayUpdate,
+  sendHostDevicePpdHighlight,
+  requestHostDevicePpdHighlightPermission,
+  requestHostDevicePpdSongData,
 } from "../../../services/hostDevicePpd";
+import type { PpdRemoteDisplayUpdate, PpdSessionAccess } from "../../../../common/ppd-control";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { NO_CAPABILITIES } from "../ClientApi";
 import type { ClientCapabilities, ClientConfig, ClientMode, LeaderIdentity, NetworkState, Unsubscribe } from "../ClientApi";
 import { deriveCapabilities } from "../capabilities";
 import { readSessionToggleSettings } from "../sessionFeatureSettings";
+import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -109,6 +115,8 @@ export class RestCore {
    *  SAME target (the legacy goOnline() re-invoked the current watchDisplay). */
   private lastFollow: { kind: "cloud"; leaderId?: string } | { kind: "ppd"; info: P2PSessionInfo } | null = null;
   private ppdWatching = false;
+  private ppdAccess: PpdSessionAccess | null = null;
+  private readonly ppdSongCache = new Map<string, SongData>();
   private capabilities: ClientCapabilities = { ...NO_CAPABILITIES };
   /** The user's leader-mode choice (legacy chkAdmin); gated by the right to lead.
    *  Defaults off — the store restores the persisted choice via setLeaderMode. */
@@ -312,9 +320,10 @@ export class RestCore {
     // host that injects nothing) gets no right; the server still ENFORCES control
     // on /display_update regardless, so an unauthorized push no-ops server-side.
     const lockedCloudFollower = !!this.config.lockedToSession && !this.config.servedByHost;
+    const ppdFollower = this.isFollowingPpd();
     const hasHostHome = typeof window !== "undefined" && typeof window.hostDevice?.goHome === "function";
     return deriveCapabilities({
-      role: this.config.servedByHost || lockedCloudFollower ? "ClientServed" : "AppRest",
+      role: this.config.servedByHost || lockedCloudFollower || ppdFollower ? "ClientServed" : "AppRest",
       hasHostBridge: isHostDevicePpdAvailable(),
       hasHostHome,
       hasWebServerBackend: isWebServerRuntimeAvailable(),
@@ -328,7 +337,9 @@ export class RestCore {
       hasSelectedLeader: false,
       externalWebDisplayEnabled: false,
       ppdSessionEnabled: readSessionToggleSettings().ppdSessionEnabled,
-      leaderRight: this.headerLeaderAvailable ?? (!lockedCloudFollower && this.config.hostAccess !== "GUEST"),
+      leaderRight: ppdFollower
+        ? (this.ppdAccess?.leaderModeAvailable ?? false)
+        : (this.headerLeaderAvailable ?? (!lockedCloudFollower && this.config.hostAccess !== "GUEST")),
       leaderMode: this.leaderMode,
       lockedToSession: !!this.config.lockedToSession,
       fullEditorReachable: this.config.allowFullEditor !== false,
@@ -379,6 +390,22 @@ export class RestCore {
     this.emitCapabilities();
   }
 
+  isFollowingPpd(): boolean {
+    return this.lastFollow?.kind === "ppd" && this.ppdWatching;
+  }
+
+  sendPpdDisplayUpdate(update: PpdRemoteDisplayUpdate): Promise<void> {
+    return sendHostDevicePpdDisplayUpdate(update);
+  }
+
+  sendPpdHighlight(from: number, to: number, section?: number): Promise<void> {
+    return sendHostDevicePpdHighlight({ from, to, section });
+  }
+
+  requestPpdHighlightPermission(verifyOnly = false): Promise<boolean> {
+    return requestHostDevicePpdHighlightPermission(verifyOnly);
+  }
+
   setNetworkState(state: NetworkState): void {
     this.networkEvents.emit(state);
   }
@@ -391,8 +418,14 @@ export class RestCore {
   }
 
   async loadSongData(songId: string): Promise<SongData> {
-    const entries = await cloudApi.fetchSongsById([songId]);
-    return entries[0]?.songdata ?? { text: "", system: getEmptyDisplay().system };
+    const data = await loadPpdSongLocalFirst({
+      songId,
+      followingPpd: this.isFollowingPpd(),
+      cache: this.ppdSongCache,
+      loadLocal: async () => (await cloudApi.fetchSongsById([songId]))[0]?.songdata,
+      loadRemote: requestHostDevicePpdSongData,
+    });
+    return data ?? { text: "", system: getEmptyDisplay().system };
   }
 
   // ── session discovery ────────────────────────────────────────────────────────
@@ -422,7 +455,10 @@ export class RestCore {
   /** Begin hosting a local PPD session (legacy startPpdSession). The host loop pushes
    *  THIS client's current display to followers — see {@link getDisplay}. */
   async startLocalHost(): Promise<void> {
-    const started = await startHostDevicePpdHosting(() => this.getDisplay());
+    const started = await startHostDevicePpdHosting(
+      () => this.getDisplay(),
+      (songId) => this.loadSongData(songId)
+    );
     if (started) this.setNetworkState({ status: "leading" });
   }
 
@@ -466,6 +502,7 @@ export class RestCore {
   }
 
   private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.ppdSongCache.clear();
     this.resetChordProStyles(true);
     this.lastFollow = { kind: "ppd", info };
     this.followLeaderId = undefined;
@@ -500,11 +537,20 @@ export class RestCore {
       },
       () => {
         this.ppdWatching = false;
+        this.ppdAccess = null;
+        this.emitCapabilities();
         this.resetChordProStyles(true);
         this.setNetworkState({ status: "offline" });
+      },
+      (access) => {
+        this.ppdAccess = access;
+        this.emitCapabilities();
       }
     );
-    if (this.ppdWatching) this.setNetworkState({ status: "watching" });
+    if (this.ppdWatching) {
+      this.emitCapabilities();
+      this.setNetworkState({ status: "watching" });
+    }
   }
 
   /**
@@ -553,6 +599,7 @@ export class RestCore {
   }
 
   stopFollow(): void {
+    const stoppedPpdFollow = this.ppdWatching || this.ppdAccess !== null;
     this.followToken++;
     if (this.followAbort) {
       try {
@@ -566,6 +613,9 @@ export class RestCore {
       stopHostDeviceWatching();
       this.ppdWatching = false;
     }
+    this.ppdAccess = null;
+    this.ppdSongCache.clear();
+    if (stoppedPpdFollow) this.emitCapabilities();
     this.resetChordProStyles(true);
   }
 }

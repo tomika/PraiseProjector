@@ -124,6 +124,23 @@ export type Display = t.TypeOf<typeof displayCodec>;
 export type SectionRepeatCount = t.TypeOf<typeof sectionRepeatCountCodec>;
 export type DisplayStylesQueryResponse = t.TypeOf<typeof displayStylesQueryResponseCodec>;
 
+/** Shared display-control request used by the local webserver, renderer IPC and
+ * PPD v2. Keep this cross-boundary shape in one place so transports cannot drift. */
+export type DisplayUpdateRequest = {
+  command: "song_update" | "display_update";
+  id: string;
+  from: number;
+  to: number;
+  section?: number;
+  sectionRepeatCounts?: Display["sectionRepeatCounts"];
+  sectionRepeatNonce?: number;
+  transpose?: number;
+  capo?: number;
+  instructions?: string;
+  title?: string;
+  playlist?: PlaylistEntry[];
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Netdisplay data
 // ═══════════════════════════════════════════════════════════════════════════════

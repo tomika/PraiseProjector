@@ -1,4 +1,4 @@
-import { Display as PPDisplay, PlaylistEntry as PPPlaylistEntry } from "../../common/pp-types";
+import { Display as PPDisplay, DisplayUpdateRequest as PPDisplayUpdateRequest } from "../../common/pp-types";
 import type { WebServerInterface } from "../../common/webserver-interface";
 import { Settings } from "../types";
 
@@ -13,20 +13,7 @@ export interface MonitorDisplay {
   internal: boolean;
 }
 
-export type DisplayUpdateRequest = {
-  command: "song_update" | "display_update";
-  id: string;
-  from: number;
-  to: number;
-  section?: number;
-  sectionRepeatCounts?: Display["sectionRepeatCounts"];
-  sectionRepeatNonce?: number;
-  transpose?: number;
-  capo?: number;
-  instructions?: string;
-  title?: string;
-  playlist?: PPPlaylistEntry[];
-};
+export type DisplayUpdateRequest = PPDisplayUpdateRequest;
 
 export type WindowBounds = {
   x: number;
@@ -208,6 +195,8 @@ export interface P2PSessionInfo {
   address?: string;
   port?: number;
   detected: number;
+  protocolVersion?: number;
+  capabilities?: string[];
 }
 
 /**

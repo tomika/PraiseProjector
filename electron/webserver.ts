@@ -1289,8 +1289,10 @@ export class WebServer {
    * Returns combined list of current clients and admin clients
    */
   public getConnectedClients(projectingOnly: true): number;
-  public getConnectedClients(projectingOnly?: false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }>;
-  public getConnectedClients(projectingOnly = false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> | number {
+  public getConnectedClients(projectingOnly?: false): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean; isConnected: boolean }>;
+  public getConnectedClients(
+    projectingOnly = false
+  ): Array<{ id: string; deviceName: string; isLeaderModeClient: boolean; isConnected: boolean }> | number {
     const now = Date.now();
 
     if (projectingOnly) {
@@ -1301,20 +1303,20 @@ export class WebServer {
       return count;
     }
 
-    const result: Array<{ id: string; deviceName: string; isLeaderModeClient: boolean }> = [];
+    const result: Array<{ id: string; deviceName: string; isLeaderModeClient: boolean; isConnected: boolean }> = [];
 
-    // Add currently connected clients that are not already leader-mode clients
+    // Return every live row. Older clients queries omitted connected leaders,
+    // making an authorized browser look offline in the management list.
     for (const [clientId, client] of this.connectedClients) {
       if (client.validTo > now) {
         const fullId = `${client.deviceName}@${clientId}`;
-        // Check if not already in leader-mode list
-        const isAlreadyLeaderModeClient = this.settings.leaderModeClients.some((entry) => {
-          const parts = entry.split("@");
-          return parts[parts.length - 1] === clientId;
-        });
-        if (!isAlreadyLeaderModeClient) {
-          result.push({ id: fullId, deviceName: client.deviceName, isLeaderModeClient: false });
-        }
+        const isLeaderModeClient =
+          this.settings.allClientsCanUseLeaderMode ||
+          this.settings.leaderModeClients.some((entry) => {
+            const parts = entry.split("@");
+            return parts[parts.length - 1] === clientId;
+          });
+        result.push({ id: fullId, deviceName: client.deviceName, isLeaderModeClient, isConnected: true });
       }
     }
 

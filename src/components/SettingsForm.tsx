@@ -12,6 +12,7 @@ import AboutSettings from "./settings/AboutSettings";
 import ChordProStylesSettings from "./settings/ChordProStylesSettings";
 import ClientViewSettings from "./settings/ClientViewSettings";
 import PerformanceSettings from "./settings/PerformanceSettings";
+import ClientsSettings from "./settings/ClientsSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
@@ -44,6 +45,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
     "leaders",
     "sections",
     "chordpro-styles",
+    "clients",
     "about",
     ...(hasWebServerRuntime ? ["webserver", "netdisplay"] : []),
   ]);
@@ -305,6 +307,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
       sections: <SectionsSettings settings={settings} updateSetting={updateSetting} />,
       "chordpro-styles": <ChordProStylesSettings settings={settings} updateSetting={updateSetting} />,
       images: <ImagesSettings settings={settings} updateSetting={updateSetting} />,
+      clients: <ClientsSettings settings={settings} updateSetting={updateSetting} />,
       webserver: <WebServerSettings settings={settings} updateSetting={updateSetting} />,
       netdisplay: <NetDisplaySettings settings={settings} updateSetting={updateSetting} />,
       about: <AboutSettings />,
@@ -386,6 +389,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "performance" ? "active" : ""}`} href="#" onClick={() => setActiveTab("performance")}>
                 {t("SettingsPagePerformance")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "clients" ? "active" : ""}`} href="#" onClick={() => setActiveTab("clients")}>
+                {t("SettingsPageClients")}
               </a>
             </li>
             {hasWebServerRuntime && (

@@ -76,11 +76,18 @@ import { parseAndDecode } from "../common/io-utils";
 import {
   initHostDevicePpd,
   isHostDevicePpdAvailable,
+  PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT,
+  PPD_HIGHLIGHT_CHANGED_EVENT,
+  PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT,
+  requestHostDevicePpdSongData,
+  sendHostDevicePpdDisplayUpdate,
   startHostDevicePpdHosting,
   startHostDeviceWatching,
   stopHostDevicePpdHosting,
   stopHostDeviceWatching,
+  type PpdHighlightAccessRequestDetail,
 } from "./services/hostDevicePpd";
+import type { PpdSessionAccess } from "../common/ppd-control";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
@@ -90,6 +97,7 @@ import { requestTutorialContinueWhenUnblocked, requestVisibleTutorialStart } fro
 import type { TutorialCommand } from "./tutorial/tutorialTypes";
 import { PullRefreshSpinner } from "./shared/PullRefreshSpinner";
 import { usePullToRefresh } from "./shared/usePullToRefresh";
+import { deriveFullViewPpdFollowUi } from "./services/ppdFollowUi";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -407,13 +415,15 @@ const AppContent: React.FC = () => {
     hasSyncedSettingsRef.current = true;
   }, [settings, syncToBackend]);
 
-  // Electron owns its UDP host in the main process. Android exposes the same
-  // transport through hostDevice, but its PPD responder lives in this web runtime,
-  // so keep it aligned with the persisted feature toggle from initial app load.
+  // Electron owns the legacy display-stream responder in the main process, while
+  // Android hosts it here. PPD v2 control is intentionally handled in this shared
+  // web runtime on both platforms, so keep the bridge aligned with the feature
+  // toggle; startHostDevicePpdHosting avoids starting a duplicate display loop on
+  // Electron and only enables its control-plane/raw-packet adapter.
   // Serialize changes so rapid toggles cannot leave an older async start/stop as
   // the final state.
   useEffect(() => {
-    if (ppdSessionEnabled == null || window.electronAPI || !isHostDevicePpdAvailable()) return;
+    if (ppdSessionEnabled == null || !isHostDevicePpdAvailable()) return;
 
     const shouldHost = ppdSessionEnabled;
     ppdHostingSyncRef.current = ppdHostingSyncRef.current
@@ -423,15 +433,21 @@ const AppContent: React.FC = () => {
       })
       .then(async () => {
         if (shouldHost) {
-          await startHostDevicePpdHosting(() => {
-            const display = getCurrentDisplay();
-            const { styles: chordProStyles, rev: chordProStylesRev } = ppdSharedStylesRef.current;
-            return {
-              ...display,
-              chordProStylesRev,
-              chordProStyles,
-            };
-          });
+          await startHostDevicePpdHosting(
+            () => {
+              const display = getCurrentDisplay();
+              const { styles: chordProStyles, rev: chordProStylesRev } = ppdSharedStylesRef.current;
+              return {
+                ...display,
+                chordProStylesRev,
+                chordProStyles,
+              };
+            },
+            (songId) => {
+              const song = Database.getInstance().getSongById(songId);
+              return song ? { text: song.Text, system: song.System } : undefined;
+            }
+          );
         } else {
           await stopHostDevicePpdHosting();
         }
@@ -493,10 +509,16 @@ const AppContent: React.FC = () => {
   const [watchedSessionId, setWatchedSessionId] = useState<string | null>(null);
   const [_watchedSessionUrl, setWatchedSessionUrl] = useState<string | null>(null);
   const [watchedPlaylist, setWatchedPlaylist] = useState<Playlist | null>(null);
+  const [ppdWatchAccess, setPpdWatchAccess] = useState<PpdSessionAccess | null>(null);
+  const [ppdLeaderMode, setPpdLeaderMode] = useState(false);
+  const [ppdRemoteSongs, setPpdRemoteSongs] = useState<Map<string, Song>>(() => new Map());
   const watchPollingAbortRef = useRef<AbortController | null>(null);
   const selectedLeaderRef = useRef<Leader | null>(selectedLeader);
   const settingsRef = useRef<Settings | null>(settings);
   const isWatching = watchedSessionId !== null;
+  const ppdFollowUi = deriveFullViewPpdFollowUi(isWatching, ppdWatchAccess?.leaderModeAvailable === true, ppdLeaderMode);
+  const ppdLeaderModeAvailable = ppdFollowUi.leaderModeAvailable;
+  const ppdLeaderModeActive = ppdFollowUi.leaderModeActive;
   const previewPanelRef = useRef<PreviewPanelMethods>(null);
   const syncDeclinedAtRef = useRef<number | null>(null);
   const leftPanelRef = useRef<LeftPanelMethods>(null);
@@ -748,19 +770,38 @@ const AppContent: React.FC = () => {
   // Keyboard events are debounced here so cross-panel updates only fire
   // after selection activity calms down (single debounce point).
   const KEYBOARD_SELECTION_DEBOUNCE_MS = 30;
-  const applyPlaylistSelection = useCallback((selection: PlaylistSelectionEvent) => {
-    playlistSelectionSourceRef.current = selection.source;
-    setPlaylistSelection(selection);
+  const applyPlaylistSelection = useCallback(
+    (selection: PlaylistSelectionEvent) => {
+      playlistSelectionSourceRef.current = selection.source;
+      setPlaylistSelection(selection);
 
-    // Also update song tree to show the same song (visual consistency)
-    // But NOT during restoration - we restore to savedState.selectedSongId instead
-    if (selection.item && !isRestoringStateRef.current) {
-      leftPanelRef.current?.setSelectedSongId(selection.item.songId);
-      // Auto-select first section when user selects a new playlist item from UI
-      setSelectedSectionIndex(0);
-      previewPanelRef.current?.setSelectedSectionIndex(0);
-    }
-  }, []);
+      // A full-view PPD leader projects the selected remote row back to the host.
+      // The local PlaylistPanel selection remains optimistic for instant feedback;
+      // the normal display stream then confirms it with the host's canonical song.
+      if (ppdLeaderModeActive && selection.item && selection.settled) {
+        const item = selection.item;
+        void sendHostDevicePpdDisplayUpdate({
+          command: "display_update",
+          id: item.songId,
+          from: 0,
+          to: 0,
+          transpose: item.transpose,
+          capo: item.capo,
+          instructions: item.instructions,
+        }).catch((error) => console.warn("[PPD] Failed to project full-view playlist selection:", error));
+      }
+
+      // Also update song tree to show the same song (visual consistency)
+      // But NOT during restoration - we restore to savedState.selectedSongId instead
+      if (selection.item && !isRestoringStateRef.current) {
+        leftPanelRef.current?.setSelectedSongId(selection.item.songId);
+        // Auto-select first section when user selects a new playlist item from UI
+        setSelectedSectionIndex(0);
+        previewPanelRef.current?.setSelectedSectionIndex(0);
+      }
+    },
+    [ppdLeaderModeActive]
+  );
 
   const flushPendingKeyboardSelection = useCallback(() => {
     const pendingSelection = latestKeyboardSelectionRef.current;
@@ -1671,6 +1712,44 @@ const AppContent: React.FC = () => {
     };
   }, [markRemoteHighlightActivity, showConfirm, t]);
 
+  // PPD v2 reuses the same host UI and projection logic as HTTP remote control.
+  // Only the transport differs: hostDevicePpd emits DOM events because Android's
+  // PPD loop already runs in this renderer, while Electron forwards raw packets
+  // here through the host-device bridge.
+  useEffect(() => {
+    const onAccessRequest = (event: Event) => {
+      const detail = (event as CustomEvent<PpdHighlightAccessRequestDetail>).detail;
+      if (!detail?.clientId || typeof detail.respond !== "function") return;
+      showConfirm(
+        t("RemoteHighlight"),
+        t("AskRemoteHighlightModifyPermission"),
+        () => detail.respond(true),
+        () => detail.respond(false),
+        { confirmText: t("AllowRemoteControl") }
+      );
+    };
+    const onHighlightChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ from: number; to: number; section?: number }>).detail;
+      if (!detail || typeof detail.from !== "number" || typeof detail.to !== "number") return;
+      markRemoteHighlightActivity();
+      if (settingsRef.current?.remoteHighlightControlEnabled === false) return;
+      if (detail.from === 0 && detail.to === 0) previewPanelRef.current?.setSelectedSectionIndex(-1);
+      else previewPanelRef.current?.selectSectionByLine(detail.from, detail.section);
+    };
+    const onControllerChanged = (event: Event) => {
+      setRemoteHighlightController((event as CustomEvent<string>).detail || "");
+    };
+
+    window.addEventListener(PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT, onAccessRequest);
+    window.addEventListener(PPD_HIGHLIGHT_CHANGED_EVENT, onHighlightChanged);
+    window.addEventListener(PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT, onControllerChanged);
+    return () => {
+      window.removeEventListener(PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT, onAccessRequest);
+      window.removeEventListener(PPD_HIGHLIGHT_CHANGED_EVENT, onHighlightChanged);
+      window.removeEventListener(PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT, onControllerChanged);
+    };
+  }, [markRemoteHighlightActivity, showConfirm, t]);
+
   // Handle playlist item selection - sets projectedSong and (if not editing) editedSong
   useEffect(() => {
     console.debug("App", `selectedPlaylistItem effect: item=${selectedPlaylistItem?.songId}, isEditing=${isEditing}, isAuthLoading=${isAuthLoading}`);
@@ -1693,7 +1772,7 @@ const AppContent: React.FC = () => {
           return;
         }
         console.debug("App", `Database has ${db.getSongs().length} songs`);
-        const song = db.getSongById(targetSongId);
+        const song = db.getSongById(targetSongId) ?? ppdRemoteSongs.get(targetSongId);
         console.debug("App", `Loading song from playlist selection: songId=${targetSongId}, found=${song?.Title || "NOT FOUND"}`);
         if (song) {
           const clonedSong = song.clone();
@@ -1725,7 +1804,7 @@ const AppContent: React.FC = () => {
 
       void loadSong();
     }
-  }, [selectedPlaylistItem, isEditing, isAuthLoading]);
+  }, [selectedPlaylistItem, isEditing, isAuthLoading, ppdRemoteSongs]);
 
   // Handle song tree selection - sets editedSong (with confirmation if editing)
   const handleSongSelected = async (song: Song | null) => {
@@ -2081,6 +2160,42 @@ const AppContent: React.FC = () => {
   const handleSwipePrev = () => navigateSongByDelta(-1);
   const handleSwipeNext = () => navigateSongByDelta(1);
 
+  // Keep the local database as the zero-latency page-turn source. Only missing
+  // PPD neighbours are fetched from the host, then cached for subsequent turns.
+  useEffect(() => {
+    if (!isWatching || !ppdWatchAccess?.capabilities.includes("song.fetch") || !watchedPlaylist || !projectedSong) {
+      if (!isWatching && ppdRemoteSongs.size) setPpdRemoteSongs(new Map());
+      return;
+    }
+    const currentIndex = watchedPlaylist.items.findIndex((item) => item.songId === projectedSong.Id);
+    if (currentIndex < 0) return;
+    const ids = [watchedPlaylist.items[currentIndex - 1]?.songId, watchedPlaylist.items[currentIndex + 1]?.songId].filter(
+      (songId): songId is string => !!songId && !Database.getInstance().getSongById(songId) && !ppdRemoteSongs.has(songId)
+    );
+    if (!ids.length) return;
+    let cancelled = false;
+    void Promise.allSettled(
+      ids.map(async (songId) => {
+        const data = await requestHostDevicePpdSongData(songId);
+        const song = new Song(data.text, data.system);
+        song.Id = songId;
+        return song;
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      const loaded = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+      if (!loaded.length) return;
+      setPpdRemoteSongs((current) => {
+        const next = new Map(current);
+        for (const song of loaded) next.set(song.Id, song);
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isWatching, ppdRemoteSongs, ppdWatchAccess, projectedSong, watchedPlaylist]);
+
   // Resolve the adjacent song (without navigating) so the editor can pre-render
   // it behind the current page for the page-turn reveal. Uses playlist order
   // when a playlist item is selected, otherwise the song-tree order.
@@ -2091,6 +2206,12 @@ const AppContent: React.FC = () => {
   // ref read returned null and the editor kept blank neighbour pages until the
   // next re-render — i.e. until the song was re-picked in the list by hand.
   const getAdjacentSongForFlip = (delta: 1 | -1): Song | null => {
+    if (isWatching && watchedPlaylist && projectedSong) {
+      const currentIndex = watchedPlaylist.items.findIndex((item) => item.songId === projectedSong.Id);
+      const adjacent = watchedPlaylist.items[currentIndex + delta];
+      if (!adjacent) return null;
+      return Database.getInstance().getSongById(adjacent.songId) ?? ppdRemoteSongs.get(adjacent.songId) ?? null;
+    }
     if (selectedPlaylistItem) {
       const playlist = leftPanelRef.current?.getCurrentPlaylist();
       if (!playlist) return null;
@@ -2414,6 +2535,16 @@ const AppContent: React.FC = () => {
     [applyDisplay]
   );
 
+  const handlePpdAccessUpdate = useCallback((access: PpdSessionAccess) => {
+    setPpdWatchAccess(access);
+    if (!access.leaderModeAvailable) setPpdLeaderMode(false);
+  }, []);
+
+  const togglePpdLeaderMode = useCallback(() => {
+    if (!ppdLeaderModeAvailable) return;
+    setPpdLeaderMode((enabled) => !enabled);
+  }, [ppdLeaderModeAvailable]);
+
   // Use ref for exit function to avoid circular dependency
   const exitWatchModeRef = useRef<() => void>(() => {});
 
@@ -2444,6 +2575,9 @@ const AppContent: React.FC = () => {
     setWatchedSessionId(null);
     setWatchedSessionUrl(null);
     setWatchedPlaylist(null); // Clear remote playlist
+    setPpdWatchAccess(null);
+    setPpdLeaderMode(false);
+    setPpdRemoteSongs(new Map());
 
     // Only clear song display if we were actually watching (matching C# behavior)
     if (watchedSessionId !== null) {
@@ -2500,6 +2634,10 @@ const AppContent: React.FC = () => {
     ) => {
       console.info("App", `Entering watch mode for ${sessionType} session: ${sessionId}`);
 
+      setPpdWatchAccess(null);
+      setPpdLeaderMode(false);
+      setPpdRemoteSongs(new Map());
+
       // Set watched session state
       setWatchedSessionId(sessionId);
       setWatchedSessionUrl(_sessionUrl);
@@ -2518,7 +2656,7 @@ const AppContent: React.FC = () => {
           return;
         }
         void initHostDevicePpd();
-        void startHostDeviceWatching(sessionId, udpDetails, handleUdpDisplayUpdate, handleUdpSessionEnded).then((started) => {
+        void startHostDeviceWatching(sessionId, udpDetails, handleUdpDisplayUpdate, handleUdpSessionEnded, handlePpdAccessUpdate).then((started) => {
           if (!started) {
             console.warn("App", "HostDevice local watch start failed");
             exitWatchModeRef.current();
@@ -2530,7 +2668,7 @@ const AppContent: React.FC = () => {
         watchOnlineDisplay(sessionId, cloudApi.getBaseUrl(), watchPollingAbortRef.current.signal);
       }
     },
-    [updateCurrentSongText, watchOnlineDisplay, handleUdpDisplayUpdate, handleUdpSessionEnded]
+    [updateCurrentSongText, watchOnlineDisplay, handleUdpDisplayUpdate, handleUdpSessionEnded, handlePpdAccessUpdate]
   );
 
   // Launch viewer - show sessions dialog (matching C# OnDeviceButtonClicked)
@@ -2853,6 +2991,10 @@ const AppContent: React.FC = () => {
                     onPlaylistSelectionChange={handlePlaylistSelectionChange}
                     onSongSelected={handleSongSelected}
                     onOpenLeaderSettings={openLeaderSettings}
+                    following={isWatching}
+                    ppdLeaderModeAvailable={ppdLeaderModeAvailable}
+                    ppdLeaderMode={ppdLeaderModeActive}
+                    onTogglePpdLeaderMode={togglePpdLeaderMode}
                     onOpenSessions={handleLaunchViewer}
                     onSyncClick={handleSyncClick}
                     onRemoteChangeCountChange={setRemoteChangeCount}
@@ -2864,7 +3006,7 @@ const AppContent: React.FC = () => {
                     onExternalFilesDropped={handleSongTreeExternalFilesDropped}
                     selectedSong={editedSong}
                     onAdjacentSongsChange={handleAdjacentSongsChange}
-                    disabled={isWatching}
+                    disabled={ppdFollowUi.playlistDisabled}
                     remotePlaylist={watchedPlaylist}
                     playlistPanelSize={playlistPanelSize}
                     songListPanelSize={songListPanelSize}
@@ -2956,6 +3098,10 @@ const AppContent: React.FC = () => {
                       onPlaylistSelectionChange={handlePlaylistSelectionChange}
                       onSongSelected={handleSongSelected}
                       onOpenLeaderSettings={openLeaderSettings}
+                      following={isWatching}
+                      ppdLeaderModeAvailable={ppdLeaderModeAvailable}
+                      ppdLeaderMode={ppdLeaderModeActive}
+                      onTogglePpdLeaderMode={togglePpdLeaderMode}
                       onOpenSessions={handleLaunchViewer}
                       onSyncClick={handleSyncClick}
                       onRemoteChangeCountChange={setRemoteChangeCount}
@@ -2966,7 +3112,7 @@ const AppContent: React.FC = () => {
                       onExternalFilesDropped={handleSongTreeExternalFilesDropped}
                       selectedSong={editedSong}
                       onAdjacentSongsChange={handleAdjacentSongsChange}
-                      disabled={isWatching}
+                      disabled={ppdFollowUi.playlistDisabled}
                       remotePlaylist={watchedPlaylist}
                       playlistPanelSize={playlistPanelSize}
                       songListPanelSize={songListPanelSize}

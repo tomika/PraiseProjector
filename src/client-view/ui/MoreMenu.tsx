@@ -79,7 +79,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       image: "wifi.svg",
       show: canUseSessions(state),
       dot: hasBackgroundSessionsFound(state),
-      run: () => store.openSessionsDialog(),
+      run: () => void store.openSessionsDialog(),
     },
     {
       id: "home",

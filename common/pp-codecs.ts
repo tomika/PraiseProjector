@@ -289,7 +289,28 @@ export const editSongResponseCodec = uniType({ version: t.number, song: t.string
  */
 export const ppdMessageInternalCodec = uniType(
   { op: t.string },
-  { id: t.string, url: t.string, name: t.string, display: displayCodec, stylesRev: t.string }
+  {
+    id: t.string,
+    url: t.string,
+    name: t.string,
+    display: displayCodec,
+    songId: t.string,
+    songData: songDataCodec,
+    stylesRev: t.string,
+    version: t.number,
+    requestId: t.string,
+    token: t.string,
+    capabilities: t.array(t.string),
+    leaderModeAvailable: t.boolean,
+    access: t.string,
+    mode: t.string,
+    granted: t.boolean,
+    status: t.string,
+    error: t.string,
+    command: t.string,
+    update: t.unknown,
+    highlight: t.unknown,
+  }
 );
 
 /**
@@ -299,7 +320,29 @@ export const ppdMessageInternalCodec = uniType(
  */
 export const ppdMessageCodec = uniType(
   { op: t.string, device: t.string },
-  { id: t.string, url: t.string, name: t.string, display: displayCodec, port: t.number, stylesRev: t.string }
+  {
+    id: t.string,
+    url: t.string,
+    name: t.string,
+    display: displayCodec,
+    songId: t.string,
+    songData: songDataCodec,
+    port: t.number,
+    stylesRev: t.string,
+    version: t.number,
+    requestId: t.string,
+    token: t.string,
+    capabilities: t.array(t.string),
+    leaderModeAvailable: t.boolean,
+    access: t.string,
+    mode: t.string,
+    granted: t.boolean,
+    status: t.string,
+    error: t.string,
+    command: t.string,
+    update: t.unknown,
+    highlight: t.unknown,
+  }
 );
 
 // ── Song history ──────────────────────────────────────────────────────────────

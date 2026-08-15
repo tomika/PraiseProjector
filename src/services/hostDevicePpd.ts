@@ -1,17 +1,31 @@
 import { P2PSessionInfo } from "../types/electron.d";
-import { Display } from "../../common/pp-types";
+import { Display, type SongData } from "../../common/pp-types";
+import {
+  PPD_CONTROL_CAPABILITIES,
+  PPD_PROTOCOL_VERSION,
+  PpdControlHost,
+  type PpdHighlightUpdate,
+  type PpdPeer,
+  type PpdRemoteDisplayUpdate,
+  type PpdSessionAccess,
+  type PpdWireMessage,
+  isPpdPeerAllowlisted,
+  isPpdWireMessage,
+  readPpdSessionAccess,
+} from "../../common/ppd-control";
 import { readPersistedSettings } from "./settingsStore";
 import { isWebServerRuntimeAvailable } from "./webServerBridge";
+import { clearHostedPpdClients, isHostedPpdClientActivity, noteHostedPpdClient } from "./hostedPpdClients";
 
-type PpdMessage = {
-  op?: string;
-  id?: string;
-  device?: string;
-  port?: number;
-  name?: string;
-  url?: string;
-  display?: Display;
-  stylesRev?: string;
+type PpdMessage = PpdWireMessage;
+
+export const PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT = "pp-ppd-highlight-access-request";
+export const PPD_HIGHLIGHT_CHANGED_EVENT = "pp-ppd-highlight-changed";
+export const PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT = "pp-ppd-highlight-controller-changed";
+
+export type PpdHighlightAccessRequestDetail = {
+  clientId: string;
+  respond(grant: boolean): void;
 };
 
 type HostDevicePacket = {
@@ -98,6 +112,25 @@ let watchTimer: ReturnType<typeof setInterval> | null = null;
 let watchedSession: { id: string; details: WatchDetails } | null = null;
 let watchedDisplayCallback: ((display: Display) => void) | null = null;
 let watchedEndedCallback: (() => void) | null = null;
+let watchedAccessCallback: ((access: PpdSessionAccess) => void) | null = null;
+let watchedAccess: PpdSessionAccess | null = null;
+let watchedHighlightToken = "";
+let ppdControlHosting = false;
+
+type PendingControlRequest = {
+  resolve(message: PpdMessage): void;
+  reject(error: Error): void;
+  timeout: ReturnType<typeof setTimeout>;
+  retryTimers: ReturnType<typeof setTimeout>[];
+};
+const pendingControlRequests = new Map<string, PendingControlRequest>();
+let controlHost: PpdControlHost | null = null;
+
+const clearPendingControlRequest = (requestId: string, pending: PendingControlRequest): void => {
+  clearTimeout(pending.timeout);
+  for (const timer of pending.retryTimers) clearTimeout(timer);
+  pendingControlRequests.delete(requestId);
+};
 
 // Optional callback for nearby endpoint change notifications (for UI consumers)
 type NearbyChangeCallback = (type: "discovered" | "disappeared", endpointId: string, name?: string) => void;
@@ -125,7 +158,15 @@ const isSessionFresh = (session: P2PSessionInfo, at = now()): boolean => at - se
 /** Everything a consumer renders. Liveness (`detected`) is deliberately excluded so
  *  a peer that keeps answering does not re-notify — and re-render — every round. */
 const sessionSignature = (session: P2PSessionInfo): string =>
-  [session.name, session.url, session.transport, session.address ?? "", session.port ?? ""].join("|");
+  [
+    session.name,
+    session.url,
+    session.transport,
+    session.address ?? "",
+    session.port ?? "",
+    session.protocolVersion ?? 1,
+    ...(session.capabilities ?? []),
+  ].join("|");
 
 const notifySessionsChanged = (): void => {
   for (const callback of sessionsChangeListeners) {
@@ -234,7 +275,8 @@ const decodePacketMessage = (packetMessage: string): PpdMessage | null => {
       bytes[i] = bin.charCodeAt(i);
     }
     const json = new TextDecoder().decode(bytes);
-    return JSON.parse(json) as PpdMessage;
+    const parsed: unknown = JSON.parse(json);
+    return isPpdWireMessage(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -292,6 +334,7 @@ const sendPpd = async (message: PpdMessage, host: string, portSpec: string) => {
 
 let hosting = false;
 let hostDisplayProvider: (() => Display) | null = null;
+let hostSongProvider: ((songId: string) => SongData | undefined | Promise<SongData | undefined>) | null = null;
 let hostTimer: ReturnType<typeof setInterval> | null = null;
 let hostName = "";
 // Refreshed by scan/view requests. A viewer repeats view every 10 seconds, so
@@ -313,6 +356,48 @@ const hostWatchers = new Map<
     inlineStylesRetransmits?: number;
   }
 >();
+
+const isPpdLeaderAllowed = (peer: PpdPeer): boolean => {
+  const settings = readPersistedSettings();
+  if (settings.allClientsCanUseLeaderMode !== false) return true;
+  return isPpdPeerAllowlisted(peer, settings.leaderModeClients ?? []);
+};
+
+const getControlHost = (): PpdControlHost => {
+  if (controlHost) return controlHost;
+  controlHost = new PpdControlHost({
+    getHostId: () => deviceId,
+    isLeaderAllowed: isPpdLeaderAllowed,
+    requestHighlightAccess: (peer) => {
+      return new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finish = (grant: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve(grant);
+        };
+        const timeout = setTimeout(() => finish(false), 30000);
+        window.dispatchEvent(
+          new CustomEvent<PpdHighlightAccessRequestDetail>(PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT, {
+            detail: { clientId: peer.deviceId, respond: finish },
+          })
+        );
+      });
+    },
+    applyDisplayUpdate: (_peer, update) => {
+      window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail: update }));
+    },
+    applyHighlight: (_peer, highlight) => {
+      window.dispatchEvent(new CustomEvent<PpdHighlightUpdate>(PPD_HIGHLIGHT_CHANGED_EVENT, { detail: highlight }));
+    },
+    getSongData: (_peer, songId) => hostSongProvider?.(songId),
+    onHighlightControllerChanged: (clientId) => {
+      window.dispatchEvent(new CustomEvent<string>(PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT, { detail: clientId }));
+    },
+  });
+  return controlHost;
+};
 
 // Send a host-originated PPD message (offer/display/off), augmenting it with our own
 // device id, name and listen port so the receiver can reply (mirrors legacy
@@ -401,7 +486,17 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
             if (!hosting) return;
             const url = await getAdvertisedWebServerUrl().catch(() => undefined);
             hostAdvertisedWebServerUrl = url;
-            await sendHostPpd({ op: "offer", id: message.id, url }, packet.from, message.port ?? packet.port);
+            await sendHostPpd(
+              {
+                op: "offer",
+                id: message.id,
+                url,
+                version: PPD_PROTOCOL_VERSION,
+                capabilities: [...PPD_CONTROL_CAPABILITIES],
+              },
+              packet.from,
+              message.port ?? packet.port
+            );
           })();
         }, Math.random() * SCAN_REPLY_JITTER_MS);
       }
@@ -503,8 +598,10 @@ const sendViewRequest = async () => {
   await sendPpd(
     {
       op: "view",
+      version: PPD_PROTOCOL_VERSION,
       id: watchedSession.id,
       device: selfDevice,
+      name: await getSelfDeviceName(),
       port: listenPort || undefined,
     },
     watchedSession.details.address,
@@ -520,6 +617,13 @@ const stopWatchingInternal = () => {
   watchedSession = null;
   watchedDisplayCallback = null;
   watchedEndedCallback = null;
+  watchedAccess = null;
+  watchedAccessCallback = null;
+  watchedHighlightToken = "";
+  for (const [requestId, pending] of pendingControlRequests) {
+    clearPendingControlRequest(requestId, pending);
+    pending.reject(new Error("PPD session ended"));
+  }
 };
 
 const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
@@ -564,6 +668,8 @@ const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
     address: packet.from,
     port: offerPort,
     detected: now(),
+    protocolVersion: message.version,
+    capabilities: message.capabilities,
   };
   discoveredSessions.set(sessionId, session);
   // Publish only a genuine appearance/change — a peer that simply keeps answering
@@ -655,10 +761,42 @@ const startHostDeviceNearbyDiscovery = async (): Promise<void> => {
 };
 
 const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessage) => {
+  if (ppdControlHosting && message.device) {
+    const peer: PpdPeer = {
+      deviceId: message.device,
+      address: packet.from,
+      transport: packet.transport === "nearby" ? "nearby" : "udp",
+      name: message.name,
+    };
+    // A scan merely discovers another host. Only traffic explicitly addressed to
+    // our hosted session proves that this peer is one of our PPD clients.
+    if (isHostedPpdClientActivity(message, deviceId)) {
+      noteHostedPpdClient(peer);
+    }
+    const handled = await getControlHost().handle(message, peer, (response) => sendHostPpd(response, packet.from, message.port ?? packet.port));
+    if (handled) return;
+  }
+
   // While hosting a JS-loop PPD session, consume the host-side ops (scan/view/ack)
   // here; the watcher-side ops (offer/off/display) fall through to the switch below.
   if (hosting && handleHostMessage(packet, message)) return;
   switch (message.op) {
+    case "session": {
+      if (!watchedSession || message.device !== watchedSession.id) return;
+      const access = readPpdSessionAccess(message);
+      if (!access) return;
+      watchedAccess = access;
+      watchedAccessCallback?.(access);
+      return;
+    }
+    case "result": {
+      if (!watchedSession || message.device !== watchedSession.id || !message.requestId) return;
+      const pending = pendingControlRequests.get(message.requestId);
+      if (!pending) return;
+      clearPendingControlRequest(message.requestId, pending);
+      pending.resolve(message);
+      return;
+    }
     case "offer":
       upsertOffer(packet, message);
       return;
@@ -880,9 +1018,13 @@ export const initHostDevicePpd = async () => {
 export const disposeHostDevicePpd = () => {
   stopWatchingInternal();
   hosting = false;
+  ppdControlHosting = false;
+  controlHost?.clear();
   hostDisplayProvider = null;
+  hostSongProvider = null;
   hostAdvertisedWebServerUrl = undefined;
   hostWatchers.clear();
+  clearHostedPpdClients();
   if (hostTimer) {
     clearInterval(hostTimer);
     hostTimer = null;
@@ -1110,7 +1252,8 @@ export const startHostDeviceWatching = async (
   sessionId: string,
   details: WatchDetails,
   onDisplayUpdate: (display: Display) => void,
-  onSessionEnded: () => void
+  onSessionEnded: () => void,
+  onAccessUpdate?: (access: PpdSessionAccess) => void
 ): Promise<boolean> => {
   if (!isHostDevicePpdAvailable()) return false;
   await initHostDevicePpd();
@@ -1124,6 +1267,9 @@ export const startHostDeviceWatching = async (
   watchedSession = { id: normalizedId, details };
   watchedDisplayCallback = onDisplayUpdate;
   watchedEndedCallback = onSessionEnded;
+  watchedAccessCallback = onAccessUpdate ?? null;
+  watchedAccess = { version: 1, capabilities: ["display.watch"], leaderModeAvailable: false };
+  watchedAccessCallback?.(watchedAccess);
 
   await sendViewRequest();
   watchTimer = setInterval(() => {
@@ -1137,6 +1283,113 @@ export const stopHostDeviceWatching = () => {
   stopWatchingInternal();
 };
 
+const sendWatchedControlRequest = async (message: Omit<PpdMessage, "device" | "version" | "requestId">, timeoutMs: number): Promise<PpdMessage> => {
+  if (!watchedSession) throw new Error("No active PPD session");
+  const requestId = randomId() + randomId();
+  const selfDevice = await getSelfDeviceId();
+  const selfName = await getSelfDeviceName();
+  const request: PpdMessage = {
+    ...message,
+    version: PPD_PROTOCOL_VERSION,
+    requestId,
+    device: selfDevice,
+    name: selfName,
+    id: watchedSession.id,
+    port: listenPort || undefined,
+  };
+
+  const response = new Promise<PpdMessage>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      const pending = pendingControlRequests.get(requestId);
+      if (pending) clearPendingControlRequest(requestId, pending);
+      reject(new Error("PPD control request timed out"));
+    }, timeoutMs);
+    pendingControlRequests.set(requestId, { resolve, reject, timeout, retryTimers: [] });
+  });
+
+  const send = () => {
+    if (!pendingControlRequests.has(requestId) || !watchedSession) return;
+    void sendPpd(request, watchedSession.details.address, String(watchedSession.details.port)).catch(() => {
+      // UDP/Nearby delivery is best-effort; the tracked retries and request
+      // timeout provide the observable result to the caller.
+    });
+  };
+  send();
+  const pending = pendingControlRequests.get(requestId);
+  pending?.retryTimers.push(setTimeout(send, 750), setTimeout(send, 1500));
+  return response;
+};
+
+const requireOkResult = (result: PpdMessage): PpdMessage => {
+  if (result.status !== "ok") throw new Error(result.error || `PPD control request ${result.status || "failed"}`);
+  return result;
+};
+
+export const isHostDevicePpdControlAvailable = (): boolean =>
+  !!watchedSession && watchedAccess?.version === PPD_PROTOCOL_VERSION && watchedAccess.capabilities.includes("display.control");
+
+/** Fetch one song from the followed PPD host. Used only after the local database
+ * misses, so the normal zero-network neighbour preload remains the fast path. */
+export const requestHostDevicePpdSongData = async (songId: string): Promise<SongData> => {
+  if (!watchedAccess?.capabilities.includes("song.fetch")) throw new Error("PPD song fetch is not available");
+  const result = requireOkResult(await sendWatchedControlRequest({ op: "get-song", songId }, 5000));
+  if (
+    result.songId !== songId ||
+    !result.songData ||
+    typeof result.songData.text !== "string" ||
+    (result.songData.system !== "G" && result.songData.system !== "S")
+  ) {
+    throw new Error("Invalid PPD song response");
+  }
+  return result.songData;
+};
+
+export const sendHostDevicePpdDisplayUpdate = async (update: PpdRemoteDisplayUpdate): Promise<void> => {
+  if (!watchedAccess?.controlToken) throw new Error("PPD leader access is not granted");
+  requireOkResult(
+    await sendWatchedControlRequest(
+      {
+        op: "command",
+        command: update.command,
+        update,
+        token: watchedAccess.controlToken,
+      },
+      5000
+    )
+  );
+};
+
+export const requestHostDevicePpdHighlightPermission = async (verifyOnly = false): Promise<boolean> => {
+  if (!watchedSession || watchedAccess?.version !== PPD_PROTOCOL_VERSION) return false;
+  const result = await sendWatchedControlRequest(
+    {
+      op: "access",
+      access: "highlight",
+      mode: verifyOnly ? "verify" : "request",
+    },
+    verifyOnly ? 5000 : 35000
+  );
+  if (result.status !== "ok" || result.granted !== true) return false;
+  watchedHighlightToken = result.token ?? "";
+  return !!watchedHighlightToken;
+};
+
+export const sendHostDevicePpdHighlight = async (highlight: PpdHighlightUpdate): Promise<void> => {
+  const token = watchedAccess?.controlToken || watchedHighlightToken;
+  if (!token) throw new Error("PPD highlight access is not granted");
+  requireOkResult(
+    await sendWatchedControlRequest(
+      {
+        op: "command",
+        command: "highlight",
+        highlight,
+        token,
+      },
+      5000
+    )
+  );
+};
+
 /** Whether a JS-loop PPD session is currently being hosted (Android/web). */
 export const isHostDevicePpdHosting = (): boolean => hosting;
 
@@ -1148,12 +1401,20 @@ export const isHostDevicePpdHosting = (): boolean => hosting;
  * `getDisplay` supplies the current projected display pushed to watchers. Returns
  * false when no host bridge is available (a plain browser).
  */
-export const startHostDevicePpdHosting = async (getDisplay: () => Display): Promise<boolean> => {
+export const startHostDevicePpdHosting = async (
+  getDisplay: () => Display,
+  getSongData?: (songId: string) => SongData | undefined | Promise<SongData | undefined>
+): Promise<boolean> => {
   if (!isHostDevicePpdAvailable()) return false;
   await initHostDevicePpd();
   await ensureListening();
   const selfDevice = await getSelfDeviceId();
   hostName = (await getSelfDeviceName()) || selfDevice;
+  hostDisplayProvider = getDisplay;
+  hostSongProvider = getSongData ?? null;
+  ppdControlHosting = true;
+  getControlHost().clear();
+  clearHostedPpdClients();
   const hostDevice = getHostDevice();
   // Android gates advertiseNearby behind the very permissions it will not ask for on
   // its own, so it silently no-ops until they are granted. Prompt here, before the
@@ -1165,7 +1426,6 @@ export const startHostDevicePpdHosting = async (getDisplay: () => Display): Prom
     await resolvePromise(hostDevice?.advertiseNearby?.(true) ?? false);
     return true;
   }
-  hostDisplayProvider = getDisplay;
   hosting = true;
   hostWatchers.clear();
   await resolvePromise(hostDevice?.advertiseNearby?.(true) ?? false);
@@ -1179,9 +1439,13 @@ export const stopHostDevicePpdHosting = async (): Promise<void> => {
   const hostDevice = getHostDevice();
   if (hosting) for (const watcher of hostWatchers.values()) void sendHostPpd({ op: "off" }, watcher.address, watcher.port);
   hosting = false;
+  ppdControlHosting = false;
+  controlHost?.clear();
   hostDisplayProvider = null;
+  hostSongProvider = null;
   hostAdvertisedWebServerUrl = undefined;
   hostWatchers.clear();
+  clearHostedPpdClients();
   if (hostTimer) {
     clearInterval(hostTimer);
     hostTimer = null;

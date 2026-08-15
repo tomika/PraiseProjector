@@ -1,17 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { buildLocalUrl, generateQRCodeSVG } from "../../hooks/useSessionUrl";
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { getLocalNetworkAddresses } from "../../services/hostDevicePpd";
-import { getWebServerInterface } from "../../services/webServerBridge";
 import "./WebServerSettings.css";
-
-interface ClientInfoEntry {
-  id: string;
-  deviceName: string;
-  isLeaderModeClient: boolean;
-  isConnected: boolean;
-}
 
 interface WebServerSettingsProps {
   settings: Settings;
@@ -24,27 +16,8 @@ interface UfwStatus {
   enabled: boolean;
 }
 
-const getClientIdentifier = (id: string): string => {
-  const parts = id.split("@");
-  return parts[parts.length - 1] || id;
-};
-
-const getClientDeviceName = (id: string): string => {
-  const parts = id.split("@");
-  return parts.length > 1 ? parts[0] : "";
-};
-
-const sameIdentifierSet = (a: Set<string>, b: Set<string>): boolean => {
-  if (a.size !== b.size) return false;
-  for (const value of a) {
-    if (!b.has(value)) return false;
-  }
-  return true;
-};
-
 const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateSetting }) => {
   const { t } = useLocalization();
-  const [connectedClients, setConnectedClients] = useState<ClientInfoEntry[]>([]);
   const [networkAddresses, setNetworkAddresses] = useState<string[]>([]);
   const [domainDropdownOpen, setDomainDropdownOpen] = useState(false);
   const domainContainerRef = useRef<HTMLDivElement>(null);
@@ -52,154 +25,6 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
   const [ufwLoading, setUfwLoading] = useState(false);
   const [ufwResult, setUfwResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [ufwCopied, setUfwCopied] = useState(false);
-  const [pendingRevokedLeaderClients, setPendingRevokedLeaderClients] = useState<Set<string>>(new Set());
-
-  // Load connected clients from backend
-  const refreshClients = useCallback(async () => {
-    const webServer = getWebServerInterface();
-    if (!webServer) return;
-    try {
-      const clientsMap = new Map<string, ClientInfoEntry>();
-      // Add leader-mode clients first
-      for (const leaderEntry of settings.leaderModeClients) {
-        const parts = leaderEntry.split("@");
-        const deviceName = parts.length > 1 ? parts[0] : "";
-        const id = parts[parts.length - 1];
-        clientsMap.set(id, { id: leaderEntry, deviceName, isLeaderModeClient: true, isConnected: false });
-      }
-
-      const result = await webServer.query({ kind: "clients", projectingOnly: false });
-      const connectedClients = result.kind === "clients" ? result.clients : [];
-
-      for (const client of connectedClients) {
-        const id = getClientIdentifier(client.id);
-        const existing = clientsMap.get(id);
-        if (existing) {
-          existing.isConnected = true;
-          // Update device name in case it changed or was missing from admin entry
-          existing.deviceName = client.deviceName;
-        } else {
-          clientsMap.set(id, {
-            id: client.id,
-            deviceName: client.deviceName,
-            isLeaderModeClient: false,
-            isConnected: true,
-          });
-        }
-      }
-      const clients = Array.from(clientsMap.values());
-      const leaderClientIdentifiers = new Set(settings.leaderModeClients.map(getClientIdentifier));
-      const backendLeaderIdentifiers = new Set(clients.filter((client) => client.isLeaderModeClient).map((client) => getClientIdentifier(client.id)));
-      const isSettingsSyncedToBackend = sameIdentifierSet(leaderClientIdentifiers, backendLeaderIdentifiers);
-
-      setConnectedClients((prev) => {
-        const merged = new Map<string, ClientInfoEntry>();
-        const previousRows = new Map(prev.map((client) => [getClientIdentifier(client.id), client]));
-
-        for (const client of clients) {
-          const identifier = getClientIdentifier(client.id);
-          merged.set(identifier, {
-            ...client,
-            isLeaderModeClient: settings.allClientsCanUseLeaderMode || leaderClientIdentifiers.has(identifier),
-            // Backend list includes saved leader-mode entries too; non-leader rows are guaranteed live connections.
-            isConnected: !client.isLeaderModeClient,
-          });
-        }
-
-        // Keep leader-mode rows from local settings visible even when offline.
-        for (const leaderClientId of settings.leaderModeClients) {
-          const identifier = getClientIdentifier(leaderClientId);
-          if (!merged.has(identifier)) {
-            const previous = previousRows.get(identifier);
-            merged.set(identifier, {
-              id: previous?.id ?? leaderClientId,
-              deviceName: previous?.deviceName || getClientDeviceName(leaderClientId),
-              isLeaderModeClient: true,
-              isConnected: false,
-            });
-          }
-        }
-
-        // Keep locally revoked rows visible until backend reflects saved settings.
-        if (pendingRevokedLeaderClients.size > 0) {
-          for (const identifier of pendingRevokedLeaderClients) {
-            if (!merged.has(identifier)) {
-              const previous = previousRows.get(identifier);
-              if (previous) {
-                merged.set(identifier, {
-                  ...previous,
-                  isLeaderModeClient: false,
-                  isConnected: false,
-                });
-              }
-            }
-          }
-
-          if (isSettingsSyncedToBackend) {
-            setPendingRevokedLeaderClients((current) => {
-              const next = new Set(current);
-              for (const identifier of current) {
-                const row = merged.get(identifier);
-                if (row && !row.isConnected && !row.isLeaderModeClient) {
-                  merged.delete(identifier);
-                  next.delete(identifier);
-                }
-              }
-              return next;
-            });
-          }
-        }
-
-        return Array.from(merged.values()).sort((a, b) => {
-          const nameA = (a.deviceName || getClientIdentifier(a.id)).toLocaleLowerCase();
-          const nameB = (b.deviceName || getClientIdentifier(b.id)).toLocaleLowerCase();
-          return nameA.localeCompare(nameB);
-        });
-      });
-    } catch (error) {
-      console.error("Failed to get connected clients:", error);
-    }
-  }, [pendingRevokedLeaderClients, settings.leaderModeClients, settings.allClientsCanUseLeaderMode]);
-
-  // Refresh clients on mount and periodically
-  useEffect(() => {
-    refreshClients();
-    const interval = setInterval(refreshClients, 5000); // Refresh every 5 seconds
-    return () => clearInterval(interval);
-  }, [refreshClients]);
-
-  // Toggle client leader-mode access (matching C# OnClientItemDoubleClicked)
-  const toggleClientLeaderMode = (client: ClientInfoEntry) => {
-    const clientIdentifier = getClientIdentifier(client.id);
-    const leaderClientIdentifiers = new Set(settings.leaderModeClients.map(getClientIdentifier));
-    const isCurrentlyLeaderModeClient = settings.allClientsCanUseLeaderMode || leaderClientIdentifiers.has(clientIdentifier);
-
-    if (isCurrentlyLeaderModeClient) {
-      // Remove from explicit leader-mode list (identifier-based to handle "Device@ID" vs "ID" entries)
-      const newList = settings.leaderModeClients.filter((entry) => getClientIdentifier(entry) !== clientIdentifier);
-      updateSetting("leaderModeClients", newList);
-      setPendingRevokedLeaderClients((prev) => {
-        const next = new Set(prev);
-        next.add(clientIdentifier);
-        return next;
-      });
-    } else {
-      // Add to explicit leader-mode list if not already present by identifier
-      if (!leaderClientIdentifiers.has(clientIdentifier)) {
-        updateSetting("leaderModeClients", [...settings.leaderModeClients, client.id]);
-      }
-      setPendingRevokedLeaderClients((prev) => {
-        const next = new Set(prev);
-        next.delete(clientIdentifier);
-        return next;
-      });
-    }
-
-    // Update local list immediately so label changes before backend sync/save
-    setConnectedClients((prev) =>
-      prev.map((c) => (getClientIdentifier(c.id) === clientIdentifier ? { ...c, isLeaderModeClient: !isCurrentlyLeaderModeClient } : c))
-    );
-  };
 
   // Fetch machine's network addresses through the shared Electron/Android
   // hostDevice contract.
@@ -491,76 +316,6 @@ const WebServerSettings: React.FC<WebServerSettingsProps> = ({ settings, updateS
           </div>
         )}
       </fieldset>
-
-      <hr />
-
-      <div className="form-check">
-        <input
-          className="form-check-input"
-          type="checkbox"
-          id="allClientsAdmin"
-          checked={settings.allClientsCanUseLeaderMode}
-          onChange={(e) => updateSetting("allClientsCanUseLeaderMode", e.target.checked)}
-        />
-        <label className={`form-check-label ${settings.iWebEnabled ? "" : "text-muted"}`} htmlFor="allClientsAdmin">
-          {t("AllClientsAreAdmins")}
-        </label>
-      </div>
-
-      {/* Leader-mode client list - shown when all-clients-leader-mode is disabled. */}
-      {
-        <div className={`mt-3 ${settings.allClientsCanUseLeaderMode ? "disabled" : ""}`}>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <label className={`form-label mb-0 ${settings.iWebEnabled ? "" : "text-muted"}`}>{t("AdminClients")}</label>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={refreshClients} title={t("Refresh")}>
-              <i className="fa fa-refresh"></i>
-            </button>
-          </div>
-          <p className="text-muted small">{t("AdminClientsDescription")}</p>
-
-          {/* List of connected clients (matching C# lvClients ListView) */}
-          <div className="admin-clients-list border rounded mb-2">
-            {connectedClients.length === 0 ? (
-              <div className="text-muted p-2 text-center small">{t("NoAdminClients")}</div>
-            ) : (
-              <table className="table table-sm table-hover mb-0">
-                <thead>
-                  <tr>
-                    <th className="small text-center client-state-col"></th>
-                    <th className="small">{t("DeviceName")}</th>
-                    <th className="small">{t("Identifier")}</th>
-                    <th className="small text-center">{t("Status")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {connectedClients.map((client, index) => {
-                    const parts = client.id.split("@");
-                    const identifier = parts[parts.length - 1];
-                    return (
-                      <tr key={index} className="admin-client-row" onClick={() => toggleClientLeaderMode(client)}>
-                        <td className="small text-center align-middle" title={client.isConnected ? t("ClientConnected") : t("ClientDisconnected")}>
-                          <i className={`fa fa-circle ${client.isConnected ? "text-success" : "text-secondary"}`} aria-hidden="true"></i>
-                        </td>
-                        <td className="small">{client.deviceName || "-"}</td>
-                        <td className="small">
-                          <code>{identifier}</code>
-                        </td>
-                        <td className="small text-center">
-                          {client.isLeaderModeClient ? (
-                            <span className="badge bg-success">{t("Admin")}</span>
-                          ) : (
-                            <span className="badge bg-secondary">{t("Guest")}</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      }
     </div>
   );
 };

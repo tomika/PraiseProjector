@@ -47,6 +47,8 @@ export type WebServerConnectedClient = {
   id: string;
   deviceName: string;
   isLeaderModeClient: boolean;
+  /** Explicit when the backend can distinguish a live row from a saved rule. */
+  isConnected?: boolean;
 };
 
 export type WebServerQuery = { kind: "clients"; projectingOnly?: boolean } | { kind: "highlightController" };

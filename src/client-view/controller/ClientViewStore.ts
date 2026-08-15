@@ -211,6 +211,7 @@ interface PersistedClientViewState {
 
 /** device-preference key (the port namespaces it, e.g. "pp-pref-client-view-state"). */
 const PERSIST_KEY = "client-view-state";
+const OPEN_SESSIONS_AFTER_RELOAD_KEY = "pp-client-view-open-sessions-after-reload";
 const PERSIST_VERSION = 3;
 /** Coalesce rapid state changes into one write (localStorage is synchronous). */
 const PERSIST_DEBOUNCE_MS = 400;
@@ -368,7 +369,8 @@ export function isAppWatching(state: ClientViewState): boolean {
  *  grants display control; in that case the session stays fixed, but display and
  *  playlist handling are enabled through the capability model. */
 export function isViewingRemoteDisplay(state: ClientViewState): boolean {
-  return isFollowerView(state) || isAppWatching(state) || (state.lockedToSession && !state.capabilities.canControlDisplay);
+  const appIsReadOnlyWatcher = isAppWatching(state) && !(state.capabilities.leaderModeAvailable && state.capabilities.canControlDisplay);
+  return isFollowerView(state) || appIsReadOnlyWatcher || (state.lockedToSession && !state.capabilities.canControlDisplay);
 }
 
 /** The toolbar network indicator is meaningful only for a host-served Client (a
@@ -380,7 +382,7 @@ export function showsNetworkIndicator(state: ClientViewState): boolean {
 /** Offer the highlight lamp to anyone who can control the display, plus a Client
  *  follower (who can REQUEST highlight permission from the leader). */
 export function canUseHighlightLamp(state: ClientViewState): boolean {
-  return state.capabilities.canControlDisplay || state.mode === "Client";
+  return state.capabilities.canControlDisplay || state.mode === "Client" || isAppWatching(state);
 }
 
 /** True when the host has any task the user can only complete in the full view
@@ -694,7 +696,8 @@ export class ClientViewStore {
         window.removeEventListener("pagehide", onUnload);
       });
     }
-    this.openStartupSessionsDialog(token);
+    if (this.consumeOpenSessionsAfterReload()) this.showSessionsDialog();
+    else this.openStartupSessionsDialog(token);
   }
 
   dispose(): void {
@@ -1334,7 +1337,7 @@ export class ClientViewStore {
     }
     if (capabilities.canControlDisplay) {
       this.set({ highlightOn: true, highlightControl: true });
-    } else if (mode === "Client") {
+    } else if (mode === "Client" || isAppWatching(this.state)) {
       void this.requestHighlightPermission();
     }
   }
@@ -2117,7 +2120,19 @@ export class ClientViewStore {
 
   // ── sessions ─────────────────────────────────────────────────────────────────
 
-  openSessionsDialog(): void {
+  async openSessionsDialog(): Promise<void> {
+    // Match the full view's Sessions button: pressing it again while following a
+    // session exits follow mode first. Reloading rebuilds the local song/list
+    // seed; a session marker reopens the form after that clean initialization.
+    if (isAppWatching(this.state)) {
+      await this.stopWatching();
+      if (this.reloadWithSessionsDialog()) return;
+    }
+
+    this.showSessionsDialog();
+  }
+
+  private showSessionsDialog(): void {
     this.set({
       sessionsDialogOpen: true,
       sessionsDialogStartupHidden: false,
@@ -2125,6 +2140,28 @@ export class ClientViewStore {
       startupScanMode: null,
       sessionsFoundBadge: false,
     });
+  }
+
+  private reloadWithSessionsDialog(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      window.sessionStorage?.setItem(OPEN_SESSIONS_AFTER_RELOAD_KEY, "1");
+    } catch {
+      /* session storage is optional; the reload itself is still required */
+    }
+    this.reloadPage();
+    return true;
+  }
+
+  private consumeOpenSessionsAfterReload(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      const reopen = window.sessionStorage?.getItem(OPEN_SESSIONS_AFTER_RELOAD_KEY) === "1";
+      if (reopen) window.sessionStorage.removeItem(OPEN_SESSIONS_AFTER_RELOAD_KEY);
+      return reopen;
+    } catch {
+      return false;
+    }
   }
 
   closeSessionsDialog(): void {

@@ -13,6 +13,7 @@ import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression
 import { setSyncStatus } from "../state/syncStatusStore";
 import { useUpdate } from "../contexts/UpdateContext";
 import { requestTutorialContinueWhenUnblocked } from "../tutorial/tutorialEvents";
+import { deriveFullViewPpdFollowUi } from "../services/ppdFollowUi";
 
 const MIN_PEEK_INTERVAL_SECONDS = 10;
 const PEEK_POLL_TICK_MS = 1000; // check every second whether it's time to query
@@ -27,6 +28,10 @@ interface UserPanelProps {
   onReplaceDatabase?: () => void;
   onSettingsClick?: () => void;
   onSongCheckClick?: () => void;
+  following?: boolean;
+  ppdLeaderModeAvailable?: boolean;
+  ppdLeaderMode?: boolean;
+  onTogglePpdLeaderMode?: () => void;
 }
 
 const UserPanel: React.FC<UserPanelProps> = ({
@@ -39,6 +44,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
   onReplaceDatabase,
   onSettingsClick,
   onSongCheckClick,
+  following = false,
+  ppdLeaderModeAvailable = false,
+  ppdLeaderMode = false,
+  onTogglePpdLeaderMode,
 }) => {
   const { selectedLeader, setSelectedLeaderId, allLeaders } = useLeader();
   const {
@@ -327,6 +336,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
   };
 
   const handleLeaderSettingsClick = () => {
+    if (following) {
+      onTogglePpdLeaderMode?.();
+      return;
+    }
     onOpenLeaderSettings?.(selectedLeader?.id || null);
   };
 
@@ -334,6 +347,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const localChangeCount = updatedSongCount + updatedProfileCount;
   const remoteChangeCount = isAuthenticated && cloudDbVersion !== null ? cloudDbVersion - localDbVersion : 0;
   const showCloudAccessFailed = networkUnavailable || cloudAuthFailed || (!isGuest && authStatus === "offline");
+  const leaderControl = deriveFullViewPpdFollowUi(following, ppdLeaderModeAvailable, ppdLeaderMode);
 
   useEffect(() => {
     onRemoteChangeCountChange?.(remoteChangeCount);
@@ -483,9 +497,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
       </div>
       <div className="form-group d-flex align-items-center mb-1">
         <button
-          className="btn btn-light mr-1 sidebar-icon-btn"
+          className={`btn btn-light mr-1 sidebar-icon-btn${following ? " full-view-leader-mode-btn" : ""}${leaderControl.leaderModeActive ? " btn-active" : ""}`}
           data-tutorial-id="full-leader-settings"
-          aria-label="Leader"
+          aria-label={following ? "Leader mode" : "Leader"}
+          aria-pressed={following ? leaderControl.leaderModeActive : undefined}
+          title={following ? (leaderControl.leaderModeActive ? "Leader mode on — tap to follow" : "Leader mode off — tap to lead") : undefined}
+          disabled={leaderControl.leaderButtonDisabled}
           onClick={handleLeaderSettingsClick}
         >
           <Icon type={IconType.LEADER} />
@@ -496,7 +513,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
             aria-label="Leader Selection"
             value={selectedLeader?.id || ""}
             onChange={handleLeaderChange}
-            disabled={allLeaders.length === 0}
+            disabled={leaderControl.leaderSelectDisabled || allLeaders.length === 0}
           >
             <option value=""></option>
             {[...allLeaders]

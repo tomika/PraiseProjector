@@ -766,33 +766,13 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   filter: none;
 }
 
-/* App-following options: the read-only remote playlist fills the pane while the
-   original Stop-following action stays centred above it. The overlay wrapper
-   ignores pointer events outside the button, so the list remains scrollable. */
+/* App followers see the remote playlist read-only. PPD leaders bypass this
+   wrapper and use the normal editable playlist/browser. */
 .cv-following-options {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-}
-
-.cv-following-stop-wrap {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px 16px;
-  pointer-events: none;
-}
-
-.cv-stop-following-btn {
-  pointer-events: auto;
-}
-
-.cv-stop-following-btn .cv-netdisplay-icon {
-  filter: var(--cv-icon-invert);
 }
 
 .cv-list-wrap.cv-readonly-playlist-wrap {

@@ -5,6 +5,7 @@ import { getMachineIpAddress } from "./utils";
 import * as t from "io-ts";
 import { PpdProtocolHandler, PpdSendFn, PpdHostInfo } from "./ppd-protocol";
 import type { Display } from "../common/pp-types";
+import { PPD_CONTROL_CAPABILITIES, PPD_PROTOCOL_VERSION } from "../common/ppd-control";
 
 // Display codec for UDP messages - matches C# Display class
 const displayCodec = t.partial({
@@ -35,6 +36,10 @@ const udpMessageCodec = t.intersection([
       t.literal("view"),
       t.literal("ack"),
       t.literal("off"),
+      t.literal("session"),
+      t.literal("access"),
+      t.literal("command"),
+      t.literal("result"),
     ]),
   }),
   t.partial({
@@ -44,7 +49,22 @@ const udpMessageCodec = t.intersection([
     name: t.string,
     url: t.string,
     display: displayCodec,
+    songId: t.string,
+    songData: t.unknown,
     stylesRev: t.string,
+    version: t.number,
+    requestId: t.string,
+    token: t.string,
+    capabilities: t.array(t.string),
+    leaderModeAvailable: t.boolean,
+    access: t.string,
+    mode: t.string,
+    granted: t.boolean,
+    status: t.string,
+    error: t.string,
+    command: t.string,
+    update: t.unknown,
+    highlight: t.unknown,
   }),
 ]);
 
@@ -69,6 +89,8 @@ export interface LocalSessionInfo {
   address: string;
   port?: number;
   detected: number; // timestamp
+  protocolVersion?: number;
+  capabilities?: string[];
 }
 
 export interface RawUdpPacket {
@@ -181,6 +203,8 @@ export class UdpServer {
       address: rinfo.address,
       port: offerPort,
       detected: Date.now(),
+      protocolVersion: message.version,
+      capabilities: message.capabilities,
     };
 
     this.discoveredSessions.set(sessionId, session);
@@ -257,6 +281,8 @@ export class UdpServer {
         url: webUrl,
         port: this.ppdSessionEnabled ? this.getPort() : undefined,
         device: this.ppdSessionEnabled ? this.getHostId() : undefined,
+        version: this.ppdSessionEnabled ? PPD_PROTOCOL_VERSION : undefined,
+        capabilities: this.ppdSessionEnabled ? [...PPD_CONTROL_CAPABILITIES] : undefined,
       };
 
       this.sendMessage(JSON.stringify(response), targetPort, rinfo.address);

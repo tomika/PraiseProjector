@@ -296,3 +296,25 @@
 .admin-client-row {
   cursor: pointer;
 }
+
+.clients-settings-list {
+  max-height: 320px;
+}
+
+.client-protocol-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.client-address {
+  font-size: 0.75rem;
+}
+
+.client-access-list.disabled {
+  opacity: 0.65;
+}
+
+.client-access-list.disabled .admin-client-row {
+  cursor: default;
+}

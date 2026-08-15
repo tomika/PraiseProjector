@@ -59,6 +59,10 @@ interface LeftPanelProps {
   onImportDatabase?: () => void;
   onReplaceDatabase?: () => void;
   onSongCheckClick?: () => void;
+  following?: boolean;
+  ppdLeaderModeAvailable?: boolean;
+  ppdLeaderMode?: boolean;
+  onTogglePpdLeaderMode?: () => void;
   onExternalFilesDropped?: (files: File[]) => void;
   // Named panel size props for persistence
   playlistPanelSize?: number;
@@ -94,6 +98,10 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
       onImportDatabase,
       onReplaceDatabase,
       onSongCheckClick,
+      following,
+      ppdLeaderModeAvailable,
+      ppdLeaderMode,
+      onTogglePpdLeaderMode,
       onExternalFilesDropped,
       playlistPanelSize,
       songListPanelSize,
@@ -295,6 +303,10 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
           onImportDatabase={onImportDatabase}
           onReplaceDatabase={onReplaceDatabase}
           onSongCheckClick={onSongCheckClick}
+          following={following}
+          ppdLeaderModeAvailable={ppdLeaderModeAvailable}
+          ppdLeaderMode={ppdLeaderMode}
+          onTogglePpdLeaderMode={onTogglePpdLeaderMode}
         />
         <div className="flex-grow-1 mt-2">
           <PanelGroup
