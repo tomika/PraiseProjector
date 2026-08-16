@@ -72,9 +72,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Kétujjas koppintás",
-              "Mozdítás nélküli kétujjas koppintással a módok Ki → Teljes oldal → Szélesség → Automatikus kitöltés → Kézi sorrendben váltanak; az új mód röviden megjelenik.",
+              "Mozdítás nélküli kétujjas koppintással a módok Ki → Teljes oldal → Szélesség → Kézi sorrendben váltanak; az új mód röviden megjelenik.",
               "Two-finger tap",
-              "Tap with two fingers without moving. Modes cycle Off → Fit page → Fit width → Auto fill → Manual, and the new mode briefly appears."
+              "Tap with two fingers without moving. Modes cycle Off → Fit page → Fit width → Manual, and the new mode briefly appears."
             )
           ),
           s(
@@ -82,9 +82,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Zoommódok",
-              "A Teljes oldal mindkét irányban illeszt; a Szélesség kitölti a szélességet és görgethető; az Automatikus kitöltés a legnagyobb használható méretet keresi; a Kézi közvetlen méretet használ. Két ujjas érintés vagy Ctrl+Shift+görgő váltja a zoommódot.",
+              "A Teljes oldal mindkét irányban illeszt; Automatikus sortörés nélkül a Szélesség kitölti a szélességet és görgethető; a Kézi közvetlen méretet használ. Az Automatikus sortörés a két illesztési módban azonosan, a rendelkezésre álló magasságig növelheti a betűméretet, Kézi módban csak a hosszú sorokat töri. Két ujjas érintés vagy Ctrl+Shift+görgő váltja a zoommódot.",
               "Zoom modes",
-              "Fit page fits both dimensions; Fit width fills the width and scrolls; Auto fill finds the largest usable size; Manual uses an explicit size. A two-finger tap or Ctrl+Shift+wheel cycles zoom modes."
+              "Fit page fits both dimensions; without Auto wrap, Fit width fills the width and scrolls; Manual uses an explicit size. Auto wrap gives both fit modes the same height-filling font growth, while Manual only wraps over-wide lines. A two-finger tap or Ctrl+Shift+wheel cycles zoom modes."
             )
           ),
           s(

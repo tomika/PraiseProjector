@@ -51,7 +51,7 @@ export type DarkMode = "auto" | "light" | "dark";
 
 /** maxText section-tag display: full word, abbreviation, or hidden. */
 export type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
-export type ZoomSizingMode = "FIT_PAGE" | "FIT_WIDTH" | "MANUAL" | "AUTO_HEIGHT";
+export type ZoomSizingMode = "FIT_PAGE" | "FIT_WIDTH" | "MANUAL";
 
 /** Which collection the options-panel song list shows: the full database
  *  (searchable), the editable working playlist, or the leader-playlists picker
@@ -153,6 +153,9 @@ export interface DisplaySettings {
   zoomHideMeta: boolean;
   zoomTagMode: ZoomTagMode;
   zoomSizingMode: ZoomSizingMode;
+  /** Wrap over-wide lyrics lines. Automatic sizing modes may only grow the
+   *  fitted font after wrapping; MANUAL always preserves zoomFontSize. */
+  zoomAutoWrap: boolean;
   /** User-selected lyrics size for MANUAL mode, in CSS pixels. */
   zoomFontSize: number;
 }
@@ -171,6 +174,7 @@ const defaultDisplaySettings: DisplaySettings = {
   zoomHideMeta: true,
   zoomTagMode: "ABBREV",
   zoomSizingMode: "FIT_PAGE",
+  zoomAutoWrap: false,
   zoomFontSize: 20,
 };
 
@@ -782,13 +786,21 @@ export class ClientViewStore {
     const patch: Partial<ClientViewState> = {};
     if (persisted.displaySettings && typeof persisted.displaySettings === "object") {
       // Merge over defaults so a snapshot missing newer keys still validates.
-      const legacy = persisted.displaySettings as DisplaySettings & { zoomScrollable?: boolean };
-      const sizingMode = ["FIT_PAGE", "FIT_WIDTH", "MANUAL", "AUTO_HEIGHT"].includes(legacy.zoomSizingMode)
-        ? legacy.zoomSizingMode
-        : legacy.zoomScrollable
-          ? "FIT_WIDTH"
-          : "FIT_PAGE";
-      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode };
+      const legacy = persisted.displaySettings as Omit<Partial<DisplaySettings>, "zoomSizingMode"> & {
+        zoomScrollable?: boolean;
+        zoomSizingMode?: ZoomSizingMode | "AUTO_HEIGHT";
+      };
+      const sizingMode: ZoomSizingMode =
+        legacy.zoomSizingMode === "FIT_PAGE" || legacy.zoomSizingMode === "FIT_WIDTH" || legacy.zoomSizingMode === "MANUAL"
+          ? legacy.zoomSizingMode
+          : legacy.zoomSizingMode === "AUTO_HEIGHT" || legacy.zoomScrollable
+            ? "FIT_WIDTH"
+            : "FIT_PAGE";
+      const zoomAutoWrap =
+        typeof legacy.zoomAutoWrap === "boolean"
+          ? legacy.zoomAutoWrap
+          : legacy.zoomSizingMode === "AUTO_HEIGHT" || legacy.zoomSizingMode === "MANUAL";
+      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode, zoomAutoWrap };
     }
     if (typeof persisted.optionsOpen === "boolean") patch.optionsOpen = persisted.optionsOpen;
     if (typeof persisted.leaderMode === "boolean") patch.leaderMode = persisted.leaderMode;

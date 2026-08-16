@@ -204,7 +204,7 @@ async function settledSnapshot(api: BoundEditor) {
 }
 
 /**
- * Apply a renderer mutation and wait for its frame. A very large AUTO_HEIGHT
+ * Apply a renderer mutation and wait for its frame. A very large auto-wrap
  * trial can leave no usable line width after scaled margins/tag lanes. The
  * renderer correctly leaves that layout pending, but waiting for settlement in
  * that case would never finish because there is no geometry to commit. Treat a
@@ -224,10 +224,11 @@ async function fitAndZoom(
   api: BoundEditor,
   sizingMode: ZoomSizingMode,
   requestedFontSize: number,
+  autoWrap: boolean,
   fitViewport?: HTMLElement | null
 ): Promise<boolean> {
   try {
-    return await fitAndZoomInternal(host, api, sizingMode, requestedFontSize, fitViewport);
+    return await fitAndZoomInternal(host, api, sizingMode, requestedFontSize, autoWrap, fitViewport);
   } catch {
     // A page can be disposed while its asynchronous DOM layout is settling.
     host.style.removeProperty("visibility");
@@ -236,42 +237,66 @@ async function fitAndZoom(
   }
 }
 
+/**
+ * Auto wrap makes FIT_PAGE and FIT_WIDTH share one height-filling geometry.
+ * Leaving FIT_WIDTH in scroll mode would reserve its stable scrollbar gutter,
+ * narrowing the wrap boundary enough to produce different line breaks and font
+ * search results. Manual sizing still scrolls, as does plain unwrapped
+ * FIT_WIDTH.
+ */
+function usesVerticalScroll(sizingMode: ZoomSizingMode, autoWrap: boolean): boolean {
+  return sizingMode === "MANUAL" || (sizingMode === "FIT_WIDTH" && !autoWrap);
+}
+
 async function fitAndZoomInternal(
   host: HTMLDivElement,
   api: BoundEditor,
   sizingMode: ZoomSizingMode,
   requestedFontSize: number,
+  autoWrap: boolean,
   fitViewport?: HTMLElement | null
 ): Promise<boolean> {
-  const scrollMode = sizingMode !== "FIT_PAGE";
+  const scrollMode = usesVerticalScroll(sizingMode, autoWrap);
   const manualFontSize = sizingMode === "MANUAL";
+  const automaticFontGrowth = autoWrap && !manualFontSize;
   const container = host.parentElement;
-  if (container) container.classList.toggle("cv-scroll", scrollMode);
-  if (fitViewport && fitViewport !== container && fitViewport.classList.contains("cv-page")) fitViewport.classList.toggle("cv-scroll", scrollMode);
+  if (container) {
+    container.classList.toggle("cv-scroll", scrollMode);
+    container.classList.toggle("cv-line-wrap", autoWrap);
+  }
+  if (fitViewport && fitViewport !== container && fitViewport.classList.contains("cv-page")) {
+    fitViewport.classList.toggle("cv-scroll", scrollMode);
+    fitViewport.classList.toggle("cv-line-wrap", autoWrap);
+  }
   // The current page is temporarily lifted and unclipped while it turns. Measure
   // against an unlifted sibling page so the scrollbar gutter and content box are
   // identical before and after the page swap.
   const cw = fitViewport?.clientWidth || container?.clientWidth || 1;
   const ch = fitViewport?.clientHeight || container?.clientHeight || 1;
   const generation = advanceFitGeneration(host);
-  if (scrollMode) host.style.width = `${cw}px`;
+  // Wrapped layout always needs the pane width as its line-breaking boundary,
+  // including FIT_PAGE where the final composite may subsequently scale down.
+  if (scrollMode || autoWrap) host.style.width = `${cw}px`;
   else host.style.removeProperty("width");
-  if (sizingMode === "AUTO_HEIGHT") host.style.opacity = "0";
+  if (automaticFontGrowth) host.style.opacity = "0";
   else if (!host.style.transform) host.style.visibility = "hidden";
-  api.setLineWrapping(manualFontSize, manualFontSize, false);
+  // Automatic modes first need the unwrapped natural layout to establish the
+  // existing FIT_WIDTH visual font. MANUAL can apply its independent wrapping
+  // immediately because its requested font size must never be changed.
+  api.setLineWrapping(manualFontSize && autoWrap, manualFontSize && autoWrap, false);
   api.setContentFontSize(manualFontSize ? requestedFontSize : null, false);
   api.fitToPane(scrollMode, { width: cw, height: ch });
   let finalSnapshot = await settledSnapshot(api);
   // A resize and the React display effect can start two fits in the same frame.
   // They share one mutable editor, so a superseded fit must stop before it
-  // switches AUTO_HEIGHT wrapping/font size below. Otherwise the stale fit can
+  // switches auto wrapping/font size below. Otherwise the stale fit can
   // overwrite the active fit's state, leaving the host hidden with its previous
   // transform (or revealing that stale, over-large transform).
   if (fitGenerations.get(host) !== generation) return false;
 
   const scaledFitWidthHeight = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => scaleFitWidthMetric(snapshot.height, cw, snapshot.width);
 
-  if (sizingMode === "AUTO_HEIGHT" && scaledFitWidthHeight(finalSnapshot) <= ch - 1) {
+  if (automaticFontGrowth) {
     const naturalFontSize = api.getContentFontSize();
     const fitWidthFontSize = Math.max(6, Math.ceil(scaleFitWidthMetric(naturalFontSize, cw, finalSnapshot.width)));
     api.setLineWrapping(true, false, false);
@@ -279,6 +304,7 @@ async function fitAndZoomInternal(
     api.update();
     const wrappedFitWidthSnapshot = await settledSnapshot(api);
     if (fitGenerations.get(host) !== generation) return false;
+    finalSnapshot = wrappedFitWidthSnapshot;
 
     if (scaledFitWidthHeight(wrappedFitWidthSnapshot) <= ch - 1) {
       const fittedFontSize = await findLargestLargerFittingFontSize({
@@ -295,13 +321,6 @@ async function fitAndZoomInternal(
       });
       if (fitGenerations.get(host) !== generation) return false;
       api.setContentFontSize(fittedFontSize ?? fitWidthFontSize, false);
-      api.update();
-      finalSnapshot = await settledSnapshot(api);
-    } else {
-      // Wrapping at the FIT_WIDTH visual font would overflow. In that case AUTO
-      // is exactly FIT_WIDTH; it must never shrink merely to eliminate scrolling.
-      api.setLineWrapping(false, false, false);
-      api.setContentFontSize(null, false);
       api.update();
       finalSnapshot = await settledSnapshot(api);
     }
@@ -352,20 +371,20 @@ function renderSong(
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
   const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
-  const autoSplitLines = sizingMode === "MANUAL";
+  const autoWrap = maxText && settings.zoomAutoWrap;
   api.setDisplayMode(
     maxText ? !settings.zoomHideTitle : true,
     maxText ? !settings.zoomHideMeta : true,
     tagMode !== "HIDDEN",
     tagMode === "ABBREV",
-    autoSplitLines,
+    autoWrap,
     flags,
     boxType,
-    sizingMode === "MANUAL"
+    autoWrap && sizingMode === "MANUAL"
   );
   if (shift !== 0) api.transpose(shift);
   api.darkMode(dark);
-  void fitAndZoom(host, api, sizingMode, settings.zoomFontSize, fitViewport);
+  void fitAndZoom(host, api, sizingMode, settings.zoomFontSize, autoWrap, fitViewport);
 }
 
 function getDisplayChordProStyles(display: Display): ChordProStylesSettings | null {
@@ -413,6 +432,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const appliedTransposeRef = useRef(0);
   const sizingModeRef = useRef<ZoomSizingMode>("FIT_PAGE");
   const zoomFontSizeRef = useRef(settings.zoomFontSize);
+  const autoWrapRef = useRef(false);
   const pinchActiveRef = useRef(false);
   const pinchSuppressPointerRef = useRef(false);
   const pendingTurnFitRef = useRef<PendingTurnFit | null>(null);
@@ -545,15 +565,17 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   }, []);
   // "Toolbar on the right" means wide-pane layout AND options closed.
   const toolbarOnRight = widePane && !optionsOpen;
-  // Closed wide-pane layout (toolbar on the right) forces wrapped full-width
-  // geometry; otherwise honour the selected zoom sizing mode while maxText is on.
+  // Closed wide-pane layout (toolbar on the right) forces full-width geometry;
+  // otherwise honour the selected zoom sizing mode while maxText is on.
   const sizingMode: ZoomSizingMode = toolbarOnRight ? "FIT_WIDTH" : settings.maxText ? settings.zoomSizingMode : "FIT_PAGE";
-  const scrollMode = sizingMode !== "FIT_PAGE";
+  const autoWrap = settings.maxText && settings.zoomAutoWrap;
+  const scrollMode = usesVerticalScroll(sizingMode, autoWrap);
   // Mirror into a ref the once-bound ResizeObserver can read.
   useEffect(() => {
     sizingModeRef.current = sizingMode;
     zoomFontSizeRef.current = settings.zoomFontSize;
-  }, [settings.zoomFontSize, sizingMode]);
+    autoWrapRef.current = autoWrap;
+  }, [autoWrap, settings.zoomFontSize, sizingMode]);
 
   useEffect(() => {
     const el = swipeRef.current;
@@ -926,11 +948,11 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       raf = requestAnimationFrame(() => {
         const fitViewport = prevPageRef.current ?? nextPageRef.current ?? pane;
         if (apiRef.current && hostRef.current)
-          void fitAndZoom(hostRef.current, apiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
+          void fitAndZoom(hostRef.current, apiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport);
         if (prevApiRef.current && prevHostRef.current)
-          void fitAndZoom(prevHostRef.current, prevApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
+          void fitAndZoom(prevHostRef.current, prevApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport);
         if (nextApiRef.current && nextHostRef.current)
-          void fitAndZoom(nextHostRef.current, nextApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, fitViewport);
+          void fitAndZoom(nextHostRef.current, nextApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport);
       });
     };
     const observer = new ResizeObserver(() => {
@@ -1036,16 +1058,15 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // NO_CHORDS is a pseudo box-type: hide chords entirely with an empty box.
     const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
     const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
-    const autoSplitLines = sizingMode === "MANUAL";
     api.setDisplayMode(
       maxText ? !settings.zoomHideTitle : true,
       maxText ? !settings.zoomHideMeta : true,
       tagMode !== "HIDDEN",
       tagMode === "ABBREV",
-      autoSplitLines,
+      autoWrap,
       flags,
       boxType,
-      sizingMode === "MANUAL"
+      autoWrap && sizingMode === "MANUAL"
     );
     api.darkMode(dark);
     // Instructions: set the text on the editor, then toggle the overlay via the
@@ -1068,7 +1089,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     if (carriedFit) applyFitVisualState(host, carriedFit);
     // Scale only after all geometry/decorations for this display have been
     // submitted, so settlement represents the exact page that will be revealed.
-    const settledFit = fitAndZoom(host, api, sizingMode, settings.zoomFontSize, prevPageRef.current ?? nextPageRef.current ?? swipeRef.current);
+    const settledFit = fitAndZoom(
+      host,
+      api,
+      sizingMode,
+      settings.zoomFontSize,
+      autoWrap,
+      prevPageRef.current ?? nextPageRef.current ?? swipeRef.current
+    );
     const settledFitGeneration = fitGenerations.get(host);
     // Leader highlight control: while on, a tap on a lyrics section pushes its
     // {from,to,section} as the display highlight. Re-installed after each load.
@@ -1085,7 +1113,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
     });
-  }, [display, chordProStyles, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, store]);
+  }, [display, chordProStyles, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, autoWrap, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
   useEffect(() => {

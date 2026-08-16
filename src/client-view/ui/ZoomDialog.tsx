@@ -1,7 +1,8 @@
 /**
  * ZoomPanel — the maxText (zoom) sub-controls, shown as a contextmenu-like panel
  * anchored below the zoom button in OptionsBar. Mirrors the original
- * #zoomSettingsDialog: title/meta visibility, section-tag mode, and text sizing.
+ * #zoomSettingsDialog: title/meta visibility, line wrapping, section-tag mode,
+ * and text sizing.
  *
  * Changes are applied immediately (no OK button). The panel is opened by
  * long-pressing / right-clicking the zoom button and closed by clicking outside.
@@ -40,6 +41,10 @@ export function ZoomPanel() {
       <label className="cv-zoom-toggle">
         <input type="checkbox" checked={s.zoomHideMeta} onChange={(e) => store.setDisplaySetting("zoomHideMeta", e.target.checked)} />
         <span className="cv-zoom-label">Meta</span>
+      </label>
+      <label className="cv-zoom-toggle cv-zoom-wrap-toggle">
+        <input type="checkbox" checked={s.zoomAutoWrap} onChange={(e) => store.setDisplaySetting("zoomAutoWrap", e.target.checked)} />
+        <span className="cv-zoom-label">Auto wrap</span>
       </label>
 
       <div className="cv-zoom-row">

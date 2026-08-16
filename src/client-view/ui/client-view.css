@@ -454,6 +454,11 @@ body,
   scrollbar-gutter: stable; /* Safari doesn't support this yet, so we use a ::-webkit-scrollbar instead. */
 }
 
+/* Wrapped manual content should use the full width until it actually needs a scrollbar. */
+.cv-page.cv-scroll.cv-line-wrap {
+  scrollbar-gutter: auto;
+}
+
 #swipe-handler .cv-empty-state {
   position: absolute;
   inset: 0;
@@ -1429,6 +1434,12 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     0 0 0.5em #05e,
     0 0 0.6em #05e,
     0 0 0.7em #05e;
+}
+
+/* Unlike Title / Meta, a checked Auto wrap option enables a feature rather
+   than hiding one, so keep the active glow without striking its label out. */
+.cv-zoom-wrap-toggle input:checked ~ .cv-zoom-label {
+  text-decoration: none;
 }
 
 .cv-zoom-row {
