@@ -75,6 +75,7 @@ import { readPersistedSettings } from "../../../services/settingsStore";
 import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
 import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
 import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
+import { dispatchClientViewDisplayUpdate } from "../../../services/clientViewDisplayUpdate";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -281,7 +282,7 @@ export class DirectClientApi implements ClientApi {
   // UI's selection/preview/playlist AND the projector all follow along — not just
   // the shared CurrentSongStore (App.tsx remoteDisplayUpdateHandler).
   private dispatchDisplayUpdate(detail: Record<string, unknown>): void {
-    window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail }));
+    void dispatchClientViewDisplayUpdate(detail);
   }
 
   /** Refresh the cached style only when its persisted value really changed.
@@ -489,7 +490,7 @@ export class DirectClientApi implements ClientApi {
           playlist: entries,
         });
       } else {
-        this.dispatchDisplayUpdate({ command: "display_update", id: current.songId, playlist: entries });
+        await dispatchClientViewDisplayUpdate({ command: "display_update", id: current.songId, playlist: entries }, true);
       }
     };
     return {

@@ -16,6 +16,7 @@ import {
 import { readPersistedSettings } from "./settingsStore";
 import { isWebServerRuntimeAvailable } from "./webServerBridge";
 import { clearHostedPpdClients, isHostedPpdClientActivity, noteHostedPpdClient } from "./hostedPpdClients";
+import { dispatchClientViewDisplayUpdate } from "./clientViewDisplayUpdate";
 
 type PpdMessage = PpdWireMessage;
 
@@ -385,9 +386,11 @@ const getControlHost = (): PpdControlHost => {
         );
       });
     },
-    applyDisplayUpdate: (_peer, update) => {
-      window.dispatchEvent(new CustomEvent("pp-cv-display-update", { detail: update }));
-    },
+    // A PPD result acknowledges application, not merely transport delivery. This
+    // keeps playlist replacement ordered before a following first-song selection.
+    // The bridge wait has its own timeout, so a missing App listener cannot stall
+    // the PPD control request indefinitely.
+    applyDisplayUpdate: (_peer, update) => dispatchClientViewDisplayUpdate(update, true),
     applyHighlight: (_peer, highlight) => {
       window.dispatchEvent(new CustomEvent<PpdHighlightUpdate>(PPD_HIGHLIGHT_CHANGED_EVENT, { detail: highlight }));
     },

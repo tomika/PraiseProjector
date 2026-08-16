@@ -90,6 +90,7 @@ import {
 import type { PpdSessionAccess } from "../common/ppd-control";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
+import { CLIENT_VIEW_DISPLAY_UPDATE_EVENT, isClientViewDisplayUpdateEnvelope } from "./services/clientViewDisplayUpdate";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 import { TutorialHost } from "./tutorial/TutorialHost";
@@ -1368,7 +1369,7 @@ const AppContent: React.FC = () => {
     }
     if (data.command === "display_update") {
       if (data.playlist) {
-        leftPanelRef.current?.updatePlaylist(applyLeaderPreferencesToRemotePlaylist(data.playlist));
+        await leftPanelRef.current?.updatePlaylist(applyLeaderPreferencesToRemotePlaylist(data.playlist));
       } else if (currentDisplay.songId !== data.id) {
         const _db = Database.getInstance();
         const song = _db.getSongById(data.id);
@@ -1469,10 +1470,18 @@ const AppContent: React.FC = () => {
     // Route the embedded client view's display changes through the same handler
     // used for remote webserver clients, so selection/preview/projector stay in sync.
     const cvHandler = (e: Event) => {
-      const detail = (e as CustomEvent<DisplayUpdateRequest>).detail;
-      if (detail) enqueue(() => remoteDisplayUpdateHandler(detail));
+      const eventDetail = (e as CustomEvent<unknown>).detail;
+      const envelope = isClientViewDisplayUpdateEnvelope(eventDetail) ? eventDetail : null;
+      if (envelope) envelope.handled = true;
+      const detail = envelope?.update ?? (eventDetail as DisplayUpdateRequest);
+      if (!detail) {
+        envelope?.complete();
+        return;
+      }
+      const queued = enqueue(() => remoteDisplayUpdateHandler(detail as DisplayUpdateRequest));
+      if (envelope) void queued.then(envelope.complete, envelope.complete);
     };
-    window.addEventListener("pp-cv-display-update", cvHandler);
+    window.addEventListener(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, cvHandler);
     const cvSelectionHandler = (e: Event) => {
       const detail = (e as CustomEvent<string | null>).detail ?? null;
       syncHostSelectionFromClientView(detail);
@@ -1485,7 +1494,7 @@ const AppContent: React.FC = () => {
       enqueue(() => remoteDisplayUpdateHandler(event.update));
     });
     return () => {
-      window.removeEventListener("pp-cv-display-update", cvHandler);
+      window.removeEventListener(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, cvHandler);
       window.removeEventListener("pp-cv-sync-host-selection", cvSelectionHandler);
       unsubscribe?.();
     };

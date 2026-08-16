@@ -111,7 +111,7 @@ export interface PlaylistPanelMethods {
   setSelectedIndex: (index: number) => void;
   getSelectedIndex: () => number;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
-  updatePlaylist: (playlist: PlaylistEntryData[]) => void;
+  updatePlaylist: (playlist: PlaylistEntryData[]) => Promise<void>;
   loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
@@ -186,6 +186,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private undoStack: PlaylistHistorySnapshot[] = [];
   private redoStack: PlaylistHistorySnapshot[] = [];
   private isApplyingHistory = false;
+  private readonly pendingPlaylistUpdateResolves = new Set<() => void>();
   private legacyScheduleDate: Date | null;
   private static readonly PLAYLIST_HISTORY_MAX = 50;
   constructor(props: PlaylistPanelProps) {
@@ -297,6 +298,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   componentWillUnmount() {
+    // React drops setState callbacks when the component unmounts before commit.
+    // Release their callers so the shared remote-display queue cannot freeze
+    // during the paging/desktop LeftPanel swap.
+    for (const resolve of this.pendingPlaylistUpdateResolves) resolve();
+    this.pendingPlaylistUpdateResolves.clear();
+
     const { showInstructionsEditor, editingInstructions } = this.state;
     if (showInstructionsEditor && editingInstructions) {
       persistedInstructionsEditorState = {
@@ -478,7 +485,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     generatePlaylistId(playlist).then((playlist_id) => updateCurrentDisplay({ playlist, playlist_id }));
   }
 
-  updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string, origin?: PlaylistOrigin | null): void {
+  updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string, origin?: PlaylistOrigin | null): Promise<void> {
     // console.debug("Playlist", "updatePlaylist called", { itemsLength: items?.length, name, id, remoteProp: this.props.remotePlaylist != null });
     const playlist = new Playlist(
       name || "CurrentPlaylist",
@@ -490,27 +497,40 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.legacyScheduleDate = null;
       this.persistPlaylistOrigin(null);
     }
-    this.setState({ currentPlaylist: playlist, playlistOrigin }, () => {
-      // console.debug("Playlist", "setState callback ENTER for updatePlaylist");
-      try {
-        this.updatePlaylistItemStates();
-        this.savePlaylist(playlist); // Persist and update Display state
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.pendingPlaylistUpdateResolves.delete(finish);
+        resolve();
+      };
+      this.pendingPlaylistUpdateResolves.add(finish);
+      this.setState({ currentPlaylist: playlist, playlistOrigin }, () => {
+        // console.debug("Playlist", "setState callback ENTER for updatePlaylist");
+        try {
+          this.updatePlaylistItemStates();
+          this.savePlaylist(playlist); // Persist and update Display state
 
-        // Notify parent that playlist is loaded (for state restoration)
-        this.props.onPlaylistLoaded?.(playlist.items.length);
+          // Notify parent that playlist is loaded (for state restoration)
+          this.props.onPlaylistLoaded?.(playlist.items.length);
 
-        // Apply pending selected index after playlist loads
-        const pendingIndex = this.pendingSelectedIndex;
-        if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
-          this.applySelectedIndex(pendingIndex, true);
+          // Apply pending selected index after playlist loads
+          const pendingIndex = this.pendingSelectedIndex;
+          if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
+            this.applySelectedIndex(pendingIndex, true);
+          }
+
+          this.tryRestoreInstructionsEditorAfterRemount();
+        } catch (err) {
+          console.error("Playlist", "error in setState callback", err);
+        } finally {
+          // Resolve only after React has committed the replacement. Callers may
+          // immediately select an entry from the new list, so resolving before
+          // this callback would make selectSongById see (and append to) the old list.
+          finish();
         }
-
-        this.tryRestoreInstructionsEditorAfterRemount();
-      } catch (err) {
-        console.error("Playlist", "error in setState callback", err);
-      } finally {
-        // console.debug("Playlist", "setState callback EXIT for updatePlaylist");
-      }
+      });
     });
   }
 
@@ -688,7 +708,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const savedPlaylistJson = localStorage.getItem("pp-playlist");
       if (savedPlaylistJson) {
         const savedPlaylist = Playlist.fromJSON(JSON.parse(savedPlaylistJson));
-        this.updatePlaylist(savedPlaylist.items || [], savedPlaylist.name, savedPlaylist.id, this.loadPlaylistOrigin());
+        void this.updatePlaylist(savedPlaylist.items || [], savedPlaylist.name, savedPlaylist.id, this.loadPlaylistOrigin());
       } else {
         // No saved playlist - still notify parent that loading is complete
         this.props.onPlaylistLoaded?.(0);

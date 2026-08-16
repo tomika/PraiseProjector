@@ -28,7 +28,7 @@ export interface LeftPanelMethods {
   // Playlist methods
   setPlaylistSelection: (selection: PlaylistSelectionInput | null) => PlaylistSelectionEvent | null;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
-  updatePlaylist: (playlist: PlaylistEntryData[]) => void;
+  updatePlaylist: (playlist: PlaylistEntryData[]) => Promise<void>;
   loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
@@ -181,7 +181,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
           return event;
         },
         getPreferencesForSongId: (songId: string) => playlistPanelRef.current?.getPreferencesForSongId(songId) ?? null,
-        updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist),
+        updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist) ?? Promise.resolve(),
         loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) =>
           playlistPanelRef.current?.loadScheduledPlaylist(leaderId, scheduledDate, playlist),
         updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) =>
