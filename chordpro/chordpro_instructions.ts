@@ -34,20 +34,21 @@ export class Instructions {
   constructor(readonly items: InstructionItem[] = []) {}
 
   private static itemKey(item: InstructionItem) {
-    return item.info ? item.info.withoutModifiers() : item.value;
+    return item.info ? item.info.instructionName() : item.value;
   }
 
   static findSection(doc: ChordProDocument, tag: string): ChordProSectionInfo | undefined {
     if (!tag) return undefined;
     const probe = new ChordProSectionInfo("start_of_chorus:" + tag);
-    const target = probe.withoutModifiers().toLocaleLowerCase();
+    const target = probe.instructionName().toLocaleLowerCase();
     if (!target) return undefined;
     let baseFallback: ChordProSectionInfo | undefined;
     const targetBase = probe.baseTag.toLocaleLowerCase();
     for (const si of doc.sectionInfo.values()) {
       const info = si.info;
-      if (!info.tag) continue;
-      if (info.withoutModifiers().toLocaleLowerCase() === target) return info;
+      const sectionName = info.instructionName();
+      if (!sectionName) continue;
+      if (sectionName.toLocaleLowerCase() === target) return info;
       if (!baseFallback && targetBase && info.baseTag.toLocaleLowerCase() === targetBase) baseFallback = info;
     }
     return baseFallback;
@@ -55,7 +56,7 @@ export class Instructions {
 
   static createSectionItem(doc: ChordProDocument, tag: string, multiplier = 1, transpose?: number): InstructionItem {
     const info = Instructions.findSection(doc, tag);
-    const item: InstructionItem = info ? { value: info.withoutModifiers(), multiplier, info } : { value: tag, multiplier };
+    const item: InstructionItem = info ? { value: info.instructionName(), multiplier, info } : { value: tag, multiplier };
     const t = clampTranspose(transpose);
     if (t !== undefined) item.transpose = t;
     return item;
@@ -64,12 +65,12 @@ export class Instructions {
   static matchesSection(line: ChordProLine, item: InstructionItem) {
     if (line.isComment || item.multiplier == null) return false;
     if (item.info) {
-      const targetTag = item.info.withoutModifiers().toLocaleLowerCase();
+      const targetTag = item.info.instructionName().toLocaleLowerCase();
       const lineTag = line.getTagInfo().tag.toString().toLocaleLowerCase();
       if (lineTag === targetTag) return true;
       const lineInfo = line.getSectionInfo();
       if (lineInfo === item.info) return true;
-      return lineInfo.withoutModifiers().toLocaleLowerCase() === targetTag;
+      return lineInfo.instructionName().toLocaleLowerCase() === targetTag;
     }
     return line.getTagInfo().tag.toString().toLocaleLowerCase() === item.value.toLocaleLowerCase();
   }
@@ -78,7 +79,7 @@ export class Instructions {
     this.normalize();
     return this.items
       .map((x) => {
-        const base = x.info ? x.info.withoutModifiers() : x.value;
+        const base = x.info ? x.info.instructionName() : x.value;
         const mult = (x.multiplier ?? 0) > 1 ? " " + x.multiplier + "x" : "";
         return base + mult + formatTransposeSuffix(x.transpose);
       })
@@ -96,11 +97,11 @@ export class Instructions {
       const item: InstructionItem = { value: trimmedLine };
       if (trimmedLine) {
         const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
-        const canonical = probe.withoutModifiers();
+        const canonical = probe.instructionName();
         const section = Instructions.findSection(doc, canonical || trimmedLine);
         if (section) {
           item.info = section;
-          item.value = section.withoutModifiers();
+          item.value = section.instructionName();
           item.multiplier = probe.multiplier ?? 1;
           if (item.multiplier < 1) item.multiplier = 1;
           // Inherit transpose from the section tag (e.g. `{soc: Chorus +2}`) when

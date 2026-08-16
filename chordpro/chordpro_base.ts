@@ -1060,6 +1060,20 @@ export class ChordProSectionInfo {
     return this.compose(true, true);
   }
 
+  /** Canonical section name used by instructions. Unlabelled standard section
+   * directives (for example `{start_of_verse}`) still need an addressable name
+   * even though their visual tag is intentionally empty. */
+  instructionName() {
+    const authored = this.withoutModifiers();
+    if (authored) return authored;
+    return this.isSection && this.name.startsWith("start_of_") ? this.name.substring(9) : "";
+  }
+
+  /** Instruction name including authored repeat/transpose modifiers. */
+  normalizedInstructionName() {
+    return this.normalized() || this.instructionName();
+  }
+
   private compose(includeMultiplier: boolean, includeTranspose: boolean) {
     if (!this.baseTag) return this.tag;
     const parts = [this.baseTag];
@@ -1144,9 +1158,10 @@ export class ChordProDocument {
   /**
    * Returns the song's built-in "default" instruction string: one entry per
    * comment line (raw text) and one entry per distinct section block (in
-   * `ChordProSectionInfo.normalized()` form). This is the source the editor
-   * uses to seed the instructions side pane, and the source `Song.ts` uses
-   * when no explicit playlist instructions are supplied.
+   * `ChordProSectionInfo.normalized()` form, or the directive name for an
+   * unlabelled standard section). This is the source the editor uses to seed
+   * the instructions side pane, and the source `Song.ts` uses when no explicit
+   * playlist instructions are supplied.
    */
   getDefaultInstructions(): string {
     const lines: string[] = [];
@@ -1156,9 +1171,10 @@ export class ChordProDocument {
         lines.push(line_obj.text);
       } else {
         const info = line_obj.getSectionInfo();
-        if (info.tag) {
+        const instructionName = info.normalizedInstructionName();
+        if (instructionName) {
           while (i + 1 < this.lines.length && this.lines[i + 1].getSectionInfo() === info) ++i;
-          lines.push(info.normalized());
+          lines.push(instructionName);
         }
       }
     }
@@ -1305,8 +1321,8 @@ export class ChordProDocument {
     const sections: string[] = [];
     for (const info of this.sectionInfo.values()) {
       const parsed = info.info;
-      if (parsed.tag) sections.push(parsed.tag);
-      else if (parsed.name.startsWith("start_of_")) sections.push(parsed.name.substring(9));
+      const sectionName = parsed.instructionName();
+      if (sectionName) sections.push(sectionName);
     }
     return sections;
   }

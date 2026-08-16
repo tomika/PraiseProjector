@@ -4731,7 +4731,7 @@ export class ChordProEditor extends ChordDrawer {
 
     const lineToken = (line: ChordProLine) => {
       const info = line.getSectionInfo();
-      const canonical = info.withoutModifiers()?.trim();
+      const canonical = info.instructionName().trim();
       if (canonical) return `section:${canonical.toLocaleLowerCase()}`;
       const tagInfo = line.getTagInfo();
       const key = tagInfo.key?.toString()?.trim();
@@ -4956,7 +4956,7 @@ export class ChordProEditor extends ChordDrawer {
       const chooseFromTagBlocks = (): { top: number; bottom: number } | null => {
         const lineToken = (line: ChordProLine): string | null => {
           const info = line.getSectionInfo();
-          const canonical = info.withoutModifiers()?.trim();
+          const canonical = info.instructionName().trim();
           if (canonical) return `section:${canonical.toLocaleLowerCase()}`;
           const tagInfo = line.getTagInfo();
           const key = tagInfo.key?.toString()?.trim();
@@ -5802,7 +5802,7 @@ export class ChordProEditor extends ChordDrawer {
     const instructions = this.instructions;
 
     const normalizeExistingItemsKeeping = (protectedItem?: InstructionItem) => {
-      const itemKey = (x: InstructionItem) => (x.info ? x.info.withoutModifiers() : x.value);
+      const itemKey = (x: InstructionItem) => (x.info ? x.info.instructionName() : x.value);
       if (!protectedItem) {
         instructions.normalize();
         return;

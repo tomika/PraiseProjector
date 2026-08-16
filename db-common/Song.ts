@@ -442,7 +442,7 @@ export class Song {
     for (const section of this._sections) {
       if (!section.tag) continue;
       const info = Instructions.findSection(this.doc, section.tag);
-      const key = info ? info.withoutModifiers().toLocaleLowerCase() : section.tag.trim().toLocaleLowerCase();
+      const key = info ? info.instructionName().toLocaleLowerCase() : section.tag.trim().toLocaleLowerCase();
       if (!key) continue;
       if (!this._sectionsMap.has(key)) this._sectionsMap.set(key, []);
       this._sectionsMap.get(key)!.push(section);
@@ -491,7 +491,7 @@ export class Song {
       // Grid directives can appear in defaults/instructions but are not
       // projectable lyric sections and must stay out of section lists.
       if (filterGrid && item.info.name === "start_of_grid") continue;
-      const key = item.info.withoutModifiers().toLocaleLowerCase();
+      const key = item.info.instructionName().toLocaleLowerCase();
       const ss = this._sectionsMap.get(key);
       if (!ss) continue;
       for (const s of ss) {
