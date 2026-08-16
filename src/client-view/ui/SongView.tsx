@@ -17,7 +17,7 @@
  * controller's explicit navigation source.
  */
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   useClientPerformancePreferences,
@@ -408,7 +408,15 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
   const hasSongText = !!display.song?.trim();
-  const chordProStyles = getDisplayChordProStyles(display);
+  // display_query parses fresh arrays/objects on every response. Derive stable
+  // structural values so unchanged repeat/style payloads retain identity.
+  const chordProStylesJson = JSON.stringify(getDisplayChordProStyles(display));
+  const sectionRepeatCountsJson = JSON.stringify(display.sectionRepeatCounts ?? null);
+  const chordProStyles = useMemo(() => (JSON.parse(chordProStylesJson) as ChordProStylesSettings | null) ?? null, [chordProStylesJson]);
+  const sectionRepeatCounts = useMemo(
+    () => (JSON.parse(sectionRepeatCountsJson) as Display["sectionRepeatCounts"] | null) ?? undefined,
+    [sectionRepeatCountsJson]
+  );
   const playlistReturnTitle = canUsePlaylistNavigation
     ? "Return to current song in playlist navigation"
     : state.playlist.length === 0
@@ -999,8 +1007,10 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   }, [neighbourPreloadingEnabled, store]);
 
   // ── current page: reflect display + render-setting changes ────────────────────
-  // Reload only when the song text changes; re-apply display flags and highlight
-  // on every change (cheap). Mirrors praiseprojector.ts displayChanged().
+  // Reload only when the song text changes and re-fit only when an input that
+  // affects document layout changes. Highlight is deliberately handled by the
+  // decoration-only effect below: display_query returns a fresh Display object
+  // for every highlight tick, but that must not restart auto-wrap/font fitting.
   useEffect(() => {
     const api = apiRef.current;
     const host = hostRef.current;
@@ -1076,12 +1086,15 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // draw=false here is enough.
     api.applyInstructions(display.instructions ?? "", false);
     api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
-    api.setSectionRepeatCounts(display.sectionRepeatCounts, false);
-    // Show the display's highlighted range only when highlight is on (legacy chkHighlight).
-    if (highlightOn) {
-      api.highlight(display.from ?? 0, display.to ?? 0, display.section, display.sectionRepeatNonce);
+    api.setSectionRepeatCounts(sectionRepeatCounts, false);
+    // Submit the current decoration without drawing; fitAndZoom owns the single
+    // document paint for this content/layout change.
+    const current = store.getSnapshot();
+    const currentDisplay = current.display;
+    if (current.highlightOn) {
+      api.highlight(currentDisplay.from ?? 0, currentDisplay.to ?? 0, currentDisplay.section, currentDisplay.sectionRepeatNonce, false);
     } else {
-      api.highlight(0, 0, undefined, undefined);
+      api.highlight(0, 0, undefined, undefined, false);
     }
     const pendingTurnFit = pendingTurnFitRef.current;
     const carriedFit = pendingTurnFit?.songId === display.songId ? pendingTurnFit.visual : null;
@@ -1098,9 +1111,6 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       prevPageRef.current ?? nextPageRef.current ?? swipeRef.current
     );
     const settledFitGeneration = fitGenerations.get(host);
-    // Leader highlight control: while on, a tap on a lyrics section pushes its
-    // {from,to,section} as the display highlight. Re-installed after each load.
-    api.setLyricsHitHandler(highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section) : null);
     // Keep the revealed neighbour in place until the incoming current page has
     // its final transform. Swapping earlier exposed a second, slightly larger fit
     // after every completed turn.
@@ -1113,7 +1123,40 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
     });
-  }, [display, chordProStyles, settings, dark, scrollMode, showInstructions, highlightOn, highlightControl, sizingMode, autoWrap, store]);
+  }, [
+    display.capo,
+    display.instructions,
+    display.song,
+    display.songId,
+    display.transpose,
+    sectionRepeatCounts,
+    chordProStyles,
+    settings,
+    dark,
+    scrollMode,
+    showInstructions,
+    sizingMode,
+    autoWrap,
+    store,
+  ]);
+
+  // A highlight response is a decoration update only. The ChordPro renderer
+  // patches its highlight layer in place, preserving the wrapped song DOM,
+  // current fit transform and visible pixels.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (highlightOn) api.highlight(display.from ?? 0, display.to ?? 0, display.section, display.sectionRepeatNonce);
+    else api.highlight(0, 0, undefined, undefined);
+  }, [display.from, display.section, display.sectionRepeatNonce, display.song, display.songId, display.to, highlightOn]);
+
+  // The hit handler is interaction state, not layout state. Re-install it after
+  // a document load without coupling ordinary control changes to auto-wrap.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.setLyricsHitHandler(display.song && highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section) : null);
+  }, [display.song, highlightControl, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────
   useEffect(() => {

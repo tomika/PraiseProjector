@@ -251,11 +251,11 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
     y = bottom;
   }
 
-  // The base is computed from `showTags` alone, so a song with no visible tags
-  // still reserves the separation gap even though its text starts at the left
-  // margin. Deliberate: keeps highlight geometry stable across songs.
-  const horizontalSeparation = 2 * plan.display.lyricsLineHeight;
-  const baseHighlightLeft = leftOffset + plan.display.horizontalMargin + (plan.showTags ? layout.tagLaneWidth + horizontalSeparation : 0);
+  // Use the layout's ACTUAL tag gap. `showTags` may be enabled while the song
+  // contains no visible tags; in that case layoutSong reserves neither a tag
+  // lane nor a gap, and the highlight must start with the lyrics instead of
+  // being shifted right by two line heights.
+  const baseHighlightLeft = leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth + layout.tagGap;
   const highlightPadding = Math.max(2, Math.round(plan.display.lyricsLineHeight * 0.2));
   const width = layout.width + leftOffset;
 

@@ -612,6 +612,11 @@ export class DomSongRenderer {
   private chordStripNode: HTMLDivElement | null = null;
   private bodyNode: HTMLDivElement | null = null;
   private diagramsNode: HTMLDivElement | null = null;
+  /** Geometry needed to patch highlight decoration without rebuilding song rows. */
+  private highlightContext: { plan: DisplayPlan; layout: SongLayoutResult; bodyLeft: number } | null = null;
+  private committedSemanticKey = "";
+  private committedDiagramKey = "";
+  private committedViewportWidth = -1;
   /** Renderer-owned geometry revision, bumped ONCE when async ABC work completes. */
   private abcGeometryRevision = 0;
   private abcLoadState: "idle" | "loading" | "done" = "idle";
@@ -696,6 +701,7 @@ export class DomSongRenderer {
 
   update(input: DomSongRendererInput, category: InvalidationCategory = "structure") {
     if (this.disposed) return;
+    const renderPending = this.scheduledFrame !== null;
     const replaced = input.document !== this.input.document;
     const semanticChanged = revisionsKey(input) !== revisionsKey(this.input);
     const decorationChanged = decorationKey(input) !== decorationKey(this.input);
@@ -703,6 +709,21 @@ export class DomSongRenderer {
     this.input = input;
     if (replaced) this.identities.startEpoch(input.document);
     if (replaced || semanticChanged) this.collapsedInstructionStarts.clear();
+    if (
+      category === "decoration" &&
+      !replaced &&
+      !semanticChanged &&
+      !diagramsChanged &&
+      revisionsKey(input) === this.committedSemanticKey &&
+      diagramKey(input) === this.committedDiagramKey &&
+      this.patchHighlightDecoration()
+    ) {
+      // Do not mask an already-pending layout/metrics commit. Its key must still
+      // differ from the last fully committed document so the scheduled frame
+      // cannot early-out after this lightweight decoration patch.
+      if (!renderPending) this.lastCommitKey = this.createCommitKey(input, this.committedSemanticKey, this.committedViewportWidth);
+      return;
+    }
     if (replaced || semanticChanged || decorationChanged || diagramsChanged || category === "decoration" || category === "interaction")
       this.invalidate(category);
   }
@@ -749,6 +770,7 @@ export class DomSongRenderer {
     this.chordStripNode = null;
     this.bodyNode = null;
     this.diagramsNode = null;
+    this.highlightContext = null;
     this.geometry = null;
     this.root.remove();
   }
@@ -868,7 +890,17 @@ export class DomSongRenderer {
       layout = layoutSong(plan, this.measurer, { ...layoutOptions, abcHeights: this.abcHeights() });
 
     if (this.disposed || generation !== this.invalidationGeneration || semanticKey !== revisionsKey(this.input)) return;
-    const commitKey = [
+    const commitKey = this.createCommitKey(input, semanticKey, viewportWidth);
+    if (commitKey === this.lastCommitKey) return;
+    this.commit(plan, layout, !this.measurer.fontsPending && !abcPending);
+    this.lastCommitKey = commitKey;
+    this.committedSemanticKey = semanticKey;
+    this.committedDiagramKey = diagramKey(input);
+    this.committedViewportWidth = viewportWidth;
+  }
+
+  private createCommitKey(input: DomSongRendererInput, semanticKey: string, viewportWidth: number) {
+    return [
       semanticKey,
       this.measurer.styleRevision,
       // Decorations and completed async ABC geometry can each require a fresh
@@ -879,9 +911,21 @@ export class DomSongRenderer {
       input.widthPolicy === "FIT_PAGE" && !input.viewportAlignedTitle ? "natural" : viewportWidth,
       collapseKey(this.collapsedInstructionStarts),
     ].join("|");
-    if (commitKey === this.lastCommitKey) return;
-    this.commit(plan, layout, !this.measurer.fontsPending && !abcPending);
-    this.lastCommitKey = commitKey;
+  }
+
+  /** Replace only the song-level highlight bands. Lyrics, chords, metadata,
+   * diagrams and their measured layout retain their existing DOM identity. */
+  private patchHighlightDecoration() {
+    const context = this.highlightContext;
+    const body = this.bodyNode;
+    const geometry = this.geometry;
+    if (!context || !body || !geometry) return false;
+
+    const replacement = this.buildHighlightRoot(context.plan, geometry, context.layout, context.bodyLeft);
+    const current = body.firstElementChild;
+    if (current?.classList.contains("chp-dom-highlight-root")) current.replaceWith(replacement);
+    else body.prepend(replacement);
+    return true;
   }
 
   private applyInstructionCollapse(plan: DisplayPlan): DisplayPlan {
@@ -1121,6 +1165,7 @@ export class DomSongRenderer {
     this.chordStripNode = chordStrip;
     this.bodyNode = body;
     this.diagramsNode = diagrams;
+    this.highlightContext = { plan, layout, bodyLeft };
     this.root.classList.toggle("chp-dom-editing", !!editing);
     this.root.style.width = `${composite.width}px`;
     this.root.style.height = `${composite.height}px`;
