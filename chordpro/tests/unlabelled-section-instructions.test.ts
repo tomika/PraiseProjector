@@ -30,3 +30,12 @@ test("unlabelled standard section remains projectable through instructed section
   assert.equal(instructed[0].tag, "Verse");
   assert.match(instructed[0].text, /Jézus véred megtisztít/);
 });
+
+test("getSections retains authored modifiers and the legacy unlabelled grid name", () => {
+  const document = new ChordProDocument(
+    getChordSystem("G"),
+    `{start_of_verse: Verse 3x #2}\nLine\n{end_of_verse}\n{start_of_grid}\nD F G\n{end_of_grid}`
+  );
+
+  assert.deepEqual(document.getSections(), ["Verse 3x #2", "grid"]);
+});

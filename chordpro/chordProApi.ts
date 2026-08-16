@@ -327,7 +327,8 @@ function bindEditor(editorDiv: HTMLDivElement) {
     highlight: (from: number, to: number, section?: number, repeatNonce?: number, draw = true) => {
       const instance = getBoundEditor();
       if (!instance) return;
-      instance.highlight(from, to, section, repeatNonce, draw);
+      if (section === undefined) instance.highlight(from, to, draw);
+      else instance.highlight(from, to, section, repeatNonce, draw);
     },
     /** Set the song's display-instructions TEXT on the editor (legacy
      *  applyInstructions). Whether/how it is drawn is controlled separately by

@@ -515,12 +515,21 @@ export function coalesceLyricRuns(
  * gets its own commit-key term instead, so a highlight-only change still
  * produces a visible commit.
  */
-function decorationKey(input: DomSongRendererInput) {
+export function highlightDecorationKey(input: DomSongRendererInput) {
   const highlight = input.highlight;
   const range = highlight
     ? `${highlight.from}:${highlight.to}:${highlight.section ?? ""}:${highlight.repeatIndex ?? ""}:${highlight.repeatTotal ?? ""}`
     : "none";
-  return `${range}:${input.highlightOpacity}:${input.isDark ? "dark" : "light"}:${editingKey(input)}`;
+  return `${range}:${input.highlightOpacity}`;
+}
+
+/** Decorations the highlight-only fast path cannot patch. */
+export function nonHighlightDecorationKey(input: DomSongRendererInput) {
+  return `${input.isDark ? "dark" : "light"}:${editingKey(input)}`;
+}
+
+function decorationKey(input: DomSongRendererInput) {
+  return `${highlightDecorationKey(input)}:${nonHighlightDecorationKey(input)}`;
 }
 
 /**
@@ -616,6 +625,7 @@ export class DomSongRenderer {
   private highlightContext: { plan: DisplayPlan; layout: SongLayoutResult; bodyLeft: number } | null = null;
   private committedSemanticKey = "";
   private committedDiagramKey = "";
+  private committedNonHighlightDecorationKey = "";
   private committedViewportWidth = -1;
   /** Renderer-owned geometry revision, bumped ONCE when async ABC work completes. */
   private abcGeometryRevision = 0;
@@ -716,6 +726,7 @@ export class DomSongRenderer {
       !diagramsChanged &&
       revisionsKey(input) === this.committedSemanticKey &&
       diagramKey(input) === this.committedDiagramKey &&
+      nonHighlightDecorationKey(input) === this.committedNonHighlightDecorationKey &&
       this.patchHighlightDecoration()
     ) {
       // Do not mask an already-pending layout/metrics commit. Its key must still
@@ -896,6 +907,7 @@ export class DomSongRenderer {
     this.lastCommitKey = commitKey;
     this.committedSemanticKey = semanticKey;
     this.committedDiagramKey = diagramKey(input);
+    this.committedNonHighlightDecorationKey = nonHighlightDecorationKey(input);
     this.committedViewportWidth = viewportWidth;
   }
 

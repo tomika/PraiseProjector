@@ -4616,7 +4616,7 @@ export class ChordProEditor extends ChordDrawer {
         repeatTotal,
         repeatNonce,
       };
-      if (draw) this.reconcileRenderBackend("decoration");
+      if (draw && !this.disposed && !this.drawingSuppressed) this.reconcileRenderBackend("decoration");
       this.requestHighlightScroll();
       return;
     }
@@ -4632,7 +4632,7 @@ export class ChordProEditor extends ChordDrawer {
       (this.highlighted?.repeatNonce ?? -1) !== (repeatNonce ?? -1)
     ) {
       this.highlighted = { from, to, section, repeatIndex, repeatTotal, repeatNonce };
-      if (draw) this.reconcileRenderBackend("decoration");
+      if (draw && !this.disposed && !this.drawingSuppressed) this.reconcileRenderBackend("decoration");
       this.requestHighlightScroll();
     }
   }

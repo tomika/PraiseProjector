@@ -1321,8 +1321,11 @@ export class ChordProDocument {
     const sections: string[] = [];
     for (const info of this.sectionInfo.values()) {
       const parsed = info.info;
-      const sectionName = parsed.instructionName();
-      if (sectionName) sections.push(sectionName);
+      // Keep this legacy query's public shape distinct from instruction
+      // matching: callers historically received the authored tag including
+      // modifiers, and an unlabelled grid was exposed as "grid".
+      if (parsed.tag) sections.push(parsed.tag);
+      else if (parsed.name.startsWith("start_of_")) sections.push(parsed.name.substring(9));
     }
     return sections;
   }
