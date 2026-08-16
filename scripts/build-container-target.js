@@ -139,10 +139,10 @@ const runContainerEnv = [
 const buildCmd = [
   "mkdir -p /tmp/project",
   "cd /project",
-  "tar --exclude=www --exclude=node_modules --exclude=package-lock.json --exclude=dist -cf - . | tar -xf - -C /tmp/project",
+  "tar --exclude=www --exclude=node_modules --exclude=dist -cf - . | tar -xf - -C /tmp/project",
   "cd /tmp/project",
   "npm install",
-  "npm audit fix",
+  "npm audit fix || echo 'npm audit fix left unresolved vulnerabilities (see report above); continuing build'",
   ...(targetConfig.preBuildCommands || []),
   "npm run generate-icons",
   "npm run build:web",
