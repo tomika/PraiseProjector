@@ -142,6 +142,7 @@ const buildCmd = [
   "tar --exclude=www --exclude=node_modules --exclude=package-lock.json --exclude=dist -cf - . | tar -xf - -C /tmp/project",
   "cd /tmp/project",
   "npm install",
+  "npm audit fix",
   ...(targetConfig.preBuildCommands || []),
   "npm run generate-icons",
   "npm run build:web",
