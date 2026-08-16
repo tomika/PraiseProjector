@@ -23,6 +23,7 @@ import { getClientPerformanceSnapshot, recordProjectionRenderDuration, subscribe
 import { projectedImageCacheBudget, resolveProjectionRenderDimensions } from "../shared/performanceSettings";
 import { Display } from "../../common/pp-types";
 import { getWebServerInterface } from "../services/webServerBridge";
+import { getProjectionClientPresenceSnapshot, subscribeProjectionClientPresence } from "../services/projectionClientPresence";
 
 type PreviewTab = "format" | "image" | "message" | "controls";
 type PreviewPanelCollapseMode = Settings["previewPanelCollapseMode"];
@@ -31,6 +32,7 @@ const PREVIEW_PANEL_COLLAPSE_MODES: PreviewPanelCollapseMode[] = ["expanded", "t
 const PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK = 4;
 const PREVIEW_PANEL_WITH_TAB_CONTENT_FALLBACK_PX = 168;
 const PREVIEW_TABS_ICON_MODE_HYSTERESIS_PX = 24;
+const subscribeProjectionClientPresenceStore = (listener: () => void) => subscribeProjectionClientPresence(listener);
 
 type SectionListActionKey =
   | "ArrowDown"
@@ -376,8 +378,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
 
     // Projector state - matching C# DisplayForm
     const [projectorEnabled, setProjectorEnabled] = useState(false);
-    // Connected net-display clients (Electron only; stays false in web mode)
-    const [hasConnectedClients, setHasConnectedClients] = useState(false);
+    // Shared web/PPD projection-client presence; the service owns the single
+    // poller used by both the full view and client view.
+    const hasConnectedClients = useSyncExternalStore(
+      subscribeProjectionClientPresenceStore,
+      getProjectionClientPresenceSnapshot,
+      getProjectionClientPresenceSnapshot
+    );
     const [currentMonitorIndex, setCurrentMonitorIndex] = useState(-1);
     const [availableMonitors, setAvailableMonitors] = useState<MonitorDisplay[]>([]);
     // Total number of physical displays (Electron only). Defaults to 2 so the
@@ -438,23 +445,6 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       const filtered = displays.filter((d) => d.id !== excludedId);
       // Do not hide all displays if exclusion over-matches for any reason.
       return filtered.length > 0 ? filtered : displays;
-    }, []);
-
-    // Poll connected clients every 2 s (Electron only — in web mode we can't know)
-    useEffect(() => {
-      const webServer = getWebServerInterface();
-      if (!webServer) return;
-      const poll = async () => {
-        try {
-          const result = await webServer.query({ kind: "clients", projectingOnly: true });
-          setHasConnectedClients(result.kind === "clients" && result.count > 0);
-        } catch {
-          // ignore transient errors
-        }
-      };
-      void poll(); // immediate first check
-      const id = setInterval(poll, 2000);
-      return () => clearInterval(id);
     }, []);
 
     // Track the number of connected displays (Electron only) so the projector

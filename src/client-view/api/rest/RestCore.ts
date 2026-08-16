@@ -117,6 +117,8 @@ export class RestCore {
   private ppdWatching = false;
   private ppdAccess: PpdSessionAccess | null = null;
   private readonly ppdSongCache = new Map<string, SongData>();
+  /** Local working playlist hidden while this App follows a remote session. */
+  private playlistBeforeFollow: PlaylistEntry[] | null = null;
   private capabilities: ClientCapabilities = { ...NO_CAPABILITIES };
   /** The user's leader-mode choice (legacy chkAdmin); gated by the right to lead.
    *  Defaults off — the store restores the persisted choice via setLeaderMode. */
@@ -459,7 +461,7 @@ export class RestCore {
       () => this.getDisplay(),
       (songId) => this.loadSongData(songId)
     );
-    if (started) this.setNetworkState({ status: "leading" });
+    if (started) this.setNetworkState({ status: "leading", transport: "ppd" });
   }
 
   /** Stop hosting the local PPD session (legacy stopPpdSession). */
@@ -493,7 +495,7 @@ export class RestCore {
     if (!target) return;
     this.stopFollow();
     // Instant feedback: show "connecting" the moment the user taps the indicator.
-    this.setNetworkState({ status: "startup" });
+    this.setNetworkState({ status: "startup", transport: target.kind === "ppd" ? "ppd" : "web" });
     if (target.kind === "ppd" && isHostDevicePpdAvailable()) {
       await this.startPpdFollow(target.info);
     } else {
@@ -501,7 +503,13 @@ export class RestCore {
     }
   }
 
+  private snapshotPlaylistBeforeFollow(): void {
+    if (this.lastFollow || this.playlistBeforeFollow) return;
+    this.playlistBeforeFollow = this.playlist.map((entry) => ({ ...entry }));
+  }
+
   private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.snapshotPlaylistBeforeFollow();
     this.ppdSongCache.clear();
     this.resetChordProStyles(true);
     this.lastFollow = { kind: "ppd", info };
@@ -511,7 +519,7 @@ export class RestCore {
     this.followAbort = controller;
     const stylesApi = /^https?:\/\//i.test(info.url) ? new CloudApiService() : null;
     stylesApi?.setBaseUrl(info.url.replace(/\/+$/, ""));
-    this.setNetworkState({ status: "startup" });
+    this.setNetworkState({ status: "startup", transport: "ppd" });
     this.ppdWatching = await startHostDeviceWatching(
       info.id,
       { address: info.address ?? "", port: info.port ?? 0, hostId: info.hostId },
@@ -533,14 +541,14 @@ export class RestCore {
           });
           if (stylesApi) void this.syncChordProStyles(stylesRev, token, controller.signal, stylesApi, undefined, stylesRev);
         }
-        this.setNetworkState({ status: "watching" });
+        this.setNetworkState({ status: "watching", transport: "ppd" });
       },
       () => {
         this.ppdWatching = false;
         this.ppdAccess = null;
         this.emitCapabilities();
         this.resetChordProStyles(true);
-        this.setNetworkState({ status: "offline" });
+        this.setNetworkState({ status: "offline", transport: "ppd" });
       },
       (access) => {
         this.ppdAccess = access;
@@ -549,7 +557,7 @@ export class RestCore {
     );
     if (this.ppdWatching) {
       this.emitCapabilities();
-      this.setNetworkState({ status: "watching" });
+      this.setNetworkState({ status: "watching", transport: "ppd" });
     }
   }
 
@@ -561,6 +569,9 @@ export class RestCore {
    *   (used on startup and reconnect to avoid sitting through a long-poll timeout).
    */
   private startCloudFollow(leaderId?: string, forceFirst = false): void {
+    // This common entry also covers fixed-source Client-mode boot, so leaving a
+    // followed session can restore the local working list without a page reload.
+    this.snapshotPlaylistBeforeFollow();
     this.resetChordProStyles(true);
     this.lastFollow = { kind: "cloud", leaderId };
     this.followLeaderId = leaderId;
@@ -568,7 +579,7 @@ export class RestCore {
     const controller = new AbortController();
     this.followAbort = controller;
     // Connecting until the first response confirms (or fails) the link.
-    this.setNetworkState({ status: "startup" });
+    this.setNetworkState({ status: "startup", transport: "web" });
 
     const loop = async (): Promise<void> => {
       let forced = forceFirst;
@@ -587,10 +598,10 @@ export class RestCore {
             chordProStyles: display.chordProStylesRev ? (this.chordProStyles ?? undefined) : undefined,
           });
           void this.syncChordProStyles(display.chordProStylesRev, token, controller.signal, cloudApi, this.followLeaderId);
-          this.setNetworkState({ status: "watching" });
+          this.setNetworkState({ status: "watching", transport: "web" });
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
-          this.setNetworkState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+          this.setNetworkState({ status: "error", transport: "web", error: error instanceof Error ? error.message : String(error) });
           await delay(2000);
         }
       }
@@ -617,5 +628,15 @@ export class RestCore {
     this.ppdSongCache.clear();
     if (stoppedPpdFollow) this.emitCapabilities();
     this.resetChordProStyles(true);
+  }
+
+  /** Exit follow mode and restore the local client state without a page reload. */
+  stopWatching(): void {
+    this.stopFollow();
+    const playlist = this.playlistBeforeFollow ?? [];
+    this.playlistBeforeFollow = null;
+    this.lastFollow = null;
+    this.setDisplay({ ...getEmptyDisplay(), playlist });
+    this.setNetworkState({ status: "online" });
   }
 }

@@ -1323,6 +1323,7 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
 /* colored status icons — don't invert them in dark mode */
 #mainView.dark #mainToolbar #netstatus.net-online .btnImg,
 #mainView.dark #mainToolbar #netstatus.net-watching .btnImg,
+#mainView.dark #mainToolbar #netstatus.net-leading .btnImg,
 #mainView.dark #mainToolbar #netstatus.net-offline .btnImg {
   filter: none;
 }

@@ -211,7 +211,6 @@ interface PersistedClientViewState {
 
 /** device-preference key (the port namespaces it, e.g. "pp-pref-client-view-state"). */
 const PERSIST_KEY = "client-view-state";
-const OPEN_SESSIONS_AFTER_RELOAD_KEY = "pp-client-view-open-sessions-after-reload";
 const PERSIST_VERSION = 3;
 /** Coalesce rapid state changes into one write (localStorage is synchronous). */
 const PERSIST_DEBOUNCE_MS = 400;
@@ -230,6 +229,8 @@ export interface ClientViewState {
   playlistSearching: boolean;
   playlist: PlaylistEntry[];
   network: NetworkState;
+  /** Whether this application currently has a PPD or projecting web client. */
+  hasConnectedClients: boolean;
   authed: boolean;
   leader: LeaderIdentity | null;
   /** What the active backend + context permit; gates UI affordances. */
@@ -362,6 +363,14 @@ export function isAppWatching(state: ClientViewState): boolean {
   return state.mode === "App" && state.network.status === "watching";
 }
 
+/** An App with an active follow target, including connecting/error/offline states
+ *  where it is not currently receiving display frames. */
+function isAppFollowingSession(state: ClientViewState): boolean {
+  // Fixed-source Client mode is deliberately excluded: it begins following at
+  // boot and has no independent pre-follow local playlist to restore.
+  return state.mode === "App" && state.network.transport != null && state.network.status !== "leading";
+}
+
 /** The view is mirroring someone else's display — a Client follower/locked
  *  session without control, OR an App that chose to watch a session. Drives the
  *  view-only toolbar / song view (no navigation, transpose or song browser).
@@ -373,10 +382,13 @@ export function isViewingRemoteDisplay(state: ClientViewState): boolean {
   return isFollowerView(state) || appIsReadOnlyWatcher || (state.lockedToSession && !state.capabilities.canControlDisplay);
 }
 
-/** The toolbar network indicator is meaningful only for a host-served Client (a
- *  persistent server link to report); standalone App mode has none to show. */
+/** The toolbar network indicator is meaningful for a host-served Client (a
+ *  persistent server link to report) and for an App participating in a local PPD
+ *  session. A disconnected PPD follower deliberately retains its transport so
+ *  the offline indicator remains available as an explicit reconnect action.
+ *  Standalone App mode without either connection has none to show. */
 export function showsNetworkIndicator(state: ClientViewState): boolean {
-  return state.lockedToSession || state.mode !== "App";
+  return state.lockedToSession || state.mode !== "App" || state.network.transport === "ppd" || state.hasConnectedClients;
 }
 
 /** Offer the highlight lamp to anyone who can control the display, plus a Client
@@ -415,6 +427,7 @@ function initialState(): ClientViewState {
     playlistSearching: false,
     playlist: [],
     network: { status: "startup" },
+    hasConnectedClients: false,
     authed: false,
     leader: null,
     capabilities: { ...NO_CAPABILITIES },
@@ -696,8 +709,7 @@ export class ClientViewStore {
         window.removeEventListener("pagehide", onUnload);
       });
     }
-    if (this.consumeOpenSessionsAfterReload()) this.showSessionsDialog();
-    else this.openStartupSessionsDialog(token);
+    this.openStartupSessionsDialog(token);
   }
 
   dispose(): void {
@@ -910,6 +922,7 @@ export class ClientViewStore {
         });
       }),
       this.api.session.subscribeNetworkState((network) => this.set({ network })),
+      this.api.session.subscribeConnectedClients((hasConnectedClients) => this.set({ hasConnectedClients })),
       // This port is the LOCAL discovery channel; replacing the whole list here would
       // drop the cloud rows, which refresh on their own (slower) schedule.
       this.api.session.subscribeSessions((sessions) => this.setSessionGroup(sessions, "local")),
@@ -2122,11 +2135,11 @@ export class ClientViewStore {
 
   async openSessionsDialog(): Promise<void> {
     // Match the full view's Sessions button: pressing it again while following a
-    // session exits follow mode first. Reloading rebuilds the local song/list
-    // seed; a session marker reopens the form after that clean initialization.
-    if (isAppWatching(this.state)) {
+    // session exits follow mode first. The adapter restores its local display and
+    // playlist, and stopWatching() refreshes this store in place before the dialog
+    // opens, so no page reload is needed.
+    if (isAppFollowingSession(this.state)) {
       await this.stopWatching();
-      if (this.reloadWithSessionsDialog()) return;
     }
 
     this.showSessionsDialog();
@@ -2140,28 +2153,6 @@ export class ClientViewStore {
       startupScanMode: null,
       sessionsFoundBadge: false,
     });
-  }
-
-  private reloadWithSessionsDialog(): boolean {
-    if (typeof window === "undefined") return false;
-    try {
-      window.sessionStorage?.setItem(OPEN_SESSIONS_AFTER_RELOAD_KEY, "1");
-    } catch {
-      /* session storage is optional; the reload itself is still required */
-    }
-    this.reloadPage();
-    return true;
-  }
-
-  private consumeOpenSessionsAfterReload(): boolean {
-    if (typeof window === "undefined") return false;
-    try {
-      const reopen = window.sessionStorage?.getItem(OPEN_SESSIONS_AFTER_RELOAD_KEY) === "1";
-      if (reopen) window.sessionStorage.removeItem(OPEN_SESSIONS_AFTER_RELOAD_KEY);
-      return reopen;
-    } catch {
-      return false;
-    }
   }
 
   closeSessionsDialog(): void {
@@ -2258,6 +2249,17 @@ export class ClientViewStore {
 
   async stopWatching(): Promise<void> {
     await this.api.session.stopWatching();
+    const display = this.api.display.getCurrent();
+    this.set({
+      display,
+      playlist: this.api.playlist.getPlaylist(),
+      capabilities: this.api.getCapabilities(),
+      transpose: display.transpose,
+      capo: display.capo ?? 0,
+      highlightOn: false,
+      highlightControl: false,
+      highlightPending: false,
+    });
   }
 
   /** Begin hosting a local PPD session so nearby devices can follow (legacy

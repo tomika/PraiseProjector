@@ -74,6 +74,7 @@ import { filterOwnSessionEntries } from "../../../shared/sessionList";
 import { readPersistedSettings } from "../../../services/settingsStore";
 import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
 import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
+import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -113,6 +114,8 @@ export class DirectClientApi implements ClientApi {
   private readonly ppdSongCache = new Map<string, SongData>();
   private leaderMode = false;
   private lastFollow: { kind: "cloud"; leaderId?: string } | { kind: "ppd"; info: P2PSessionInfo } | null = null;
+  /** Local working playlist hidden while this App follows a remote session. */
+  private playlistBeforeFollow: NonNullable<Display["playlist"]> | null = null;
 
   readonly song: SongApi = this.createSongApi();
   readonly playlist: PlaylistApi = this.createPlaylistApi();
@@ -568,7 +571,7 @@ export class DirectClientApi implements ClientApi {
             return song ? { text: song.Text, system: song.System } : undefined;
           }
         );
-        if (started) this.setNetworkState({ status: "leading" });
+        if (started) this.setNetworkState({ status: "leading", transport: "ppd" });
       },
       stopLocal: async () => {
         await stopHostDevicePpdHosting();
@@ -581,7 +584,7 @@ export class DirectClientApi implements ClientApi {
       // and is the sole owner of cloud publishing. Re-sending here would lose its
       // guest-session/default-leader target and could update the wrong namespace.
       createOnline: async () => {
-        this.setNetworkState({ status: "leading" });
+        this.setNetworkState({ status: "leading", transport: "web" });
       },
       watch: (session) => this.watch(session),
       // Dispatch by url SCHEME (legacy found-session selector): an http(s) url is a
@@ -598,13 +601,20 @@ export class DirectClientApi implements ClientApi {
         this.stopFollow();
         // Let the host exit watch mode (clear the followed projection).
         window.dispatchEvent(new CustomEvent("pp-cv-watch-stop"));
+        const playlist = this.playlistBeforeFollow ?? [];
+        this.playlistBeforeFollow = null;
+        this.lastFollow = null;
+        // CurrentSongStore is the Direct adapter's source of truth. Publish a
+        // local empty display plus the pre-follow working list so every client-view
+        // subscriber updates without requiring a page reload.
+        updateCurrentDisplay({ ...getEmptyDisplay(), playlist }, { forceEmit: true });
         this.setNetworkState({ status: "online" });
       },
       reconnect: async () => {
         const target = this.lastFollow;
         if (!target) return;
         this.stopFollow();
-        this.setNetworkState({ status: "startup" });
+        this.setNetworkState({ status: "startup", transport: target.kind === "ppd" ? "ppd" : "web" });
         if (target.kind === "ppd" && isHostDevicePpdAvailable()) {
           await this.startPpdFollow(target.info);
         } else {
@@ -618,6 +628,7 @@ export class DirectClientApi implements ClientApi {
         callback(this.networkState);
         return () => this.networkListeners.delete(callback);
       },
+      subscribeConnectedClients: subscribeProjectionClientPresence,
       // Local discovery is event-shaped: publish each offer/withdrawal as it lands so
       // the list does not have to wait for the next poll tick to show a peer that has
       // already answered.
@@ -646,22 +657,28 @@ export class DirectClientApi implements ClientApi {
     }
   }
 
+  private snapshotPlaylistBeforeFollow(): void {
+    if (this.lastFollow || this.playlistBeforeFollow) return;
+    this.playlistBeforeFollow = (getCurrentDisplay().playlist ?? []).map((entry) => ({ ...entry }));
+  }
+
   private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+    this.snapshotPlaylistBeforeFollow();
     this.ppdSongCache.clear();
     this.lastFollow = { kind: "ppd", info };
-    this.setNetworkState({ status: "startup" });
+    this.setNetworkState({ status: "startup", transport: "ppd" });
     this.ppdWatching = await startHostDeviceWatching(
       info.id,
       { address: info.address ?? "", port: info.port ?? 0, hostId: info.hostId },
       (display) => {
-        this.setNetworkState({ status: "watching" });
+        this.setNetworkState({ status: "watching", transport: "ppd" });
         this.relayFollowedDisplay(display);
       },
       () => {
         this.ppdWatching = false;
         this.ppdAccess = null;
         this.refreshHostState();
-        this.setNetworkState({ status: "offline" });
+        this.setNetworkState({ status: "offline", transport: "ppd" });
       },
       (access) => {
         this.ppdAccess = access;
@@ -670,18 +687,19 @@ export class DirectClientApi implements ClientApi {
     );
     if (this.ppdWatching) {
       this.refreshHostState();
-      this.setNetworkState({ status: "watching" });
+      this.setNetworkState({ status: "watching", transport: "ppd" });
     }
   }
 
   /** Long-poll /display_query and project each response, mirroring RestCore's
    *  cloud follow (and App.tsx's WatchOnlineDisplay) but routed through the host. */
   private startCloudFollow(leaderId?: string, forceFirst = false): void {
+    this.snapshotPlaylistBeforeFollow();
     this.lastFollow = { kind: "cloud", leaderId };
     const token = ++this.followToken;
     const controller = new AbortController();
     this.followAbort = controller;
-    this.setNetworkState({ status: "startup" });
+    this.setNetworkState({ status: "startup", transport: "web" });
 
     const loop = async (): Promise<void> => {
       let forced = forceFirst;
@@ -690,11 +708,11 @@ export class DirectClientApi implements ClientApi {
           const { display } = await cloudApi.fetchDisplayQuery(getCurrentDisplay(), { leaderId, signal: controller.signal, forced });
           forced = false;
           if (token !== this.followToken) return;
-          this.setNetworkState({ status: "watching" });
+          this.setNetworkState({ status: "watching", transport: "web" });
           this.relayFollowedDisplay(display);
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
-          this.setNetworkState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+          this.setNetworkState({ status: "error", transport: "web", error: error instanceof Error ? error.message : String(error) });
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }

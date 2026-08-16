@@ -71,6 +71,9 @@ export type NetworkStatus = "startup" | "offline" | "online" | "watching" | "lea
 
 export interface NetworkState {
   status: NetworkStatus;
+  /** Active session transport. PPD is surfaced separately so the toolbar can
+   *  distinguish a nearby/local session from a web-hosted connection. */
+  transport?: "web" | "ppd";
   /** Human-readable detail for the `error` status. */
   error?: string;
 }
@@ -461,6 +464,9 @@ export interface SessionApi {
   netDisplayUrl(): string;
   /** Emits whenever the network/session status changes. */
   subscribeNetworkState(callback: (state: NetworkState) => void): Unsubscribe;
+  /** Emits whether this application currently has a connected PPD or projecting
+   *  web client. Fires immediately with the current best-known value. */
+  subscribeConnectedClients(callback: (connected: boolean) => void): Unsubscribe;
   /** Emits whenever the set of discovered sessions changes. */
   subscribeSessions(callback: (sessions: OnlineSessionEntry[]) => void): Unsubscribe;
 }

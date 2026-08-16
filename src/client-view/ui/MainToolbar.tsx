@@ -127,8 +127,15 @@ export function MainToolbar({
   // divNetStatus.onclick → goOnline(). While LEADING there is no remote link to
   // re-establish, so the dot is purely informational there.
   const netStatus = state.network.status;
-  const netReconnectable = netStatus !== "leading";
-  const netLabel = NET_STATUS_LABEL[netStatus] ?? netStatus;
+  // A downstream client selects online-leader.svg only while the upstream state
+  // is healthy. Connecting, offline and error states must remain visible so a
+  // followed session can still be diagnosed and reconnected by tapping the icon.
+  const upstreamNeedsAttention = netStatus === "startup" || netStatus === "offline" || netStatus === "error";
+  const showDownstreamLeader = state.hasConnectedClients && !upstreamNeedsAttention;
+  const indicatorStatus: NetworkStatus = showDownstreamLeader ? "leading" : netStatus;
+  const ppdNearby = !showDownstreamLeader && state.network.transport === "ppd" && (netStatus === "watching" || netStatus === "leading");
+  const netReconnectable = indicatorStatus !== "leading";
+  const netLabel = NET_STATUS_LABEL[indicatorStatus] ?? indicatorStatus;
   const netDetail = netStatus === "error" && state.network.error ? `: ${state.network.error}` : "";
   const netTitle = netReconnectable ? `${netLabel}${netDetail} — tap to reconnect` : `${netLabel}${netDetail}`;
   const openCapoPicker = () => {
@@ -291,10 +298,11 @@ export function MainToolbar({
         </span>
       </div>
     ),
-    // Network status: only shown when the client is following an online session
-    // or connected to a server. Hidden in standalone App mode (embedded in
-    // Electron) where there is no remote connection to indicate. Tapping forces an
-    // immediate reconnect (see netReconnectable above).
+    // Network status: shown for a web-served client, a local PPD participant, or
+    // an App with downstream projection clients. A real PPD/web client activates
+    // online-leader.svg; PPD without a downstream client uses nearby.svg. Startup
+    // and failure retain their status-specific icons. Tapping forces an immediate
+    // reconnect where applicable (see netReconnectable above).
     //
     // All status icons stay mounted at once; changing status only toggles the
     // .cv-net-active CSS class (see client-view.css). We deliberately do NOT swap a
@@ -304,18 +312,19 @@ export function MainToolbar({
     netstatus: showsNetworkIndicator(state) ? (
       <div
         id="netstatus"
-        className={`btnDiv net-${netStatus}${state.hotkeyActiveControl === "network" ? " cv-hotkey-active" : ""}`}
+        className={`btnDiv net-${indicatorStatus}${state.hotkeyActiveControl === "network" ? " cv-hotkey-active" : ""}`}
         title={netTitle}
         onClick={netReconnectable ? () => void store.reconnect() : undefined}
       >
         {NET_STATUSES.map((s) => (
           <img
             key={s}
-            className={`btnImg cv-net-icon${s === netStatus ? " cv-net-active" : ""}${s === "startup" ? " cv-spin" : ""}`}
+            className={`btnImg cv-net-icon${s === indicatorStatus && !ppdNearby ? " cv-net-active" : ""}${s === "startup" ? " cv-spin" : ""}`}
             src={icon(NET_STATUS_ICON[s])}
             alt={NET_STATUS_LABEL[s] ?? s}
           />
         ))}
+        <img className={`btnImg cv-net-icon${ppdNearby ? " cv-net-active" : ""}`} src={icon("nearby.svg")} alt="Nearby PPD" />
       </div>
     ) : null,
     fullscreen: (

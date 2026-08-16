@@ -1093,9 +1093,11 @@ const AppContent: React.FC = () => {
 
   // Subscribe to global display changes and sync to backend
   useEffect(() => {
-    return subscribeCurrentDisplayChange((display) => {
+    const unsubscribe = subscribeCurrentDisplayChange((display) => {
       syncCurrentDisplayToBackend(display);
     });
+    syncCurrentDisplayToBackend(getCurrentDisplay());
+    return unsubscribe;
   }, [syncCurrentDisplayToBackend]);
 
   // Callback when sections are generated - used for state restoration

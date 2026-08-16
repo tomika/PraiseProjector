@@ -508,6 +508,7 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
           .then((url) => {
             hostAdvertisedWebServerUrl = url;
             registerHostWatcher(packet, message);
+            void pushDisplayToWatchers();
           });
       }
       return true;

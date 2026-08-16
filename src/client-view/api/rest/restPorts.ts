@@ -18,6 +18,7 @@ import type { AuthApi, DeviceApi, DeviceInfo, DisplayApi, PlaylistApi, SessionAp
 import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
+import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
 
 const TOKEN_KEY = "sessionId";
 
@@ -326,17 +327,17 @@ export function createSessionApi(core: RestCore): SessionApi {
       // Seed the freshly-registered cloud session with the working playlist so
       // followers see it immediately (pushDisplay no longer carries the list).
       if (core.getPlaylist().length) await pushPlaylist(core, core.getPlaylist());
-      core.setNetworkState({ status: "leading" });
+      core.setNetworkState({ status: "leading", transport: "web" });
     },
     watch: (session) => core.watch(session),
     attach: (session) => attachSession(core, session),
     stopWatching: async () => {
-      core.stopFollow();
-      core.setNetworkState({ status: "online" });
+      core.stopWatching();
     },
     reconnect: () => core.reconnect(),
     netDisplayUrl: () => core.netDisplayUrl(),
     subscribeNetworkState: (callback) => core.networkEvents.add(callback),
+    subscribeConnectedClients: subscribeProjectionClientPresence,
     // Local discovery is event-shaped: republish as each offer/withdrawal lands so the
     // list does not wait for the next poll tick to show a peer that already answered.
     subscribeSessions: (callback) => {
