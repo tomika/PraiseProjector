@@ -23,6 +23,7 @@ import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
 import { useLongPress } from "./useLongPress";
+import { useAutoFitScale } from "./useAutoFitScale";
 import { useWheelDragOpen, type WheelDragOpenPayload } from "./useWheelDragOpen";
 import { WheelPicker } from "./WheelPicker";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
@@ -110,6 +111,15 @@ export function MainToolbar({
   }, []);
   const vertical = widePane && !state.optionsOpen;
   const order = vertical ? TOOLBAR_ORDER_VERTICAL : TOOLBAR_ORDER_HORIZONTAL;
+
+  // Horizontal strip on a narrow screen: shrink the buttons until they all fit
+  // rather than letting the last ones run off the right edge. The vertical
+  // column needs no fit — it already scrolls (see client-view.css).
+  // The pull-to-refresh gesture binds to this same element, so its ref doubles
+  // as the auto-fit host whenever the toolbar is mounted with one.
+  const ownToolbarRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = pullRef ?? ownToolbarRef;
+  useAutoFitScale(toolbarRef, { enabled: !vertical });
 
   // Long-press plumbing for the wand (instructions) button. Editing is gated by
   // display-control capability. A long press — or the native contextmenu (touch
@@ -349,7 +359,7 @@ export function MainToolbar({
 
   return (
     <>
-      <div className="widthProtect" id="mainToolbar" ref={pullRef}>
+      <div className="widthProtect" id="mainToolbar" ref={toolbarRef}>
         {order.map((key) => {
           const node = controls[key];
           return node ? <Fragment key={key}>{node}</Fragment> : null;

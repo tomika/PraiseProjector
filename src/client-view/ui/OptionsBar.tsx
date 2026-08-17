@@ -14,6 +14,7 @@ import { HighlightOpacityDialog } from "./HighlightOpacityDialog";
 import { MoreMenu } from "./MoreMenu";
 import { ZoomPanel } from "./ZoomDialog";
 import { icon } from "./assets";
+import { useAutoFitScale } from "./useAutoFitScale";
 import { useLongPress } from "./useLongPress";
 
 const CHORD_BOX_ICON: Record<ChordBoxKind, string> = {
@@ -48,6 +49,11 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
   const s = state.displaySettings;
   const hotkeyClass = (control: string) => (state.hotkeyActiveControl === control ? " cv-hotkey-active" : "");
   const [chordBoxMenuOpen, setChordBoxMenuOpen] = useState(false);
+  // Narrow panel: shrink the bar (both rows by ONE shared factor, so they keep
+  // matching) until every chord option fits, instead of letting the row ends —
+  // Close and the more-menu — overflow the panel's right edge.
+  const optionsBarRef = useRef<HTMLDivElement>(null);
+  useAutoFitScale(optionsBarRef, { rowSelector: ".cv-options-row" });
   const chordBoxWrapRef = useRef<HTMLDivElement>(null);
   const lampWrapRef = useRef<HTMLDivElement>(null);
   const zoomWrapRef = useRef<HTMLDivElement>(null);
@@ -139,7 +145,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
       : "Highlight off — click to turn on, long-press to opacity control)";
 
   return (
-    <div className="cv-options-bar">
+    <div className="cv-options-bar" ref={optionsBarRef}>
       <div className="cv-options-row">
         <div ref={chordBoxWrapRef} className={`cv-chordbox-wrap${hotkeyClass("chord-box")}`} data-tutorial-id="client-chord-box">
           <button
