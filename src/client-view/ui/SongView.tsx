@@ -238,14 +238,12 @@ async function fitAndZoom(
 }
 
 /**
- * Auto wrap makes FIT_PAGE and FIT_WIDTH share one height-filling geometry.
- * Leaving FIT_WIDTH in scroll mode would reserve its stable scrollbar gutter,
- * narrowing the wrap boundary enough to produce different line breaks and font
- * search results. Manual sizing still scrolls, as does plain unwrapped
- * FIT_WIDTH.
+ * FIT_WIDTH always preserves the width scale and scrolls vertically when the
+ * song is taller than the pane. Auto wrap may grow a short song to also fill
+ * the height, but it must not turn a tall FIT_WIDTH song into FIT_PAGE.
  */
-function usesVerticalScroll(sizingMode: ZoomSizingMode, autoWrap: boolean): boolean {
-  return sizingMode === "MANUAL" || (sizingMode === "FIT_WIDTH" && !autoWrap);
+function usesVerticalScroll(sizingMode: ZoomSizingMode): boolean {
+  return sizingMode !== "FIT_PAGE";
 }
 
 async function fitAndZoomInternal(
@@ -256,7 +254,7 @@ async function fitAndZoomInternal(
   autoWrap: boolean,
   fitViewport?: HTMLElement | null
 ): Promise<boolean> {
-  const scrollMode = usesVerticalScroll(sizingMode, autoWrap);
+  const scrollMode = usesVerticalScroll(sizingMode);
   const manualFontSize = sizingMode === "MANUAL";
   const automaticFontGrowth = autoWrap && !manualFontSize;
   const container = host.parentElement;
@@ -577,7 +575,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   // otherwise honour the selected zoom sizing mode while maxText is on.
   const sizingMode: ZoomSizingMode = toolbarOnRight ? "FIT_WIDTH" : settings.maxText ? settings.zoomSizingMode : "FIT_PAGE";
   const autoWrap = settings.maxText && settings.zoomAutoWrap;
-  const scrollMode = usesVerticalScroll(sizingMode, autoWrap);
+  const scrollMode = usesVerticalScroll(sizingMode);
   // Mirror into a ref the once-bound ResizeObserver can read.
   useEffect(() => {
     sizingModeRef.current = sizingMode;
