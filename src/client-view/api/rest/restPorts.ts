@@ -9,7 +9,12 @@
  */
 
 import { cloudApi } from "../../../../common/cloudApi";
-import { getLocalBroadcastAddresses, getLocalNetworkAddresses, onHostDeviceSessionsChanged } from "../../../services/hostDevicePpd";
+import {
+  getLocalBroadcastAddresses,
+  getLocalNetworkAddresses,
+  onHostDeviceSessionsChanged,
+  shutdownHostDevicePpd,
+} from "../../../services/hostDevicePpd";
 import { openLanSessionUrl } from "../../../services/sessionNavigation";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
@@ -509,8 +514,13 @@ export function createDeviceApi(): DeviceApi {
     },
   };
   if (window.hostDevice?.exit) {
-    device.exit = () => {
-      void window.hostDevice?.exit?.();
+    device.exit = async () => {
+      try {
+        await shutdownHostDevicePpd();
+      } catch (error) {
+        console.warn("ClientView", "PPD shutdown before app exit failed", error);
+      }
+      await Promise.resolve(window.hostDevice?.exit?.());
     };
   }
   return device;

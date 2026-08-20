@@ -16,6 +16,7 @@
  */
 
 import { Display, PpdMessage } from "../common/pp-types";
+import { PPD_HOST_WATCH_TIMEOUT_SECONDS, PPD_PROTOCOL_VERSION } from "../common/ppd-control";
 import { getCurrentDisplay, registerDisplayChangeListener } from "./display";
 
 export type { PpdMessage };
@@ -40,6 +41,7 @@ export interface PpdHostInfo {
 /** Tracks a remote viewer subscribed to our display (leader mode). */
 interface PpdWatcher {
   peerId: string;
+  watchId?: string;
   sendMessage: PpdSendFn;
   lastRequestArrived: number;
   lastDisplaySent: number;
@@ -63,6 +65,7 @@ export class PpdProtocolHandler {
 
   // ── Viewer mode state ──
   private _watchedDeviceId: string | null = null;
+  private _watchedWatchId: string | null = null;
   private displayUpdateCallback: ((display: unknown) => void) | null = null;
   private sessionEndedCallback: (() => void) | null = null;
 
@@ -73,6 +76,9 @@ export class PpdProtocolHandler {
   }
   get watchedDeviceId(): string | null {
     return this._watchedDeviceId;
+  }
+  get watchedWatchId(): string | null {
+    return this._watchedWatchId;
   }
   get watcherCount(): number {
     return this.watchers.size;
@@ -113,7 +119,11 @@ export class PpdProtocolHandler {
         this.handleOff(message);
         break;
 
-      // scan, offer, hello, goodbye — handled by transport layer
+      case "goodbye":
+        this.handleGoodbye(message);
+        break;
+
+      // scan, offer and hello are handled by the transport layer.
     }
   }
 
@@ -134,7 +144,7 @@ export class PpdProtocolHandler {
     if (!this._isLeading) return;
     for (const watcher of this.watchers.values()) {
       try {
-        watcher.sendMessage({ op: "off", device: this.host.getHostId() });
+        watcher.sendMessage({ op: "off", device: this.host.getHostId(), watchId: watcher.watchId });
       } catch {
         /* ignore send errors during shutdown */
       }
@@ -172,10 +182,16 @@ export class PpdProtocolHandler {
       // (address/port may have changed)
       watcher.lastRequestArrived = now;
       watcher.sendMessage = sendResponse;
+      if (message.watchId && message.watchId !== watcher.watchId) {
+        watcher.watchId = message.watchId;
+        watcher.lastDisplay = undefined;
+        watcher.lastDisplayAcked = false;
+      }
     } else {
       // New watcher — register a display change listener so we push updates
       watcher = {
         peerId,
+        watchId: message.watchId,
         sendMessage: sendResponse,
         lastRequestArrived: now,
         lastDisplaySent: 0,
@@ -203,6 +219,7 @@ export class PpdProtocolHandler {
 
     const watcher = this.watchers.get(message.device);
     if (watcher) {
+      if (message.watchId && watcher.watchId && message.watchId !== watcher.watchId) return;
       if (message.stylesRev !== undefined && message.stylesRev !== watcher.lastSentStylesRev) {
         console.debug(`[PPD] Ignoring stale ACK from ${message.device} for styles rev ${message.stylesRev}`);
         return;
@@ -245,6 +262,8 @@ export class PpdProtocolHandler {
       name: this.host.getHostName(),
       display: clientDisplay,
       device: this.host.getHostId(),
+      version: PPD_PROTOCOL_VERSION,
+      watchId: watcher.watchId,
     });
   }
 
@@ -279,7 +298,7 @@ export class PpdProtocolHandler {
   /** Periodic tick: retransmit unacked displays and prune stale watchers. */
   private retransmitTick(): void {
     const now = Date.now();
-    const dropLimit = now - 120_000; // 2 min timeout (matching mobile client)
+    const dropLimit = now - PPD_HOST_WATCH_TIMEOUT_SECONDS * 1000;
     const toRemove: string[] = [];
 
     for (const [id, watcher] of this.watchers) {
@@ -310,6 +329,8 @@ export class PpdProtocolHandler {
             name: this.host.getHostName(),
             display: JSON.parse(watcher.lastDisplay),
             device: this.host.getHostId(),
+            version: PPD_PROTOCOL_VERSION,
+            watchId: watcher.watchId,
           });
         } catch (error) {
           console.error(`[PPD] Retransmit failed for ${id}:`, error);
@@ -332,6 +353,7 @@ export class PpdProtocolHandler {
   startWatching(deviceId: string, onDisplayUpdate: (display: unknown) => void, onSessionEnded: () => void): void {
     this.stopWatching();
     this._watchedDeviceId = deviceId;
+    this._watchedWatchId = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     this.displayUpdateCallback = onDisplayUpdate;
     this.sessionEndedCallback = onSessionEnded;
     console.info(`[PPD] Now watching device: ${deviceId}`);
@@ -343,8 +365,18 @@ export class PpdProtocolHandler {
       console.info(`[PPD] Stopped watching device: ${this._watchedDeviceId}`);
     }
     this._watchedDeviceId = null;
+    this._watchedWatchId = null;
     this.displayUpdateCallback = null;
     this.sessionEndedCallback = null;
+  }
+
+  /** End an unresponsive viewer-side watch through the same callback as `off`. */
+  handleWatchTimeout(): void {
+    if (!this._watchedDeviceId || !this.sessionEndedCallback) return;
+    console.warn(`[PPD] Watched device ${this._watchedDeviceId} timed out`);
+    const cb = this.sessionEndedCallback;
+    this.stopWatching();
+    cb();
   }
 
   isWatching(): boolean {
@@ -356,6 +388,7 @@ export class PpdProtocolHandler {
       console.debug(`[PPD] Ignoring display from ${message.device} (watching: ${this._watchedDeviceId ?? "none"})`);
       return;
     }
+    if (message.watchId && message.watchId !== this._watchedWatchId) return;
 
     if (message.display && this.displayUpdateCallback) {
       this.displayUpdateCallback(message.display);
@@ -369,11 +402,19 @@ export class PpdProtocolHandler {
       id: message.device, // leader's device ID
       device: this.host.getHostId(), // our device ID
       stylesRev: message.display?.chordProStylesRev ?? "",
+      watchId: message.watchId,
     });
   }
 
+  private handleGoodbye(message: PpdMessage): void {
+    if (!this._isLeading || message.id !== this.host.getHostId()) return;
+    const watcher = this.watchers.get(message.device);
+    if (!watcher || (message.watchId && watcher.watchId && message.watchId !== watcher.watchId)) return;
+    this.removeWatcher(message.device);
+  }
+
   private handleOff(message: PpdMessage): void {
-    if (message.device === this._watchedDeviceId && this.sessionEndedCallback) {
+    if (message.device === this._watchedDeviceId && (!message.watchId || message.watchId === this._watchedWatchId) && this.sessionEndedCallback) {
       console.info(`[PPD] Watched device ${message.device} went offline`);
       const cb = this.sessionEndedCallback;
       this.stopWatching();

@@ -5,7 +5,13 @@ import { getMachineIpAddress } from "./utils";
 import * as t from "io-ts";
 import { PpdProtocolHandler, PpdSendFn, PpdHostInfo } from "./ppd-protocol";
 import type { Display } from "../common/pp-types";
-import { PPD_CONTROL_CAPABILITIES, PPD_PROTOCOL_VERSION } from "../common/ppd-control";
+import {
+  PPD_CONTROL_CAPABILITIES,
+  PPD_DEFAULT_WATCH_TIMEOUT_SECONDS,
+  PPD_PROTOCOL_VERSION,
+  getPpdWatchHeartbeatMs,
+  normalizePpdWatchTimeoutSeconds,
+} from "../common/ppd-control";
 
 // Display codec for UDP messages - matches C# Display class
 const displayCodec = t.partial({
@@ -36,6 +42,7 @@ const udpMessageCodec = t.intersection([
       t.literal("view"),
       t.literal("ack"),
       t.literal("off"),
+      t.literal("goodbye"),
       t.literal("session"),
       t.literal("access"),
       t.literal("command"),
@@ -54,6 +61,8 @@ const udpMessageCodec = t.intersection([
     stylesRev: t.string,
     version: t.number,
     requestId: t.string,
+    watchId: t.string,
+    reason: t.string,
     token: t.string,
     capabilities: t.array(t.string),
     leaderModeAvailable: t.boolean,
@@ -121,6 +130,12 @@ export class UdpServer {
   private watchedDeviceAddress: string | null = null;
   private watchedDevicePort: number | null = null;
   private watchTimer: NodeJS.Timeout | null = null;
+  private watchDeadlineTimer: NodeJS.Timeout | null = null;
+  private watchedLastResponseAt = 0;
+  private watchedLivenessConfirmed = false;
+  private watchTimeoutSeconds = PPD_DEFAULT_WATCH_TIMEOUT_SECONDS;
+  private readonly pendingSends = new Set<Promise<void>>();
+  private shutdownPromise: Promise<void> | null = null;
 
   // Shared protocol handler (handles view/ack/display/off logic for both UDP and BT)
   private protocolHandler: PpdProtocolHandler;
@@ -156,6 +171,17 @@ export class UdpServer {
     }
 
     console.debug(`[UDP] Received: op=${message.op} device=${message.device} from=${rinfo.address}:${rinfo.port}`);
+
+    if (
+      message.device === this.protocolHandler.watchedDeviceId &&
+      (!message.watchId || message.watchId === this.protocolHandler.watchedWatchId) &&
+      (message.op === "display" || message.op === "session" || message.op === "result")
+    ) {
+      this.watchedLastResponseAt = Date.now();
+      if ((message.op === "session" || message.op === "display") && message.version === PPD_PROTOCOL_VERSION) {
+        this.watchedLivenessConfirmed = true;
+      }
+    }
 
     // Build a transport-specific send callback that includes our UDP listen port
     // so the receiver can send replies back to us.
@@ -291,9 +317,7 @@ export class UdpServer {
 
   public sendMessage(message: string, port: number, address: string): void {
     const encodedMsg = Buffer.from(message, "utf8").toString("base64");
-    this.socket.send(encodedMsg, port, address, (err) => {
-      if (err) console.error(`[UDP] Send error: ${err.stack}`);
-    });
+    this.trackSend(this.sendDatagram(encodedMsg, port, address));
   }
 
   /**
@@ -302,9 +326,32 @@ export class UdpServer {
    * so re-encoding them would break PPD parsing on receivers.
    */
   public sendRawMessage(rawMessage: string, port: number, address: string): void {
-    this.socket.send(rawMessage, port, address, (err) => {
-      if (err) console.error(`[UDP] Send error: ${err.stack}`);
+    this.trackSend(this.sendDatagram(rawMessage, port, address));
+  }
+
+  private sendDatagram(message: string, port: number, address: string): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        this.socket.send(message, port, address, (err) => {
+          if (err) console.error(`[UDP] Send error: ${err.stack}`);
+          resolve();
+        });
+      } catch (error) {
+        console.error("[UDP] Send failed:", error);
+        resolve();
+      }
     });
+  }
+
+  private trackSend(pending: Promise<void>): void {
+    this.pendingSends.add(pending);
+    void pending.finally(() => this.pendingSends.delete(pending));
+  }
+
+  private async flushPendingSends(): Promise<void> {
+    while (this.pendingSends.size > 0) {
+      await Promise.all([...this.pendingSends]);
+    }
   }
 
   // First non-internal IPv4 subnet broadcast address (the default scan target). The
@@ -412,36 +459,90 @@ export class UdpServer {
     onSessionEnded: () => void
   ): void {
     // Stop any existing watch
-    this.stopWatching();
+    this.trackSend(this.stopWatchingWithReason("session-switch"));
 
     // Transport state (address/port for periodic view requests)
     this.watchedDeviceAddress = address;
     this.watchedDevicePort = port;
 
     // Protocol state (display/off handling + ACK)
-    this.protocolHandler.startWatching(deviceId, onDisplayUpdate, onSessionEnded);
+    this.protocolHandler.startWatching(deviceId, onDisplayUpdate, () => {
+      this.clearWatchTransportState();
+      onSessionEnded();
+    });
+    this.watchedLastResponseAt = Date.now();
+    this.watchedLivenessConfirmed = false;
 
     // Send initial view request
     this.sendViewRequest();
 
-    // Start periodic timer - matching C# OnUDPWatchTimerTick (every 10 seconds)
-    this.watchTimer = setInterval(() => {
-      this.sendViewRequest();
-    }, 10000);
+    this.scheduleWatchTimers();
   }
 
   /**
    * Stop watching the current UDP session - matching C# ExitSessionWatchingMode for UDP
    */
   public stopWatching(): void {
+    this.trackSend(this.stopWatchingWithReason("local-stop"));
+  }
+
+  private stopWatchingWithReason(reason: "local-stop" | "session-switch" | "shutdown"): Promise<void> {
+    const deviceId = this.protocolHandler.watchedDeviceId;
+    const watchId = this.protocolHandler.watchedWatchId;
+    const address = this.watchedDeviceAddress;
+    const port = this.watchedDevicePort;
+    this.clearWatchTransportState();
+    this.protocolHandler.stopWatching();
+
+    if (!deviceId || !address || !port) return Promise.resolve();
+    const message = Buffer.from(
+      JSON.stringify({
+        op: "goodbye",
+        id: deviceId,
+        device: this.getHostId(),
+        port: this.port,
+        watchId: watchId ?? undefined,
+        reason,
+      }),
+      "utf8"
+    ).toString("base64");
+    return this.sendDatagram(message, port, address);
+  }
+
+  private clearWatchTransportState(): void {
     if (this.watchTimer) {
       clearInterval(this.watchTimer);
       this.watchTimer = null;
     }
-
+    if (this.watchDeadlineTimer) {
+      clearInterval(this.watchDeadlineTimer);
+      this.watchDeadlineTimer = null;
+    }
     this.watchedDeviceAddress = null;
     this.watchedDevicePort = null;
-    this.protocolHandler.stopWatching();
+    this.watchedLastResponseAt = 0;
+    this.watchedLivenessConfirmed = false;
+  }
+
+  private scheduleWatchTimers(): void {
+    if (this.watchTimer) clearInterval(this.watchTimer);
+    if (this.watchDeadlineTimer) clearInterval(this.watchDeadlineTimer);
+    this.watchTimer = setInterval(() => this.sendViewRequest(), getPpdWatchHeartbeatMs(this.watchTimeoutSeconds));
+    this.watchDeadlineTimer = setInterval(() => {
+      if (
+        this.watchedLivenessConfirmed &&
+        this.watchedLastResponseAt > 0 &&
+        Date.now() - this.watchedLastResponseAt >= this.watchTimeoutSeconds * 1000
+      ) {
+        this.protocolHandler.handleWatchTimeout();
+      }
+    }, 1000);
+  }
+
+  /** Apply the renderer setting to the legacy main-process follower path too. */
+  public setWatchTimeoutSeconds(value: unknown): void {
+    this.watchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(value);
+    if (this.protocolHandler.isWatching()) this.scheduleWatchTimers();
   }
 
   /**
@@ -458,6 +559,8 @@ export class UdpServer {
       id: this.protocolHandler.watchedDeviceId, // Target device's ID (who we're watching)
       device: this.getHostId(), // Our device ID (who is requesting the view)
       port: this.port, // Our listening port so host can respond back
+      version: PPD_PROTOCOL_VERSION,
+      watchId: this.protocolHandler.watchedWatchId ?? undefined,
     };
 
     this.sendMessage(JSON.stringify(viewRequest), this.watchedDevicePort, this.watchedDeviceAddress);
@@ -515,6 +618,28 @@ export class UdpServer {
         resolve(false);
       }, 1000);
     });
+  }
+
+  /** Graceful application shutdown: notify followers before releasing the UDP socket. */
+  public shutdown(): Promise<void> {
+    if (!this.shutdownPromise) this.shutdownPromise = this.performShutdown();
+    return this.shutdownPromise;
+  }
+
+  private async performShutdown(): Promise<void> {
+    await this.stopWatchingWithReason("shutdown");
+    this.protocolHandler.dispose();
+    await this.flushPendingSends();
+    this.rawPacketListeners.clear();
+    this.sessionChangeListeners.clear();
+    await new Promise<void>((resolve) => {
+      try {
+        this.socket.close(resolve);
+      } catch {
+        resolve();
+      }
+    });
+    if (udpServerInstance === this) udpServerInstance = null;
   }
 
   static async initialize(webServer: WebServer): Promise<UdpServer | null> {

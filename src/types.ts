@@ -79,6 +79,8 @@ export interface Settings {
   automaticViewSwitch: "none" | "portraitToClient" | "orientation";
   clientViewAutoScanSessions: ClientViewAutoScanMode;
   clientViewSessionsFoundPopup: ClientViewAutoScanMode;
+  /** Seconds without a PPD response before a followed local session is considered disconnected. */
+  ppdWatchTimeoutSeconds: number;
   /** Active input profile for the new client view. `factory` is built in/read-only. */
   clientViewActiveInputProfileId: string;
   /** User-created input profiles only; the factory profile stays in code. */

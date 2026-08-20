@@ -20,6 +20,12 @@ import {
 import { learnMidiMessage, midiInputNames, midiSupported, requestMidiAccess } from "../../client-view/input/midiInput";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useMessageBox } from "../../contexts/MessageBoxContext";
+import {
+  PPD_DEFAULT_WATCH_TIMEOUT_SECONDS,
+  PPD_MAX_WATCH_TIMEOUT_SECONDS,
+  PPD_MIN_WATCH_TIMEOUT_SECONDS,
+  normalizePpdWatchTimeoutSeconds,
+} from "../../../common/ppd-control";
 import "./ClientViewSettings.css";
 
 interface Props {
@@ -250,6 +256,23 @@ export default function ClientViewSettings({ settings, updateSetting }: Props) {
           <option value="both">{t("SettingsClientViewAutoScanSessionsBoth")}</option>
         </select>
         <small className="form-text text-muted">{t("SettingsClientViewSessionsFoundPopupDescription")}</small>
+      </div>
+      <div className="form-group mt-2">
+        <label htmlFor="ppdWatchTimeoutSeconds">{t("SettingsPpdWatchTimeout")}</label>
+        <input
+          id="ppdWatchTimeoutSeconds"
+          className="form-control"
+          type="number"
+          min={PPD_MIN_WATCH_TIMEOUT_SECONDS}
+          max={PPD_MAX_WATCH_TIMEOUT_SECONDS}
+          step={1}
+          value={settings.ppdWatchTimeoutSeconds}
+          onChange={(event) => {
+            const value = parseInt(event.target.value || String(PPD_DEFAULT_WATCH_TIMEOUT_SECONDS), 10);
+            updateSetting("ppdWatchTimeoutSeconds", normalizePpdWatchTimeoutSeconds(value));
+          }}
+        />
+        <small className="form-text text-muted">{t("SettingsPpdWatchTimeoutDescription")}</small>
       </div>
 
       <hr />

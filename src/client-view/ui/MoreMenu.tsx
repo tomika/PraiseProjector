@@ -95,7 +95,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       },
     },
     { id: "about", label: "About", image: "about.svg", show: true, run: () => store.openAbout() },
-    { id: "exit", label: "Exit", image: "power.svg", show: state.canExit, run: () => store.exitApp() },
+    { id: "exit", label: "Exit", image: "power.svg", show: state.canExit, run: () => void store.exitApp() },
   ];
   const visible = items.filter((item) => item.show);
   if (visible.length === 0) return null;

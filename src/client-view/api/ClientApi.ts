@@ -533,7 +533,7 @@ export interface DeviceApi {
   /** Native device details, with the browser's approximate memory as fallback. */
   getDeviceInfo(): Promise<DeviceInfo | null>;
   /** Present when the host can terminate the app (native shells only). */
-  exit?(): void;
+  exit?(): Promise<void>;
   /** Navigate back to the host home/launcher. */
   goHome(): void;
 }

@@ -2,20 +2,24 @@ import { P2PSessionInfo } from "../types/electron.d";
 import { Display, type SongData } from "../../common/pp-types";
 import {
   PPD_CONTROL_CAPABILITIES,
+  PPD_HOST_WATCH_TIMEOUT_SECONDS,
   PPD_PROTOCOL_VERSION,
   PpdControlHost,
   type PpdHighlightUpdate,
   type PpdPeer,
   type PpdRemoteDisplayUpdate,
   type PpdSessionAccess,
+  type PpdWatchEndReason,
   type PpdWireMessage,
+  getPpdWatchHeartbeatMs,
   isPpdPeerAllowlisted,
   isPpdWireMessage,
+  normalizePpdWatchTimeoutSeconds,
   readPpdSessionAccess,
 } from "../../common/ppd-control";
 import { readPersistedSettings } from "./settingsStore";
 import { isWebServerRuntimeAvailable } from "./webServerBridge";
-import { clearHostedPpdClients, isHostedPpdClientActivity, noteHostedPpdClient } from "./hostedPpdClients";
+import { clearHostedPpdClients, isHostedPpdClientActivity, noteHostedPpdClient, removeHostedPpdClient } from "./hostedPpdClients";
 import { dispatchClientViewDisplayUpdate } from "./clientViewDisplayUpdate";
 
 type PpdMessage = PpdWireMessage;
@@ -85,9 +89,15 @@ const DEVICE_ID_PREFERENCE = "ppdDeviceId";
  *  user is looking at the list and shuts down on its own once polling stops —
  *  BLE scanning and Nearby discovery are both expensive to leave running. */
 const NEARBY_DISCOVERY_IDLE_MS = 8000;
+/** First-response waits stay interactive even when loss detection is configured
+ *  for a much longer period. */
+const PPD_CONNECT_TIMEOUT_MAX_MS = 15000;
+/** Never let a broken native bridge turn the Exit action into an endless wait. */
+const PPD_SHUTDOWN_GRACE_MS = 1000;
 
 const discoveredSessions = new Map<string, P2PSessionInfo>();
 let initialized = false;
+let shutdownPromise: Promise<void> | null = null;
 let listenPort = 0;
 let unsubscribeHostDevice: (() => void) | null = null;
 let scanId = "";
@@ -110,9 +120,18 @@ let nearbyDiscoveryStopTimer: ReturnType<typeof setTimeout> | null = null;
 let nearbyPermissionRequested = false;
 
 let watchTimer: ReturnType<typeof setInterval> | null = null;
-let watchedSession: { id: string; details: WatchDetails } | null = null;
+let watchDeadlineTimer: ReturnType<typeof setInterval> | null = null;
+let watchedSession: {
+  id: string;
+  watchId: string;
+  details: WatchDetails;
+  lastResponseAt: number;
+  livenessConfirmed: boolean;
+  responseReceived: boolean;
+} | null = null;
+let watchedResponseWaiter: { resolve: (received: boolean) => void; timeout: ReturnType<typeof setTimeout> } | null = null;
 let watchedDisplayCallback: ((display: Display) => void) | null = null;
-let watchedEndedCallback: (() => void) | null = null;
+let watchedEndedCallback: ((reason: PpdWatchEndReason) => void) | null = null;
 let watchedAccessCallback: ((access: PpdSessionAccess) => void) | null = null;
 let watchedAccess: PpdSessionAccess | null = null;
 let watchedHighlightToken = "";
@@ -140,6 +159,13 @@ const nearbyChangeListeners = new Set<NearbyChangeCallback>();
 const now = () => Date.now();
 
 const randomId = () => Math.random().toString(36).slice(2);
+
+const getWatchTimeoutMs = (): number => normalizePpdWatchTimeoutSeconds(readPersistedSettings().ppdWatchTimeoutSeconds) * 1000;
+const getWatchConnectTimeoutMs = (): number => Math.min(getWatchTimeoutMs(), PPD_CONNECT_TIMEOUT_MAX_MS);
+
+// Host expiry is deliberately independent from the aggressive follower deadline:
+// it retains several heartbeats even when this device detects its own lost host fast.
+const getHostWatcherTimeoutMs = (): number => Math.max(PPD_HOST_WATCH_TIMEOUT_SECONDS * 1000, getWatchTimeoutMs());
 
 // ── Discovered-session liveness + change notification ──────────────────────────
 //
@@ -214,6 +240,16 @@ export const onHostDeviceSessionsChanged = (callback: SessionsChangeCallback): (
 };
 
 const resolvePromise = async <T>(value: T | Promise<T>) => value;
+
+const settleWithinShutdownGrace = async (work: Promise<unknown>[]): Promise<void> => {
+  if (work.length === 0) return;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const graceExpired = new Promise<void>((resolve) => {
+    timeout = setTimeout(resolve, PPD_SHUTDOWN_GRACE_MS);
+  });
+  await Promise.race([Promise.allSettled(work), graceExpired]);
+  if (timeout) clearTimeout(timeout);
+};
 
 const getHostDevice = () => window.hostDevice;
 const isElectronHost = (): boolean => typeof window !== "undefined" && !!(window as Window & { electronAPI?: unknown }).electronAPI;
@@ -338,7 +374,7 @@ let hostDisplayProvider: (() => Display) | null = null;
 let hostSongProvider: ((songId: string) => SongData | undefined | Promise<SongData | undefined>) | null = null;
 let hostTimer: ReturnType<typeof setInterval> | null = null;
 let hostName = "";
-// Refreshed by scan/view requests. A viewer repeats view every 10 seconds, so
+// Refreshed by scan/view requests. Current viewers repeat view every 5 seconds, so
 // webserver toggles have a bounded staleness window rather than permanent state.
 let hostAdvertisedWebServerUrl: string | undefined;
 const hostWatchers = new Map<
@@ -346,6 +382,7 @@ const hostWatchers = new Map<
   {
     address: string;
     port?: number;
+    watchId?: string;
     lastRequestArrived: number;
     lastDisplaySent: number;
     lastDisplayAcked: boolean;
@@ -460,10 +497,16 @@ const registerHostWatcher = (packet: HostDevicePacket, message: PpdMessage): voi
     existing.lastRequestArrived = now();
     existing.address = packet.from;
     existing.port = message.port ?? packet.port;
+    if (message.watchId && message.watchId !== existing.watchId) {
+      existing.watchId = message.watchId;
+      existing.lastDisplay = undefined;
+      existing.lastDisplayAcked = false;
+    }
   } else {
     hostWatchers.set(message.device, {
       address: packet.from,
       port: message.port ?? packet.port,
+      watchId: message.watchId,
       lastRequestArrived: now(),
       lastDisplaySent: 0,
       lastDisplayAcked: false,
@@ -519,6 +562,7 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
       if (message.id === deviceId && message.device) {
         const watcher = hostWatchers.get(message.device);
         if (watcher) {
+          if (message.watchId && watcher.watchId && message.watchId !== watcher.watchId) return true;
           if (message.stylesRev !== undefined && message.stylesRev !== watcher.lastSentStylesRev) return true;
           watcher.lastDisplayAcked = true;
           // Viewers predating stylesRev still get the previous one-shot behavior.
@@ -532,13 +576,22 @@ const handleHostMessage = (packet: HostDevicePacket, message: PpdMessage): boole
         }
       }
       return true;
+    case "goodbye":
+      if (message.id === deviceId && message.device) {
+        const watcher = hostWatchers.get(message.device);
+        if (watcher && (!message.watchId || !watcher.watchId || message.watchId === watcher.watchId)) {
+          hostWatchers.delete(message.device);
+        }
+      }
+      return true;
     default:
       return false;
   }
 };
 
 // Push the current display to every watcher whose state is stale or unacked (legacy
-// handlePpdRequests' 200 ms-throttled per-watcher send), dropping watchers idle >120 s.
+// handlePpdRequests' 200 ms-throttled per-watcher send), dropping watchers once
+// their configurable heartbeat deadline has elapsed.
 const pushDisplayToWatchers = async (): Promise<void> => {
   if (!hosting || !hostDisplayProvider) return;
   const nowMs = now();
@@ -548,8 +601,9 @@ const pushDisplayToWatchers = async (): Promise<void> => {
   const display = { ...providedDisplay, chordProStyles: undefined };
   const serializedDisplay = JSON.stringify(display);
   for (const [key, watcher] of [...hostWatchers]) {
-    if (watcher.lastRequestArrived < nowMs - 120000) {
+    if (watcher.lastRequestArrived < nowMs - getHostWatcherTimeoutMs()) {
       hostWatchers.delete(key);
+      removeHostedPpdClient(key);
       continue;
     }
     if (!watcher.lastDisplayAcked && watcher.pendingStylesRev && watcher.lastDisplay) {
@@ -565,11 +619,15 @@ const pushDisplayToWatchers = async (): Promise<void> => {
           watcher.lastDisplay = serializedDisplay;
           watcher.lastSentStylesRev = chordProStylesRev ?? "";
           watcher.lastDisplayAcked = false;
-          void sendHostPpd({ op: "display", display }, watcher.address, watcher.port);
+          void sendHostPpd({ op: "display", display, watchId: watcher.watchId }, watcher.address, watcher.port);
         } else {
           watcher.lastDisplaySent = nowMs;
           watcher.inlineStylesRetransmits = (watcher.inlineStylesRetransmits ?? 0) + 1;
-          void sendHostPpd({ op: "display", display: JSON.parse(watcher.lastDisplay) as Display }, watcher.address, watcher.port);
+          void sendHostPpd(
+            { op: "display", display: JSON.parse(watcher.lastDisplay) as Display, watchId: watcher.watchId },
+            watcher.address,
+            watcher.port
+          );
         }
       }
       continue;
@@ -591,7 +649,7 @@ const pushDisplayToWatchers = async (): Promise<void> => {
       watcher.pendingStylesRev = includeStyles ? chordProStylesRev : !chordProStylesRev ? "" : undefined;
       watcher.inlineStylesRetransmits = 0;
       watcher.lastDisplayAcked = false;
-      void sendHostPpd({ op: "display", display: displayToSend }, watcher.address, watcher.port);
+      void sendHostPpd({ op: "display", display: displayToSend, watchId: watcher.watchId }, watcher.address, watcher.port);
     }
   }
 };
@@ -607,16 +665,62 @@ const sendViewRequest = async () => {
       device: selfDevice,
       name: await getSelfDeviceName(),
       port: listenPort || undefined,
+      watchId: watchedSession.watchId,
     },
     watchedSession.details.address,
     String(watchedSession.details.port)
   );
 };
 
-const stopWatchingInternal = () => {
+const scheduleWatchHeartbeat = () => {
+  if (watchTimer) clearInterval(watchTimer);
+  watchTimer = null;
+  if (!watchedSession) return;
+  watchTimer = setInterval(() => {
+    void sendViewRequest();
+  }, getPpdWatchHeartbeatMs(readPersistedSettings().ppdWatchTimeoutSeconds));
+};
+
+const handleWatchSettingsChanged = () => scheduleWatchHeartbeat();
+
+const sendGoodbye = async (session: NonNullable<typeof watchedSession>, reason: "local-stop" | "session-switch" | "shutdown") => {
+  const selfDevice = await getSelfDeviceId();
+  await sendPpd(
+    {
+      op: "goodbye",
+      version: PPD_PROTOCOL_VERSION,
+      id: session.id,
+      device: selfDevice,
+      name: await getSelfDeviceName(),
+      port: listenPort || undefined,
+      watchId: session.watchId,
+      reason,
+    },
+    session.details.address,
+    String(session.details.port)
+  );
+};
+
+const settleWatchedResponseWaiter = (received: boolean) => {
+  const waiter = watchedResponseWaiter;
+  if (!waiter) return;
+  watchedResponseWaiter = null;
+  clearTimeout(waiter.timeout);
+  waiter.resolve(received);
+};
+
+const stopWatchingInternal = (notifyHostReason?: "local-stop" | "session-switch" | "shutdown") => {
+  const session = watchedSession;
+  if (notifyHostReason && session) void sendGoodbye(session, notifyHostReason);
+  settleWatchedResponseWaiter(false);
   if (watchTimer) {
     clearInterval(watchTimer);
     watchTimer = null;
+  }
+  window.removeEventListener("pp-settings-changed", handleWatchSettingsChanged);
+  if (watchDeadlineTimer) {
+    clearInterval(watchDeadlineTimer);
+    watchDeadlineTimer = null;
   }
   watchedSession = null;
   watchedDisplayCallback = null;
@@ -628,6 +732,41 @@ const stopWatchingInternal = () => {
     clearPendingControlRequest(requestId, pending);
     pending.reject(new Error("PPD session ended"));
   }
+};
+
+const endWatchingFromRemote = (reason: PpdWatchEndReason) => {
+  if (!watchedSession) return;
+  const ended = watchedEndedCallback;
+  stopWatchingInternal();
+  ended?.(reason);
+};
+
+const markWatchedResponse = (message: PpdMessage): boolean => {
+  if (!watchedSession || message.device !== watchedSession.id) return false;
+  if (message.watchId && message.watchId !== watchedSession.watchId) return false;
+  watchedSession.lastResponseAt = now();
+  return true;
+};
+
+const confirmWatchedResponse = () => {
+  if (!watchedSession) return;
+  watchedSession.responseReceived = true;
+  settleWatchedResponseWaiter(true);
+};
+
+const waitForWatchedResponse = (session: NonNullable<typeof watchedSession>): Promise<boolean> => {
+  if (session.responseReceived) return Promise.resolve(true);
+  settleWatchedResponseWaiter(false);
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      if (watchedSession === session) stopWatchingInternal();
+      else settleWatchedResponseWaiter(false);
+      resolve(false);
+    }, getWatchConnectTimeoutMs());
+    watchedResponseWaiter = { resolve, timeout };
+    // A response may have arrived between the check above and waiter setup.
+    if (session.responseReceived) settleWatchedResponseWaiter(true);
+  });
 };
 
 const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
@@ -772,12 +911,18 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
       transport: packet.transport === "nearby" ? "nearby" : "udp",
       name: message.name,
     };
+    if (message.op === "goodbye" && message.id === deviceId) {
+      removeHostedPpdClient(peer.deviceId);
+      getControlHost().removePeer(peer);
+    }
     // A scan merely discovers another host. Only traffic explicitly addressed to
     // our hosted session proves that this peer is one of our PPD clients.
     if (isHostedPpdClientActivity(message, deviceId)) {
       noteHostedPpdClient(peer);
     }
-    const handled = await getControlHost().handle(message, peer, (response) => sendHostPpd(response, packet.from, message.port ?? packet.port));
+    const handled = await getControlHost().handle(message, peer, (response) =>
+      sendHostPpd({ ...response, watchId: response.watchId ?? message.watchId }, packet.from, message.port ?? packet.port)
+    );
     if (handled) return;
   }
 
@@ -786,15 +931,19 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
   if (hosting && handleHostMessage(packet, message)) return;
   switch (message.op) {
     case "session": {
-      if (!watchedSession || message.device !== watchedSession.id) return;
       const access = readPpdSessionAccess(message);
-      if (!access) return;
+      if (!access || !markWatchedResponse(message) || !watchedSession) return;
+      // Only a valid v2 session response proves that this host answers every
+      // heartbeat. Legacy hosts can remain silent while an ACKed display is
+      // unchanged, so applying the deadline to them would create false outages.
+      watchedSession.livenessConfirmed = true;
+      confirmWatchedResponse();
       watchedAccess = access;
       watchedAccessCallback?.(access);
       return;
     }
     case "result": {
-      if (!watchedSession || message.device !== watchedSession.id || !message.requestId) return;
+      if (!markWatchedResponse(message) || !message.requestId) return;
       const pending = pendingControlRequests.get(message.requestId);
       if (!pending) return;
       clearPendingControlRequest(message.requestId, pending);
@@ -808,14 +957,15 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
       if (message.device) {
         if (discoveredSessions.delete(`udp_${message.device}`)) notifySessionsChanged();
       }
-      if (watchedSession && message.device === watchedSession.id) {
-        const ended = watchedEndedCallback;
-        stopWatchingInternal();
-        ended?.();
-      }
+      if (markWatchedResponse(message)) endWatchingFromRemote("remote-off");
       return;
     case "display": {
-      if (!watchedSession || !watchedDisplayCallback || !message.device || message.device !== watchedSession.id || !message.display) return;
+      if (!markWatchedResponse(message) || !watchedSession || !watchedDisplayCallback || !message.display) return;
+      // The Electron main-process host has no control-host `session` response,
+      // but its versioned display is an unconditional reply to every view. Old
+      // browser/Android hosts omit version and can remain silent after an ACK.
+      if (message.version === PPD_PROTOCOL_VERSION) watchedSession.livenessConfirmed = true;
+      confirmWatchedResponse();
       watchedDisplayCallback(message.display);
       const selfDevice = await getSelfDeviceId();
       await sendPpd(
@@ -825,6 +975,7 @@ const onIncomingPpdMessage = async (packet: HostDevicePacket, message: PpdMessag
           device: selfDevice,
           port: listenPort || undefined,
           stylesRev: message.display.chordProStylesRev ?? "",
+          watchId: watchedSession.watchId,
         },
         watchedSession.details.address,
         String(watchedSession.details.port)
@@ -941,6 +1092,12 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
 
     if (data.event === "disconnected" || data.event === "connection failed") {
       connectedNearbyEndpoints.delete(data.id);
+      if (watchedSession?.details.address === data.id) endWatchingFromRemote("transport-disconnected");
+      for (const [watcherId, watcher] of hostWatchers) {
+        if (watcher.address !== data.id) continue;
+        hostWatchers.delete(watcherId);
+        removeHostedPpdClient(watcherId);
+      }
       return;
     }
 
@@ -1019,28 +1176,80 @@ export const initHostDevicePpd = async () => {
   };
 };
 
+/**
+ * Gracefully stop the renderer-side PPD runtime. Explicit app-exit paths await
+ * this function so the final follower `goodbye` / host `off` messages reach the
+ * native bridge before Android or Electron tears the renderer down.
+ *
+ * Nearby routing state and bridge subscriptions intentionally remain alive until
+ * the farewell sends settle; clearing them first can turn a valid endpoint ID into
+ * an invalid UDP address or close the transport while its last payload is queued.
+ */
+export const shutdownHostDevicePpd = (): Promise<void> => {
+  if (shutdownPromise) return shutdownPromise;
+
+  shutdownPromise = (async () => {
+    const session = watchedSession;
+    const watchers = hosting ? [...hostWatchers.values()] : [];
+    const farewells: Promise<unknown>[] = [];
+    if (session) farewells.push(sendGoodbye(session, "shutdown"));
+    for (const watcher of watchers) {
+      farewells.push(sendHostPpd({ op: "off", watchId: watcher.watchId, reason: "shutdown" }, watcher.address, watcher.port));
+    }
+
+    // Stop producing new traffic immediately, but do not ask stopWatchingInternal
+    // to send as well: the awaited goodbye above is the single shutdown message.
+    stopWatchingInternal();
+    hosting = false;
+    ppdControlHosting = false;
+    controlHost?.clear();
+    hostDisplayProvider = null;
+    hostSongProvider = null;
+    hostAdvertisedWebServerUrl = undefined;
+    hostWatchers.clear();
+    clearHostedPpdClients();
+    if (hostTimer) {
+      clearInterval(hostTimer);
+      hostTimer = null;
+    }
+    stopHostDeviceNearbyDiscovery();
+
+    await settleWithinShutdownGrace(farewells);
+
+    const hostDevice = getHostDevice();
+    nearbyEndpoints.clear();
+    connectedNearbyEndpoints.clear();
+    const stopNearby = async (action: (() => void | boolean | Promise<void | boolean>) | undefined): Promise<void> => {
+      try {
+        await resolvePromise(action?.() ?? false);
+      } catch {
+        /* Native cleanup is best-effort; app exit must still be able to proceed. */
+      }
+    };
+    await settleWithinShutdownGrace([
+      stopNearby(hostDevice?.closeNearby ? () => hostDevice.closeNearby?.("") : undefined),
+      stopNearby(hostDevice?.advertiseNearby ? () => hostDevice.advertiseNearby?.(false) : undefined),
+    ]);
+    unsubscribeHostDevice?.();
+    unsubscribeHostDevice = null;
+    initialized = false;
+  })().finally(() => {
+    shutdownPromise = null;
+  });
+
+  return shutdownPromise;
+};
+
+/** Best-effort lifecycle cleanup for pagehide/unmount paths that cannot wait. */
 export const disposeHostDevicePpd = () => {
-  stopWatchingInternal();
-  hosting = false;
-  ppdControlHosting = false;
-  controlHost?.clear();
-  hostDisplayProvider = null;
-  hostSongProvider = null;
-  hostAdvertisedWebServerUrl = undefined;
-  hostWatchers.clear();
-  clearHostedPpdClients();
-  if (hostTimer) {
-    clearInterval(hostTimer);
-    hostTimer = null;
-  }
-  stopHostDeviceNearbyDiscovery();
-  nearbyEndpoints.clear();
-  connectedNearbyEndpoints.clear();
-  void getHostDevice()?.closeNearby?.("");
-  void getHostDevice()?.advertiseNearby?.(false);
-  unsubscribeHostDevice?.();
-  unsubscribeHostDevice = null;
-  initialized = false;
+  void shutdownHostDevicePpd();
+};
+
+/** Refresh a suspended bfcache watch before delayed interval callbacks resume. */
+export const resumeHostDevicePpdAfterPageRestore = () => {
+  if (!watchedSession) return;
+  watchedSession.lastResponseAt = now();
+  void sendViewRequest();
 };
 
 // ── Scan targeting ─────────────────────────────────────────────────────────────
@@ -1256,8 +1465,9 @@ export const startHostDeviceWatching = async (
   sessionId: string,
   details: WatchDetails,
   onDisplayUpdate: (display: Display) => void,
-  onSessionEnded: () => void,
-  onAccessUpdate?: (access: PpdSessionAccess) => void
+  onSessionEnded: (reason: PpdWatchEndReason) => void,
+  onAccessUpdate?: (access: PpdSessionAccess) => void,
+  options?: { waitForResponse?: boolean }
 ): Promise<boolean> => {
   if (!isHostDevicePpdAvailable()) return false;
   await initHostDevicePpd();
@@ -1267,8 +1477,15 @@ export const startHostDeviceWatching = async (
   if (!port && !isNearbyEndpoint(details.address)) return false;
 
   const normalizedId = sessionId.startsWith("udp_") ? sessionId.slice(4) : sessionId;
-  stopWatchingInternal();
-  watchedSession = { id: normalizedId, details };
+  stopWatchingInternal("session-switch");
+  watchedSession = {
+    id: normalizedId,
+    watchId: randomId() + randomId(),
+    details,
+    lastResponseAt: now(),
+    livenessConfirmed: false,
+    responseReceived: false,
+  };
   watchedDisplayCallback = onDisplayUpdate;
   watchedEndedCallback = onSessionEnded;
   watchedAccessCallback = onAccessUpdate ?? null;
@@ -1276,15 +1493,17 @@ export const startHostDeviceWatching = async (
   watchedAccessCallback?.(watchedAccess);
 
   await sendViewRequest();
-  watchTimer = setInterval(() => {
-    void sendViewRequest();
-  }, 10000);
+  window.addEventListener("pp-settings-changed", handleWatchSettingsChanged);
+  scheduleWatchHeartbeat();
+  watchDeadlineTimer = setInterval(() => {
+    if (watchedSession?.livenessConfirmed && now() - watchedSession.lastResponseAt >= getWatchTimeoutMs()) endWatchingFromRemote("timeout");
+  }, 1000);
 
-  return true;
+  return options?.waitForResponse ? waitForWatchedResponse(watchedSession) : true;
 };
 
 export const stopHostDeviceWatching = () => {
-  stopWatchingInternal();
+  stopWatchingInternal("local-stop");
 };
 
 const sendWatchedControlRequest = async (message: Omit<PpdMessage, "device" | "version" | "requestId">, timeoutMs: number): Promise<PpdMessage> => {
@@ -1300,6 +1519,7 @@ const sendWatchedControlRequest = async (message: Omit<PpdMessage, "device" | "v
     name: selfName,
     id: watchedSession.id,
     port: listenPort || undefined,
+    watchId: watchedSession.watchId,
   };
 
   const response = new Promise<PpdMessage>((resolve, reject) => {
@@ -1441,7 +1661,10 @@ export const startHostDevicePpdHosting = async (
  *  we're gone, stop the loop, and disable native advertising. */
 export const stopHostDevicePpdHosting = async (): Promise<void> => {
   const hostDevice = getHostDevice();
-  if (hosting) for (const watcher of hostWatchers.values()) void sendHostPpd({ op: "off" }, watcher.address, watcher.port);
+  if (hosting)
+    for (const watcher of hostWatchers.values()) {
+      void sendHostPpd({ op: "off", watchId: watcher.watchId }, watcher.address, watcher.port);
+    }
   hosting = false;
   ppdControlHosting = false;
   controlHost?.clear();

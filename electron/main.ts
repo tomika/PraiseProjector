@@ -10,6 +10,7 @@ import {
   powerSaveBlocker,
   session,
   nativeImage,
+  autoUpdater as electronAutoUpdater,
   type MessageBoxOptions,
   type MessageBoxReturnValue,
 } from "electron";
@@ -88,6 +89,10 @@ app.on("second-instance", () => {
 
 // Track powerSaveBlocker ID to prevent duplicate blockers
 let powerSaveBlockerId: number | null = null;
+let ppdShutdownStarted = false;
+let ppdShutdownFinished = false;
+let quittingForUpdate = false;
+let configuredPpdWatchTimeoutSeconds: number | undefined;
 
 type NetDisplayEncodeSettings = {
   jpegQuality?: number;
@@ -941,6 +946,13 @@ async function setupAutoUpdater() {
   autoUpdater.on("error", (err) => {
     console.error("Auto-updater error:", err);
   });
+
+  electronAutoUpdater.on("before-quit-for-update", () => {
+    // electron-updater's BaseUpdater (including Windows NsisUpdater) deliberately
+    // emits this event on Electron's native autoUpdater before calling app.quit().
+    // Do not replace quitAndInstall's lifecycle with a plain app.quit().
+    quittingForUpdate = true;
+  });
 }
 
 // IPC handlers for auto-update
@@ -1176,6 +1188,7 @@ app.on("ready", () => {
       console.error("Failed to initialize UDP server");
       return;
     }
+    udpServer.setWatchTimeoutSeconds(configuredPpdWatchTimeoutSeconds);
     udpServer.onRawPacket((packet) => {
       sendHostDeviceMessage("udp", packet);
     });
@@ -1208,6 +1221,24 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", (event) => {
+  const udpServer = getUdpServerInstance();
+  if (!udpServer || ppdShutdownFinished) return;
+  if (quittingForUpdate) {
+    void udpServer.shutdown();
+    return;
+  }
+
+  event.preventDefault();
+  if (ppdShutdownStarted) return;
+  ppdShutdownStarted = true;
+  const safetyTimeout = new Promise<void>((resolve) => setTimeout(resolve, 1500));
+  void Promise.race([udpServer.shutdown(), safetyTimeout]).finally(() => {
+    ppdShutdownFinished = true;
+    app.quit();
+  });
 });
 
 app.on("activate", () => {
@@ -1478,6 +1509,8 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
   }
 
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
+  configuredPpdWatchTimeoutSeconds = settings.ppdWatchTimeoutSeconds;
+  getUdpServerInstance()?.setWatchTimeoutSeconds(settings.ppdWatchTimeoutSeconds);
   if (getWebServerInstance()) {
     applyWebServerConfig({
       // Both Electron renderers (the full view AND the embedded client view) sync

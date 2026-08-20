@@ -31,7 +31,7 @@ import {
   requestHostDevicePpdHighlightPermission,
   requestHostDevicePpdSongData,
 } from "../../../services/hostDevicePpd";
-import type { PpdRemoteDisplayUpdate, PpdSessionAccess } from "../../../../common/ppd-control";
+import type { PpdRemoteDisplayUpdate, PpdSessionAccess, PpdWatchEndReason } from "../../../../common/ppd-control";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { NO_CAPABILITIES } from "../ClientApi";
 import type { ClientCapabilities, ClientConfig, ClientMode, LeaderIdentity, NetworkState, Unsubscribe } from "../ClientApi";
@@ -497,7 +497,7 @@ export class RestCore {
     // Instant feedback: show "connecting" the moment the user taps the indicator.
     this.setNetworkState({ status: "startup", transport: target.kind === "ppd" ? "ppd" : "web" });
     if (target.kind === "ppd" && isHostDevicePpdAvailable()) {
-      await this.startPpdFollow(target.info);
+      await this.startPpdFollow(target.info, true);
     } else {
       this.startCloudFollow(target.kind === "cloud" ? target.leaderId : undefined, true);
     }
@@ -508,7 +508,7 @@ export class RestCore {
     this.playlistBeforeFollow = this.playlist.map((entry) => ({ ...entry }));
   }
 
-  private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+  private async startPpdFollow(info: P2PSessionInfo, waitForResponse = false): Promise<void> {
     this.snapshotPlaylistBeforeFollow();
     this.ppdSongCache.clear();
     this.resetChordProStyles(true);
@@ -543,21 +543,27 @@ export class RestCore {
         }
         this.setNetworkState({ status: "watching", transport: "ppd" });
       },
-      () => {
+      (reason: PpdWatchEndReason) => {
         this.ppdWatching = false;
         this.ppdAccess = null;
         this.emitCapabilities();
         this.resetChordProStyles(true);
+        if (reason === "remote-off") {
+          this.stopWatching();
+          return;
+        }
         this.setNetworkState({ status: "offline", transport: "ppd" });
       },
       (access) => {
         this.ppdAccess = access;
         this.emitCapabilities();
-      }
+      },
+      { waitForResponse }
     );
     if (this.ppdWatching) {
       this.emitCapabilities();
-      this.setNetworkState({ status: "watching", transport: "ppd" });
+    } else {
+      this.setNetworkState({ status: "offline", transport: "ppd" });
     }
   }
 

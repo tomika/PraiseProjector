@@ -17,6 +17,7 @@ import { setMidiSoundfontUrl } from "../chordpro/midi";
 import { getKeyCodeString, isNumLockEnabled } from "../chordpro/keycodes";
 import { ChordDetails } from "../chordpro/note_system";
 import { cloudApi } from "../common/cloudApi";
+import { PPD_HOST_WATCH_TIMEOUT_SECONDS, PPD_WATCH_HEARTBEAT_MS } from "../common/ppd-control";
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -531,10 +532,18 @@ export class App extends AppBase {
   private nearbyEnabled = false;
   private ppdScanId = "";
   private ppdServices?: Map<string, { name: string; url: string; deviceId?: string }>;
-  private ppdWatch?: { host: string; port?: number; device: string; lastRequestSent: number; lastResponseArrived: number };
+  private ppdWatch?: { host: string; port?: number; device: string; watchId: string; lastRequestSent: number; lastResponseArrived: number };
   private ppdWatchers?: Map<
     string,
-    { host: string; port?: number; lastRequestArrived: number; lastDisplaySent: number; lastDisplayAcked: boolean; lastDisplay?: string }
+    {
+      host: string;
+      port?: number;
+      watchId?: string;
+      lastRequestArrived: number;
+      lastDisplaySent: number;
+      lastDisplayAcked: boolean;
+      lastDisplay?: string;
+    }
   >;
   private readonly ppdPackets = new Map<string, { from: string; port?: number; message: PpdMessage }>();
 
@@ -577,7 +586,7 @@ export class App extends AppBase {
           case "ack":
             if (this.ppdWatchers && message.id === this.ppdDeviceId && message.device) {
               const watcher = this.ppdWatchers.get(message.device);
-              if (watcher) watcher.lastDisplayAcked = true;
+              if (watcher && (!message.watchId || !watcher.watchId || message.watchId === watcher.watchId)) watcher.lastDisplayAcked = true;
             }
             break;
           case "view":
@@ -588,12 +597,18 @@ export class App extends AppBase {
                 watcher.lastRequestArrived = now;
                 watcher.host = packet.from;
                 watcher.port = message.port;
+                if (message.watchId && message.watchId !== watcher.watchId) {
+                  watcher.watchId = message.watchId;
+                  watcher.lastDisplayAcked = false;
+                  watcher.lastDisplay = undefined;
+                }
               } else
                 this.ppdWatchers.set(
                   message.device,
                   (watcher = {
                     host: packet.from,
                     port: message.port,
+                    watchId: message.watchId,
                     lastRequestArrived: now,
                     lastDisplaySent: 0,
                     lastDisplayAcked: false,
@@ -605,19 +620,27 @@ export class App extends AppBase {
             }
             break;
           case "display":
-            if (message.device == this.ppdWatch?.device) {
+            if (message.device == this.ppdWatch?.device && (!message.watchId || message.watchId === this.ppdWatch.watchId)) {
               if (message.display) {
                 const display = message.display;
                 if (display) this.applyDisplay(display);
                 else this.log("Invalid display arrived: " + message.display);
               } else this.log("No display in 'display' packet");
-              sendResponse({ op: "ack", id: message.device, stylesRev: message.display?.chordProStylesRev ?? "" });
+              sendResponse({ op: "ack", id: message.device, stylesRev: message.display?.chordProStylesRev ?? "", watchId: this.ppdWatch.watchId });
             }
             break;
           case "off":
-            if (message.device == this.ppdWatch?.device) {
+            if (message.device == this.ppdWatch?.device && (!message.watchId || message.watchId === this.ppdWatch.watchId)) {
               this.hostDevice?.showToast(`${message.name ? message.name + ": " : ""}👋`);
               this.disconnectUdpSession();
+            }
+            break;
+          case "goodbye":
+            if (message.id === this.ppdDeviceId && message.device) {
+              const watcher = this.ppdWatchers?.get(message.device);
+              if (watcher && (!message.watchId || !watcher.watchId || message.watchId === watcher.watchId)) {
+                this.ppdWatchers?.delete(message.device);
+              }
             }
             break;
           case "offer":
@@ -649,7 +672,7 @@ export class App extends AppBase {
     for (const key of processed) this.ppdPackets.delete(key);
 
     if (this.ppdWatchers) {
-      const droplimit = now - 120000;
+      const droplimit = now - PPD_HOST_WATCH_TIMEOUT_SECONDS * 1000;
       const notWatching: string[] = [];
       for (const [key, watcher] of this.ppdWatchers.entries()) {
         if (watcher.lastRequestArrived < droplimit) notWatching.push(key);
@@ -664,6 +687,7 @@ export class App extends AppBase {
                 op: "display",
                 name,
                 display,
+                watchId: watcher.watchId,
               },
               watcher.host,
               watcher.port
@@ -675,10 +699,14 @@ export class App extends AppBase {
     }
 
     if (this.ppdWatch) {
-      if (this.ppdWatch.lastRequestSent < now - 10000) {
-        this.ppdWatch.lastRequestSent = this.sendPpdMessage({ op: "view", id: this.ppdWatch.device }, this.ppdWatch.host, this.ppdWatch.port)
+      if (this.ppdWatch.lastRequestSent < now - PPD_WATCH_HEARTBEAT_MS) {
+        this.ppdWatch.lastRequestSent = this.sendPpdMessage(
+          { op: "view", id: this.ppdWatch.device, watchId: this.ppdWatch.watchId },
+          this.ppdWatch.host,
+          this.ppdWatch.port
+        )
           ? now
-          : now - 9000;
+          : now - (PPD_WATCH_HEARTBEAT_MS - 1000);
       }
     }
   }
@@ -699,7 +727,7 @@ export class App extends AppBase {
   }
 
   private stopPpdSession() {
-    for (const watcher of this.ppdWatchers?.values() ?? []) this.sendPpdMessage({ op: "off" }, watcher.host, watcher.port);
+    for (const watcher of this.ppdWatchers?.values() ?? []) this.sendPpdMessage({ op: "off", watchId: watcher.watchId }, watcher.host, watcher.port);
     this.ppdWatchers = undefined;
     Nearby.closeAll();
     if (this.iconStartSession) makeVisible(this.iconStartSession, (this.udpEnabled || this.nearbyEnabled) && !cloudApi.isAuthed());
@@ -755,6 +783,13 @@ export class App extends AppBase {
 
   private goHome() {
     this.waitLoadingCircle(true);
+    if (this.ppdWatch) {
+      this.sendPpdMessage(
+        { op: "goodbye", id: this.ppdWatch.device, watchId: this.ppdWatch.watchId, reason: "local-stop" },
+        this.ppdWatch.host,
+        this.ppdWatch.port
+      );
+    }
     if (this.hostDevice) this.hostDevice.goHome();
     else if (history.length && !this.songToCheck) history.back();
     else location.reload();
@@ -4730,6 +4765,7 @@ export class App extends AppBase {
       host: m[2],
       port: m[1] === "udp" ? parseInt(m[3], 10) : undefined,
       device: m[4],
+      watchId: this.genUniqueId() + this.genUniqueId(),
       lastRequestSent: 0,
       lastResponseArrived: 0,
     };

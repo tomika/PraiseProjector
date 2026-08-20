@@ -361,8 +361,8 @@ export function canUseSessions(state: ClientViewState): boolean {
   return state.mode === "App" && !state.lockedToSession;
 }
 
-/** An App that is currently following a remote (cloud) session — temporarily a
- *  follower (legacy ppdWatchMode), unlike the PERMANENT Client follower. */
+/** An App that is currently following a remote cloud or local PPD session —
+ *  temporarily a follower (legacy ppdWatchMode), unlike the permanent Client. */
 export function isAppWatching(state: ClientViewState): boolean {
   return state.mode === "App" && state.network.status === "watching";
 }
@@ -387,12 +387,12 @@ export function isViewingRemoteDisplay(state: ClientViewState): boolean {
 }
 
 /** The toolbar network indicator is meaningful for a host-served Client (a
- *  persistent server link to report) and for an App participating in a local PPD
- *  session. A disconnected PPD follower deliberately retains its transport so
- *  the offline indicator remains available as an explicit reconnect action.
- *  Standalone App mode without either connection has none to show. */
+ *  persistent server link to report), an App following a session, or an App with
+ *  downstream clients. A disconnected follower deliberately retains its target
+ *  so the offline indicator remains available as an explicit reconnect action.
+ *  Merely hosting PPD without a connected client is not a follow connection. */
 export function showsNetworkIndicator(state: ClientViewState): boolean {
-  return state.lockedToSession || state.mode !== "App" || state.network.transport === "ppd" || state.hasConnectedClients;
+  return state.lockedToSession || state.mode !== "App" || isAppFollowingSession(state) || state.hasConnectedClients;
 }
 
 /** Offer the highlight lamp to anyone who can control the display, plus a Client
@@ -2047,8 +2047,14 @@ export class ClientViewStore {
   }
 
   /** Terminate the app on hosts that support it (gated by state.canExit). */
-  exitApp(): void {
-    this.api.device.exit?.();
+  async exitApp(): Promise<void> {
+    try {
+      await this.api.device.exit?.();
+    } catch (error) {
+      // Native exit normally destroys the runtime. If its bridge rejects instead,
+      // keep the event-handler promise handled and leave a diagnostic behind.
+      console.warn("ClientView", "Native app exit failed", error);
+    }
   }
 
   setDisplaySetting<K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]): void {

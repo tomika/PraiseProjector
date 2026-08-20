@@ -115,6 +115,8 @@ const bluetoothMessageCodec = t.intersection([
     stylesRev: t.string,
     version: t.number,
     requestId: t.string,
+    watchId: t.string,
+    reason: t.string,
     token: t.string,
     capabilities: t.array(t.string),
     leaderModeAvailable: t.boolean,

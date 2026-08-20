@@ -74,12 +74,14 @@ import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../
 import { getEmptyDisplay } from "../common/pp-utils";
 import { parseAndDecode } from "../common/io-utils";
 import {
+  disposeHostDevicePpd,
   initHostDevicePpd,
   isHostDevicePpdAvailable,
   PPD_HIGHLIGHT_ACCESS_REQUEST_EVENT,
   PPD_HIGHLIGHT_CHANGED_EVENT,
   PPD_HIGHLIGHT_CONTROLLER_CHANGED_EVENT,
   requestHostDevicePpdSongData,
+  resumeHostDevicePpdAfterPageRestore,
   sendHostDevicePpdDisplayUpdate,
   startHostDevicePpdHosting,
   startHostDeviceWatching,
@@ -87,7 +89,7 @@ import {
   stopHostDeviceWatching,
   type PpdHighlightAccessRequestDetail,
 } from "./services/hostDevicePpd";
-import type { PpdSessionAccess } from "../common/ppd-control";
+import type { PpdSessionAccess, PpdWatchEndReason } from "../common/ppd-control";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
 import { CLIENT_VIEW_DISPLAY_UPDATE_EVENT, isClientViewDisplayUpdateEnvelope } from "./services/clientViewDisplayUpdate";
@@ -458,6 +460,24 @@ const AppContent: React.FC = () => {
       });
   }, [ppdSessionEnabled]);
 
+  // Best-effort protocol farewell when the renderer really goes away. A persisted
+  // pagehide only enters the browser back-forward cache; disposing there would
+  // leave PPD dead after pageshow because the React tree is not remounted.
+  useEffect(() => {
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) disposeHostDevicePpd();
+    };
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) resumeHostDevicePpdAfterPageRestore();
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, []);
+
   // Open EULA viewer when requested from About page
   useEffect(() => {
     const handler = () => setShowEulaView(true);
@@ -513,6 +533,11 @@ const AppContent: React.FC = () => {
   const [ppdWatchAccess, setPpdWatchAccess] = useState<PpdSessionAccess | null>(null);
   const [ppdLeaderMode, setPpdLeaderMode] = useState(false);
   const [ppdRemoteSongs, setPpdRemoteSongs] = useState<Map<string, Song>>(() => new Map());
+  const activeLocalWatchRef = useRef<{
+    sessionId: string;
+    restart: (waitForResponse?: boolean) => Promise<boolean>;
+  } | null>(null);
+  const ppdDisconnectPromptGenerationRef = useRef(0);
   const watchPollingAbortRef = useRef<AbortController | null>(null);
   const selectedLeaderRef = useRef<Leader | null>(selectedLeader);
   const settingsRef = useRef<Settings | null>(settings);
@@ -2559,16 +2584,53 @@ const AppContent: React.FC = () => {
   // Use ref for exit function to avoid circular dependency
   const exitWatchModeRef = useRef<() => void>(() => {});
 
-  // Handle UDP session ended from electron main process
-  const handleUdpSessionEnded = useCallback(() => {
-    console.warn("App", "UDP session ended");
-    exitWatchModeRef.current();
-    // Could show a message to user here
-  }, []);
+  // Handle a graceful remote shutdown separately from an unresponsive/lost host.
+  // MessageBoxProvider queues this Promise-based question behind any active dialog.
+  const handleUdpSessionEnded = useCallback(
+    async (reason: PpdWatchEndReason) => {
+      const watch = activeLocalWatchRef.current;
+      if (!watch) return;
+
+      if (reason === "remote-off") {
+        console.info("App", "PPD host ended the session gracefully");
+        activeLocalWatchRef.current = null;
+        ppdDisconnectPromptGenerationRef.current++;
+        exitWatchModeRef.current();
+        return;
+      }
+
+      console.warn("App", "PPD host connection lost", { reason });
+      const promptGeneration = ++ppdDisconnectPromptGenerationRef.current;
+      const reconnect = await showConfirmAsync(t("PpdSessionDisconnectedTitle"), t("PpdSessionDisconnectedMessage"), {
+        confirmText: t("PpdSessionReconnect"),
+        cancelText: t("PpdSessionReleaseProjection"),
+      });
+
+      // The question can wait behind another dialog. Ignore its eventual answer
+      // when the user has meanwhile left watch mode or selected another session.
+      if (promptGeneration !== ppdDisconnectPromptGenerationRef.current || activeLocalWatchRef.current !== watch) return;
+
+      if (reconnect) {
+        const started = await watch.restart(true);
+        if (promptGeneration !== ppdDisconnectPromptGenerationRef.current || activeLocalWatchRef.current !== watch) return;
+        if (started) return;
+        activeLocalWatchRef.current = null;
+        exitWatchModeRef.current();
+        showMessage(t("PpdSessionDisconnectedTitle"), t("PpdSessionReconnectFailed"));
+        return;
+      }
+
+      activeLocalWatchRef.current = null;
+      exitWatchModeRef.current();
+    },
+    [showConfirmAsync, showMessage, t]
+  );
 
   // Exit session watching mode - matching C# ProjectorForm.ExitSessionWatchingMode
   const exitWatchMode = useCallback(() => {
     console.info("App", "Exiting watch mode");
+    activeLocalWatchRef.current = null;
+    ppdDisconnectPromptGenerationRef.current++;
 
     // Stop cloud polling
     if (watchPollingAbortRef.current) {
@@ -2645,6 +2707,10 @@ const AppContent: React.FC = () => {
     ) => {
       console.info("App", `Entering watch mode for ${sessionType} session: ${sessionId}`);
 
+      if (activeLocalWatchRef.current) stopHostDeviceWatching();
+      activeLocalWatchRef.current = null;
+      ppdDisconnectPromptGenerationRef.current++;
+
       setPpdWatchAccess(null);
       setPpdLeaderMode(false);
       setPpdRemoteSongs(new Map());
@@ -2667,7 +2733,19 @@ const AppContent: React.FC = () => {
           return;
         }
         void initHostDevicePpd();
-        void startHostDeviceWatching(sessionId, udpDetails, handleUdpDisplayUpdate, handleUdpSessionEnded, handlePpdAccessUpdate).then((started) => {
+        const restart = (waitForResponse = false) =>
+          startHostDeviceWatching(
+            sessionId,
+            udpDetails,
+            handleUdpDisplayUpdate,
+            (reason) => void handleUdpSessionEnded(reason),
+            handlePpdAccessUpdate,
+            { waitForResponse }
+          );
+        const watch = { sessionId, restart };
+        activeLocalWatchRef.current = watch;
+        void restart().then((started) => {
+          if (activeLocalWatchRef.current !== watch) return;
           if (!started) {
             console.warn("App", "HostDevice local watch start failed");
             exitWatchModeRef.current();

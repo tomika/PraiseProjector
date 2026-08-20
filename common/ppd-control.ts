@@ -1,6 +1,26 @@
 import type { Display, DisplayUpdateRequest, SongData } from "./pp-types";
 
 export const PPD_PROTOCOL_VERSION = 2 as const;
+/** Normal heartbeat cadence. Aggressive follower timeouts use a shorter derived cadence. */
+export const PPD_WATCH_HEARTBEAT_MS = 5000;
+export const PPD_DEFAULT_WATCH_TIMEOUT_SECONDS = 15;
+export const PPD_MIN_WATCH_TIMEOUT_SECONDS = 5;
+export const PPD_MAX_WATCH_TIMEOUT_SECONDS = 300;
+/** Host-side floor: six normal heartbeats, or three heartbeats from a legacy 10-second viewer. */
+export const PPD_HOST_WATCH_TIMEOUT_SECONDS = 30;
+
+export type PpdWatchEndReason = "remote-off" | "timeout" | "transport-disconnected";
+
+export function normalizePpdWatchTimeoutSeconds(value: unknown): number {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : PPD_DEFAULT_WATCH_TIMEOUT_SECONDS;
+  return Math.max(PPD_MIN_WATCH_TIMEOUT_SECONDS, Math.min(PPD_MAX_WATCH_TIMEOUT_SECONDS, numeric));
+}
+
+/** Keep three probes inside the configured follower deadline without increasing normal traffic. */
+export function getPpdWatchHeartbeatMs(timeoutSeconds: unknown): number {
+  const timeoutMs = normalizePpdWatchTimeoutSeconds(timeoutSeconds) * 1000;
+  return Math.min(PPD_WATCH_HEARTBEAT_MS, Math.max(1000, Math.floor(timeoutMs / 3)));
+}
 
 export const PPD_CONTROL_CAPABILITIES = [
   "display.watch",
@@ -42,6 +62,9 @@ export type PpdWireMessage = {
   stylesRev?: string;
   version?: number;
   requestId?: string;
+  /** Identifies one viewer subscription so delayed lifecycle packets cannot affect a later reconnect. */
+  watchId?: string;
+  reason?: PpdWatchEndReason | "local-stop" | "session-switch" | "shutdown";
   token?: string;
   capabilities?: string[];
   leaderModeAvailable?: boolean;

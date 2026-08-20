@@ -308,10 +308,11 @@ export function MainToolbar({
         </span>
       </div>
     ),
-    // Network status: shown for a web-served client, a local PPD participant, or
-    // an App with downstream projection clients. A real PPD/web client activates
-    // online-leader.svg; PPD without a downstream client uses nearby.svg. Startup
-    // and failure retain their status-specific icons. Tapping forces an immediate
+    // Network status: shown for a web-served client, an App following a session,
+    // or an App with downstream projection clients. Hosting PPD by itself is not
+    // a follow connection and does not show this status. A real PPD/web client
+    // activates online-leader.svg; a PPD follower uses nearby.svg. Startup and
+    // failure retain their status-specific icons. Tapping forces an immediate
     // reconnect where applicable (see netReconnectable above).
     //
     // All status icons stay mounted at once; changing status only toggles the

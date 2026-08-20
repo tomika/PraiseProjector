@@ -5,6 +5,7 @@ import { useLocalization } from "../localization/LocalizationContext";
 import { syncSettingsToBackend } from "../services/settingsSync";
 import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
 import { normalizePerformancePreferences } from "../shared/performanceSettings";
+import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } from "../../common/ppd-control";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -128,6 +129,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       automaticViewSwitch: "none",
       clientViewAutoScanSessions: "both",
       clientViewSessionsFoundPopup: "local",
+      ppdWatchTimeoutSeconds: PPD_DEFAULT_WATCH_TIMEOUT_SECONDS,
       clientViewActiveInputProfileId: "factory",
       clientViewInputProfiles: [],
       fullViewChordProPageTurnMode: "auto",
@@ -204,6 +206,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Merge defaults with loaded settings so new settings get their default values
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
+        merged.ppdWatchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(loaded.ppdWatchTimeoutSeconds);
         merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));
         if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
         // Migrate old showPreferredOnly boolean to preferenceFilter string

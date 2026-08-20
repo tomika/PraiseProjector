@@ -1,6 +1,8 @@
-import type { PpdPeer, PpdWireMessage } from "../../common/ppd-control";
+import { PPD_HOST_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds, type PpdPeer, type PpdWireMessage } from "../../common/ppd-control";
+import { readPersistedSettings } from "./settingsStore";
 
-export const HOSTED_PPD_CLIENT_STALE_MS = 120000;
+const hostedPpdClientStaleMs = (): number =>
+  Math.max(PPD_HOST_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds(readPersistedSettings().ppdWatchTimeoutSeconds)) * 1000;
 
 export type HostedPpdClient = PpdPeer & {
   lastSeen: number;
@@ -47,9 +49,10 @@ export class HostedPpdClientRegistry {
   }
 
   prune(at = Date.now()): void {
+    const staleMs = hostedPpdClientStaleMs();
     let changed = false;
     for (const [deviceId, client] of this.clients) {
-      if (at - client.lastSeen > HOSTED_PPD_CLIENT_STALE_MS) {
+      if (at - client.lastSeen > staleMs) {
         this.clients.delete(deviceId);
         changed = true;
       }
@@ -58,7 +61,8 @@ export class HostedPpdClientRegistry {
   }
 
   getClients(at = Date.now()): HostedPpdClient[] {
-    return [...this.clients.values()].filter((client) => at - client.lastSeen <= HOSTED_PPD_CLIENT_STALE_MS).map((client) => ({ ...client }));
+    const staleMs = hostedPpdClientStaleMs();
+    return [...this.clients.values()].filter((client) => at - client.lastSeen <= staleMs).map((client) => ({ ...client }));
   }
 
   subscribe(listener: HostedPpdClientsListener): () => void {
@@ -80,6 +84,7 @@ export class HostedPpdClientRegistry {
 const hostedPpdClients = new HostedPpdClientRegistry();
 
 export const noteHostedPpdClient = (peer: PpdPeer): void => hostedPpdClients.touch(peer);
+export const removeHostedPpdClient = (deviceId: string): void => hostedPpdClients.remove(deviceId);
 export const clearHostedPpdClients = (): void => hostedPpdClients.clear();
 export const getHostedPpdClients = (): HostedPpdClient[] => {
   hostedPpdClients.prune();

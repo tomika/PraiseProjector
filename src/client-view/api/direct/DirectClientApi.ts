@@ -44,7 +44,7 @@ import {
   requestHostDevicePpdHighlightPermission,
   requestHostDevicePpdSongData,
 } from "../../../services/hostDevicePpd";
-import type { PpdSessionAccess } from "../../../../common/ppd-control";
+import type { PpdSessionAccess, PpdWatchEndReason } from "../../../../common/ppd-control";
 import type { Display, SongData } from "../../../../common/pp-types";
 import type { P2PSessionInfo } from "../../../types/electron";
 import { createDeviceApi } from "../rest/restPorts";
@@ -599,17 +599,7 @@ export class DirectClientApi implements ClientApi {
         await this.watch(session);
       },
       stopWatching: async () => {
-        this.stopFollow();
-        // Let the host exit watch mode (clear the followed projection).
-        window.dispatchEvent(new CustomEvent("pp-cv-watch-stop"));
-        const playlist = this.playlistBeforeFollow ?? [];
-        this.playlistBeforeFollow = null;
-        this.lastFollow = null;
-        // CurrentSongStore is the Direct adapter's source of truth. Publish a
-        // local empty display plus the pre-follow working list so every client-view
-        // subscriber updates without requiring a page reload.
-        updateCurrentDisplay({ ...getEmptyDisplay(), playlist }, { forceEmit: true });
-        this.setNetworkState({ status: "online" });
+        this.releaseFollowedSession();
       },
       reconnect: async () => {
         const target = this.lastFollow;
@@ -617,7 +607,7 @@ export class DirectClientApi implements ClientApi {
         this.stopFollow();
         this.setNetworkState({ status: "startup", transport: target.kind === "ppd" ? "ppd" : "web" });
         if (target.kind === "ppd" && isHostDevicePpdAvailable()) {
-          await this.startPpdFollow(target.info);
+          await this.startPpdFollow(target.info, true);
         } else {
           this.startCloudFollow(target.kind === "cloud" ? target.leaderId : undefined, true);
         }
@@ -663,7 +653,7 @@ export class DirectClientApi implements ClientApi {
     this.playlistBeforeFollow = (getCurrentDisplay().playlist ?? []).map((entry) => ({ ...entry }));
   }
 
-  private async startPpdFollow(info: P2PSessionInfo): Promise<void> {
+  private async startPpdFollow(info: P2PSessionInfo, waitForResponse = false): Promise<void> {
     this.snapshotPlaylistBeforeFollow();
     this.ppdSongCache.clear();
     this.lastFollow = { kind: "ppd", info };
@@ -675,20 +665,26 @@ export class DirectClientApi implements ClientApi {
         this.setNetworkState({ status: "watching", transport: "ppd" });
         this.relayFollowedDisplay(display);
       },
-      () => {
+      (reason: PpdWatchEndReason) => {
         this.ppdWatching = false;
         this.ppdAccess = null;
         this.refreshHostState();
+        if (reason === "remote-off") {
+          this.releaseFollowedSession();
+          return;
+        }
         this.setNetworkState({ status: "offline", transport: "ppd" });
       },
       (access) => {
         this.ppdAccess = access;
         this.refreshHostState();
-      }
+      },
+      { waitForResponse }
     );
     if (this.ppdWatching) {
       this.refreshHostState();
-      this.setNetworkState({ status: "watching", transport: "ppd" });
+    } else {
+      this.setNetworkState({ status: "offline", transport: "ppd" });
     }
   }
 
@@ -727,6 +723,17 @@ export class DirectClientApi implements ClientApi {
    *  projector + CurrentSongStore stay in sync. */
   private relayFollowedDisplay(display: Display): void {
     window.dispatchEvent(new CustomEvent("pp-cv-watch-display", { detail: display }));
+  }
+
+  private releaseFollowedSession(): void {
+    this.stopFollow();
+    // Let the host exit watch mode and clear the followed projection.
+    window.dispatchEvent(new CustomEvent("pp-cv-watch-stop"));
+    const playlist = this.playlistBeforeFollow ?? [];
+    this.playlistBeforeFollow = null;
+    this.lastFollow = null;
+    updateCurrentDisplay({ ...getEmptyDisplay(), playlist }, { forceEmit: true });
+    this.setNetworkState({ status: "online" });
   }
 
   private stopFollow(): void {

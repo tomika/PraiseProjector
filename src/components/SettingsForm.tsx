@@ -25,6 +25,7 @@ import { useUpdate } from "../contexts/UpdateContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { TypesenseClient } from "../../common/typesense-client";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
+import { shutdownHostDevicePpd } from "../services/hostDevicePpd";
 import { getAssetPath } from "../utils/assetPath";
 
 interface SettingsFormProps {
@@ -251,7 +252,16 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
       confirmDanger: true,
     });
     if (!confirmed) return;
-    window.hostDevice?.exit?.();
+    try {
+      await shutdownHostDevicePpd();
+    } catch (error) {
+      console.warn("SettingsForm", "PPD shutdown before app exit failed", error);
+    }
+    try {
+      await Promise.resolve(window.hostDevice?.exit?.());
+    } catch (error) {
+      console.warn("SettingsForm", "Native app exit failed", error);
+    }
   };
 
   const handleAddLeader = (name: string) => {
