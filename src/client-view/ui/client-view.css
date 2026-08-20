@@ -1856,14 +1856,41 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   min-width: 2.3em;
 }
 
-#list.cv-playlist .cv-pl-title-edit {
+#list.cv-playlist .cv-pl-title-edit-container {
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 2px 4px;
+  overflow: hidden;
   border: 1px solid var(--cv-accent);
   border-radius: 4px;
   background: var(--cv-panel-bg);
+}
+
+#list.cv-playlist .cv-pl-title-edit {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  padding: 2px 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--cv-panel-fg);
   font: inherit;
+}
+
+#list.cv-playlist .cv-pl-title-confirm {
+  align-self: stretch;
+  flex: 0 0 2em;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--cv-accent);
+  border-radius: 0;
+  background: #198754;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
 #list.cv-playlist td.transposeColumn,

@@ -2827,7 +2827,7 @@ const PlaylistItemRow: React.FC<{
               placeholder={t("EnterSongTitlePlaceholder")}
             />
             <button type="button" className="btn btn-success btn-sm playlist-edit-confirm" onClick={handleConfirmEdit} title="Confirm changes">
-              ✅
+              ✓
             </button>
           </div>
         </td>

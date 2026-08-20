@@ -59,6 +59,7 @@ export function PlaylistEditor() {
   const [overTrash, setOverTrash] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const confirmingTitleEditRef = useRef(false);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragging = dragIndex !== null;
 
@@ -119,12 +120,14 @@ export function PlaylistEditor() {
   };
 
   const startTitleEdit = (index: number) => {
+    confirmingTitleEditRef.current = false;
     setEditingIndex(index);
     setEditingTitle(playlist[index]?.title ?? "");
   };
 
   const cancelTitleEdit = () => {
     setEditingIndex(null);
+    setEditingTitle("");
   };
 
   const commitTitleEdit = () => {
@@ -134,6 +137,23 @@ export function PlaylistEditor() {
     setEditingIndex(null);
     if (!current || !nextTitle || nextTitle === current.title) return;
     void store.updatePlaylistEntry(editingIndex, { title: nextTitle });
+  };
+
+  const confirmTitleEdit = () => {
+    // Clicking the confirm button moves focus away from the input first. Mark
+    // that blur as a confirmation, so its delayed handler does not discard the
+    // just-approved edit.
+    confirmingTitleEditRef.current = true;
+    commitTitleEdit();
+  };
+
+  const handleTitleEditBlur = () => {
+    // Match the full-view editor: title changes are only saved explicitly.
+    // Delay lets the confirmation button's click run after the input blurs.
+    setTimeout(() => {
+      if (!confirmingTitleEditRef.current) cancelTitleEdit();
+      confirmingTitleEditRef.current = false;
+    }, 100);
   };
 
   const reset = () => {
@@ -286,28 +306,39 @@ export function PlaylistEditor() {
                     }}
                   >
                     {editingIndex === index ? (
-                      <input
-                        className="cv-pl-title-edit"
-                        autoFocus
-                        aria-label="Edit song title"
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        onClick={stopRowClick}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onBlur={commitTitleEdit}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                      <div className="cv-pl-title-edit-container">
+                        <input
+                          className="cv-pl-title-edit"
+                          autoFocus
+                          aria-label="Edit song title"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onClick={stopRowClick}
+                          onDoubleClick={(e) => {
                             e.preventDefault();
-                            commitTitleEdit();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelTitleEdit();
-                          }
-                        }}
-                      />
+                            e.stopPropagation();
+                          }}
+                          onBlur={handleTitleEditBlur}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              confirmTitleEdit();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              cancelTitleEdit();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="cv-pl-title-confirm"
+                          onClick={confirmTitleEdit}
+                          title="Confirm changes"
+                          aria-label="Confirm title changes"
+                        >
+                          ✓
+                        </button>
+                      </div>
                     ) : (
                       <TitleCell entry={titleEntry} />
                     )}
