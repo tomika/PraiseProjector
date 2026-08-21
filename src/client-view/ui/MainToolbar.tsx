@@ -84,6 +84,13 @@ export function MainToolbar({
   // ppdWatchMode). Either way no navigation or transpose — the display mirrors the
   // leader (legacy setLeader(false)/ppdWatchMode hid btnPrev/btnNext/divTranspose).
   const follower = isViewingRemoteDisplay(state);
+  // Paging affordance: the prev/next buttons go disabled-looking at the ends of
+  // the active navigation list. store.neighbourEntry is the very check the page
+  // turn itself uses (PageFlip.hasNeighbour / store.prevSong|nextSong), so the
+  // greyed-out state cannot disagree with what a tap would actually do — both
+  // simply no-op without a neighbour, so the handler stays wired as-is.
+  const canPrev = !!store.neighbourEntry(false);
+  const canNext = !!store.neighbourEntry(true);
   const [wheel, setWheel] = useState<null | "transpose" | "capo">(null);
   // When the open wheel was summoned by a drag off its trigger, the in-flight
   // pointer to hand to it so it opens already turning (see useWheelDragOpen).
@@ -221,7 +228,13 @@ export function MainToolbar({
   // One renderer per control key; the order arrays decide which appear and where.
   const controls: Record<ToolbarButtonKey, ReactNode> = {
     prev: follower ? null : (
-      <div id="btnPrev" className="btnDiv" onClick={() => (onPrev ? onPrev() : void store.prevSong())}>
+      <div
+        id="btnPrev"
+        className={`btnDiv${canPrev ? "" : " cv-disabled"}`}
+        title={canPrev ? "Previous song" : "No previous song"}
+        aria-disabled={!canPrev}
+        onClick={() => (onPrev ? onPrev() : void store.prevSong())}
+      >
         <img className="btnImg" src={icon("left.svg")} alt="Prev" />
       </div>
     ),
@@ -352,7 +365,13 @@ export function MainToolbar({
       </div>
     ),
     next: follower ? null : (
-      <div id="btnNext" className="btnDiv" onClick={() => (onNext ? onNext() : void store.nextSong())}>
+      <div
+        id="btnNext"
+        className={`btnDiv${canNext ? "" : " cv-disabled"}`}
+        title={canNext ? "Next song" : "No next song"}
+        aria-disabled={!canNext}
+        onClick={() => (onNext ? onNext() : void store.nextSong())}
+      >
         <img className="btnImg" src={icon("right.svg")} alt="Next" />
       </div>
     ),

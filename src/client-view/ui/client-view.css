@@ -329,6 +329,10 @@ body,
   justify-content: center;
 }
 
+/* A toolbar control whose action exists but is unavailable right now: the capo
+   value picker while capo is off, prev/next at the ends of the navigation list.
+   Kept as a visual state only — the buttons still swallow the tap and no-op. */
+#mainToolbar .btnDiv.cv-disabled,
 #capoDropdown.cv-disabled {
   opacity: 0.35;
   cursor: default;
