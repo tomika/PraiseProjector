@@ -1,0 +1,42 @@
+/* Attention dot for outstanding work (see shared/TodoBadge.tsx). The colour is the
+   message: green = only local edits to upload, blue = only server changes to pull,
+   turquoise = both, orange = offline, red = anything else (pending songs, an app
+   update, a failed cloud session).
+
+   The glow is derived from --cv-todo-dot-color, so a colour is stated ONCE per
+   kind. The dark ring underneath keeps every hue legible on a light toolbar. */
+.cv-todo-dot {
+  --cv-todo-dot-color: #ff3b30;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cv-todo-dot-color);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 0.3em 0.05em color-mix(in srgb, var(--cv-todo-dot-color) 80%, transparent),
+    0 0 0.6em 0.1em color-mix(in srgb, var(--cv-todo-dot-color) 50%, transparent);
+  pointer-events: none;
+}
+
+.cv-todo-dot-upload {
+  --cv-todo-dot-color: #2ecc57;
+}
+
+.cv-todo-dot-download {
+  --cv-todo-dot-color: #2f7bff;
+}
+
+.cv-todo-dot-sync {
+  --cv-todo-dot-color: #16d5c6;
+}
+
+.cv-todo-dot-offline {
+  --cv-todo-dot-color: #ff9500;
+}
+
+.cv-todo-dot-other {
+  --cv-todo-dot-color: #ff3b30;
+}

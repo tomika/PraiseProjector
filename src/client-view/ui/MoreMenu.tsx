@@ -17,7 +17,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { canUseSessions, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
+import { canUseSessions, clientViewTodoBadge, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
+import { TodoBadge } from "../../shared/TodoBadge";
+import { todoBadgeKind, type TodoBadgeKind } from "../../state/syncStatusStore";
 import { icon } from "./assets";
 
 interface MenuItem {
@@ -27,8 +29,8 @@ interface MenuItem {
   show: boolean;
   /** Greyed-out but visible (legacy makeDisabled), e.g. Clear/Save on an empty list. */
   disabled?: boolean;
-  /** Show a red attention dot on this item (full-view todo pending). */
-  dot?: boolean;
+  /** Show the colour-coded attention dot on this item (see shared/TodoBadge). */
+  dot?: TodoBadgeKind | null;
   run: () => void;
 }
 
@@ -78,7 +80,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       label: "Sessions",
       image: "wifi.svg",
       show: canUseSessions(state),
-      dot: hasBackgroundSessionsFound(state),
+      dot: hasBackgroundSessionsFound(state) ? "other" : null,
       run: () => void store.openSessionsDialog(),
     },
     {
@@ -86,7 +88,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
       label: "Switch UI",
       image: "full-ui.svg",
       show: Boolean(onHome) || caps.canOpenFullEditor,
-      dot: hasFullViewTodo(state),
+      dot: todoBadgeKind(state.syncStatus),
       run: () => {
         if (onHome) {
           store.syncHostSelectionToFullView();
@@ -98,6 +100,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
     { id: "exit", label: "Exit", image: "power.svg", show: state.canExit, run: () => void store.exitApp() },
   ];
   const visible = items.filter((item) => item.show);
+  const moreBadge = clientViewTodoBadge(state);
   if (visible.length === 0) return null;
 
   const choose = (item: MenuItem) => {
@@ -118,7 +121,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
         onClick={() => setOpen((v) => !v)}
       >
         <img className="btnImg cv-opt-icon" src={icon("menu.svg")} alt="More" />
-        {(hasFullViewTodo(state) || hasBackgroundSessionsFound(state)) && <span className="cv-todo-dot" aria-label="Action needed" />}
+        {moreBadge && <TodoBadge kind={moreBadge} label="Action needed" />}
       </button>
       {open && (
         <div className="cv-more-menu" role="menu">
@@ -134,7 +137,7 @@ export function MoreMenu({ onHome }: { onHome?: () => void }) {
               title={item.label}
             >
               <img className="btnImg cv-opt-icon" src={icon(item.image)} alt="" />
-              {item.dot && <span className="cv-todo-dot" aria-hidden="true" />}
+              {item.dot && <TodoBadge kind={item.dot} />}
             </button>
           ))}
         </div>

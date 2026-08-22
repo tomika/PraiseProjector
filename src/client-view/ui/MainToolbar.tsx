@@ -18,7 +18,8 @@ import {
   useClientViewStore,
 } from "../controller/ClientViewContext";
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
-import { isViewingRemoteDisplay, showsNetworkIndicator, hasFullViewTodo, hasBackgroundSessionsFound } from "../controller/ClientViewStore";
+import { isViewingRemoteDisplay, showsNetworkIndicator, clientViewTodoBadge } from "../controller/ClientViewStore";
+import { TodoBadge } from "../../shared/TodoBadge";
 import type { NetworkStatus } from "../api/ClientApi";
 import { TOOLBAR_ORDER_HORIZONTAL, TOOLBAR_ORDER_VERTICAL, type ToolbarButtonKey } from "./uiConfig";
 import { icon } from "./assets";
@@ -225,6 +226,10 @@ export function MainToolbar({
     setWheelDrag(null);
   }
 
+  // Everything the user can only finish behind the options panel is reported by ONE
+  // colour-coded dot on its button (see shared/TodoBadge).
+  const optionsBadge = clientViewTodoBadge(state);
+
   // One renderer per control key; the order arrays decide which appear and where.
   const controls: Record<ToolbarButtonKey, ReactNode> = {
     prev: follower ? null : (
@@ -241,7 +246,7 @@ export function MainToolbar({
     options: (
       <div id="btnOptions" className="btnDiv left-aligned" onClick={() => store.toggleOptions()}>
         <img className="btnImg" src={icon("options.svg")} alt="Options" />
-        {(hasFullViewTodo(state) || hasBackgroundSessionsFound(state)) && <span className="cv-todo-dot" aria-label="Action needed" />}
+        {optionsBadge && <TodoBadge kind={optionsBadge} label="Action needed" />}
       </div>
     ),
     home: state.capabilities.canReturnHome ? (

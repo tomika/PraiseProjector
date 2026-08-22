@@ -346,7 +346,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const showSyncControls = !!(onSyncClick || onExportDatabase || onImportDatabase || onReplaceDatabase);
   const localChangeCount = updatedSongCount + updatedProfileCount;
   const remoteChangeCount = isAuthenticated && cloudDbVersion !== null ? cloudDbVersion - localDbVersion : 0;
-  const showCloudAccessFailed = networkUnavailable || cloudAuthFailed || (!isGuest && authStatus === "offline");
+  // Being unreachable and having a stale session are one icon here but two
+  // different badge colours (orange vs red), so publish them separately below.
+  const isOffline = networkUnavailable || (!isGuest && authStatus === "offline");
+  const showCloudAccessFailed = isOffline || cloudAuthFailed;
   const leaderControl = deriveFullViewPpdFollowUi(following, ppdLeaderModeAvailable, ppdLeaderMode);
 
   useEffect(() => {
@@ -362,9 +365,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
       remoteChangeCount,
       pendingSongCount,
       updateAvailable: hasUpdate,
-      cloudAccessFailed: showCloudAccessFailed,
+      offline: isOffline,
+      cloudAuthFailed,
     });
-  }, [isAuthenticated, localChangeCount, remoteChangeCount, pendingSongCount, hasUpdate, showCloudAccessFailed]);
+  }, [isAuthenticated, localChangeCount, remoteChangeCount, pendingSongCount, hasUpdate, isOffline, cloudAuthFailed]);
 
   return (
     <div data-tutorial-id="full-profile-database">

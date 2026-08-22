@@ -15,7 +15,7 @@
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
-import { EMPTY_SYNC_STATUS, hasFullViewTodo as statusHasFullViewTodo, type SyncStatus } from "../../state/syncStatusStore";
+import { EMPTY_SYNC_STATUS, todoBadgeKind, type SyncStatus, type TodoBadgeKind } from "../../state/syncStatusStore";
 import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
@@ -401,17 +401,21 @@ export function canUseHighlightLamp(state: ClientViewState): boolean {
   return state.capabilities.canControlDisplay || state.mode === "Client" || isAppWatching(state);
 }
 
-/** True when the host has any task the user can only complete in the full view
- *  (sync, song review, or app update). Drives the client-view attention dots. */
-export function hasFullViewTodo(state: ClientViewState): boolean {
-  return statusHasFullViewTodo(state.syncStatus);
-}
-
 /** True when the startup auto-scan found a background session that did not match
  *  the `clientViewSessionsFoundPopup` mask, so the Sessions button (and the
  *  options / more buttons it lives behind) carry an attention dot. */
 export function hasBackgroundSessionsFound(state: ClientViewState): boolean {
   return state.sessionsFoundBadge;
+}
+
+/** The single colour for the aggregate attention dot on the buttons the todos hide
+ *  behind (options / more): everything the user can only finish in the full view
+ *  (sync, song review, app update) plus a found background session. A found session
+ *  is not a sync state at all, so it takes the catch-all red like every other
+ *  non-sync todo. */
+export function clientViewTodoBadge(state: ClientViewState): TodoBadgeKind | null {
+  if (hasBackgroundSessionsFound(state)) return "other";
+  return todoBadgeKind(state.syncStatus);
 }
 
 const SEARCH_DEBOUNCE_MS = 250;

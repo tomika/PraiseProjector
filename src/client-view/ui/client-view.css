@@ -2575,27 +2575,16 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   position: relative;
 }
 
-/* ── full-view "todo" attention dot (see syncStatusStore / hasFullViewTodo) ─────── */
-/* The more-button's dot anchors to .cv-more (its container, already position:relative
+/* ── "todo" attention dot (see syncStatusStore / shared/TodoBadge.tsx) ─────────── */
+/* Only the positioning contexts live here; the dot itself — including its
+   per-situation colours — is the shared component's stylesheet, because the full
+   view's tab header shows the same badge and the two must never drift apart.
+   The more-button's dot anchors to .cv-more (its container, already position:relative
    above), not to .cv-more-btn itself — so it stays pinned to the row's top-right
    corner even as the button is bottom-aligned within that taller container. */
 #btnOptions,
 .cv-more-item {
   position: relative;
-}
-.cv-todo-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #ff3b30;
-  box-shadow:
-    0 0 0 2px rgba(0, 0, 0, 0.35),
-    0 0 0.3em 0.05em rgba(255, 59, 48, 0.8),
-    0 0 0.6em 0.1em rgba(255, 59, 48, 0.5);
-  pointer-events: none;
 }
 
 /* Wheel picker: the default is the original vertical "radio tuner". A horizontal

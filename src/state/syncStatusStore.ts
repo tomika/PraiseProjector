@@ -25,9 +25,24 @@ export interface SyncStatus {
   pendingSongCount: number;
   /** A software update is available or downloaded. */
   updateAvailable: boolean;
-  /** Cloud is unreachable or the session needs re-auth. */
-  cloudAccessFailed: boolean;
+  /** The device cannot reach the cloud at all (no network / offline session). */
+  offline: boolean;
+  /** The cloud is reachable but the session needs re-auth. */
+  cloudAuthFailed: boolean;
 }
+
+/**
+ * The ONE colour a todo badge shows. Each kind is a distinct situation rather
+ * than a severity level, because "something is pending" alone (the old single red
+ * dot) told the user nothing about whether it was worth opening the full view:
+ *
+ *   upload   (green)     — only local edits waiting to be pushed
+ *   download (blue)      — nothing to push, but the server is ahead
+ *   sync     (turquoise) — both directions, and nothing else
+ *   offline  (orange)    — the device cannot reach the cloud
+ *   other    (red)       — pending songs, an app update, or anything else
+ */
+export type TodoBadgeKind = "upload" | "download" | "sync" | "offline" | "other";
 
 export const EMPTY_SYNC_STATUS: SyncStatus = {
   authenticated: false,
@@ -35,7 +50,8 @@ export const EMPTY_SYNC_STATUS: SyncStatus = {
   remoteChangeCount: 0,
   pendingSongCount: 0,
   updateAvailable: false,
-  cloudAccessFailed: false,
+  offline: false,
+  cloudAuthFailed: false,
 };
 
 type Listener = () => void;
@@ -56,7 +72,8 @@ export function setSyncStatus(next: SyncStatus): void {
     status.remoteChangeCount === next.remoteChangeCount &&
     status.pendingSongCount === next.pendingSongCount &&
     status.updateAvailable === next.updateAvailable &&
-    status.cloudAccessFailed === next.cloudAccessFailed
+    status.offline === next.offline &&
+    status.cloudAuthFailed === next.cloudAuthFailed
   ) {
     return;
   }
@@ -74,7 +91,28 @@ export function subscribeSyncStatus(listener: (status: SyncStatus) => void): () 
 /** True when there is anything the user can only resolve in the FULL VIEW (sync,
  *  song review, or app update). Drives the client-view attention dots. */
 export function hasFullViewTodo(s: SyncStatus): boolean {
-  return s.localChangeCount > 0 || s.remoteChangeCount > 0 || s.pendingSongCount > 0 || s.updateAvailable || s.cloudAccessFailed;
+  return todoBadgeKind(s) !== null;
+}
+
+/**
+ * Classify the todo status into the single badge colour to show, or null when
+ * there is nothing to report. Most specific / most urgent first: anything that is
+ * neither plain sync traffic nor a lost link is "other" and shows red ALONE, so
+ * red keeps meaning "there is more here than a sync".
+ *
+ * `ignoreUpdate` drops the app-update trigger, for surfaces where the update is
+ * reachable anyway and so should not claim a badge of its own (the full view's
+ * tab header — UpdateNotification is mounted above all three tabs).
+ */
+export function todoBadgeKind(s: SyncStatus, { ignoreUpdate = false }: { ignoreUpdate?: boolean } = {}): TodoBadgeKind | null {
+  if (s.pendingSongCount > 0 || s.cloudAuthFailed || (s.updateAvailable && !ignoreUpdate)) return "other";
+  if (s.offline) return "offline";
+  const up = s.localChangeCount > 0;
+  const down = s.remoteChangeCount > 0;
+  if (up && down) return "sync";
+  if (up) return "upload";
+  if (down) return "download";
+  return null;
 }
 
 export function useSyncStatus(): SyncStatus {

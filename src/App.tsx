@@ -99,6 +99,7 @@ import { TutorialHost } from "./tutorial/TutorialHost";
 import { requestTutorialContinueWhenUnblocked, requestVisibleTutorialStart } from "./tutorial/tutorialEvents";
 import type { TutorialCommand } from "./tutorial/tutorialTypes";
 import { PullRefreshSpinner } from "./shared/PullRefreshSpinner";
+import { SyncTodoBadge } from "./shared/TodoBadge";
 import { usePullToRefresh } from "./shared/usePullToRefresh";
 import { deriveFullViewPpdFollowUi } from "./services/ppdFollowUi";
 
@@ -3061,8 +3062,16 @@ const AppContent: React.FC = () => {
           {/* Paging mode layout (mobile portrait) - show/hide with CSS to preserve state */}
           <div style={{ display: usePagingMode ? "flex" : "none", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
             <div className="main-paging-buttons btn-group mb-2" ref={pagingPull.containerRef}>
-              <button className={`btn ${activePanel === "side" ? "btn-primary" : "btn-secondary"}`} onClick={() => setActivePanel("side")}>
+              {/* Every sync / review todo is resolved in the Songs tab (UserPanel lives
+                  in its LeftPanel), so the colour-coded badge belongs on that first
+                  tab. An available app update is deliberately excluded: it is offered
+                  by UpdateNotification above all three tabs, so it belongs to none. */}
+              <button
+                className={`btn position-relative ${activePanel === "side" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setActivePanel("side")}
+              >
                 {t("TabSongs")}
+                <SyncTodoBadge ignoreUpdate label="Action needed" />
               </button>
               <button className={`btn ${activePanel === "editor" ? "btn-primary" : "btn-secondary"}`} onClick={() => setActivePanel("editor")}>
                 {t("TabEditor")}
