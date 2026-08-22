@@ -700,75 +700,6 @@ export const fullViewTutorial: TutorialDefinition = {
       }
     ),
     s(
-      "format",
-      ".projecting-formats-container",
-      tx(
-        "Formátum és tartalom",
-        "A Formátum, Kép, Üzenet és Vezérlők lapok a kivetített tartalom megjelenésének és kiegészítő elemeinek beállítására szolgálnak.",
-        "Format and content",
-        "Use the Format, Image, Message and Controls tabs to configure projected appearance and additional content."
-      ),
-      {
-        prepare: preview,
-        details: [
-          s(
-            "format-text",
-            [".format-columns", ".preview-tab-content"],
-            tx(
-              "Szövegformátum",
-              "Betűtípus, méret, stílus, szín és igazítás állítható. Ezek a megjelenést változtatják, nem a dal szövegét.",
-              "Text format",
-              "Set font, size, style, color and alignment. These affect presentation, not the song text."
-            ),
-            { prepare: () => activatePreviewTab(0) }
-          ),
-          s(
-            "format-image",
-            ".preview-tab-content",
-            tx(
-              "Kép",
-              "Háttér, illesztési mód és képhez kapcsolódó beállítások választhatók.",
-              "Image",
-              "Choose a background, fit mode and image-related settings."
-            ),
-            { prepare: () => activatePreviewTab(1) }
-          ),
-          s(
-            "format-message",
-            [".message-textarea", ".preview-tab-content"],
-            tx(
-              "Üzenet",
-              "Itt írható be a dal helyett megjelenő rövid üzenet, amely a külön Üzenet kapcsolóval jeleníthető meg.",
-              "Message",
-              "Write a short message here and show it with the separate Message toggle."
-            ),
-            { prepare: () => activatePreviewTab(2) }
-          ),
-          s(
-            "format-controls",
-            [".preview-controls-grid", ".preview-tab-content"],
-            tx(
-              "Vezérlők",
-              "A kivetítési és kijelzővezérlők ezen a lapon jelennek meg, a gombok a szakaszlistán használható billentyűzet gombok funkcióit implementálják.",
-              "Controls",
-              "Projection and display controls appear on this tab; the buttons implement the functions of the keyboard controls available in the section list."
-            ),
-            { prepare: () => activatePreviewTab(3) }
-          ),
-          s(
-            "format-collapse",
-            ".preview-layout-cycle-btn",
-            tx(
-              "Panel elrendezése",
-              "Ezzel több lépésben összecsukhatók a beállítások vagy az előnézet, hogy több hely maradjon a fontos területnek.",
-              "Panel layout",
-              "Cycle through collapsed layouts to give more room to either settings or the preview."
-            )
-          ),
-        ],
-      }
-    ),
-    s(
       "projection",
       ".preview-button-column",
       tx(
@@ -858,6 +789,75 @@ export const fullViewTutorial: TutorialDefinition = {
               "A Formátum terület Üzenet lapján megadott rövid szöveget kapcsolja a kimenetre.",
               "Message",
               "Toggle the short text entered on the Message tab onto the output."
+            )
+          ),
+        ],
+      }
+    ),
+    s(
+      "format",
+      ".projecting-formats-container",
+      tx(
+        "Formátum és tartalom",
+        "A Formátum, Kép, Üzenet és Vezérlők lapok a kivetített tartalom megjelenésének és kiegészítő elemeinek beállítására szolgálnak.",
+        "Format and content",
+        "Use the Format, Image, Message and Controls tabs to configure projected appearance and additional content."
+      ),
+      {
+        prepare: preview,
+        details: [
+          s(
+            "format-text",
+            [".format-columns", ".preview-tab-content"],
+            tx(
+              "Szövegformátum",
+              "Betűtípus, méret, stílus, szín és igazítás állítható. Ezek a megjelenést változtatják, nem a dal szövegét.",
+              "Text format",
+              "Set font, size, style, color and alignment. These affect presentation, not the song text."
+            ),
+            { prepare: () => activatePreviewTab(0) }
+          ),
+          s(
+            "format-image",
+            ".preview-tab-content",
+            tx(
+              "Kép",
+              "Háttér, illesztési mód és képhez kapcsolódó beállítások választhatók.",
+              "Image",
+              "Choose a background, fit mode and image-related settings."
+            ),
+            { prepare: () => activatePreviewTab(1) }
+          ),
+          s(
+            "format-message",
+            [".message-textarea", ".preview-tab-content"],
+            tx(
+              "Üzenet",
+              "Itt írható be a dal helyett megjelenő rövid üzenet, amely a külön Üzenet kapcsolóval jeleníthető meg.",
+              "Message",
+              "Write a short message here and show it with the separate Message toggle."
+            ),
+            { prepare: () => activatePreviewTab(2) }
+          ),
+          s(
+            "format-controls",
+            [".preview-controls-grid", ".preview-tab-content"],
+            tx(
+              "Vezérlők",
+              "A kivetítési és kijelzővezérlők ezen a lapon jelennek meg, a gombok a szakaszlistán használható billentyűzet gombok funkcióit implementálják.",
+              "Controls",
+              "Projection and display controls appear on this tab; the buttons implement the functions of the keyboard controls available in the section list."
+            ),
+            { prepare: () => activatePreviewTab(3) }
+          ),
+          s(
+            "format-collapse",
+            ".preview-layout-cycle-btn",
+            tx(
+              "Panel elrendezése",
+              "Ezzel több lépésben összecsukhatók a beállítások vagy az előnézet, hogy több hely maradjon a fontos területnek.",
+              "Panel layout",
+              "Cycle through collapsed layouts to give more room to either settings or the preview."
             )
           ),
         ],
