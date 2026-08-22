@@ -56,13 +56,15 @@
 
 .playlist-edit-container {
   display: flex;
-  align-items: center;
+  /* stretch (not center): a centered child leaves a sub-pixel sliver of the
+     container background above the input on the top edge */
+  align-items: stretch;
   width: calc(100% - 0.5rem);
   margin: 0 0.25rem;
   overflow: hidden;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--pp-border-color, #ced4da);
   border-radius: 0.25rem;
-  background: #fff;
+  background: var(--pp-input-bg, #fff);
 }
 
 .playlist-edit-container:focus-within {
