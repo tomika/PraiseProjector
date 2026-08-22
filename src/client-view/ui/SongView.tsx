@@ -45,10 +45,14 @@ import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
-import { ZOOM_MODE_ROTATION, ZoomSizingModeGlyph, type ZoomSizingModeMeta } from "./zoomSizingModes";
+import { ZOOM_MODE_ROTATION, ZoomSizingModeGlyph, zoomSizingModeMeta, type ZoomSizingModeMeta } from "./zoomSizingModes";
 
 type BoundEditor = ReturnType<typeof chordProAPI.bind>;
 const fitGenerations = new WeakMap<HTMLDivElement, number>();
+/** The composite scale (`z`) the last successful fit applied to a host. The zoom
+ *  gestures need it to read the font size the user actually SEES in an automatic
+ *  mode: the renderer's content font size is the un-scaled one. */
+const fitScales = new WeakMap<HTMLDivElement, number>();
 const CLIENT_VIEW_EDITOR_OPTIONS: ChordProEditorOptions = { viewportAlignedTitle: true };
 
 interface FitVisualState {
@@ -71,6 +75,22 @@ interface PendingTurnFit {
 const GESTURE_SLOP_PX = 8;
 const ZOOM_PINCH_PIXELS_PER_STEP = 28;
 const MAX_AUTO_FONT_SIZE = 256;
+// The manual font-size range (matches the store's own clamp and the zoom panel's
+// slider bounds).
+const MIN_MANUAL_FONT_SIZE = 10;
+const MAX_MANUAL_FONT_SIZE = 64;
+
+const clampManualFontSize = (px: number) => Math.max(MIN_MANUAL_FONT_SIZE, Math.min(MAX_MANUAL_FONT_SIZE, Math.round(px)));
+
+/** The lyrics font size currently ON SCREEN for a host: the renderer's own content
+ *  font size multiplied by the composite scale its last fit applied. MANUAL fits at
+ *  scale 1, so there this is simply the requested size; in an automatic mode it is
+ *  the size the automatic fit arrived at. */
+function visualFontSize(host: HTMLDivElement | null, api: BoundEditor | null): number | null {
+  if (!host || !api) return null;
+  const size = api.getContentFontSize() * (fitScales.get(host) ?? 1);
+  return Number.isFinite(size) && size > 0 ? size : null;
+}
 
 const NAVIGATION_MODE_META: Record<NavigationMode, { icon: string; label: string }> = {
   database: { icon: "database.svg", label: "Song database navigation" },
@@ -145,6 +165,7 @@ function clearFit(host: HTMLDivElement): number {
   host.style.removeProperty("margin-bottom");
   host.style.removeProperty("visibility");
   host.style.removeProperty("opacity");
+  fitScales.delete(host);
   return generation;
 }
 
@@ -328,6 +349,7 @@ async function fitAndZoomInternal(
     const ew = snapshot.width;
     const eh = snapshot.height;
     const z = manualFontSize ? 1 : scrollMode ? cw / ew : Math.min(cw / ew, ch / eh);
+    fitScales.set(host, z);
     const tx = (cw - ew * z) / 2;
     api.setViewportAlignedTitleGeometry(cw / z, tx / z);
     host.style.transformOrigin = "top left";
@@ -474,6 +496,27 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     [showZoomModeToast, store]
   );
 
+  /** A pinch or ctrl+wheel is an explicit override of an AUTOMATIC fit: hand the
+   *  gesture over to MANUAL at the font size that is on screen right now, then let
+   *  the same event carry on adjusting from there. Without the handover the first
+   *  detent would snap the song to whatever manual size was last used.
+   *
+   *  Zoom-off is its own mode in the rotation (not a fit mode), so font gestures
+   *  stay inert there and keep cycling the mode instead. Returns the baseline the
+   *  gesture continues from, or null when it does not apply.
+   *
+   *  The handover IS a mode change, so it raises the same toast a rotation does —
+   *  otherwise the song silently stops fitting itself and nothing says why. */
+  const beginManualFontSizing = useCallback((): number | null => {
+    const settings = store.getSnapshot().displaySettings;
+    if (!settings.maxText) return null;
+    if (settings.zoomSizingMode === "MANUAL") return settings.zoomFontSize;
+    const baseline = clampManualFontSize(visualFontSize(hostRef.current, apiRef.current) ?? settings.zoomFontSize);
+    store.setManualZoomFontSize(baseline);
+    showZoomModeToast(zoomSizingModeMeta("MANUAL"));
+    return baseline;
+  }, [showZoomModeToast, store]);
+
   useEffect(
     () => () => {
       if (zoomModeToastTimerRef.current !== null) window.clearTimeout(zoomModeToastTimerRef.current);
@@ -616,7 +659,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
     const finishPinch = (cancelled: boolean) => {
       const cycleMode = pinchGestureActive && !pinchMoved && !cancelled;
-      const finalFontSize = Math.max(10, Math.min(64, pinchBaselineFontSize + lastPinchSteps));
+      const finalFontSize = clampManualFontSize(pinchBaselineFontSize + lastPinchSteps);
       const commitFontSize = pinchGestureActive && pinchAdjustsFont && pinchMoved && !cancelled && finalFontSize !== pinchBaselineFontSize;
       restorePinchPreview();
       pinchGestureActive = false;
@@ -638,8 +681,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       lastPinchSteps = 0;
       pinchStartDistance = touchDistance(touches);
       const displaySettings = store.getSnapshot().displaySettings;
-      pinchBaselineFontSize = displaySettings.zoomFontSize;
-      pinchAdjustsFont = displaySettings.maxText && displaySettings.zoomSizingMode === "MANUAL";
+      // An automatic fit mode pinches from the size currently on screen and is
+      // committed as MANUAL by setManualZoomFontSize() below; only zoom-off keeps
+      // the gesture inert (it stays a mode-cycling two-finger tap).
+      pinchAdjustsFont = displaySettings.maxText;
+      pinchBaselineFontSize =
+        pinchAdjustsFont && displaySettings.zoomSizingMode !== "MANUAL"
+          ? clampManualFontSize(visualFontSize(hostRef.current, apiRef.current) ?? displaySettings.zoomFontSize)
+          : displaySettings.zoomFontSize;
       pinchPreviewHost = pinchAdjustsFont ? hostRef.current : null;
       pinchPreviewTransform = pinchPreviewHost?.style.transform ?? "";
       pinchActiveRef.current = true;
@@ -653,7 +702,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       const fontDelta = (touchDistance(touches) - pinchStartDistance) / ZOOM_PINCH_PIXELS_PER_STEP;
       const steps = Math.round(fontDelta);
       if (pinchPreviewHost && pinchBaselineFontSize > 0) {
-        const previewFontSize = Math.max(10, Math.min(64, pinchBaselineFontSize + fontDelta));
+        const previewFontSize = Math.max(MIN_MANUAL_FONT_SIZE, Math.min(MAX_MANUAL_FONT_SIZE, pinchBaselineFontSize + fontDelta));
         const scale = previewFontSize / pinchBaselineFontSize;
         pinchPreviewHost.style.transform = `${pinchPreviewTransform} scale(${scale})`;
       }
@@ -727,7 +776,10 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         pointerPinchMoved = true;
         const delta = steps - pointerPinchLastSteps;
         pointerPinchLastSteps = steps;
-        store.adjustManualZoomFontSize(delta);
+        // Switch out of an automatic fit lazily, at the FIRST detent — doing it on
+        // pointerdown would turn the non-moving two-finger tap (which rotates the
+        // mode) into a silent mode change.
+        if (beginManualFontSizing() !== null) store.adjustManualZoomFontSize(delta);
       }
       event.preventDefault();
     };
@@ -741,7 +793,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       const delta = Math.abs(ev.deltaY) >= Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX;
       if (delta === 0) return;
       if (ev.shiftKey) rotateZoomMode(delta < 0 ? -1 : 1);
-      else store.adjustManualZoomFontSize(delta < 0 ? 1 : -1);
+      else if (beginManualFontSizing() !== null) store.adjustManualZoomFontSize(delta < 0 ? 1 : -1);
     };
     const supportsPointerPinch = "PointerEvent" in window;
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -774,7 +826,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         window.removeEventListener("touchcancel", onTouchCancel, true);
       }
     };
-  }, [rotateZoomMode, store]);
+  }, [beginManualFontSizing, rotateZoomMode, store]);
 
   // Pointer plumbing: forward swipe gestures to the shared controller. We do NOT
   // setPointerCapture — capturing on #swipe-handler would steal taps from the

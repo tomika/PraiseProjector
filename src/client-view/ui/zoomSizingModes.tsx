@@ -20,6 +20,13 @@ export const SIZING_MODES: readonly ZoomSizingModeMeta[] = [
 
 export const ZOOM_MODE_ROTATION: readonly ZoomSizingModeMeta[] = [ZOOM_OFF_MODE, ...SIZING_MODES];
 
+/** The meta for one mode, so a surface that changes the mode WITHOUT rotating (a
+ *  pinch handing an automatic fit over to MANUAL) can show the same toast glyph the
+ *  rotation does, instead of hard-coding a second copy of that mode's label/icon. */
+export function zoomSizingModeMeta(value: ZoomSizingMode | null): ZoomSizingModeMeta {
+  return ZOOM_MODE_ROTATION.find((mode) => mode.value === value) ?? ZOOM_OFF_MODE;
+}
+
 export function ZoomSizingModeGlyph({ mode, className = "" }: { mode: ZoomSizingModeMeta; className?: string }) {
   return (
     <span className={`cv-zoom-mode-glyph${className ? ` ${className}` : ""}`}>
