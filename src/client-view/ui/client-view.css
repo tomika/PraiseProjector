@@ -1440,10 +1440,23 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     0 0 0.7em #05e;
 }
 
-/* Unlike Title / Meta, a checked Auto wrap option enables a feature rather
-   than hiding one, so keep the active glow without striking its label out. */
+/* Auto wrap carries no word — it is the wrap.svg glyph. Unlike Title / Meta it
+   ENABLES a feature rather than hiding one, so the checked state keeps the neon
+   glow (as a drop-shadow, the icon equivalent of the labels' text-shadow) and
+   never strikes anything out. */
 .cv-zoom-wrap-toggle input:checked ~ .cv-zoom-label {
   text-decoration: none;
+}
+
+.cv-zoom-wrap-icon {
+  display: block;
+  width: auto;
+  height: 22px;
+  filter: var(--cv-icon-invert);
+}
+
+.cv-zoom-wrap-toggle input:checked ~ .cv-zoom-label .cv-zoom-wrap-icon {
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
 .cv-zoom-row {

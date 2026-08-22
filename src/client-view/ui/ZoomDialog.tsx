@@ -8,10 +8,12 @@
  * long-pressing / right-clicking the zoom button and closed by clicking outside.
  *
  * Title and Meta labels use a strikethrough + blue glow when their hide-option is
- * on, matching the original `input:checked + label { text-shadow: … }` style.
+ * on, matching the original `input:checked + label { text-shadow: … }` style. Auto
+ * wrap has no label — it is the wrap.svg glyph, glowing (not struck through) when on.
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
+import { icon } from "./assets";
 import type { ZoomTagMode } from "../controller/ClientViewStore";
 import { SIZING_MODES, ZoomSizingModeGlyph } from "./zoomSizingModes";
 
@@ -42,9 +44,11 @@ export function ZoomPanel() {
         <input type="checkbox" checked={s.zoomHideMeta} onChange={(e) => store.setDisplaySetting("zoomHideMeta", e.target.checked)} />
         <span className="cv-zoom-label">Meta</span>
       </label>
-      <label className="cv-zoom-toggle cv-zoom-wrap-toggle">
+      <label className="cv-zoom-toggle cv-zoom-wrap-toggle" title="Auto wrap">
         <input type="checkbox" checked={s.zoomAutoWrap} onChange={(e) => store.setDisplaySetting("zoomAutoWrap", e.target.checked)} />
-        <span className="cv-zoom-label">Auto wrap</span>
+        <span className="cv-zoom-label">
+          <img className="cv-zoom-wrap-icon" src={icon("wrap.svg")} alt="Auto wrap" />
+        </span>
       </label>
 
       <div className="cv-zoom-row">
