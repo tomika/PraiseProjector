@@ -79,6 +79,8 @@
   "LanguageDescription": "Choose the application language",
   "AskDiscardChanges": "Discard changes?",
   "UnsavedChanges": "Unsaved Changes",
+  "AskSwitchToClientViewWithUnsavedChanges": "The song contains unsaved changes. Switch to client view anyway?",
+  "SwitchToClientView": "Switch to client view",
   "AskDiscardChangesAndLoadNewSong": "You have unsaved changes. Do you want to discard them and load the new song?",
   "AskDiscardChangesAndReload": "You have unsaved changes. Do you want to discard them and reload the original song?",
   "ConfirmSave": "Confirm Save",

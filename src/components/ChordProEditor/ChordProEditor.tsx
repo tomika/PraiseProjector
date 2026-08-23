@@ -26,7 +26,8 @@ interface ChordProEditorProps {
   setProjectedSongText?: (newLyrics: string) => void;
   onTextChange?: (newText: string) => void; // For import wizard
   initialEditMode?: boolean; // Start in edit mode
-  initialTab?: ChordProEditorTab; // Restore the selected editor tab after a remount
+  editMode?: boolean; // Controlled edit mode used by the full-view editor
+  activeTab?: ChordProEditorTab;
   onActiveTabChange?: (tab: ChordProEditorTab) => void;
   compareBase?: string; // For diff view - pass the base song text to compare against
   previewOnly?: boolean; // Hide tabs and toolbar, like C# PreviewOnly()
@@ -247,12 +248,12 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   constructor(props: ChordProEditorProps) {
     super(props);
     this.state = {
-      activeTab: props.initialTab ?? "wysiwyg",
+      activeTab: props.activeTab ?? "wysiwyg",
       chordProText: "",
       metaData: new Map(),
       commentBlockedByChords: false,
     };
-    this.isEditable = props.initialEditMode ?? false;
+    this.isEditable = props.editMode ?? props.initialEditMode ?? false;
   }
 
   private get performancePagingDisabled() {
@@ -274,8 +275,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   componentDidUpdate(prevProps: ChordProEditorProps) {
     this.prepareWysiwygHost();
 
-    if (prevProps.initialTab !== this.props.initialTab && this.props.initialTab && this.props.initialTab !== this.state.activeTab) {
-      this.setState({ activeTab: this.props.initialTab });
+    if (prevProps.activeTab !== this.props.activeTab && this.props.activeTab && this.props.activeTab !== this.state.activeTab) {
+      this.setState({ activeTab: this.props.activeTab });
     }
 
     if (
@@ -289,6 +290,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.loadNeighborPages();
     }
 
+    const controlledEditModeChanged =
+      this.props.editMode !== undefined && prevProps.editMode !== this.props.editMode && this.props.editMode !== this.isEditable;
+
     // Check if song changed (different object or different text content)
     const songChanged = prevProps.song !== this.props.song || prevProps.song?.Text !== this.props.song?.Text;
     const compareBaseChanged = prevProps.compareBase !== this.props.compareBase;
@@ -296,11 +300,15 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     if (songChanged || compareBaseChanged) {
       // While editing, keep the current document stable and defer loading
       // incoming song/compareBase changes until edit mode exits.
-      if (this.isEditable) {
+      if (this.isEditable && !controlledEditModeChanged) {
         this.pendingExternalSongReload = true;
       } else {
         this.applyIncomingSongProps();
       }
+    }
+
+    if (controlledEditModeChanged) {
+      this.applyControlledEditMode(this.props.editMode!);
     }
 
     // Check if hideChordsInReadonlyEditor setting changed
@@ -918,6 +926,32 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     api.setDisplay(true, true, false, false, "Am", "Full", 1.0, shouldHideChords);
   }
 
+  private applyControlledEditMode(enable: boolean) {
+    this.isEditable = enable;
+    if (!enable && this.pendingExternalSongReload) {
+      this.applyIncomingSongProps();
+    }
+    if (enable) {
+      this.pendingHighlight = null;
+      this.callWysiwygAPI("highlight", 0, 0);
+    }
+    this.callWysiwygAPI("enableEdit", enable, true);
+    this.updateDisplay();
+    if (enable) this.forceUpdate();
+    else this.finishLeavingEditModeVisuals();
+  }
+
+  private finishLeavingEditModeVisuals() {
+    setTimeout(() => {
+      this.applyDarkModeToEditor();
+    }, 0);
+    this.forceUpdate(() => {
+      requestAnimationFrame(() => {
+        this.applyDarkModeToEditor();
+      });
+    });
+  }
+
   private applyChordProText(newText: string, options: { syncEditor?: boolean } = {}) {
     const { syncEditor = true } = options;
     const metaData = this.extractMetaData(newText);
@@ -1040,12 +1074,6 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     // Update display to hide/show chords based on settings
     this.updateDisplay();
 
-    // Re-apply dark mode after leaving edit mode to ensure correct colors on mobile
-    // Use setTimeout to allow the editor to complete its internal state update
-    setTimeout(() => {
-      this.applyDarkModeToEditor();
-    }, 0);
-
     // Tell the parent that edit mode is done.
     this.props.onEditModeChange?.(false);
 
@@ -1055,26 +1083,19 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       this.applyIncomingSongProps();
     }
 
-    // Force re-render and reapply dark mode after render completes
-    this.forceUpdate(() => {
-      // Additional dark mode application after React's render cycle completes
-      requestAnimationFrame(() => {
-        this.applyDarkModeToEditor();
-      });
-    });
+    // Re-render and re-apply dark mode after the editor completes its internal
+    // state update. The controlled exit path uses the same mobile fix.
+    this.finishLeavingEditModeVisuals();
   }
 
   private applyIncomingSongProps() {
+    this.pendingExternalSongReload = false;
     this.hasLoadedDocument = false; // Reset for new song
     this.wysiwygInitialized = false; // Reset initialization flag
     const chordProText = this.loadSong();
     // Only try to load to WYSIWYG if it's loaded and we have a host element
     if (this.wysiwygLoaded && this.chordProHost) {
       this.loadSongToWysiwyg(chordProText);
-    }
-    // Re-enable edit mode if needed after loading
-    if (this.props.initialEditMode && !this.isEditable) {
-      this.enterEditMode();
     }
   }
 

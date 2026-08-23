@@ -7,11 +7,15 @@ export interface ConfirmOptions {
   confirmDanger?: boolean;
 }
 
+export interface AsyncConfirmOptions extends ConfirmOptions {
+  signal?: AbortSignal;
+}
+
 interface MessageBoxContextType {
   showMessage: (title: string, message: string, onConfirm?: () => void) => void;
   showConfirm: (title: string, message: string, onConfirm: () => void, onCancel?: () => void, options?: ConfirmOptions) => void;
   /** Promise-returning version of showConfirm for async/await usage */
-  showConfirmAsync: (title: string, message: string, options?: ConfirmOptions) => Promise<boolean>;
+  showConfirmAsync: (title: string, message: string, options?: AsyncConfirmOptions) => Promise<boolean>;
   /** 3-button dialog returning "yes", "no", or "cancel" */
   showYesNoCancelAsync: (title: string, message: string, options?: ConfirmOptions) => Promise<"yes" | "no" | "cancel">;
 }
@@ -53,14 +57,17 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
   // otherwise the replaced dialog's question (and pending promise) is lost.
   const queueRef = useRef<MessageBoxConfig[]>([]);
   const activeRef = useRef(false);
+  const activeConfigRef = useRef<MessageBoxConfig | null>(null);
 
   const showNext = useCallback(() => {
     const next = queueRef.current.shift();
     if (next) {
       activeRef.current = true;
+      activeConfigRef.current = next;
       onMessageBoxChange(next);
     } else {
       activeRef.current = false;
+      activeConfigRef.current = null;
       onMessageBoxChange(null);
     }
   }, [onMessageBoxChange]);
@@ -123,16 +130,29 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
   );
 
   const showConfirmAsync = useCallback(
-    (title: string, message: string, options?: ConfirmOptions): Promise<boolean> => {
+    (title: string, message: string, options?: AsyncConfirmOptions): Promise<boolean> => {
       return new Promise((resolve) => {
-        enqueue({
+        if (options?.signal?.aborted) {
+          resolve(false);
+          return;
+        }
+
+        let settled = false;
+        const cleanupAbortListener = () => options?.signal?.removeEventListener("abort", handleAbort);
+        const config: MessageBoxConfig = {
           title,
           message,
           onConfirm: () => {
+            if (settled) return;
+            settled = true;
+            cleanupAbortListener();
             showNext();
             resolve(true);
           },
           onCancel: () => {
+            if (settled) return;
+            settled = true;
+            cleanupAbortListener();
             showNext();
             resolve(false);
           },
@@ -140,7 +160,23 @@ export const MessageBoxProvider: React.FC<MessageBoxProviderProps> = ({ children
           confirmText: options?.confirmText,
           cancelText: options?.cancelText,
           confirmDanger: options?.confirmDanger,
-        });
+        };
+        function handleAbort() {
+          if (settled) return;
+          settled = true;
+          cleanupAbortListener();
+
+          if (activeConfigRef.current === config) {
+            showNext();
+          } else {
+            const queuedIndex = queueRef.current.indexOf(config);
+            if (queuedIndex >= 0) queueRef.current.splice(queuedIndex, 1);
+          }
+          resolve(false);
+        }
+
+        options?.signal?.addEventListener("abort", handleAbort, { once: true });
+        enqueue(config);
       });
     },
     [enqueue, showNext]

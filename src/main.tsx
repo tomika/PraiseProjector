@@ -25,6 +25,7 @@ import { disableDefaultZoom } from "./utils/disableDefaultZoom";
 import { shouldUsePagingLayout } from "./utils/viewLayout";
 import { installUiAnimationPreference } from "./shared/performanceSettings";
 import { reportPageLoadedSuccessfully } from "./services/webAppLaunchReport";
+import { requestClientViewSwitch } from "./services/clientViewSwitchGuard";
 import "./shared/performance.css";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
@@ -93,10 +94,18 @@ function RootView() {
   const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
   const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
   const previousPagingLayoutRef = useRef(isPagingLayout);
+  const clientEntryRequestRef = useRef(0);
+  const clientEntryAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     reportPageLoadedSuccessfully();
   }, []);
+  useEffect(
+    () => () => {
+      clientEntryAbortRef.current?.abort();
+    },
+    []
+  );
 
   // Single setter that also persists, so every switch path (events + the client
   // view's home button) keeps the saved UI choice in sync.
@@ -118,22 +127,39 @@ function RootView() {
   const refreshOrientation = useCallback(() => {
     setIsPagingLayout(isPagingViewport());
   }, []);
+  const enterClientView = useCallback(
+    async (openOptionsOnWideEntry: boolean) => {
+      if (showClient) return;
+      clientEntryAbortRef.current?.abort();
+      const abortController = new AbortController();
+      clientEntryAbortRef.current = abortController;
+      const requestId = ++clientEntryRequestRef.current;
+      const allowed = await requestClientViewSwitch(abortController.signal);
+      if (clientEntryAbortRef.current === abortController) clientEntryAbortRef.current = null;
+      if (!allowed || requestId !== clientEntryRequestRef.current) return;
+      setOpenOptionsOnClientEntry(openOptionsOnWideEntry);
+      setShowClient(true);
+    },
+    [setShowClient, showClient]
+  );
+  const enterMainView = useCallback(() => {
+    clientEntryAbortRef.current?.abort();
+    clientEntryAbortRef.current = null;
+    clientEntryRequestRef.current += 1;
+    setOpenOptionsOnClientEntry(false);
+    setShowClient(false);
+  }, [setShowClient]);
   useEffect(() => {
     const toClient = () => {
-      if (!showClient) setOpenOptionsOnClientEntry(!isPagingViewport());
-      setShowClient(true);
-    };
-    const toMain = () => {
-      setOpenOptionsOnClientEntry(false);
-      setShowClient(false);
+      void enterClientView(!isPagingViewport());
     };
     window.addEventListener("pp-show-client-view", toClient);
-    window.addEventListener("pp-show-main-view", toMain);
+    window.addEventListener("pp-show-main-view", enterMainView);
     return () => {
       window.removeEventListener("pp-show-client-view", toClient);
-      window.removeEventListener("pp-show-main-view", toMain);
+      window.removeEventListener("pp-show-main-view", enterMainView);
     };
-  }, [setShowClient, showClient]);
+  }, [enterClientView, enterMainView]);
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "pp-settings") refreshAutomaticViewSwitch();
@@ -161,13 +187,14 @@ function RootView() {
       // Syncing the visible view to the device orientation (external system);
       // gated by the previousPagingLayoutRef check above so it runs once per flip.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setShowClient(isPagingLayout);
+      if (isPagingLayout) void enterClientView(false);
+      else enterMainView();
       return;
     }
     if (automaticViewSwitch === "portraitToClient" && isPagingLayout) {
-      setShowClient(true);
+      void enterClientView(false);
     }
-  }, [automaticViewSwitch, isPagingLayout, setShowClient]);
+  }, [automaticViewSwitch, enterClientView, enterMainView, isPagingLayout]);
   const embeddedClientConfig = useMemo(
     () => ({
       openOptionsOnWideEmbeddedEntry: openOptionsOnClientEntry,
@@ -183,15 +210,7 @@ function RootView() {
       <div hidden={showClient}>
         <App />
       </div>
-      {showClient && (
-        <ClientViewApp
-          config={embeddedClientConfig}
-          onHome={() => {
-            setOpenOptionsOnClientEntry(false);
-            setShowClient(false);
-          }}
-        />
-      )}
+      {showClient && <ClientViewApp config={embeddedClientConfig} onHome={enterMainView} />}
     </>
   );
 }

@@ -25,8 +25,8 @@ interface EditorPanelProps {
   onSwipeNext?: () => void;
   prevSong?: Song | null;
   nextSong?: Song | null;
-  initialEditMode?: boolean;
-  initialTab?: EditorPanelTab;
+  editMode?: boolean;
+  activeTab?: EditorPanelTab;
   onActiveTabChange?: (tab: EditorPanelTab) => void;
 }
 
@@ -113,8 +113,8 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
       onSwipeNext,
       prevSong,
       nextSong,
-      initialEditMode,
-      initialTab,
+      editMode,
+      activeTab,
       onActiveTabChange,
     } = this.props;
 
@@ -137,8 +137,8 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
           onSwipeNext={onSwipeNext}
           prevSong={prevSong}
           nextSong={nextSong}
-          initialEditMode={initialEditMode}
-          initialTab={initialTab}
+          editMode={editMode}
+          activeTab={activeTab}
           onActiveTabChange={onActiveTabChange}
           pageTurnMode={settings?.fullViewChordProPageTurnMode ?? "auto"}
         />

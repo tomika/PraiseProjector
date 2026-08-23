@@ -102,6 +102,7 @@ import { PullRefreshSpinner } from "./shared/PullRefreshSpinner";
 import { SyncTodoBadge } from "./shared/TodoBadge";
 import { usePullToRefresh } from "./shared/usePullToRefresh";
 import { deriveFullViewPpdFollowUi } from "./services/ppdFollowUi";
+import { registerClientViewSwitchGuard } from "./services/clientViewSwitchGuard";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -129,7 +130,6 @@ const AppStateCodec = t.type({
   // Active panel in paging mode
   activePanel: t.union([t.literal("side"), t.literal("editor"), t.literal("preview"), t.undefined]),
   editorTab: t.union([t.literal("wysiwyg"), t.literal("meta"), t.literal("chordpro"), t.undefined]),
-  editorEditing: t.union([t.boolean, t.undefined]),
   // Panel layout state - named properties for clarity
   leftPanelSize: t.union([t.number, t.undefined]),
   editorPanelSize: t.union([t.number, t.undefined]),
@@ -523,7 +523,9 @@ const AppContent: React.FC = () => {
   const preserveLoadedSongOnPlaylistSelectionRef = useRef(false);
   const playlistLoadTargetSongIdRef = useRef<string | null>(null);
   const pendingPlaylistSelectionIndexRef = useRef<number | null>(null);
-  const [isEditing, setIsEditing] = useState(initialAppState?.editorEditing ?? false);
+  // Edit mode is intentionally session-only. Persisting it without also persisting
+  // the draft can restore a stale DB version as editable after a cold start.
+  const [isEditing, setIsEditing] = useState(false);
   const [editorTab, setEditorTab] = useState<EditorPanelTab>(initialAppState?.editorTab ?? "wysiwyg");
   const [_editorInitialized, setEditorInitialized] = useState(false);
   // Remote highlight controller state - matching C# ProjectorForm.sectionListBox.Remote
@@ -714,7 +716,6 @@ const AppContent: React.FC = () => {
       songFilter: songFilter,
       activePanel: activePanel,
       editorTab: editorTab,
-      editorEditing: isEditing,
       leftPanelSize: leftPanelSize,
       editorPanelSize: editorPanelSize,
       previewPanelSize: previewPanelSize,
@@ -732,7 +733,6 @@ const AppContent: React.FC = () => {
     songFilter,
     activePanel,
     editorTab,
-    isEditing,
     leftPanelSize,
     editorPanelSize,
     previewPanelSize,
@@ -759,7 +759,6 @@ const AppContent: React.FC = () => {
         songFilter: songFilter,
         activePanel: activePanel,
         editorTab: editorTab,
-        editorEditing: isEditing,
         leftPanelSize: leftPanelSize,
         editorPanelSize: editorPanelSize,
         previewPanelSize: previewPanelSize,
@@ -779,7 +778,6 @@ const AppContent: React.FC = () => {
     songFilter,
     activePanel,
     editorTab,
-    isEditing,
     leftPanelSize,
     editorPanelSize,
     previewPanelSize,
@@ -1213,6 +1211,18 @@ const AppContent: React.FC = () => {
   // Memoized version for UI (toolbar button state)
   const _triggerRecalc = currentSongText;
   const canSaveSong = editedSong ? checkCanSaveSong() : false;
+
+  useEffect(
+    () =>
+      registerClientViewSwitchGuard((signal) => {
+        if (!isEditing || !canSaveSong) return true;
+        return showConfirmAsync(t("UnsavedChanges"), t("AskSwitchToClientViewWithUnsavedChanges"), {
+          confirmText: t("SwitchToClientView"),
+          signal,
+        });
+      }),
+    [canSaveSong, isEditing, showConfirmAsync, t]
+  );
 
   // Load button: enabled when a song is loaded
   const canLoadSong = !!editedSong;
@@ -2122,10 +2132,10 @@ const AppContent: React.FC = () => {
       setEditedSong(newSong);
       updateCurrentSongText(newSong.Text);
       // Enter edit mode and focus (matching C# if(editor.MakeEditable(true)) editor.Focus())
-      setIsEditing(true);
-      // Trigger editor to enter edit mode after a short delay to allow state to update
+      // Go through enterEditMode so the OldSyncWarning check still runs. The
+      // callback will update the controlled isEditing state after approval.
       setTimeout(() => {
-        editorPanelRef.current?.enterEditMode?.();
+        if (getEditedSong()?.Id === newSong.Id) editorPanelRef.current?.enterEditMode?.();
       }, 100);
     };
 
@@ -2666,6 +2676,7 @@ const AppContent: React.FC = () => {
 
     // Only clear song display if we were actually watching (matching C# behavior)
     if (watchedSessionId !== null) {
+      setIsEditing(false);
       setEditedSong(null);
       setProjectedSong(null);
       updateCurrentSongText("");
@@ -2695,6 +2706,7 @@ const AppContent: React.FC = () => {
       // guarded song-clear is skipped. This event only fires when the embed stops
       // following, so clear the followed projection here — otherwise the last remote
       // song lingers on the projector after Stop.
+      setIsEditing(false);
       setEditedSong(null);
       setProjectedSong(null);
       updateCurrentSongText("");
@@ -2732,6 +2744,7 @@ const AppContent: React.FC = () => {
       setWatchedSessionUrl(_sessionUrl);
 
       // Clear current song display (matching C# LoadSong(null, true))
+      setIsEditing(false);
       setEditedSong(null);
       setProjectedSong(null);
       updateCurrentSongText("");
@@ -3148,8 +3161,8 @@ const AppContent: React.FC = () => {
                         song={editedSong}
                         onLineSelect={handleLineSelect}
                         onEditModeChange={handleEditModeChange}
-                        initialEditMode={isEditing}
-                        initialTab={editorTab}
+                        editMode={isEditing && !!editedSong}
+                        activeTab={editorTab}
                         onActiveTabChange={setEditorTab}
                         onTextChange={handleTextChange}
                         settings={settings}
@@ -3260,8 +3273,8 @@ const AppContent: React.FC = () => {
                       song={editedSong}
                       onLineSelect={handleLineSelect}
                       onEditModeChange={handleEditModeChange}
-                      initialEditMode={isEditing}
-                      initialTab={editorTab}
+                      editMode={isEditing && !!editedSong}
+                      activeTab={editorTab}
                       onActiveTabChange={setEditorTab}
                       onTextChange={handleTextChange}
                       settings={settings}

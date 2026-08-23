@@ -79,6 +79,8 @@
   "LanguageDescription": "Az alkalmazás nyelvének kiválasztása",
   "AskDiscardChanges": "Elvesszenek a módosítások?",
   "UnsavedChanges": "Nem mentett változtatások",
+  "AskSwitchToClientViewWithUnsavedChanges": "A dal nem mentett módosításokat tartalmaz. Átvált kliens nézetre?",
+  "SwitchToClientView": "Váltás kliens nézetre",
   "AskDiscardChangesAndLoadNewSong": "Nem mentett módosítások vannak. El akarja vetni őket és betölteni az új dalt?",
   "AskDiscardChangesAndReload": "Nem mentett módosítások vannak. El akarja vetni őket és újratölteni az eredeti dalt?",
   "ConfirmSave": "Mentés megerősítése",
