@@ -1057,14 +1057,18 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const touchTargetOpts: AddEventListenerOptions = { passive: false };
-    let chordTouchEventTarget: HTMLElement | null = null;
+    // A DOM tag is re-rendered as soon as its synthetic mousedown selects it.
+    // Keep listening on the original target as well as the stable editor root,
+    // otherwise its touchend is delivered to a detached node and no synthetic
+    // mouseup gets a chance to focus the editor.
+    let touchEventTarget: HTMLElement | null = null;
 
-    const releaseChordTouchEventTarget = () => {
-      if (!chordTouchEventTarget) return;
-      chordTouchEventTarget.removeEventListener("touchmove", onTouchMove, touchTargetOpts);
-      chordTouchEventTarget.removeEventListener("touchend", onTouchEnd, touchTargetOpts);
-      chordTouchEventTarget.removeEventListener("touchcancel", onTouchCancel, touchTargetOpts);
-      chordTouchEventTarget = null;
+    const releaseTouchEventTarget = () => {
+      if (!touchEventTarget) return;
+      touchEventTarget.removeEventListener("touchmove", onTouchMove, touchTargetOpts);
+      touchEventTarget.removeEventListener("touchend", onTouchEnd, touchTargetOpts);
+      touchEventTarget.removeEventListener("touchcancel", onTouchCancel, touchTargetOpts);
+      touchEventTarget = null;
     };
 
     const cancelLongPressTimer = () => {
@@ -1114,12 +1118,13 @@ export class ChordProEditor extends ChordDrawer {
       this.touchChordContextMenuBlocked = touchKind !== null;
       this.longPressStart = this.touchChordContextMenuBlocked ? null : { x: t0.clientX, y: t0.clientY };
       this.longPressSelection = this.touchChordContextMenuBlocked ? null : { start: this.selectionStart, end: this.selectionEnd };
-      releaseChordTouchEventTarget();
-      if (touchKind === "drag" && t0.target instanceof HTMLElement) {
-        chordTouchEventTarget = t0.target;
-        chordTouchEventTarget.addEventListener("touchmove", onTouchMove, touchTargetOpts);
-        chordTouchEventTarget.addEventListener("touchend", onTouchEnd, touchTargetOpts);
-        chordTouchEventTarget.addEventListener("touchcancel", onTouchCancel, touchTargetOpts);
+      releaseTouchEventTarget();
+      const tagTarget = t0.target instanceof Element && !!t0.target.closest(".chp-dom-tag");
+      if ((touchKind === "drag" || tagTarget) && t0.target instanceof HTMLElement) {
+        touchEventTarget = t0.target;
+        touchEventTarget.addEventListener("touchmove", onTouchMove, touchTargetOpts);
+        touchEventTarget.addEventListener("touchend", onTouchEnd, touchTargetOpts);
+        touchEventTarget.addEventListener("touchcancel", onTouchCancel, touchTargetOpts);
       }
       dispatchMouse("mousedown", e.changedTouches[0]);
       cancelLongPressTimer();
@@ -1136,10 +1141,9 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      // While dragging a chord, the original node owns the real touch stream.
-      // The parent sees the event only until the first repaint detaches that
-      // node, so let the target listener handle every frame consistently.
-      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
+      // A dragged chord or an editing tag can be repainted away before touchend.
+      // Let its original target own the real touch stream consistently.
+      if (touchEventTarget && e.currentTarget === this.parent_div) return;
       // Void a pending long-press on any real movement, regardless of whether
       // the canvas claimed the gesture (scroll on a blank area also cancels).
       if (this.longPressTimer != null && this.longPressStart && e.changedTouches.length >= 1) {
@@ -1157,8 +1161,8 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
-      releaseChordTouchEventTarget();
+      if (touchEventTarget && e.currentTarget === this.parent_div) return;
+      releaseTouchEventTarget();
       cancelLongPressTimer();
       this.longPressStart = null;
       this.longPressSelection = null;
@@ -1221,8 +1225,8 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const onTouchCancel = (e: TouchEvent) => {
-      if (chordTouchEventTarget && e.currentTarget === this.parent_div) return;
-      releaseChordTouchEventTarget();
+      if (touchEventTarget && e.currentTarget === this.parent_div) return;
+      releaseTouchEventTarget();
       cancelLongPressTimer();
       this.longPressStart = null;
       this.longPressSelection = null;
@@ -1241,7 +1245,7 @@ export class ChordProEditor extends ChordDrawer {
     this.parent_div.addEventListener("touchcancel", onTouchCancel, listenerOpts);
 
     this.removeTouchEvents = () => {
-      releaseChordTouchEventTarget();
+      releaseTouchEventTarget();
       cancelLongPressTimer();
       this.parent_div.removeEventListener("touchstart", onTouchStart, listenerOpts);
       this.parent_div.removeEventListener("touchmove", onTouchMove, listenerOpts);
@@ -5381,6 +5385,41 @@ export class ChordProEditor extends ChordDrawer {
     input.addEventListener("keydown", (e: KeyboardEvent) => this.onMetaKeyDown(styleName, e));
     input.addEventListener("focus", () => this.onMetaFocus(styleName));
     input.addEventListener("blur", () => this.onMetaBlur(styleName));
+    let tapClientX: number | null = null;
+    const placeTapCaret = () => {
+      const clientX = tapClientX;
+      tapClientX = null;
+      if (clientX == null || document.activeElement !== input) return;
+
+      const rect = input.getBoundingClientRect();
+      const textWidth = this.measureMetaValueWidth(input, input.value);
+      const freeWidth = Math.max(0, input.clientWidth - textWidth);
+      const textAlign = getComputedStyle(input).textAlign;
+      const textLeft = textAlign === "right" || textAlign === "end" ? freeWidth : textAlign === "center" ? freeWidth / 2 : 0;
+      const x = clientX - rect.left + input.scrollLeft - textLeft;
+      const caret = caretColumnForClick(input.value, (end) => this.measureMetaValueWidth(input, input.value.substring(0, end)), x);
+      input.setSelectionRange(caret, caret);
+    };
+    input.addEventListener("touchstart", (event: TouchEvent) => {
+      if (event.changedTouches.length === 1) tapClientX = event.changedTouches[0].clientX;
+    });
+    input.addEventListener("touchmove", () => {
+      tapClientX = null;
+    });
+    input.addEventListener("touchcancel", () => {
+      tapClientX = null;
+    });
+    // Most engines focus a text input after a tap on their own. Do it
+    // explicitly too: the editor's touch router intentionally lets native
+    // form touches through, but some embedded WebViews do not promote that tap
+    // to a focusing click after the surrounding canvas has handled touches.
+    input.addEventListener("touchend", () => {
+      if (!this.readOnly) input.focus();
+      // The native compatibility click has selected a position by the next
+      // frame. Reapply the position from the actual tap for WebViews which
+      // instead collapse programmatic focus to the end of the input.
+      requestAnimationFrame(placeTapCaret);
+    });
     row.appendChild(input);
 
     return { row, prefix, value: input };
