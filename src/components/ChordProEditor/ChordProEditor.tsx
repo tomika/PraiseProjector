@@ -16,6 +16,8 @@ import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../.
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import type { PerformanceFeatureMode } from "../../types";
 
+export type ChordProEditorTab = "wysiwyg" | "meta" | "chordpro";
+
 interface ChordProEditorProps {
   song: Song | null;
   onLineSelect?: (lineNumber: number) => void;
@@ -24,6 +26,8 @@ interface ChordProEditorProps {
   setProjectedSongText?: (newLyrics: string) => void;
   onTextChange?: (newText: string) => void; // For import wizard
   initialEditMode?: boolean; // Start in edit mode
+  initialTab?: ChordProEditorTab; // Restore the selected editor tab after a remount
+  onActiveTabChange?: (tab: ChordProEditorTab) => void;
   compareBase?: string; // For diff view - pass the base song text to compare against
   previewOnly?: boolean; // Hide tabs and toolbar, like C# PreviewOnly()
   forceThemeMode?: "light" | "dark"; // Optional forced theme for embedded previews
@@ -51,7 +55,7 @@ interface ChordProEditorProps {
 }
 
 interface ChordProEditorState {
-  activeTab: "wysiwyg" | "meta" | "chordpro";
+  activeTab: ChordProEditorTab;
   chordProText: string;
   metaData: Map<string, string>;
   commentBlockedByChords: boolean;
@@ -243,7 +247,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   constructor(props: ChordProEditorProps) {
     super(props);
     this.state = {
-      activeTab: "wysiwyg",
+      activeTab: props.initialTab ?? "wysiwyg",
       chordProText: "",
       metaData: new Map(),
       commentBlockedByChords: false,
@@ -269,6 +273,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
   componentDidUpdate(prevProps: ChordProEditorProps) {
     this.prepareWysiwygHost();
+
+    if (prevProps.initialTab !== this.props.initialTab && this.props.initialTab && this.props.initialTab !== this.state.activeTab) {
+      this.setState({ activeTab: this.props.initialTab });
+    }
 
     if (
       prevProps.performanceAdaptivePaging !== this.props.performanceAdaptivePaging ||
@@ -1090,6 +1098,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
    */
   public focusMetaTitle() {
     this.setState({ activeTab: "meta" }, () => {
+      this.props.onActiveTabChange?.("meta");
       // Allow React to render the meta tab, then focus the title input
       requestAnimationFrame(() => {
         this.titleInputRef?.focus();
@@ -1153,7 +1162,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.callWysiwygAPI("insertAbcAtCursor");
   };
 
-  private handleTabChange = (tab: ChordProEditorState["activeTab"]) => {
+  private handleTabChange = (tab: ChordProEditorTab) => {
     if (this.state.activeTab === tab) {
       if (tab === "wysiwyg" && this.wysiwygLoaded) {
         this.hasLoadedDocument = false; // Force full reload
@@ -1163,6 +1172,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     }
 
     this.setState({ activeTab: tab }, () => {
+      this.props.onActiveTabChange?.(tab);
       if (tab === "wysiwyg" && this.wysiwygLoaded) {
         this.hasLoadedDocument = false; // Force full reload when switching back to WYSIWYG
         this.loadSongToWysiwyg();

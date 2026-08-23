@@ -3,7 +3,9 @@ import { Song } from "../../db-common/Song";
 import "./EditorPanel.css";
 import { subscribeEditedSong } from "../state/CurrentSongStore";
 import { Settings } from "../types";
-import ChordProEditorWithLocalization, { ChordProEditor } from "./ChordProEditor/ChordProEditor";
+import ChordProEditorWithLocalization, { ChordProEditor, ChordProEditorTab } from "./ChordProEditor/ChordProEditor";
+
+export type EditorPanelTab = ChordProEditorTab;
 
 interface EditorPanelProps {
   song: Song | null;
@@ -23,6 +25,9 @@ interface EditorPanelProps {
   onSwipeNext?: () => void;
   prevSong?: Song | null;
   nextSong?: Song | null;
+  initialEditMode?: boolean;
+  initialTab?: EditorPanelTab;
+  onActiveTabChange?: (tab: EditorPanelTab) => void;
 }
 
 interface EditorPanelState {
@@ -108,6 +113,9 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
       onSwipeNext,
       prevSong,
       nextSong,
+      initialEditMode,
+      initialTab,
+      onActiveTabChange,
     } = this.props;
 
     return (
@@ -129,6 +137,9 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
           onSwipeNext={onSwipeNext}
           prevSong={prevSong}
           nextSong={nextSong}
+          initialEditMode={initialEditMode}
+          initialTab={initialTab}
+          onActiveTabChange={onActiveTabChange}
           pageTurnMode={settings?.fullViewChordProPageTurnMode ?? "auto"}
         />
       </div>

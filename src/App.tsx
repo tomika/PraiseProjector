@@ -5,7 +5,7 @@ import { Panel, PanelGroup } from "react-resizable-panels";
 import LeftPanel, { LeftPanelMethods } from "./components/LeftPanel";
 import { PlaylistSelectionEvent } from "./components/PlaylistPanel";
 import PreviewPanel, { PreviewPanelMethods } from "./components/PreviewPanel";
-import EditorPanel from "./components/EditorPanel";
+import EditorPanel, { EditorPanelTab } from "./components/EditorPanel";
 import Toolbar from "./components/Toolbar";
 import MessageBox from "./components/MessageBox";
 import { ShareDialogHost } from "./components/ShareDialog";
@@ -128,6 +128,8 @@ const AppStateCodec = t.type({
   songFilter: t.union([t.string, t.undefined]),
   // Active panel in paging mode
   activePanel: t.union([t.literal("side"), t.literal("editor"), t.literal("preview"), t.undefined]),
+  editorTab: t.union([t.literal("wysiwyg"), t.literal("meta"), t.literal("chordpro"), t.undefined]),
+  editorEditing: t.union([t.boolean, t.undefined]),
   // Panel layout state - named properties for clarity
   leftPanelSize: t.union([t.number, t.undefined]),
   editorPanelSize: t.union([t.number, t.undefined]),
@@ -521,7 +523,8 @@ const AppContent: React.FC = () => {
   const preserveLoadedSongOnPlaylistSelectionRef = useRef(false);
   const playlistLoadTargetSongIdRef = useRef<string | null>(null);
   const pendingPlaylistSelectionIndexRef = useRef<number | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(initialAppState?.editorEditing ?? false);
+  const [editorTab, setEditorTab] = useState<EditorPanelTab>(initialAppState?.editorTab ?? "wysiwyg");
   const [_editorInitialized, setEditorInitialized] = useState(false);
   // Remote highlight controller state - matching C# ProjectorForm.sectionListBox.Remote
   const [remoteHighlightController, setRemoteHighlightController] = useState<string>("");
@@ -710,6 +713,8 @@ const AppContent: React.FC = () => {
       selectedSectionIndex: selectedSectionIndex,
       songFilter: songFilter,
       activePanel: activePanel,
+      editorTab: editorTab,
+      editorEditing: isEditing,
       leftPanelSize: leftPanelSize,
       editorPanelSize: editorPanelSize,
       previewPanelSize: previewPanelSize,
@@ -726,6 +731,8 @@ const AppContent: React.FC = () => {
     selectedSectionIndex,
     songFilter,
     activePanel,
+    editorTab,
+    isEditing,
     leftPanelSize,
     editorPanelSize,
     previewPanelSize,
@@ -751,6 +758,8 @@ const AppContent: React.FC = () => {
         selectedSectionIndex: previewPanelRef.current?.getSelectedSectionIndex() ?? -1,
         songFilter: songFilter,
         activePanel: activePanel,
+        editorTab: editorTab,
+        editorEditing: isEditing,
         leftPanelSize: leftPanelSize,
         editorPanelSize: editorPanelSize,
         previewPanelSize: previewPanelSize,
@@ -769,6 +778,8 @@ const AppContent: React.FC = () => {
     selectedPlaylistIndex,
     songFilter,
     activePanel,
+    editorTab,
+    isEditing,
     leftPanelSize,
     editorPanelSize,
     previewPanelSize,
@@ -3137,6 +3148,9 @@ const AppContent: React.FC = () => {
                         song={editedSong}
                         onLineSelect={handleLineSelect}
                         onEditModeChange={handleEditModeChange}
+                        initialEditMode={isEditing}
+                        initialTab={editorTab}
+                        onActiveTabChange={setEditorTab}
                         onTextChange={handleTextChange}
                         settings={settings}
                         setProjectedSongText={updateCurrentSongText}
@@ -3246,6 +3260,9 @@ const AppContent: React.FC = () => {
                       song={editedSong}
                       onLineSelect={handleLineSelect}
                       onEditModeChange={handleEditModeChange}
+                      initialEditMode={isEditing}
+                      initialTab={editorTab}
+                      onActiveTabChange={setEditorTab}
                       onTextChange={handleTextChange}
                       settings={settings}
                       setProjectedSongText={updateCurrentSongText}
