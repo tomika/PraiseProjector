@@ -490,12 +490,13 @@ const UserPanel: React.FC<UserPanelProps> = ({
         )}
         {onSettingsClick && (
           <button
-            className="btn btn-light user-sync-main-btn user-sync-height-btn ml-1"
+            className="btn btn-light user-sync-main-btn user-sync-height-btn ml-1 position-relative"
             aria-label="Settings"
             title={tt("toolbar_settings")}
             onClick={onSettingsClick}
           >
             <Icon type={IconType.SETTINGS} />
+            {hasUpdate && <span className="update-dot update-dot-abs" />}
           </button>
         )}
       </div>

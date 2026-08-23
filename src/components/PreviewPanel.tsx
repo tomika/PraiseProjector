@@ -9,6 +9,7 @@ import { useSettings } from "../hooks/useSettings";
 import { Icon, IconType } from "../services/IconService";
 import { getProjectedSong, getCurrentDisplay, useProjectedSong, updateCurrentDisplay, setProjectorRenderDims } from "../state/CurrentSongStore";
 import { useMessageBox } from "../contexts/MessageBoxContext";
+import { useUpdate } from "../contexts/UpdateContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
 import { MonitorDisplay } from "../types/electron";
@@ -188,6 +189,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const { settings, updateSettingWithAutoSave } = useSettings();
     const projectedSong = useProjectedSong();
     const { showMessage } = useMessageBox();
+    const { hasUpdate } = useUpdate();
     const { t } = useLocalization();
     const { tt } = useTooltips();
     const [activeTab, setActiveTab] = useState<PreviewTab>(initialTab);
@@ -2845,8 +2847,14 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               <div className="d-flex flex-column ml-1 flex-shrink-0 preview-button-column">
                 <div className="btn-group-vertical">
                   {showSettingsButton && onSettingsClick && (
-                    <button className="btn btn-light" aria-label="Settings" title={tt("toolbar_settings")} onClick={() => onSettingsClick()}>
+                    <button
+                      className="btn btn-light position-relative"
+                      aria-label="Settings"
+                      title={tt("toolbar_settings")}
+                      onClick={() => onSettingsClick()}
+                    >
                       <Icon type={IconType.SETTINGS} />
+                      {hasUpdate && <span className="update-dot update-dot-abs" />}
                     </button>
                   )}
                   <button
