@@ -232,6 +232,14 @@ export default defineConfig(({ command, mode }) => {
             // than allowing Rollup to fold it into a catch-all shared chunk. The
             // ABC editor remains a separate dynamic feature chunk.
             if (normalizedId.includes("/chordpro/") && !normalizedId.endsWith("/chordpro/abc_editor.ts")) return "chordpro-core";
+            // Split the shared, always-eager application core that both the
+            // full app and the standalone client-view entry pull in statically
+            // (DB entity models, cross-boundary types/codecs/cloud API client)
+            // out of Rollup's automatic cross-entry shared chunk, which grows
+            // past the 600 kB warning threshold when left as one file.
+            if (normalizedId.includes("/db-common/")) return "db-common";
+            if (normalizedId.includes("/common/") && !normalizedId.includes("node_modules")) return "vendor-common";
+            if (normalizedId.includes("/src/client-view/")) return "client-view-core";
             if (!normalizedId.includes("node_modules")) return undefined;
             const inPkg = (...names: string[]) => names.some((n) => normalizedId.includes(`node_modules/${n}/`));
             // Editor-only React libraries — checked BEFORE react core so the page
