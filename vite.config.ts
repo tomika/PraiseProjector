@@ -237,9 +237,18 @@ export default defineConfig(({ command, mode }) => {
             // (DB entity models, cross-boundary types/codecs/cloud API client)
             // out of Rollup's automatic cross-entry shared chunk, which grows
             // past the 600 kB warning threshold when left as one file.
+            //
+            // Deliberately NOT doing the same for /src/client-view/*: forcing
+            // that whole tree into one manual chunk broke the app in production
+            // (but not in `vite dev`, which never runs manualChunks) — a fresh
+            // load stayed on ClientView, the hidden full-view wrapper div never
+            // committed, and React threw "removeChild: not a child of this
+            // node" during the first commit. Verified by bisection: reproduces
+            // with this rule present, gone the moment it's removed, with
+            // db-common/vendor-common unchanged either way. Left as Rollup's
+            // automatic cross-entry chunking instead.
             if (normalizedId.includes("/db-common/")) return "db-common";
             if (normalizedId.includes("/common/") && !normalizedId.includes("node_modules")) return "vendor-common";
-            if (normalizedId.includes("/src/client-view/")) return "client-view-core";
             if (!normalizedId.includes("node_modules")) return undefined;
             const inPkg = (...names: string[]) => names.some((n) => normalizedId.includes(`node_modules/${n}/`));
             // Editor-only React libraries — checked BEFORE react core so the page
