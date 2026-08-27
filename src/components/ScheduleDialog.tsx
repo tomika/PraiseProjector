@@ -53,6 +53,9 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
   const activeLeader = findLeader(activeLeaderId) ?? leader;
 
   const showSwitcher = mode === "load" && ownLeaders.length + publicLeaders.length > 0;
+  // The public mirror follows server/database order. Keep its dropdown group
+  // predictable and easy to scan without mutating the source list.
+  const sortedPublicLeaders = [...publicLeaders].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   const leaderOptions = (list: Leader[]) =>
     list.map((l) => (
@@ -74,7 +77,7 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
       >
         {!findLeader(activeLeader.id) && <option value={activeLeader.id}>{activeLeader.name}</option>}
         {ownLeaders.length > 0 && <optgroup label={t("MyLeaders")}>{leaderOptions(ownLeaders)}</optgroup>}
-        {publicLeaders.length > 0 && <optgroup label={t("PublicLeaders")}>{leaderOptions(publicLeaders)}</optgroup>}
+        {sortedPublicLeaders.length > 0 && <optgroup label={t("PublicLeaders")}>{leaderOptions(sortedPublicLeaders)}</optgroup>}
       </select>
       {onRefreshPublic && (
         <button
