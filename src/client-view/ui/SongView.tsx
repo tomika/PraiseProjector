@@ -1293,7 +1293,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         <div className="editor" ref={nextHostRef} tabIndex={-1} />
       </div>
       <div className="cv-page cv-page-current" ref={currentPageRef}>
-        <div className="editor" id="editor" ref={hostRef} tabIndex={-1} />
+        <div className="editor" id="editor" ref={hostRef} tabIndex={-1} style={{ visibility: "hidden" }} />
       </div>
       {!hasSongText && (
         <div className="cv-empty-state">
