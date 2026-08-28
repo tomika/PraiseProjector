@@ -1293,7 +1293,13 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         <div className="editor" ref={nextHostRef} tabIndex={-1} />
       </div>
       <div className="cv-page cv-page-current" ref={currentPageRef}>
-        <div className="editor" id="editor" ref={hostRef} tabIndex={-1} style={{ visibility: "hidden" }} />
+        {/* The DOM renderer explicitly makes its own root visible on its first
+            commit, so `visibility: hidden` on this host can be overridden by
+            that child. Start the only initially visible host transparent
+            instead: neither the renderer nor a reload can expose auto-wrap's
+            intermediate font sizes before fitAndZoom applies the final
+            transform and removes this inline property. */}
+        <div className="editor" id="editor" ref={hostRef} tabIndex={-1} style={{ opacity: 0 }} />
       </div>
       {!hasSongText && (
         <div className="cv-empty-state">
