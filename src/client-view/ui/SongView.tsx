@@ -154,11 +154,27 @@ function advanceFitGeneration(host: HTMLDivElement): number {
   return generation;
 }
 
+/** Toggle the page-level paint guard as one operation. The page is also the
+ *  FIT_WIDTH scroll container, so pin the absolute cover to the currently
+ *  visible scroll range rather than leaving it at content offset zero. */
+function coverFitPage(host: HTMLDivElement, covered: boolean): void {
+  const page = host.parentElement;
+  if (!page) return;
+  if (covered) {
+    page.style.setProperty("--cv-fit-cover-top", `${page.scrollTop}px`);
+    page.classList.add("cv-fit-pending");
+  } else {
+    page.classList.remove("cv-fit-pending");
+    page.style.removeProperty("--cv-fit-cover-top");
+  }
+}
+
 /** Clear any scaling this module applied to an editor host, restoring its natural
  *  (unscaled) layout so it can be blanked. Also drops the pending-fit hide below,
  *  so a host cleared for reuse is never left invisible. */
 function clearFit(host: HTMLDivElement): number {
   const generation = advanceFitGeneration(host);
+  coverFitPage(host, false);
   host.style.removeProperty("width");
   host.style.removeProperty("transform");
   host.style.removeProperty("transform-origin");
@@ -246,16 +262,37 @@ async function fitAndZoom(
   sizingMode: ZoomSizingMode,
   requestedFontSize: number,
   autoWrap: boolean,
-  fitViewport?: HTMLElement | null
-): Promise<boolean> {
+  fitViewport?: HTMLElement | null,
+  retryOnFailure = true
+): Promise<number | null> {
+  const generation = advanceFitGeneration(host);
+  let applied = false;
   try {
-    return await fitAndZoomInternal(host, api, sizingMode, requestedFontSize, autoWrap, fitViewport);
+    applied = await fitAndZoomInternal(host, api, sizingMode, requestedFontSize, autoWrap, generation, fitViewport);
   } catch {
-    // A page can be disposed while its asynchronous DOM layout is settling.
+    // A disposed editor can reject while its asynchronous DOM layout settles.
+  }
+  if (applied) return generation;
+  if (fitGenerations.get(host) !== generation) return null;
+
+  // A failed fit may safely restore pixels only when the host already owns a
+  // valid transform. Without one, keep the page covered and retry once on the
+  // next frame: this recovers a transient dispose/rebind without creating an
+  // infinite retry loop. A second failure deliberately stays blank until the
+  // next display/resize fit or clearFit rather than exposing an unfitted song.
+  if (host.style.transform) {
+    coverFitPage(host, false);
     host.style.removeProperty("visibility");
     host.style.removeProperty("opacity");
-    return false;
+  } else if (retryOnFailure && host.isConnected) {
+    // Keep the original caller's promise attached to the retry. In particular,
+    // a page turn must finish as soon as the retried current page lands instead
+    // of waiting for PageFlip's safety timeout.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (fitGenerations.get(host) !== generation || !host.isConnected) return null;
+    return fitAndZoom(host, api, sizingMode, requestedFontSize, autoWrap, fitViewport, false);
   }
+  return null;
 }
 
 /**
@@ -273,6 +310,7 @@ async function fitAndZoomInternal(
   sizingMode: ZoomSizingMode,
   requestedFontSize: number,
   autoWrap: boolean,
+  generation: number,
   fitViewport?: HTMLElement | null
 ): Promise<boolean> {
   const scrollMode = usesVerticalScroll(sizingMode);
@@ -292,11 +330,14 @@ async function fitAndZoomInternal(
   // identical before and after the page swap.
   const cw = fitViewport?.clientWidth || container?.clientWidth || 1;
   const ch = fitViewport?.clientHeight || container?.clientHeight || 1;
-  const generation = advanceFitGeneration(host);
   // Wrapped layout always needs the pane width as its line-breaking boundary,
   // including FIT_PAGE where the final composite may subsequently scale down.
   if (scrollMode || autoWrap) host.style.width = `${cw}px`;
   else host.style.removeProperty("width");
+  // Opacity is enough in desktop Chromium, but Android WebView can composite
+  // child render layers between async font trials. Cover the whole page as well;
+  // unlike the editor host, no renderer-owned child style can undo this guard.
+  if (automaticFontGrowth || !host.style.transform) coverFitPage(host, true);
   if (automaticFontGrowth) host.style.opacity = "0";
   else if (!host.style.transform) host.style.visibility = "hidden";
   // Automatic modes first need the unwrapped natural layout to establish the
@@ -345,6 +386,8 @@ async function fitAndZoomInternal(
     }
   }
   const applySnapshot = (snapshot: ReturnType<BoundEditor["getLayoutSnapshot"]>) => {
+    // A same-generation zero-size snapshot is a failed fit. Leave its cover in
+    // place; fitAndZoom will restore a prior transform or schedule one retry.
     if (fitGenerations.get(host) !== generation || !snapshot.width || !snapshot.height) return false;
     const ew = snapshot.width;
     const eh = snapshot.height;
@@ -356,6 +399,7 @@ async function fitAndZoomInternal(
     host.style.transform = `translateX(${tx}px) scale(${z})`;
     if (manualFontSize) host.style.removeProperty("margin-bottom");
     else host.style.marginBottom = `${eh * (z - 1)}px`;
+    coverFitPage(host, false);
     host.style.removeProperty("visibility");
     host.style.removeProperty("opacity");
     return true;
@@ -1163,15 +1207,15 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       autoWrap,
       prevPageRef.current ?? nextPageRef.current ?? swipeRef.current
     );
-    const settledFitGeneration = fitGenerations.get(host);
     // Keep the revealed neighbour in place until the incoming current page has
     // its final transform. Swapping earlier exposed a second, slightly larger fit
-    // after every completed turn.
-    void settledFit.then((applied) => {
-      if (!applied) return;
+    // after every completed turn. fitAndZoom returns the exact generation that
+    // succeeded, including an attached one-frame retry.
+    void settledFit.then((appliedFitGeneration) => {
+      if (appliedFitGeneration === null) return;
       recordChordProRenderDuration(performance.now() - renderStartedAt);
       requestAnimationFrame(() => {
-        if (fitGenerations.get(host) !== settledFitGeneration) return;
+        if (fitGenerations.get(host) !== appliedFitGeneration) return;
         flipRef.current?.finishPending();
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
@@ -1292,13 +1336,13 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       <div className="cv-page cv-page-next" ref={nextPageRef}>
         <div className="editor" ref={nextHostRef} tabIndex={-1} />
       </div>
-      <div className="cv-page cv-page-current" ref={currentPageRef}>
-        {/* The DOM renderer explicitly makes its own root visible on its first
-            commit, so `visibility: hidden` on this host can be overridden by
-            that child. Start the only initially visible host transparent
-            instead: neither the renderer nor a reload can expose auto-wrap's
-            intermediate font sizes before fitAndZoom applies the final
-            transform and removes this inline property. */}
+      {/* Keep this className literal stable. It installs the pre-first-paint
+          guard; after mount coverFitPage owns the class imperatively, just as
+          fitAndZoom owns cv-scroll/cv-line-wrap on the same page. */}
+      <div className="cv-page cv-page-current cv-fit-pending" ref={currentPageRef}>
+        {/* Keep opacity as a second paint guard. The page-level cover above is
+            what makes this reliable in Android WebView, where renderer child
+            layers may otherwise be composited between async font trials. */}
         <div className="editor" id="editor" ref={hostRef} tabIndex={-1} style={{ opacity: 0 }} />
       </div>
       {!hasSongText && (

@@ -442,6 +442,33 @@ body,
   z-index: 0;
 }
 
+/* Keep every renderer-owned z-index inside the editor's own stacking context.
+   The fit cover can then stay structurally above it even if the DOM renderer's
+   internal `contain` rule is changed later. */
+.cv-page > .editor {
+  position: relative;
+  z-index: 0;
+}
+
+/* An opaque paint guard for asynchronous SongView fitting. Android WebView may
+   composite renderer child layers between font-size trials even while the host
+   opacity is changing; a page-level cover cannot be escaped by those children.
+   SongView removes the class only after the final fitted snapshot is applied. */
+.cv-page.cv-fit-pending::after {
+  content: "";
+  position: absolute;
+  top: var(--cv-fit-cover-top, 0px);
+  right: 0;
+  bottom: auto;
+  left: 0;
+  z-index: 10;
+  height: 100%;
+  /* Dark mode overrides the page background directly rather than changing
+     --cv-song-bg, so inherit the page's final computed background here. */
+  background: inherit;
+  pointer-events: none;
+}
+
 .cv-page-prev,
 .cv-page-next {
   z-index: -1;
