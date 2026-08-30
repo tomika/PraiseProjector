@@ -26,6 +26,7 @@ import { shouldUsePagingLayout } from "./utils/viewLayout";
 import { installUiAnimationPreference } from "./shared/performanceSettings";
 import { reportPageLoadedSuccessfully } from "./services/webAppLaunchReport";
 import { requestClientViewSwitch } from "./services/clientViewSwitchGuard";
+import { WebAppUpdateActivityBar } from "./components/WebAppUpdateActivityBar";
 import "./shared/performance.css";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
@@ -207,6 +208,7 @@ function RootView() {
   // embedded view can drive it through the shared CurrentSongStore.
   return (
     <>
+      <WebAppUpdateActivityBar />
       <div hidden={showClient}>
         <App />
       </div>

@@ -56,8 +56,18 @@ export interface ElectronHostDevice {
   getWebAppBundleStatus?: () => string | Promise<string>;
   /** Forced server check; the outcome arrives as a `pp-webapp-bundle-event`. */
   checkWebAppUpdateNow?: () => void | Promise<void>;
+  /** JSON `WebAppUpdateActivity`; local-only snapshot used when the UI mounted after
+   *  the activation check had already started. */
+  getWebAppUpdateActivity?: () => string | Promise<string>;
   /** Trial-launches an already downloaded release immediately (reloads the WebView). */
   applyPendingWebAppUpdate?: () => void | Promise<void>;
+}
+
+/** Transient Android webapp update activity. */
+export interface WebAppUpdateActivity {
+  phase: "idle" | "checking" | "downloading";
+  downloadedBytes: number;
+  totalBytes: number;
 }
 
 /** Mirrors `WebAppBundleStatus` in `WebAppBundleManager.kt`. */
@@ -90,11 +100,13 @@ export interface WebAppBundleStatus {
 }
 
 export interface WebAppBundleEventDetail {
-  phase: "checking" | "result" | "error";
+  phase: "checking" | "downloading" | "result" | "error";
   result?: "UPDATED" | "CURRENT" | "INCOMPATIBLE";
   message?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
   /** JSON-encoded `WebAppBundleStatus`, as produced by the native bridge. */
-  status?: string;
+  status?: string | null;
 }
 
 /**

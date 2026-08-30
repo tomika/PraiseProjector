@@ -1,0 +1,36 @@
+.webapp-update-activity {
+  position: fixed;
+  z-index: 2147483647;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.webapp-update-activity-bar {
+  height: 100%;
+}
+
+.webapp-update-activity-bar-checking {
+  width: 40%;
+  background: #0d6efd;
+  animation: webapp-update-checking 1s ease-in-out infinite;
+}
+
+.webapp-update-activity-bar-downloading {
+  min-width: 2px;
+  background: #dc3545;
+  transition: width 100ms linear;
+}
+
+@keyframes webapp-update-checking {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}

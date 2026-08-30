@@ -4,7 +4,7 @@ import type { WebAppBundleEventDetail, WebAppBundleStatus } from "../../types/ho
 
 type CheckPhase = "idle" | "checking" | "done";
 
-function parseStatus(raw: string | undefined): WebAppBundleStatus | null {
+function parseStatus(raw: string | null | undefined): WebAppBundleStatus | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as WebAppBundleStatus;
@@ -56,11 +56,12 @@ const WebAppBundleSettings: React.FC = () => {
     const onBundleEvent = (event: Event) => {
       const detail = (event as CustomEvent<WebAppBundleEventDetail>).detail;
       if (!detail) return;
-      setPhase(detail.phase === "checking" ? "checking" : "done");
-      if (detail.phase !== "checking") setOutcome(detail);
+      const busy = detail.phase === "checking" || detail.phase === "downloading";
+      setPhase(busy ? "checking" : "done");
+      if (!busy) setOutcome(detail);
       const pushed = parseStatus(detail.status);
       if (pushed) setStatus(pushed);
-      else void refreshStatus();
+      else if (!busy) void refreshStatus();
     };
 
     window.addEventListener("pp-webapp-bundle-event", onBundleEvent);

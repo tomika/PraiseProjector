@@ -17,6 +17,7 @@ import { cloudApiBaseUrl } from "../../config";
 import { LocalizationProvider } from "../../localization/LocalizationContext";
 import { reportPageLoadedSuccessfully } from "../../services/webAppLaunchReport";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
+import { WebAppUpdateActivityBar } from "../../components/WebAppUpdateActivityBar";
 
 function readLaunchConfigFromUrl(): Pick<
   ClientConfig,
@@ -79,6 +80,7 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
 
   createRoot(rootEl).render(
     <LocalizationProvider>
+      <WebAppUpdateActivityBar />
       <ClientViewProvider store={store}>
         <ClientView />
       </ClientViewProvider>
