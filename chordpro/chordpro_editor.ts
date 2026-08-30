@@ -458,6 +458,12 @@ export interface ChordProEditorOptions {
    * centred independently of an over-long title.
    */
   readonly viewportAlignedTitle?: boolean;
+  /**
+   * Install the legacy touch-to-mouse interaction router. Read-only previews
+   * that have no line selection or page-turn actions leave this disabled so
+   * the browser owns native touch scrolling over the rendered song text.
+   */
+  readonly routeTouch?: boolean;
 }
 
 /**
@@ -479,6 +485,13 @@ export function caretColumnForClick(text: string, measurePrefixWidth: (endIndex:
     }
   }
   return best;
+}
+
+const TOUCH_LONG_PRESS_MS = 650;
+
+/** Keep native touch context menus from turning an ordinary tap into a long press. */
+export function shouldSuppressTouchContextMenu(now: number, touchStartedAt: number, suppressUntil: number) {
+  return now < suppressUntil || (touchStartedAt > 0 && now - touchStartedAt < TOUCH_LONG_PRESS_MS);
 }
 
 export class ChordProEditor extends ChordDrawer {
@@ -524,6 +537,8 @@ export class ChordProEditor extends ChordDrawer {
   private longPressStart: { x: number; y: number } | null = null;
   private longPressSelection: { start: number | ChordProSelection | null; end: number | ChordProSelection | null } | null = null;
   private lastLongPressTime = 0;
+  private touchPressStartedAt = 0;
+  private suppressTouchContextMenuUntil = 0;
   private touchChordContextMenuBlocked = false;
   private lastTouchChordContextMenuBlockTime = 0;
   private keyEventTarget: HTMLElement | null = null;
@@ -545,6 +560,21 @@ export class ChordProEditor extends ChordDrawer {
   private domCaretScrollUnsubscribe: (() => void) | null = null;
   /** Set only by keyboard/text editing, never by rendering or pointer scrolling. */
   private domCaretScrollPending = false;
+  /** Extra scroll range while an overlay soft keyboard covers the editor. */
+  private domCaretScrollSpacer: HTMLDivElement | null = null;
+  private domCaretScrollSpacerTarget: HTMLElement | null = null;
+  private domCaretViewportRaf: number | null = null;
+  private readonly handleDomCaretViewportChange = () => {
+    if (this.domCaretViewportRaf != null) cancelAnimationFrame(this.domCaretViewportRaf);
+    this.domCaretViewportRaf = requestAnimationFrame(() => {
+      this.domCaretViewportRaf = null;
+      if (!this.parent_div.contains(document.activeElement)) {
+        this.clearDomCaretScrollSpacer();
+        return;
+      }
+      this.scrollDomCaretIntoView();
+    });
+  };
   /**
    * Root-local drop marker for an in-flight chord drag, resolved by
    * `applyChordDrag`. It is decoration state, never document state.
@@ -552,9 +582,17 @@ export class ChordProEditor extends ChordDrawer {
   private chordDropMarker: { x: number; y: number } | null = null;
   private contextMenuElement: HTMLDivElement | null = null;
   private readonly handleContextMenu = (e: MouseEvent) => {
+    const now = Date.now();
     // Chord touches are reserved for chord interaction and drag-and-drop. Keep
     // swallowing a possible trailing native contextmenu briefly after touchend.
-    if (this.touchChordContextMenuBlocked || Date.now() - this.lastTouchChordContextMenuBlockTime < 700) {
+    if (this.touchChordContextMenuBlocked || now - this.lastTouchChordContextMenuBlockTime < 700) {
+      e.preventDefault();
+      return;
+    }
+    // Some Android WebViews emit a native contextmenu before a short tap has
+    // completed, or immediately after touchend. Neither is proof of a long
+    // press: keep the fallback timer authoritative until its threshold.
+    if (shouldSuppressTouchContextMenu(now, this.touchPressStartedAt, this.suppressTouchContextMenuUntil)) {
       e.preventDefault();
       return;
     }
@@ -566,7 +604,7 @@ export class ChordProEditor extends ChordDrawer {
     }
     // Our timer already opened the menu for this touch: swallow the OS's
     // trailing native contextmenu so it doesn't reopen it.
-    if (this.longPressFired || Date.now() - this.lastLongPressTime < 700) {
+    if (this.longPressFired || now - this.lastLongPressTime < 700) {
       e.preventDefault();
       return;
     }
@@ -577,7 +615,7 @@ export class ChordProEditor extends ChordDrawer {
       this.selectionStart = this.longPressSelection.start;
       this.selectionEnd = this.longPressSelection.end;
       this.longPressFired = true;
-      this.lastLongPressTime = Date.now();
+      this.lastLongPressTime = now;
     }
     this.onContextMenu(e);
   };
@@ -904,8 +942,12 @@ export class ChordProEditor extends ChordDrawer {
       this.textarea.addEventListener("compositionend", this.handleCompositionEnd);
     }
 
-    if (routeTouch) this.installTouchHandlers();
+    if (routeTouch && options?.routeTouch !== false) this.installTouchHandlers();
     else this.removeTouchEvents = null;
+
+    window.visualViewport?.addEventListener("resize", this.handleDomCaretViewportChange);
+    window.visualViewport?.addEventListener("scroll", this.handleDomCaretViewportChange);
+    window.addEventListener("resize", this.handleDomCaretViewportChange);
 
     if (!Object.prototype.hasOwnProperty.call(window, "clipboardData")) {
       const id = "ChordProEditor_SelfGen_TextArea";
@@ -1041,7 +1083,6 @@ export class ChordProEditor extends ChordDrawer {
 
     // Long-press → context menu. Sits above the platform's default touch-hold
     // delay; movement past the slop voids it (that's a scroll/drag/selection).
-    const LONG_PRESS_MS = 650;
     const MOVE_SLOP_PX = 10;
 
     const chordTouchKind = (touch: Touch): "drag" | "diagram" | null => {
@@ -1057,10 +1098,10 @@ export class ChordProEditor extends ChordDrawer {
     };
 
     const touchTargetOpts: AddEventListenerOptions = { passive: false };
-    // A DOM tag is re-rendered as soon as its synthetic mousedown selects it.
-    // Keep listening on the original target as well as the stable editor root,
-    // otherwise its touchend is delivered to a detached node and no synthetic
-    // mouseup gets a chance to focus the editor.
+    // Editor content can be re-rendered as soon as its synthetic mousedown
+    // selects a caret, tag or chord. Keep listening on the original target as
+    // well as the stable editor root; otherwise touchend may be delivered to a
+    // detached node, leaving the long-press timer alive after a short tap.
     let touchEventTarget: HTMLElement | null = null;
 
     const releaseTouchEventTarget = () => {
@@ -1114,13 +1155,14 @@ export class ChordProEditor extends ChordDrawer {
       // mutates it (onMouseDown clears the selection).
       const t0 = e.changedTouches[0];
       const touchKind = chordTouchKind(t0);
+      this.touchPressStartedAt = Date.now();
+      this.suppressTouchContextMenuUntil = 0;
       this.longPressFired = false;
       this.touchChordContextMenuBlocked = touchKind !== null;
       this.longPressStart = this.touchChordContextMenuBlocked ? null : { x: t0.clientX, y: t0.clientY };
       this.longPressSelection = this.touchChordContextMenuBlocked ? null : { start: this.selectionStart, end: this.selectionEnd };
       releaseTouchEventTarget();
-      const tagTarget = t0.target instanceof Element && !!t0.target.closest(".chp-dom-tag");
-      if ((touchKind === "drag" || tagTarget) && t0.target instanceof HTMLElement) {
+      if (t0.target instanceof HTMLElement) {
         touchEventTarget = t0.target;
         touchEventTarget.addEventListener("touchmove", onTouchMove, touchTargetOpts);
         touchEventTarget.addEventListener("touchend", onTouchEnd, touchTargetOpts);
@@ -1128,7 +1170,7 @@ export class ChordProEditor extends ChordDrawer {
       }
       dispatchMouse("mousedown", e.changedTouches[0]);
       cancelLongPressTimer();
-      if (!this.touchChordContextMenuBlocked) this.longPressTimer = window.setTimeout(fireLongPress, LONG_PRESS_MS);
+      if (!this.touchChordContextMenuBlocked) this.longPressTimer = window.setTimeout(fireLongPress, TOUCH_LONG_PRESS_MS);
       // After onMouseDown ran, check if an interactive element was hit. In
       // read-only display mode, also claim blank canvas/page touches so the
       // outer page-flip controller receives the full synthetic mouse gesture.
@@ -1175,10 +1217,16 @@ export class ChordProEditor extends ChordDrawer {
         // land on the freshly opened menu.
         this.longPressFired = false;
         this.touchActive = false;
+        this.touchPressStartedAt = 0;
         e.preventDefault();
         e.stopPropagation();
         return;
       }
+      // Android may enqueue its native contextmenu after touchend. Fence that
+      // compatibility event while allowing this tap's synthetic mouseup below
+      // to position the caret normally.
+      this.touchPressStartedAt = 0;
+      this.suppressTouchContextMenuUntil = Date.now() + 700;
       if (e.changedTouches.length !== 1) return;
       if (this.touchActive) {
         const touch = e.changedTouches[0];
@@ -1234,6 +1282,8 @@ export class ChordProEditor extends ChordDrawer {
       if (this.touchChordContextMenuBlocked) this.lastTouchChordContextMenuBlockTime = Date.now();
       this.touchChordContextMenuBlocked = false;
       this.touchActive = false;
+      this.touchPressStartedAt = 0;
+      this.suppressTouchContextMenuUntil = Date.now() + 700;
       this.suppressNextClickTs = false;
       this.lastTouchTapTime = 0;
       this.lastTouchTapPos = null;
@@ -1268,6 +1318,14 @@ export class ChordProEditor extends ChordDrawer {
     }
     this.domCaretScrollUnsubscribe?.();
     this.domCaretScrollUnsubscribe = null;
+    window.visualViewport?.removeEventListener("resize", this.handleDomCaretViewportChange);
+    window.visualViewport?.removeEventListener("scroll", this.handleDomCaretViewportChange);
+    window.removeEventListener("resize", this.handleDomCaretViewportChange);
+    if (this.domCaretViewportRaf != null) {
+      cancelAnimationFrame(this.domCaretViewportRaf);
+      this.domCaretViewportRaf = null;
+    }
+    this.clearDomCaretScrollSpacer();
     this.domRenderer?.dispose();
     this.domRenderer = null;
     this.canvasLayout.dispose();
@@ -1972,7 +2030,7 @@ export class ChordProEditor extends ChordDrawer {
 
   private requestDomCaretScroll() {
     if (this.disposed || this.readOnly || this.drawingSuppressed || !this.domRenderer) return;
-    if (!(this.actionTarget instanceof ChordProLine) || this.cursorPos == null) return;
+    if (!this.actionTarget || this.cursorPos == null) return;
     this.domCaretScrollPending = true;
   }
 
@@ -1982,20 +2040,36 @@ export class ChordProEditor extends ChordDrawer {
    */
   private scrollDomCaretIntoView() {
     if (this.disposed || this.readOnly) return;
-    if (!(this.actionTarget instanceof ChordProLine) || this.cursorPos == null) return;
+    if (!this.actionTarget || this.cursorPos == null) return;
     const caret = this.domRenderer?.getCaretClientRect();
     const scrollTarget = this.findCaretScrollContainer(this.parent_div);
     if (!caret || !scrollTarget) return;
 
     const targetRect = scrollTarget.getBoundingClientRect();
-    const viewportLeft = targetRect.left + scrollTarget.clientLeft;
-    const viewportTop = targetRect.top + scrollTarget.clientTop;
-    const viewportRight = viewportLeft + scrollTarget.clientWidth;
-    const viewportBottom = viewportTop + scrollTarget.clientHeight;
+    const targetLeft = targetRect.left + scrollTarget.clientLeft;
+    const targetTop = targetRect.top + scrollTarget.clientTop;
+    const targetRight = targetLeft + scrollTarget.clientWidth;
+    const targetBottom = targetTop + scrollTarget.clientHeight;
+    const visualViewport = window.visualViewport;
+    const visualLeft = visualViewport?.offsetLeft ?? 0;
+    const visualTop = visualViewport?.offsetTop ?? 0;
+    const visualRight = visualLeft + (visualViewport?.width ?? window.innerWidth);
+    const visualBottom = visualTop + (visualViewport?.height ?? window.innerHeight);
+    const viewportLeft = Math.max(targetLeft, visualLeft);
+    const viewportTop = Math.max(targetTop, visualTop);
+    const viewportRight = Math.min(targetRight, visualRight);
+    const viewportBottom = Math.min(targetBottom, visualBottom);
     const style = window.getComputedStyle(scrollTarget);
     const allowsScroll = (overflow: string) => overflow === "auto" || overflow === "scroll" || overflow === "overlay";
     const marginX = Math.max(8, caret.height / 2);
     const marginY = Math.max(8, caret.height);
+
+    // Android WebView and some mobile browsers overlay the keyboard without
+    // shrinking the layout viewport. Add temporary content after the song so
+    // the internal page can scroll a bottom caret above that covered region.
+    const coveredHeight = Math.max(0, targetBottom - visualBottom);
+    this.updateDomCaretScrollSpacer(scrollTarget, coveredHeight > 1 ? coveredHeight + marginY : 0);
+
     let left = scrollTarget.scrollLeft;
     let top = scrollTarget.scrollTop;
 
@@ -2011,6 +2085,31 @@ export class ChordProEditor extends ChordDrawer {
     left = Math.max(0, Math.min(left, scrollTarget.scrollWidth - scrollTarget.clientWidth));
     top = Math.max(0, Math.min(top, scrollTarget.scrollHeight - scrollTarget.clientHeight));
     if (left !== scrollTarget.scrollLeft || top !== scrollTarget.scrollTop) scrollTarget.scrollTo({ left, top });
+  }
+
+  private updateDomCaretScrollSpacer(target: HTMLElement, height: number) {
+    if (height <= 1) {
+      this.clearDomCaretScrollSpacer();
+      return;
+    }
+    if (!this.domCaretScrollSpacer || this.domCaretScrollSpacerTarget !== target) {
+      this.clearDomCaretScrollSpacer();
+      const spacer = document.createElement("div");
+      spacer.className = "chp-dom-keyboard-scroll-spacer";
+      spacer.setAttribute("aria-hidden", "true");
+      spacer.style.pointerEvents = "none";
+      spacer.style.width = "1px";
+      target.appendChild(spacer);
+      this.domCaretScrollSpacer = spacer;
+      this.domCaretScrollSpacerTarget = target;
+    }
+    this.domCaretScrollSpacer.style.height = `${Math.ceil(height)}px`;
+  }
+
+  private clearDomCaretScrollSpacer() {
+    this.domCaretScrollSpacer?.remove();
+    this.domCaretScrollSpacer = null;
+    this.domCaretScrollSpacerTarget = null;
   }
 
   getCapo() {
@@ -4280,6 +4379,7 @@ export class ChordProEditor extends ChordDrawer {
     if (focusTarget) {
       focusTarget.focus({ preventScroll: true });
       if (!this.readOnly) virtualKeyboard()?.show();
+      this.handleDomCaretViewportChange();
     }
   }
 
@@ -5271,15 +5371,17 @@ export class ChordProEditor extends ChordDrawer {
   /** Scroll host used by the editable full-view, including horizontal-only overflow. */
   private findCaretScrollContainer(start: HTMLElement): HTMLElement | null {
     let el: HTMLElement | null = start;
+    let firstScrollContainer: HTMLElement | null = null;
     while (el && el !== document.body) {
       const style = window.getComputedStyle(el);
       const allowsScroll = (overflow: string) => overflow === "auto" || overflow === "scroll" || overflow === "overlay";
+      if (!firstScrollContainer && (allowsScroll(style.overflowX) || allowsScroll(style.overflowY))) firstScrollContainer = el;
       const scrollsX = allowsScroll(style.overflowX) && el.scrollWidth > el.clientWidth + 1;
       const scrollsY = allowsScroll(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
       if (scrollsX || scrollsY) return el;
       el = el.parentElement;
     }
-    return null;
+    return firstScrollContainer;
   }
 
   suppressDraw(suppress = true) {

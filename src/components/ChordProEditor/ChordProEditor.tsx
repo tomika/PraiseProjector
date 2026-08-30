@@ -261,6 +261,14 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     return !resolvePerformanceFeature(mode, !!this.props.chordProSlow);
   }
 
+  private get hasSwipeNavigation() {
+    return !!(this.props.onSwipePrev || this.props.onSwipeNext);
+  }
+
+  private get routeEditorTouchInteractions() {
+    return this.isEditable || !!this.props.onLineSelect || this.hasSwipeNavigation;
+  }
+
   componentDidMount() {
     const baseUrl = import.meta.env.BASE_URL || "/";
     const soundfontUrl = `${baseUrl}soundfont/`;
@@ -351,6 +359,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     ) {
       this.loadNeighborPages();
     }
+
+    const hadSwipeNavigation = !!(prevProps.onSwipePrev || prevProps.onSwipeNext);
+    if (hadSwipeNavigation !== this.hasSwipeNavigation && this.swipeContainerRef) {
+      this.setSwipeContainerRef(this.swipeContainerRef);
+    }
   }
 
   componentWillUnmount() {
@@ -359,7 +372,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.cancelScheduledRefresh();
     this.cleanupThemeObserver();
     this.cleanupFontSizeObserver();
-    this.stopSwipePointerTracking();
+    this.setSwipeContainerRef(null);
     this.flip.dispose();
     if (this.prevHost) this.getBoundChordProAPI(this.prevHost)?.dispose?.();
     if (this.nextHost) this.getBoundChordProAPI(this.nextHost)?.dispose?.();
@@ -536,13 +549,16 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   }
 
   private setSwipeContainerRef = (el: HTMLDivElement | null) => {
-    if (this.swipeContainerRef && this.pinchTouchHandler) {
-      const opts: AddEventListenerOptions = { capture: true };
-      this.swipeContainerRef.removeEventListener("touchstart", this.pinchTouchHandler, opts);
-      this.swipeContainerRef.removeEventListener("touchmove", this.pinchTouchHandler, opts);
-      this.swipeContainerRef.removeEventListener("touchend", this.pinchTouchHandler, opts);
-      this.swipeContainerRef.removeEventListener("touchcancel", this.pinchTouchHandler, opts);
+    if (this.swipeContainerRef) {
+      if (this.pinchTouchHandler) {
+        const opts: AddEventListenerOptions = { capture: true };
+        this.swipeContainerRef.removeEventListener("touchstart", this.pinchTouchHandler, opts);
+        this.swipeContainerRef.removeEventListener("touchmove", this.pinchTouchHandler, opts);
+        this.swipeContainerRef.removeEventListener("touchend", this.pinchTouchHandler, opts);
+        this.swipeContainerRef.removeEventListener("touchcancel", this.pinchTouchHandler, opts);
+      }
       this.swipeContainerRef.onpointerdown = null;
+      this.swipeContainerRef.style.touchAction = "";
       window.removeEventListener("pointermove", this.handleSwipePointerMove);
       window.removeEventListener("pointerup", this.handleSwipePointerEnd);
       window.removeEventListener("pointercancel", this.handleSwipePointerCancel);
@@ -554,7 +570,8 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.swipeContainerRef = el;
     this.flip.cancel();
     this.pinchState = null;
-    if (el) {
+    this.pinchTouchHandler = null;
+    if (el && this.hasSwipeNavigation) {
       this.installPinchScrollModeHandler(el);
       this.installSwipeInputHandlers(el);
     }
@@ -847,6 +864,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
           // When compareBase is provided, show diff view (non-editable)
           chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase, this.getEditorEventHandlers(), undefined, {
             viewportAlignedTitle: true,
+            routeTouch: this.routeEditorTouchInteractions,
           });
           this.hasLoadedDocument = true;
           // Mark as initialized after load completes
