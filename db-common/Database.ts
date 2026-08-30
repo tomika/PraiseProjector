@@ -799,17 +799,69 @@ class Database {
   }
 
   public MakeGroup(addedSong: Song, targetSongOrGroupId: Song | string): void {
+    const previousGroupId = addedSong.GroupId;
+    let targetGroupId: string;
+
     if (typeof targetSongOrGroupId === "string") {
-      addedSong.GroupId = targetSongOrGroupId;
+      targetGroupId = targetSongOrGroupId;
+      if (!targetGroupId || targetGroupId === previousGroupId) return;
+
+      addedSong.GroupId = targetGroupId;
+      addedSong.version = 0;
     } else {
-      addedSong.GroupWith(targetSongOrGroupId);
+      if (addedSong.Id === targetSongOrGroupId.Id) return;
+
+      targetGroupId = targetSongOrGroupId.GroupId;
+      if (targetGroupId) {
+        if (targetGroupId === previousGroupId) return;
+        addedSong.GroupId = targetGroupId;
+        addedSong.version = 0;
+      } else {
+        targetGroupId = addedSong.GroupWith(targetSongOrGroupId);
+      }
+    }
+
+    if (previousGroupId && previousGroupId !== targetGroupId) {
+      this.normalizeGroupAfterMemberRemoval(previousGroupId);
     }
     this.forceSave();
   }
 
   public Ungroup(song: Song): void {
-    song.GroupId = "";
+    // The editor keeps a clone of the selected song. Always mutate the
+    // canonical database instance; changing only the clone would be lost as
+    // soon as the song tree rebuilds from the database.
+    const storedSong = this.songs.get(song.Id) ?? song;
+    const previousGroupId = storedSong.GroupId;
+    if (!previousGroupId) return;
+
+    storedSong.GroupId = "";
+    storedSong.version = 0;
+    if (storedSong !== song) {
+      song.GroupId = "";
+      song.version = 0;
+    }
+    this.normalizeGroupAfterMemberRemoval(previousGroupId);
     this.forceSave();
+  }
+
+  private normalizeGroupAfterMemberRemoval(groupId: string): void {
+    const remainingSongs = Array.from(this.songs.values()).filter((song) => song.GroupId === groupId);
+    if (remainingSongs.length === 1) {
+      remainingSongs[0]!.GroupId = "";
+      remainingSongs[0]!.version = 0;
+      return;
+    }
+
+    if (remainingSongs.length < 2 || remainingSongs.some((song) => song.Id === groupId)) return;
+
+    // The anchor itself left the group. Keep the remaining multi-song group
+    // intact and promote its first member to be the new named anchor.
+    const replacementGroupId = remainingSongs[0]!.Id;
+    for (const remainingSong of remainingSongs) {
+      remainingSong.GroupId = replacementGroupId;
+      remainingSong.version = 0;
+    }
   }
 
   public addSong(song: Song): void {
@@ -821,9 +873,11 @@ class Database {
   public removeSong(songId: string): void {
     const song = this.songs.get(songId);
     if (song) {
+      const previousGroupId = song.GroupId;
       this.songs.delete(songId);
       this.words.remove(song);
       this.removeSongFromSearchEngine(song);
+      if (previousGroupId) this.normalizeGroupAfterMemberRemoval(previousGroupId);
       this.save();
     }
   }

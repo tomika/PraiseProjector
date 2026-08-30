@@ -34,6 +34,7 @@ type MobileSongTouchSession = {
 };
 
 let activeMobileSongTouchSession: MobileSongTouchSession | null = null;
+let activeSongTreeDrag = false;
 
 function registerMobileSongTouchSession(sourceSongId: string, onDragOverDifferentItem: () => void): void {
   activeMobileSongTouchSession = { sourceSongId, onDragOverDifferentItem };
@@ -248,8 +249,14 @@ const DraggableSongItem: React.FC<{
   const [dragSuppressed, setDragSuppressed] = React.useState(false);
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "song",
-    item: songFound.song,
+    item: () => {
+      activeSongTreeDrag = true;
+      return songFound.song;
+    },
     canDrag: () => !dragSuppressed,
+    end: () => {
+      activeSongTreeDrag = false;
+    },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -530,7 +537,7 @@ const GroupFolderNode: React.FC<{
   );
 
   const dropHighlight = isOver && canDrop;
-  const folderLabel = folder.songs[0]?.song.Title || "Group";
+  const folderLabel = folder.songs.find((sf) => sf.song.Id === folder.groupId)?.song.Title || folder.songs[0]?.song.Title || "Group";
 
   return (
     <div className="group-folder-container">
@@ -1459,7 +1466,12 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     });
 
     if (requestSeq === this.updateCategoriesRequestSeq) {
-      this.setState({ categories });
+      this.setState({ categories }, () => {
+        // Filtering is asynchronous and the tree is virtualized. Scrolling while
+        // the old categories are still rendered can leave the selected song
+        // outside the viewport after the new result set replaces them.
+        requestAnimationFrame(this.scrollSelectedSongIntoView);
+      });
     }
   }
 
@@ -1783,6 +1795,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   private handleExternalDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (activeSongTreeDrag) return;
+
     const hasFiles = event.dataTransfer?.files && event.dataTransfer.files.length > 0;
     const hasText = event.dataTransfer?.types?.includes("text/plain");
     if (hasFiles || hasText) {
@@ -1793,9 +1807,19 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   };
 
   private handleExternalFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (activeSongTreeDrag) {
+      activeSongTreeDrag = false;
+      return;
+    }
+
+    const hasFiles = !!event.dataTransfer?.files?.length;
+    const hasText = event.dataTransfer?.types?.includes("text/html") || event.dataTransfer?.types?.includes("text/plain");
+    // Internal react-dnd song drops must keep bubbling to the HTML5 backend,
+    // which listens above this container. Only consume actual external payloads.
+    if (!hasFiles && !hasText) return;
+
     event.preventDefault();
     event.stopPropagation();
-    const hasFiles = event.dataTransfer?.files && event.dataTransfer.files.length > 0;
     if (hasFiles) {
       const files = Array.from(event.dataTransfer.files);
       this.props.onExternalFilesDropped?.(files);

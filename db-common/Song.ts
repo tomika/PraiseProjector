@@ -239,6 +239,10 @@ export class Song {
       return;
     }
 
+    // Group membership is stored separately from the editable ChordPro text.
+    // parse() clears and optionally imports legacy # group_id metadata, so keep
+    // the current database relationship across ordinary editor reparses.
+    const groupId = this._group_id;
     this._text = normalized;
     this._simplified = null;
     this._words = null;
@@ -249,6 +253,7 @@ export class Song {
     this._doc = undefined;
     this.version = 0;
     this.parse();
+    this._group_id = groupId;
   }
 
   public clone(): Song {
@@ -451,7 +456,9 @@ export class Song {
 
   public GroupWith(s: Song): string {
     if (!s._group_id) {
-      s._group_id = uuidv4();
+      // The target song is the group's anchor. Using its UUID as the group UUID
+      // lets the tree retain the target song's title as the folder label.
+      s._group_id = s.Id;
       s.version = 0;
     }
     this._group_id = s._group_id;
