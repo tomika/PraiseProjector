@@ -50,7 +50,9 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
 
   // After a refresh the leader lists are rebuilt with fresh instances — follow
   // the active id to the new instance so the schedule reflects the fetch.
-  const activeLeader = findLeader(activeLeaderId) ?? leader;
+  const matchingLeader = findLeader(activeLeaderId);
+  const fallbackLeader = ownLeaders[0] ?? publicLeaders[0];
+  const activeLeader = matchingLeader ?? fallbackLeader ?? leader;
 
   const showSwitcher = mode === "load" && ownLeaders.length + publicLeaders.length > 0;
   // The public mirror follows server/database order. Keep its dropdown group
@@ -75,7 +77,6 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
           if (next) setActiveLeaderId(next.id);
         }}
       >
-        {!findLeader(activeLeader.id) && <option value={activeLeader.id}>{activeLeader.name}</option>}
         {ownLeaders.length > 0 && <optgroup label={t("MyLeaders")}>{leaderOptions(ownLeaders)}</optgroup>}
         {sortedPublicLeaders.length > 0 && <optgroup label={t("PublicLeaders")}>{leaderOptions(sortedPublicLeaders)}</optgroup>}
       </select>

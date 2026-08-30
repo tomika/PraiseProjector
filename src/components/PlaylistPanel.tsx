@@ -40,6 +40,7 @@ const MOBILE_LONG_PRESS_TIMEOUT_MS = 420;
 const MOBILE_TOUCH_MOVE_TOLERANCE_PX = 10;
 const MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX = 24;
 const MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS = 2600;
+const PUBLIC_LEADER_INITIAL_LOAD_TIMEOUT_MS = 4_000;
 
 type MobilePlaylistTouchSession = {
   sourceIndex: number;
@@ -178,6 +179,9 @@ interface PlaylistPanelState {
   showScheduleDialog: boolean;
   scheduleDialogMode: "save" | "load" | null;
   playlistOrigin: PlaylistOrigin | null; // Exact leader/date/label the working playlist was loaded from or saved to
+  loadingPublicLeaders: boolean;
+  /** Render-only epoch: public leaders live in Database rather than component state. */
+  publicLeadersRevision: number;
   contextMenu: { position: { x: number; y: number }; targetIndex: number; showShortcutHints: boolean } | null;
 }
 
@@ -186,6 +190,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private undoStack: PlaylistHistorySnapshot[] = [];
   private redoStack: PlaylistHistorySnapshot[] = [];
   private isApplyingHistory = false;
+  private mounted = false;
   private readonly pendingPlaylistUpdateResolves = new Set<() => void>();
   private legacyScheduleDate: Date | null;
   private static readonly PLAYLIST_HISTORY_MAX = 50;
@@ -207,6 +212,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       showScheduleDialog: false,
       scheduleDialogMode: null,
       playlistOrigin,
+      loadingPublicLeaders: false,
+      publicLeadersRevision: 0,
       contextMenu: null,
     };
 
@@ -243,6 +250,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   componentDidMount() {
+    this.mounted = true;
     this.loadPlaylist();
     setAddSongToPlaylist(this.addSongToPlaylist);
 
@@ -298,6 +306,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   componentWillUnmount() {
+    this.mounted = false;
     // React drops setState callbacks when the component unmounts before commit.
     // Release their callers so the shared remote-display queue cannot freeze
     // during the paging/desktop LeftPanel swap.
@@ -1672,13 +1681,43 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const hasAnyLeader = !!this.props.selectedLeader || db.getAllLeaders().length > 0 || db.getPublicLeaders().length > 0;
 
     if (hasAnyLeader) {
+      // Public profiles are a separate read-only mirror, so refresh them whenever
+      // the picker is opened instead of relying on an unrelated database sync.
+      // Existing local data lets the dialog open immediately.
+      const refreshPromise = db.updatePublicLeaders({ supersede: true });
       this.setState({
         showScheduleDialog: true,
         scheduleDialogMode: "load",
       });
+      void refreshPromise.then(() => {
+        if (!this.mounted || !this.state.showScheduleDialog || this.state.scheduleDialogMode !== "load") return;
+        this.setState((state) => ({ publicLeadersRevision: state.publicLeadersRevision + 1 }));
+      });
     } else {
-      // Load from file
-      await this.loadPlaylistFromFile();
+      // On first use there is no dialog to show yet. Give the user immediate
+      // feedback on the Load button and cap the network wait so offline use
+      // falls back to the file picker promptly.
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), PUBLIC_LEADER_INITIAL_LOAD_TIMEOUT_MS);
+      this.setState({ loadingPublicLeaders: true });
+      try {
+        await db.updatePublicLeaders({ supersede: true, signal: controller.signal });
+      } finally {
+        window.clearTimeout(timeout);
+      }
+      if (!this.mounted) return;
+      this.setState({ loadingPublicLeaders: false });
+
+      const currentDb = Database.getInstance();
+      if (currentDb.getAllLeaders().length > 0 || currentDb.getPublicLeaders().length > 0) {
+        this.setState({
+          showScheduleDialog: true,
+          scheduleDialogMode: "load",
+        });
+      } else {
+        // Load from file when neither local nor freshly fetched leaders exist.
+        await this.loadPlaylistFromFile();
+      }
     }
   }
 
@@ -1718,8 +1757,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   // Re-fetch the public-leader mirror on demand (the dialog's 🔄 button), then
   // re-render so the dialog's public group reflects the fresh lists.
   async handleRefreshPublicLeaders() {
-    await Database.getInstance().updatePublicLeaders();
-    this.forceUpdate();
+    await Database.getInstance().updatePublicLeaders({ supersede: true });
+    if (!this.mounted) return;
+    this.setState((state) => ({ publicLeadersRevision: state.publicLeadersRevision + 1 }));
   }
 
   handleScheduleDialogCancel() {
@@ -2161,6 +2201,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       editingInstructions,
       showScheduleDialog,
       scheduleDialogMode,
+      loadingPublicLeaders,
       contextMenu,
     } = this.state;
 
@@ -2309,9 +2350,15 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                 aria-label="Load Playlist"
                 title={this.props.tt("playlist_load")}
                 onClick={this.handleLoadPlaylist}
-                disabled={isDisabled}
+                disabled={isDisabled || loadingPublicLeaders}
               >
-                <Icon type={IconType.LOAD} />
+                {loadingPublicLeaders ? (
+                  <span className="spinner-border spinner-border-sm" role="status">
+                    <span className="visually-hidden">{t("Loading")}</span>
+                  </span>
+                ) : (
+                  <Icon type={IconType.LOAD} />
+                )}
               </button>
               <button
                 className="btn btn-light"

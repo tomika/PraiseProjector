@@ -359,6 +359,12 @@ class Database {
    *  Kept separate from `leaders` so they never enter sync upload / conflict
    *  resolution; refreshed wholesale by updatePublicLeaders(). */
   private publicLeaders: Leaders = new Leaders();
+  /** Public-profile refreshes can overlap (for example a background sync and the
+   *  load dialog's manual refresh). An older response cannot overwrite a newer
+   *  applied one; ordinary background callers share an already-running request. */
+  private publicLeaderRefreshPromise: Promise<boolean> | null = null;
+  private publicLeaderRefreshSequence = 0;
+  private publicLeaderAppliedSequence = 0;
   public words: SongWords = new SongWords();
   private typesense: TypesenseClient | null = null;
 
@@ -2240,18 +2246,48 @@ class Database {
   }
 
   /** Refresh the public-leader mirror from GET /leaders (full fetch, works for
-   *  guests too). Own leaders are excluded; failure is non-fatal (offline). */
-  public async updatePublicLeaders(): Promise<void> {
-    try {
-      const profiles = await cloudApi.fetchLeaders(0);
-      const ownIds = new Set(this.leaders.items.map((l) => l.id));
-      const next = new Leaders();
-      next.items = profiles.filter((p) => !ownIds.has(p.leaderId)).map((p) => Leader.fromJSON(p));
-      this.publicLeaders = next;
-      this.forceSave();
-    } catch (error) {
-      console.warn("Database", "Failed to refresh public leader lists", error);
+   *  guests too). Own leaders are excluded; failure is non-fatal (offline).
+   *  Every actual request bypasses HTTP caches. `supersede` only controls
+   *  coalescing: explicit user actions start a newer request instead of sharing
+   *  an already-running background refresh. */
+  public updatePublicLeaders(options?: { supersede?: boolean; signal?: AbortSignal }): Promise<boolean> {
+    // A caller-owned signal must never be shared: aborting that caller would
+    // otherwise also cancel unrelated background refreshes awaiting the same
+    // promise. Superseding calls detach any older shared request so subsequent
+    // background work cannot join a response that is no longer authoritative.
+    const shareable = options?.signal === undefined;
+    if (shareable && !options?.supersede && this.publicLeaderRefreshPromise) return this.publicLeaderRefreshPromise;
+    if (options?.supersede) this.publicLeaderRefreshPromise = null;
+
+    const sequence = ++this.publicLeaderRefreshSequence;
+    const refreshPromise = (async () => {
+      try {
+        const profiles = await cloudApi.fetchLeaders(0, { signal: options?.signal, fresh: true });
+        // Never let an older response overwrite a newer one that already applied.
+        // A merely started request is not enough to suppress this result: it may
+        // still time out or be aborted by its caller.
+        if (sequence < this.publicLeaderAppliedSequence) return true;
+        this.publicLeaderAppliedSequence = sequence;
+
+        const ownIds = new Set(this.leaders.items.map((l) => l.id));
+        const next = new Leaders();
+        next.items = profiles.filter((p) => !ownIds.has(p.leaderId)).map((p) => Leader.fromJSON(p));
+        this.publicLeaders = next;
+        this.forceSave();
+        return true;
+      } catch (error) {
+        console.warn("Database", "Failed to refresh public leader lists", error);
+        return false;
+      }
+    })();
+
+    if (shareable) {
+      this.publicLeaderRefreshPromise = refreshPromise;
+      void refreshPromise.finally(() => {
+        if (this.publicLeaderRefreshPromise === refreshPromise) this.publicLeaderRefreshPromise = null;
+      });
     }
+    return refreshPromise;
   }
 
   public getLeaderByName(leaderName: string): Leader | undefined {

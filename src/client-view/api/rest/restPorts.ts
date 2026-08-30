@@ -186,7 +186,7 @@ export function createPlaylistApi(core: RestCore): PlaylistApi {
     await pushPlaylist(core, entries);
   };
   const entriesForLeader = async (leaderId: string, label?: string) => {
-    const profiles = await cloudApi.fetchLeadersProfiles();
+    const profiles = await cloudApi.fetchLeadersProfiles(undefined, { fresh: true });
     const profile = profiles.find((p) => p.leaderId === leaderId);
     const playlist = label != null ? profile?.playlists.find((pl) => pl.label === label) : profile?.playlists[0];
     return playlist?.songs ?? [];
@@ -195,7 +195,7 @@ export function createPlaylistApi(core: RestCore): PlaylistApi {
     getPlaylist: () => core.getPlaylist(),
     setPlaylist: async (entries) => applyPlaylist(entries),
     clear: async () => applyPlaylist([]),
-    getLeaderPlaylists: () => cloudApi.fetchLeadersProfiles(),
+    getLeaderPlaylists: () => cloudApi.fetchLeadersProfiles(undefined, { fresh: true }),
     selectLeaderPlaylist: (leaderId, label) => entriesForLeader(leaderId, label),
     replaceCurrentWithSelected: async (leaderId, label) => applyPlaylist(await entriesForLeader(leaderId, label)),
     upload: async (options) =>

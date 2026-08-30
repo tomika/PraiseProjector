@@ -504,7 +504,9 @@ export class DirectClientApi implements ClientApi {
           ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const })),
         ];
       },
-      refreshLeaderPlaylists: () => Database.getInstance().updatePublicLeaders(),
+      refreshLeaderPlaylists: async () => {
+        await Database.getInstance().updatePublicLeaders({ supersede: true });
+      },
       selectLeaderPlaylist: async (leaderId, label) => playlistOf(leaderId, label),
       replaceCurrentWithSelected: async (leaderId, label) => applyPlaylist(playlistOf(leaderId, label)),
       // Save the working list to the selected leader's LOCAL schedule (the desktop

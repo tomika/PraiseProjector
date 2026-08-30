@@ -46,6 +46,7 @@ type CloudRequestOptions = {
   timeoutMs?: number;
   clearCookiesAfterSnapshot?: boolean;
   responseType?: "json" | "text";
+  cache?: RequestCache;
 };
 
 export type DisplayUpdateResult = "DONE" | "SKIPPED" | "NO_SESSION" | "UNAUTHORIZED" | "UNKNOWN_LEADER" | "ERROR";
@@ -559,6 +560,7 @@ export class CloudApiService {
                     headers,
                     credentials: "include",
                     signal: combinedSignal,
+                    cache: options?.cache,
                   });
           } catch (fetchError) {
             throw this.normalizeCloudApiError(fetchError, endpoint);
@@ -645,9 +647,15 @@ export class CloudApiService {
     return this.parseResponse(songsResponseCodec, response);
   }
 
-  async fetchLeaders(version: number, options?: { signal?: AbortSignal }) {
-    const endpoint = version > 0 ? `/leaders?version=${version}` : "/leaders";
-    const response = await this.apiCall<unknown>(endpoint, undefined, options);
+  async fetchLeaders(version: number, options?: { signal?: AbortSignal; fresh?: boolean }) {
+    let endpoint = version > 0 ? `/leaders?version=${version}` : "/leaders";
+    if (options?.fresh) {
+      endpoint += `${endpoint.includes("?") ? "&" : "?"}_ppRefresh=${Date.now()}-${++this.proxyRequestSequence}`;
+    }
+    const response = await this.apiCall<unknown>(endpoint, undefined, {
+      signal: options?.signal,
+      cache: options?.fresh ? "no-store" : undefined,
+    });
     return this.parseResponse(leadersResponseCodec, response);
   }
 
@@ -992,10 +1000,8 @@ export class CloudApiService {
    * Fetch leader profiles with optional version filter.
    * Used by the client app; version is optional (omit for full list).
    */
-  async fetchLeadersProfiles(version?: number): Promise<LeaderDBProfile[]> {
-    const endpoint = version ? `/leaders?version=${version}` : "/leaders";
-    const response = await this.apiCall<unknown>(endpoint);
-    return this.parseResponse(leadersResponseCodec, response);
+  async fetchLeadersProfiles(version?: number, options?: { fresh?: boolean }): Promise<LeaderDBProfile[]> {
+    return this.fetchLeaders(version ?? 0, { fresh: options?.fresh });
   }
 
   /** Send JSON POST request to arbitrary endpoint (legacy method name kept for compatibility). */

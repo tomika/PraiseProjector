@@ -1553,7 +1553,7 @@ export class ClientViewStore {
     const patch: Partial<ClientViewState> = { listMode: mode, leaderFilterText: "" };
     if (mode === "database" || mode === "playlist") patch.navigationMode = mode;
     this.set(patch);
-    if (mode === "leaderlists") void this.loadLeaderPlaylists();
+    if (mode === "leaderlists") void this.refreshLeaderPlaylists();
   }
 
   /** Restore the options-panel collection state after a temporary guided view.
