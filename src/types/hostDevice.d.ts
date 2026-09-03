@@ -29,12 +29,18 @@ export interface ElectronHostDevice {
    *  NetworkInterface.getNetworkInterfaces(). */
   getNetworkInterfaces?: () => string | Promise<string>;
   enableNotification?: (
-    sessionId: string,
+    sessionToken: string,
     name: string,
     descriptionText: string,
     checkIntervalMinutes: number,
     acquire: boolean
   ) => boolean | Promise<boolean>;
+  /** Whether native push notifications are configured and can currently be displayed. */
+  isNotificationEnabled?: () => boolean | Promise<boolean>;
+  /** Opt out of native push notifications and remove the server-side registration. */
+  disableNotification?: () => boolean | Promise<boolean>;
+  /** True only for native debug builds. Release hosts should return false or omit it. */
+  isDebugBuild?: () => boolean | Promise<boolean>;
   cancelNotification?: (notificationId: number) => boolean | Promise<boolean>;
   cancelAllNotifications?: () => boolean | Promise<boolean>;
   getCacheSize?: () => number | Promise<number>;

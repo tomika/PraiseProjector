@@ -53,6 +53,13 @@ export type DisplayUpdateResult = "DONE" | "SKIPPED" | "NO_SESSION" | "UNAUTHORI
 
 export type DisplaySessionTarget = { leaderId: string; sessionId?: never } | { sessionId: string; leaderId?: never };
 
+export type FcmTestResult = {
+  attempted: number;
+  sent: number;
+  unregistered: number;
+  retry: number;
+};
+
 const DISPLAY_UPDATE_RESULTS = new Set<DisplayUpdateResult>(["DONE", "SKIPPED", "NO_SESSION", "UNAUTHORIZED", "UNKNOWN_LEADER", "ERROR"]);
 
 export function isGuestDisplaySessionId(value: string): boolean {
@@ -1043,6 +1050,11 @@ export class CloudApiService {
 
       return await response.text();
     }
+  }
+
+  /** Send an immediate push to this client's FCM registration (test-mode servers only). */
+  async sendFcmTestNotification(): Promise<FcmTestResult> {
+    return this.apiCall<FcmTestResult>("/notification-test", { clientId: this.clientId });
   }
 
   /** Save a note/marking for a song */

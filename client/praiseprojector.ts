@@ -558,6 +558,11 @@ export class App extends AppBase {
       case "nearby":
         Nearby.processMessage(message.param as NearbyMessageParam);
         break;
+      case "notify": {
+        const granted = (message.param as { granted?: boolean })?.granted === true;
+        this.hostDevice?.storePreference("notifsEnabled", granted ? "true" : "false");
+        break;
+      }
       default:
         this.hostDevice?._setRetval(message.op, message.param);
         break;
@@ -5511,6 +5516,7 @@ export class App extends AppBase {
   }
 
   private async restoreSessionInfo() {
+    this.verifyClientId();
     const clientId = this.clientId ?? "";
     let token = this.hostDevice?.retrievePreference("sessionId")?.trim() || "";
     if (!token) {
@@ -5545,6 +5551,8 @@ export class App extends AppBase {
   }
 
   private async logout() {
+    this.hostDevice?.enableNotification("", "PraiseProjector", "PraiseProjector Notifications", 60, false);
+    this.cancelAllDeviceNotifications();
     if (this.token) {
       const clientId = this.clientId ?? "";
       cloudApi.setToken("Bearer " + this.token);
@@ -5568,6 +5576,7 @@ export class App extends AppBase {
       const username = login.value;
       const password = key.value;
       if (username && password) {
+        this.verifyClientId();
         const clientId = this.clientId ?? "";
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
         // Clear any active cookie-based auth so explicit user switching does
@@ -5581,7 +5590,6 @@ export class App extends AppBase {
         cloudApi.setToken("Basic " + btoa(username + ":" + password));
         let has_net = true;
         try {
-          if (store?.checked) this.verifyClientId();
           const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true, timeoutMs: 4_000 })) as SessionResponse;
           if (res && isErrorResponse(res)) throw res.error;
           this.login = res.login;

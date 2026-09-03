@@ -51,7 +51,29 @@ async function getDeviceClientId(): Promise<string> {
     id = hostname + ":" + randomPart;
     localStorage.setItem(key, id);
   }
+  await window.hostDevice?.storePreference?.("clientId", id);
   return id;
+}
+
+async function configureNativeNotifications(sessionToken: string, acquirePermission: boolean): Promise<void> {
+  const hostDevice = window.hostDevice;
+  if (!hostDevice?.enableNotification) return;
+  const preference = hostDevice.retrievePreference ? await Promise.resolve(hostDevice.retrievePreference("notifsEnabled")) : "";
+  if (preference === "false") return;
+  await Promise.resolve(hostDevice.enableNotification(sessionToken, "PraiseProjector", "PraiseProjector Notifications", 60, acquirePermission));
+}
+
+async function disableNativeNotificationRegistration(): Promise<void> {
+  const hostDevice = window.hostDevice;
+  if (!hostDevice) return;
+  if (hostDevice.disableNotification) {
+    await Promise.resolve(hostDevice.disableNotification());
+  } else if (hostDevice.enableNotification) {
+    // Compatibility with older Android hosts where an empty token was the
+    // notification-unregister operation.
+    await Promise.resolve(hostDevice.enableNotification("", "PraiseProjector", "PraiseProjector Notifications", 60, false));
+  }
+  await Promise.resolve(hostDevice.cancelAllNotifications?.());
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -83,7 +105,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
    *  When `persist` is true (default), the access token is written to
    *  localStorage so it can survive page reloads / short app restarts.
    *  Set `persist=false` for fresh logins until the user decides on "Remember Me". */
-  const applySession = useCallback((session: SessionResponse, persist = true) => {
+  const applySession = useCallback((session: SessionResponse, persist = true, acquireNotifications = false) => {
     setUser(session);
     setToken(session.token);
     setNetworkUnavailable(false);
@@ -97,6 +119,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Remove stale token from a previous user so it doesn't get sent on restart.
       localStorage.removeItem("pp_session_token");
     }
+    if (session.token)
+      void configureNativeNotifications(session.token, acquireNotifications).catch((error) =>
+        console.error("Notifications", "Failed to configure native notifications", error)
+      );
   }, []);
 
   const verifySession = async (
@@ -374,7 +400,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Don't persist session token yet — wait for "Remember Me" decision.
         // In non-Electron mode, always persist (browser cookies handle refresh).
         const isElectron = typeof window !== "undefined" && !!window.electronAPI;
-        applySession(session, !isElectron);
+        applySession(session, !isElectron, true);
         setUsername(username);
         localStorage.setItem("auth_username", username);
 
@@ -418,6 +444,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     let logoutRequestStarted = false;
     try {
+      try {
+        await disableNativeNotificationRegistration();
+      } catch (error) {
+        console.error("Notifications", "Failed to disable native notifications", error);
+      }
       const clientId = await getDeviceClientId();
       cloudApi.setClientId(clientId);
       cloudApi.setToken(null);
@@ -484,6 +515,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         cloudApi.setToken(shouldUseBearerHeader ? newToken : null);
         localStorage.removeItem("auth_token");
         localStorage.setItem("pp_session_token", newToken);
+        void configureNativeNotifications(newToken, false).catch((error) =>
+          console.error("Notifications", "Failed to refresh native notification registration", error)
+        );
       }
     },
     [username]
@@ -514,6 +548,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [loadInitialCredentials]);
 
   const markSessionExpired = useCallback(() => {
+    void disableNativeNotificationRegistration().catch((error) => console.error("Notifications", "Failed to disable native notifications", error));
     setUser(null);
     setToken(null);
     setNetworkUnavailable(false);

@@ -42,7 +42,9 @@ export interface HostDeviceInterface {
   exit?(): void;
   version?(): string;
   info?(flags: HostDeviceInfoType): string;
-  enableNotification?(sessionId: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean): boolean;
+  enableNotification?(sessionToken: string, name: string, descriptionText: string, checkIntervalMinutes: number, acquire: boolean): boolean;
+  isNotificationEnabled?(): boolean;
+  disableNotification?(): boolean;
   cancelNotification?(notificationId: number): boolean;
   cancelAllNotifications?(): boolean;
   getCacheSize?(): number;
@@ -200,8 +202,14 @@ export class HostDevice {
     }
     return null;
   }
-  enableNotification(sessionId: string, name: string, desc: string, checkIntervalMinutes: number, acquire = false) {
-    return this.device.enableNotification?.(sessionId, name, desc, checkIntervalMinutes, acquire) ?? false;
+  enableNotification(sessionToken: string, name: string, desc: string, checkIntervalMinutes: number, acquire = false) {
+    return this.device.enableNotification?.(sessionToken, name, desc, checkIntervalMinutes, acquire) ?? false;
+  }
+  get notificationEnabled() {
+    return this.device.isNotificationEnabled?.() ?? false;
+  }
+  disableNotification() {
+    return this.device.disableNotification?.() ?? false;
   }
   cancelNotification(notificationId: number) {
     return this.device.cancelNotification?.(notificationId) ?? false;
