@@ -5,7 +5,6 @@ import { Leader } from "./Leader";
 import { Leaders } from "./Leaders";
 import { SongWords } from "./SongWords";
 import { StringExtensions } from "./StringExtensions";
-import { DamerauLevenshtein } from "./DamerauLevenshtein";
 import { TypesenseClient } from "../common/typesense-client";
 import { PlaylistEntry } from "./PlaylistEntry";
 import { cloudApi } from "../common/cloudApi";
@@ -199,6 +198,7 @@ interface IComparable<T> {
 export class FilterData {
   private normalized: string;
   private wholeWords: boolean;
+  private caseSensitive: boolean;
   private useTextSimilarities: boolean;
   private lastWordIsPrefix: boolean;
   private _simplified: string | null = null;
@@ -212,14 +212,14 @@ export class FilterData {
 
   public get Simplified(): string {
     if (this._simplified === null) {
-      this._simplified = StringExtensions.simplify(this.normalized);
+      this._simplified = StringExtensions.simplify(this.normalized, this.caseSensitive);
     }
     return this._simplified;
   }
 
   public get Words(): string[] {
     if (this._words === null) {
-      this._words = this.Simplified.split(" ");
+      this._words = this.Simplified.split(" ").filter(Boolean);
     }
     return this._words;
   }
@@ -234,9 +234,10 @@ export class FilterData {
     }
   ) {
     this.wholeWords = options?.wholeWords ?? false;
+    this.caseSensitive = options?.caseSensitive ?? false;
     this.useTextSimilarities = options?.useTextSimilarities ?? true;
     this.lastWordIsPrefix = options?.lastWordIsPrefix ?? false;
-    this.normalized = StringExtensions.minimizeSpaces(expr.toLowerCase());
+    this.normalized = StringExtensions.minimizeSpaces(this.caseSensitive ? expr : expr.toLowerCase());
   }
 
   matchesTo(songWords: SongWords): ReadonlyArray<WordMatch> {
@@ -252,10 +253,14 @@ export class FilterData {
 
         const allowPrefixBonus = i === l && !this.wholeWords && this.lastWordIsPrefix;
         const prefixCost = this.useTextSimilarities ? 0.01 : 0.0;
-        const allowedMaxCost = this.useTextSimilarities && !this.wholeWords ? Math.max(word.length >= 3 ? 1.5 : 0.0, 0.9) : 0.0;
+        const allowedMaxCost = this.useTextSimilarities ? Math.max(word.length >= 3 ? 1.5 : 0.0, 0.9) : 0.0;
         const prefixMaxCost = this.useTextSimilarities ? (word.length <= 2 ? 0.9 : word.length === 3 ? 1.0 : word.length === 4 ? 1.2 : 1.5) : 0.0;
 
-        if (allowPrefixBonus) {
+        if (this.caseSensitive) {
+          for (const sp of songWords.caseSensitiveMatches(word, allowPrefixBonus, allowPrefixBonus ? prefixMaxCost : allowedMaxCost)) {
+            m.add(sp.song, sp.pos, sp.cost);
+          }
+        } else if (allowPrefixBonus) {
           // For the actively typed last token, enforce prefix semantics.
           // With text similarities enabled, allow fuzzy matching against word prefixes only.
           // This keeps incremental typing monotonic while still tolerating small typos/accents.
@@ -272,11 +277,10 @@ export class FilterData {
           }
         }
 
-        if (!m.empty) {
-          const maxWordCost = allowPrefixBonus ? (this.useTextSimilarities ? prefixMaxCost : prefixCost) : allowedMaxCost;
-          m.filterPositions(maxWordCost);
-          filters.push(m);
-        }
+        const maxWordCost = allowPrefixBonus ? (this.useTextSimilarities ? prefixMaxCost : prefixCost) : allowedMaxCost;
+        m.filterPositions(maxWordCost);
+        // Keep an empty term: every query word must match, including unknown words.
+        filters.push(m);
       }
       this.songWordsVersion = songWords.version;
       this.matches = filters;
@@ -327,6 +331,9 @@ class WordMatch {
     this.positions = ps;
   }
 }
+
+/** Text regions a snippet can be taken from; each one owns a distinct word-position range. */
+type SnippetRegion = "lyrics" | "title" | "meta";
 
 class Database {
   public static readonly importExportCodec = uniType(
@@ -1269,48 +1276,6 @@ class Database {
     return this.leaders.items;
   }
 
-  private static escapeRegExp(s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  private static matchesTextConstraints(
-    song: Song,
-    reason: FoundReason,
-    queryWords: string[],
-    caseSensitive: boolean,
-    wholeWords: boolean,
-    lastWordIsPrefix: boolean
-  ): boolean {
-    if (queryWords.length === 0) return true;
-    if (!caseSensitive && !wholeWords) return true;
-
-    let text = "";
-    if (reason === FoundReason.Title) {
-      text = song.Title;
-    } else if (reason === FoundReason.Meta) {
-      const parts: string[] = [];
-      for (const [key, value] of song.MetaData.entries()) {
-        parts.push(`${key}: ${value}`);
-      }
-      text = parts.join(" | ");
-    } else {
-      text = song.Lyrics;
-    }
-
-    const flags = caseSensitive ? "g" : "gi";
-    for (let i = 0; i < queryWords.length; i++) {
-      const escaped = Database.escapeRegExp(queryWords[i]!);
-      const isLast = i === queryWords.length - 1;
-      const usePrefix = isLast && lastWordIsPrefix;
-      const pattern = wholeWords && !usePrefix ? `\\b${escaped}\\b` : wholeWords ? `\\b${escaped}` : escaped;
-      if (!new RegExp(pattern, flags).test(text)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   public typesenseEngineEnabled = false;
 
   /**
@@ -1593,9 +1558,6 @@ class Database {
       const caseSensitive = settings?.traditionalSearchCaseSensitive ?? false;
       const wholeWords = settings?.traditionalSearchWholeWords ?? false;
       const useTextSimilarities = settings?.useTextSimilarities ?? true;
-      const queryWords = StringExtensions.minimizeSpaces(expr)
-        .split(" ")
-        .filter((w) => w.length > 0);
       const lastWordIsPrefix = expr.length > 0 && !expr.endsWith(" ");
 
       if (expr.trim()) {
@@ -1617,9 +1579,8 @@ class Database {
           ) {
             const [reason, cost] = this.filterMatch(song, filters, leader, settings);
             const costGate = cost < Math.max(1.5 * minCost, minCost + 2);
-            const textConstraintsPassed = Database.matchesTextConstraints(song, reason, queryWords, caseSensitive, wholeWords, lastWordIsPrefix);
-            if (reason !== FoundReason.None && costGate && textConstraintsPassed) {
-              const snippet = Database.generateTraditionalSnippet(song, searchExpr, reason, lastWordIsPrefix);
+            if (reason !== FoundReason.None && costGate) {
+              const snippet = Database.generateTraditionalSnippet(song, reason, filters);
               res.addSong(song, reason, cost, leader, snippet);
               minCost = cost;
             }
@@ -1767,7 +1728,7 @@ class Database {
     if (minCost < Infinity) {
       cost = minCost;
       if (startPos < SongWords.TitlePosOffset) return [FoundReason.Title, cost, undefined];
-      if (startPos > SongWords.MetaPosOffset) return [FoundReason.Meta, cost, undefined];
+      if (startPos >= SongWords.MetaPosOffset) return [FoundReason.Meta, cost, undefined];
       return [startPos < SongWords.TitlePosOffset + song.HeaderWordCount ? FoundReason.Header : FoundReason.Lyrics, cost, undefined];
     }
 
@@ -1784,138 +1745,83 @@ class Database {
     return cost < Infinity ? [FoundReason.Words, cost, undefined] : [FoundReason.None, Infinity, undefined];
   }
 
-  /**
-   * Generate a snippet for traditional search by finding the search expression
-   * in the song text and wrapping matches in <mark> tags.
-   * Supports both exact and fuzzy (Damerau-Levenshtein) word matches.
-   * For Title matches, returns undefined (title is already visible).
-   */
-  private static generateTraditionalSnippet(song: Song, expr: string, reason: FoundReason, lastWordIsPrefix: boolean = false): string | undefined {
+  /** Collect one region's text together with the word positions the index assigned to it. */
+  private static snippetRegion(song: Song, region: SnippetRegion): { text: string; boundaries: Map<number, [number, number]> } {
+    let text = "";
+    const boundaries = new Map<number, [number, number]>();
+    const append = (value: string, offset: number) => {
+      const start = text.length;
+      const normalized = value.normalize("NFC");
+      let pos = offset;
+      for (const match of normalized.matchAll(/[a-zA-Z0-9À-ɏЀ-ӿ]+/g)) {
+        boundaries.set(pos++, [start + match.index, start + match.index + match[0].length]);
+      }
+      text += normalized;
+      return pos;
+    };
+    if (region === "title") {
+      append(song.Title, 0);
+    } else if (region === "lyrics") {
+      append(song.Lyrics, SongWords.TitlePosOffset);
+    } else {
+      let offset = SongWords.MetaPosOffset;
+      for (const [key, value] of song.MetaData) {
+        if (text) text += " | ";
+        text += key + ": ";
+        offset = append(value, offset);
+      }
+    }
+    return { text, boundaries };
+  }
+
+  /** Highlight only positions accepted by the search, including all toggle constraints. */
+  private static generateTraditionalSnippet(song: Song, reason: FoundReason, filters: ReadonlyArray<WordMatch>): string | undefined {
     if (reason === FoundReason.None) return undefined;
 
-    // Pick the text to search based on the match reason
-    let text: string;
-    if (reason === FoundReason.Title) {
-      text = song.Title;
-    } else if (reason === FoundReason.Meta) {
-      const parts: string[] = [];
-      for (const [key, value] of song.MetaData.entries()) {
-        parts.push(`${key}: ${value}`);
-      }
-      text = parts.join(" | ");
-    } else {
-      text = song.Lyrics;
-    }
+    // The reason names where the match was reported, not where every query word lives, and a
+    // FoundReason.Words match is scattered by definition. Try the reason's own region first and
+    // fall back to the others, so an accepted song is never rendered without a highlight.
+    const regions: SnippetRegion[] =
+      reason === FoundReason.Title
+        ? ["title", "lyrics", "meta"]
+        : reason === FoundReason.Meta
+          ? ["meta", "lyrics", "title"]
+          : ["lyrics", "title", "meta"];
+    // A scattered match has no home region, so there the widest coverage wins instead of the first hit.
+    const stopAtFirstHit = reason !== FoundReason.Words;
 
-    if (!text) return undefined;
+    let best: { region: SnippetRegion; text: string; highlights: Array<[number, number]>; cost: number } | undefined;
+    for (const region of regions) {
+      const { text, boundaries } = Database.snippetRegion(song, region);
+      if (!text) continue;
 
-    const lowerText = text.toLowerCase();
-    const unaccentedText = StringExtensions.toUnaccented(lowerText);
-    const searchWords = expr
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length > 0);
-    if (searchWords.length === 0) return undefined;
-
-    // First try exact full-expression substring match (accented then unaccented)
-    // When last word is a prefix, match the expression as a prefix in text
-    const lowerExpr = searchWords.join(" ");
-    const unaccentedExpr = StringExtensions.toUnaccented(lowerExpr);
-
-    let exactIdx = -1;
-    let matchLen = lowerExpr.length;
-    if (lastWordIsPrefix) {
-      // Find where the expression starts, then extend the last word to its word boundary
-      exactIdx = lowerText.indexOf(lowerExpr);
-      if (exactIdx < 0) exactIdx = unaccentedText.indexOf(unaccentedExpr);
-      if (exactIdx >= 0) {
-        // Extend match to end of the last word in text
-        let end = exactIdx + lowerExpr.length;
-        while (end < text.length && /[a-zA-Z0-9\u00C0-\u024F\u0400-\u04FF]/.test(text[end]!)) end++;
-        matchLen = end - exactIdx;
-      }
-    } else {
-      exactIdx = lowerText.indexOf(lowerExpr);
-      if (exactIdx < 0) exactIdx = unaccentedText.indexOf(unaccentedExpr);
-    }
-    if (exactIdx >= 0) {
-      const highlighted =
-        Database.escapeHtml(text.substring(0, exactIdx)) +
-        "<mark>" +
-        Database.escapeHtml(text.substring(exactIdx, exactIdx + matchLen)) +
-        "</mark>" +
-        Database.escapeHtml(text.substring(exactIdx + matchLen));
-      return reason === FoundReason.Title ? highlighted : Database.trimSnippet(highlighted);
-    }
-
-    // Find word boundaries in the original text (consistent with StringExtensions.simplify regex)
-    const wordBoundaries: Array<{ start: number; end: number; lower: string; unaccented: string }> = [];
-    const wordRegex = /[a-zA-Z0-9\u00C0-\u024F\u0400-\u04FF]+/g;
-    let m: RegExpExecArray | null;
-    while ((m = wordRegex.exec(text)) !== null) {
-      const lower = m[0].toLowerCase();
-      wordBoundaries.push({ start: m.index, end: m.index + m[0].length, lower, unaccented: StringExtensions.toUnaccented(lower) });
-    }
-
-    // For each search word, find the best fuzzy-matching word in the text
-    // (using Damerau-Levenshtein, same threshold as the search engine)
-    // Compare against both accented and unaccented forms
-    // Last word (if prefix) uses startsWith matching instead of fuzzy distance
-    const highlights: Array<[number, number]> = [];
-    for (let i = 0; i < searchWords.length; i++) {
-      const searchWord = searchWords[i]!;
-      const isLast = i === searchWords.length - 1;
-      const usePrefix = isLast && lastWordIsPrefix;
-      let bestCost = Infinity;
-      let bestBoundary: { start: number; end: number } | null = null;
-      const maxCost = Math.max(searchWord.length >= 3 ? 1.5 : 0.0, 0.9);
-      const unaccentedSearch = StringExtensions.toUnaccented(searchWord);
-
-      for (const wb of wordBoundaries) {
-        if (usePrefix) {
-          // Prefix match: search word must be a prefix of the text word
-          if (wb.lower.startsWith(searchWord) || wb.unaccented.startsWith(unaccentedSearch)) {
-            bestCost = 0;
-            bestBoundary = wb;
-            break;
+      const highlights: Array<[number, number]> = [];
+      let cost = 0;
+      for (const filter of filters) {
+        let bestCost = Infinity;
+        let bestBoundary: [number, number] | undefined;
+        for (const [pos, posCost] of filter.getSongPositions(song.Id) ?? []) {
+          const boundary = boundaries.get(pos);
+          if (boundary && posCost < bestCost) {
+            bestCost = posCost;
+            bestBoundary = boundary;
           }
-          // Also allow fuzzy prefix: edit distance on the prefix portion
-          if (wb.lower.length >= searchWord.length) {
-            const prefix = wb.lower.substring(0, searchWord.length);
-            const uPrefix = wb.unaccented.substring(0, unaccentedSearch.length);
-            let cost = DamerauLevenshtein.accentedDamerauLevenshteinDistance(searchWord, prefix);
-            const uCost = DamerauLevenshtein.accentedDamerauLevenshteinDistance(unaccentedSearch, uPrefix);
-            if (uCost < cost) cost = uCost;
-            if (cost < bestCost && cost <= maxCost) {
-              bestCost = cost;
-              bestBoundary = wb;
-            }
-          }
-        } else {
-          // Quick length check — skip words that are way too different in length
-          if (Math.abs(wb.lower.length - searchWord.length) > 2 && Math.abs(wb.unaccented.length - unaccentedSearch.length) > 2) continue;
-
-          // Try accented comparison first (lower cost for exact accent match)
-          let cost = DamerauLevenshtein.accentedDamerauLevenshteinDistance(searchWord, wb.lower);
-          // Also try fully unaccented comparison
-          const uCost = DamerauLevenshtein.accentedDamerauLevenshteinDistance(unaccentedSearch, wb.unaccented);
-          if (uCost < cost) cost = uCost;
-
-          if (cost < bestCost && cost <= maxCost) {
-            bestCost = cost;
-            bestBoundary = wb;
-            if (cost === 0) break; // Exact match, no need to look further
-          }
+        }
+        if (bestBoundary) {
+          highlights.push([...bestBoundary]);
+          cost += bestCost;
         }
       }
 
-      if (bestBoundary) {
-        highlights.push([bestBoundary.start, bestBoundary.end]);
+      if (highlights.length === 0) continue;
+      if (!best || highlights.length > best.highlights.length || (highlights.length === best.highlights.length && cost < best.cost)) {
+        best = { region, text, highlights, cost };
       }
+      if (stopAtFirstHit || best.highlights.length === filters.length) break;
     }
 
-    if (highlights.length === 0) return undefined;
+    if (!best) return undefined;
+    const { text, highlights } = best;
 
     // Sort by position and merge overlapping ranges
     highlights.sort((a, b) => a[0] - b[0]);
@@ -1940,7 +1846,7 @@ class Database {
     }
     result += Database.escapeHtml(text.substring(pos));
 
-    return reason === FoundReason.Title ? result : Database.trimSnippet(result);
+    return best.region === "title" ? result : Database.trimSnippet(result);
   }
 
   private static escapeHtml(s: string): string {

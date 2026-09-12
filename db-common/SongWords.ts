@@ -9,6 +9,10 @@ export interface SongPos {
   cost: number;
 }
 
+interface IndexedSongPos extends SongPos {
+  word: string;
+}
+
 class MatchResult {
   positions: SongPos[];
   readonly minCost: number;
@@ -22,7 +26,7 @@ class MatchResult {
 }
 
 export class SongWords {
-  private posMap = new MultiMap<string, SongPos>();
+  private posMap = new MultiMap<string, IndexedSongPos>();
   private prefixMap = new MultiMap<string, string>();
   private trigramMap = new MultiMap<string, string>();
   private _version = 0;
@@ -99,24 +103,24 @@ export class SongWords {
     if (!token) return;
 
     const wasNew = !this.posMap.has(token);
-    this.posMap.add(token, { song, pos, cost });
+    this.posMap.add(token, { song, pos, cost, word: word.normalize("NFC") });
     if (wasNew) this.indexWord(token);
   }
 
   public add(song: Song) {
     let pos = 0;
-    for (const word of StringExtensions.getWords(song.Title)) {
+    for (const word of StringExtensions.getWords(song.Title, true)) {
       this.addWordPosition(word, song, pos++);
     }
 
     pos = SongWords.TitlePosOffset;
-    for (const word of song.Words) {
+    for (const word of StringExtensions.getWords(song.Lyrics, true)) {
       this.addWordPosition(word, song, pos++);
     }
 
     pos = SongWords.MetaPosOffset;
     for (const metaValue of song.MetaData.values()) {
-      for (const word of StringExtensions.getWords(metaValue)) {
+      for (const word of StringExtensions.getWords(metaValue, true)) {
         this.addWordPosition(word, song, pos++);
       }
     }
@@ -145,6 +149,7 @@ export class SongWords {
     this.posMap.clear();
     this.prefixMap.clear();
     this.trigramMap.clear();
+    this._version++;
     for (const song of songs) {
       this.add(song);
     }
@@ -155,7 +160,7 @@ export class SongWords {
     const wordEntries = candidates
       ? Array.from(candidates)
           .map((word) => [word, this.posMap.get(word)] as const)
-          .filter((entry): entry is readonly [string, Set<SongPos>] => !!entry[1])
+          .filter((entry): entry is readonly [string, Set<IndexedSongPos>] => !!entry[1])
       : Array.from(this.posMap.entries());
 
     for (const [word, positions] of wordEntries) {
@@ -293,6 +298,66 @@ export class SongWords {
       const comparison = ignoreCase ? w.toLowerCase() === word.toLowerCase() : w === word;
       return comparison ? 0 : NaN;
     });
+  }
+
+  /** Match original word spellings at their actual title, lyric or metadata positions. */
+  public caseSensitiveMatches(word: string, prefix: boolean, maxCost: number): SongPos[] {
+    const token = SongWords.normalizeToken(word);
+    const candidates = !prefix && maxCost === 0 ? new Set([token]) : this.prefixCandidates(token, maxCost);
+    const results: SongPos[] = [];
+    const costs = new Map<string, number>();
+    for (const candidate of candidates) {
+      for (const pos of this.posMap.getValues(candidate)) {
+        let cost = costs.get(pos.word);
+        if (cost === undefined) {
+          const target = prefix ? pos.word.substring(0, word.length) : pos.word;
+          cost =
+            maxCost === 0
+              ? word === target
+                ? 0
+                : Infinity
+              : DamerauLevenshtein.accentedDamerauLevenshteinDistanceBounded(word, target, maxCost, true);
+          if (prefix) {
+            const unaccentedWord = StringExtensions.toUnaccented(word);
+            const unaccentedTarget = StringExtensions.toUnaccented(target);
+            cost = Math.min(
+              cost,
+              maxCost === 0
+                ? unaccentedWord === unaccentedTarget
+                  ? 0
+                  : Infinity
+                : DamerauLevenshtein.accentedDamerauLevenshteinDistanceBounded(unaccentedWord, unaccentedTarget, maxCost, true)
+            );
+          }
+          costs.set(pos.word, cost);
+        }
+        if (Number.isFinite(cost) && cost <= maxCost) results.push({ ...pos, cost: pos.cost + cost });
+      }
+    }
+    return results;
+  }
+
+  /** Conservative prefix buckets: allow edits at the beginning too, without scanning every word. */
+  private prefixCandidates(word: string, maxCost: number): Set<string> {
+    const candidates = new Set<string>();
+    const edits = Math.floor(maxCost);
+    // The index holds at most three characters. Leave room for inserted characters.
+    if (!Number.isFinite(maxCost) || edits >= 3) return new Set(this.posMap.keys());
+    const head = StringExtensions.toUnaccented(word).substring(0, Math.min(word.length, 3 - edits));
+    if (maxCost === 0 && head.length === 3) return new Set(this.prefixMap.getValues(head));
+    for (const [key, words] of this.prefixMap) {
+      const unaccentedKey = StringExtensions.toUnaccented(key);
+      let matches = false;
+      for (let length = Math.max(0, head.length - edits); length <= Math.min(key.length, head.length + edits); length++) {
+        const target = unaccentedKey.substring(0, length);
+        if (maxCost === 0 ? head === target : DamerauLevenshtein.accentedDamerauLevenshteinDistanceBounded(head, target, maxCost) <= maxCost) {
+          matches = true;
+          break;
+        }
+      }
+      if (matches) for (const candidate of words) candidates.add(candidate);
+    }
+    return candidates;
   }
 
   /**

@@ -5,10 +5,11 @@ export class StringExtensions {
   private static rxNonWordList = /[^a-zA-Z0-9\u00C0-\u024F\u0400-\u04FF]+/g;
   private static rxSpaces = /\s+/g;
 
-  public static simplify(s: string): string {
+  public static simplify(s: string, caseSensitive: boolean = false): string {
     if (!s) return "";
     // Normalize to NFC first so accented characters are represented consistently.
-    return s.normalize("NFC").toLowerCase().replace(StringExtensions.rxNonWordList, " ").trim();
+    const normalized = s.normalize("NFC");
+    return (caseSensitive ? normalized : normalized.toLowerCase()).replace(StringExtensions.rxNonWordList, " ").trim();
   }
 
   public static minimizeSpaces(s: string): string {
@@ -16,9 +17,9 @@ export class StringExtensions {
     return s.replace(StringExtensions.rxSpaces, " ").trim();
   }
 
-  public static getWords(s: string): string[] {
+  public static getWords(s: string, caseSensitive: boolean = false): string[] {
     if (!s) return [];
-    const text = StringExtensions.simplify(s);
+    const text = StringExtensions.simplify(s, caseSensitive);
     return text.split(" ").filter((word) => word.length > 0);
   }
 

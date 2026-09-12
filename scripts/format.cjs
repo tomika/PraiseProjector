@@ -23,8 +23,10 @@ const GLOBS = [
   "electron/**/*.ts",
   "client/**/*.ts",
   "common/**/*.ts",
+  "db-common/**/*.ts",
   "chordpro/**/*.{ts,css}",
   "scripts/run-chordpro-tests.js",
+  "scripts/run-search-tests.js",
 ];
 
 const prettierCli = require.resolve("prettier/bin/prettier.cjs");
