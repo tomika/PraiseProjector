@@ -76,6 +76,7 @@ import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_style
 import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
 import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
 import { dispatchClientViewDisplayUpdate } from "../../../services/clientViewDisplayUpdate";
+import { DirectDisplaySource } from "./DirectDisplaySource";
 
 function toEntry(song: { Id: string; Title: string }): SongEntry {
   return { songId: song.Id, title: song.Title };
@@ -90,6 +91,7 @@ export interface DirectAuthBridge {
 
 export class DirectClientApi implements ClientApi {
   readonly mode: ClientMode = "App";
+  private readonly displaySource = new DirectDisplaySource(getCurrentDisplay, subscribeCurrentDisplayChange);
 
   private songListUnsub: (() => void) | null = null;
   private hostStateUnsub: (() => void) | null = null;
@@ -206,7 +208,7 @@ export class DirectClientApi implements ClientApi {
     for (const cb of this.capabilityListeners) cb(this.capabilities);
     this.refreshAuthState();
     if (stylesChanged) {
-      const display = this.withChordProStyles(getCurrentDisplay());
+      const display = this.withChordProStyles(this.displaySource.getCurrent());
       for (const cb of [...this.displayListeners]) cb(display);
     }
   };
@@ -314,9 +316,9 @@ export class DirectClientApi implements ClientApi {
 
   private createDisplayApi(): DisplayApi {
     const dispatch = (detail: Record<string, unknown>) => this.dispatchDisplayUpdate(detail);
-    const songId = () => getCurrentDisplay().songId;
+    const songId = () => this.displaySource.getCurrent().songId;
     return {
-      getCurrent: () => this.withChordProStyles(getCurrentDisplay()),
+      getCurrent: () => this.withChordProStyles(this.displaySource.getCurrent()),
       project: async (request) => {
         const update = {
           command: "display_update",
@@ -348,7 +350,7 @@ export class DirectClientApi implements ClientApi {
       setTranspose: async (value, commit) => {
         if (this.isFollowingPpd()) {
           if (commit) {
-            const current = getCurrentDisplay();
+            const current = this.displaySource.getCurrent();
             await sendHostDevicePpdDisplayUpdate({
               command: "song_update",
               id: current.songId,
@@ -364,7 +366,7 @@ export class DirectClientApi implements ClientApi {
       setCapo: async (value, commit) => {
         if (this.isFollowingPpd()) {
           if (commit) {
-            const current = getCurrentDisplay();
+            const current = this.displaySource.getCurrent();
             await sendHostDevicePpdDisplayUpdate({
               command: "song_update",
               id: current.songId,
@@ -379,7 +381,7 @@ export class DirectClientApi implements ClientApi {
       },
       setInstructions: async (instructions) => {
         if (this.isFollowingPpd()) {
-          const current = getCurrentDisplay();
+          const current = this.displaySource.getCurrent();
           await sendHostDevicePpdDisplayUpdate({
             command: "song_update",
             id: current.songId,
@@ -392,7 +394,7 @@ export class DirectClientApi implements ClientApi {
       pushToFollowers: async () => undefined,
       subscribeDisplay: (callback) => {
         this.displayListeners.add(callback);
-        const unsubscribe = subscribeCurrentDisplayChange((display) => callback(this.withChordProStyles(display)));
+        const unsubscribe = this.displaySource.subscribe((display) => callback(this.withChordProStyles(display)));
         return () => {
           this.displayListeners.delete(callback);
           unsubscribe();
@@ -480,7 +482,7 @@ export class DirectClientApi implements ClientApi {
     // so the embed's own subscribePlaylist fires too. Writing CurrentSongStore
     // directly here would update the projector but leave the full view stale.
     const applyPlaylist = async (entries: ReturnType<typeof playlistOf>) => {
-      const current = getCurrentDisplay();
+      const current = this.displaySource.getCurrent();
       if (this.isFollowingPpd()) {
         await sendHostDevicePpdDisplayUpdate({
           command: "display_update",
@@ -494,7 +496,7 @@ export class DirectClientApi implements ClientApi {
       }
     };
     return {
-      getPlaylist: () => getCurrentDisplay().playlist ?? [],
+      getPlaylist: () => this.displaySource.getCurrent().playlist ?? [],
       setPlaylist: async (entries) => applyPlaylist(entries),
       clear: async () => applyPlaylist([]),
       getLeaderPlaylists: async () => {
@@ -520,11 +522,11 @@ export class DirectClientApi implements ClientApi {
         if (!date) return "OK";
         const exists = leader.getSchedule().some((d) => formatLocalDateKey(d) === formatLocalDateKey(date));
         if (exists && !options.forced) return "OVERWRITE";
-        const entries = (getCurrentDisplay().playlist ?? []).map((entry) => PlaylistEntry.fromJSON(entry));
+        const entries = (this.displaySource.getCurrent().playlist ?? []).map((entry) => PlaylistEntry.fromJSON(entry));
         Database.getInstance().schedule(leader, date, new Playlist(formatLocalDateLabel(date), entries));
         return "OK";
       },
-      subscribePlaylist: (callback) => subscribeCurrentDisplayChange((display) => callback(display.playlist ?? [])),
+      subscribePlaylist: (callback) => this.displaySource.subscribe((display) => callback(display.playlist ?? [])),
     };
   }
 
@@ -704,7 +706,7 @@ export class DirectClientApi implements ClientApi {
       let forced = forceFirst;
       while (token === this.followToken && !controller.signal.aborted) {
         try {
-          const { display } = await cloudApi.fetchDisplayQuery(getCurrentDisplay(), { leaderId, signal: controller.signal, forced });
+          const { display } = await cloudApi.fetchDisplayQuery(this.displaySource.getCurrent(), { leaderId, signal: controller.signal, forced });
           forced = false;
           if (token !== this.followToken) return;
           this.setNetworkState({ status: "watching", transport: "web" });
@@ -724,6 +726,10 @@ export class DirectClientApi implements ClientApi {
    *  remote song projects (not just songs in the working playlist), and the
    *  projector + CurrentSongStore stay in sync. */
   private relayFollowedDisplay(display: Display): void {
+    // Publish the complete remote snapshot before the full view processes it.
+    // Its local selection/preview effects can temporarily retain the previous
+    // song's preferences; those must never become follower display updates.
+    this.displaySource.follow(display);
     window.dispatchEvent(new CustomEvent("pp-cv-watch-display", { detail: display }));
   }
 
@@ -755,6 +761,7 @@ export class DirectClientApi implements ClientApi {
     }
     this.ppdAccess = null;
     this.ppdSongCache.clear();
+    this.displaySource.stopFollowing();
     if (stoppedPpdFollow) this.refreshHostState();
   }
 
