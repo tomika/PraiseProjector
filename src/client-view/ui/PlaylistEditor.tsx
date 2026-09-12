@@ -24,6 +24,7 @@ import { icon } from "./assets";
 import { markerStyle, TitleCell } from "./SongList";
 import { useWheelDragOpen, type WheelDragOpenPayload } from "./useWheelDragOpen";
 import { WheelPicker } from "./WheelPicker";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 
 const SHARP = "♯";
 const FLAT = "♭";
@@ -70,6 +71,7 @@ export function PlaylistEditor() {
   // extra render WheelPicker needs to actually appear (a plain ref mutation
   // wouldn't trigger one).
   const [wheel, setWheel] = useState<null | { index: number; kind: "transpose" | "capo" }>(null);
+  useUnsavedChanges(editingIndex !== null || wheel !== null);
   const [pendingValue, setPendingValue] = useState(0);
   const pendingValueRef = useRef(0);
   const [wheelAnchor, setWheelAnchor] = useState<HTMLElement | null>(null);

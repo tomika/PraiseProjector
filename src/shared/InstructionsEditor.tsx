@@ -22,6 +22,7 @@ import { getChordSystem } from "../../chordpro/chordpro_base";
 import { ChordProEditor } from "../../chordpro/chordpro_editor";
 import { routeTouchEventsToMouse } from "../../common/utils";
 import { ensureChordProAssets } from "../utils/loadChordProAssets";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import "./InstructionsEditor.css";
 
 const NARROW_SCREEN_COLLAPSE_RIGHT_PX = 900;
@@ -95,6 +96,9 @@ export function InstructionsEditor({
   onSave,
   onClose,
 }: InstructionsEditorProps) {
+  // Uncommitted control values also live in the imperative editor, outside React.
+  // Protect the entire editing session, including an asynchronous save.
+  useUnsavedChanges(true);
   const [storeChecked, setStoreChecked] = useState(storeInProfile?.defaultChecked ?? true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [middleCollapsed, setMiddleCollapsed] = useState(false);

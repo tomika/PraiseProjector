@@ -103,6 +103,7 @@ import { SyncTodoBadge } from "./shared/TodoBadge";
 import { usePullToRefresh } from "./shared/usePullToRefresh";
 import { deriveFullViewPpdFollowUi } from "./services/ppdFollowUi";
 import { registerClientViewSwitchGuard } from "./services/clientViewSwitchGuard";
+import { reportUnsavedChanges } from "./services/unsavedChangesReport";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
@@ -1211,6 +1212,14 @@ const AppContent: React.FC = () => {
   // Memoized version for UI (toolbar button state)
   const _triggerRecalc = currentSongText;
   const canSaveSong = editedSong ? checkCanSaveSong() : false;
+
+  // Android replaces this document when the user opens a shared song or playlist link
+  // from another app, and beforeunload only persists UI state — an unsaved song edit
+  // would be gone. Report the same flag the in-app discard prompts use so the host
+  // confirms only when there is something to lose.
+  useEffect(() => {
+    reportUnsavedChanges(canSaveSong);
+  }, [canSaveSong]);
 
   useEffect(
     () =>

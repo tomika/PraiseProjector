@@ -16,6 +16,7 @@ import { assetBase } from "../ui/assets";
 import { cloudApiBaseUrl } from "../../config";
 import { LocalizationProvider } from "../../localization/LocalizationContext";
 import { reportPageLoadedSuccessfully } from "../../services/webAppLaunchReport";
+import { reportUnsavedChanges } from "../../services/unsavedChangesReport";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 import { WebAppUpdateActivityBar } from "../../components/WebAppUpdateActivityBar";
 
@@ -88,6 +89,9 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
   );
 
   reportPageLoadedSuccessfully();
+  // The page snapshot is persisted. Mounted editors report drafts separately;
+  // this clean report cannot clear an Instructions/playlist editor's guard.
+  reportUnsavedChanges(false);
 
   return store;
 }

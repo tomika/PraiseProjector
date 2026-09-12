@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, Suspense, lazy } from "react";
 import { DocumentImporter } from "../../services/DocumentImporter";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import { ChordProConverter } from "../../services/ChordProConverter";
 import { ImportLines } from "../../../db-common/ImportLine";
 import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../../db-common/ChordMap";
@@ -61,6 +62,7 @@ interface SongImporterWizardProps {
  * 4-step wizard for importing songs from documents
  */
 export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database, onClose, onSongImported, initialFiles }) => {
+  useUnsavedChanges(true);
   const { t } = useLocalization();
   const normalizedChordSystem = getChordSystem("G");
 

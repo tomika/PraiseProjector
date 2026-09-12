@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useDialogResize } from "../hooks/useDialogResize";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import GeneralSettings from "./settings/GeneralSettings";
 import ProjectingSettings from "./settings/ProjectingSettings";
 import SearchingSettings from "./settings/SearchingSettings";
@@ -57,6 +58,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
 }
 
 const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initialLeaderId, onOpenLogs }) => {
+  useUnsavedChanges(true);
   const { settings, initialSettings, updateSetting, saveSettings, revertSettings, resetSettingsToDefaults } = useSettings();
   const { leaders, setLeaders, saveLeaders, revertLeaders } = useDatabase();
   const { tt } = useTooltips();

@@ -1,4 +1,5 @@
 import React from "react";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import { useDrop, useDrag } from "react-dnd";
 import { Song } from "../../db-common/Song";
 import { Playlist } from "../../db-common/Playlist";
@@ -2618,6 +2619,7 @@ const PlaylistItemRow: React.FC<{
   const ref = React.useRef<HTMLTableRowElement | null>(null);
   const [dragSuppressed, setDragSuppressed] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  useUnsavedChanges(isEditing);
   const [editValue, setEditValue] = React.useState(title);
   const [isInstructionsHovered, setIsInstructionsHovered] = React.useState(false);
   const clickTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);

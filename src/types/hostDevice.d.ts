@@ -47,6 +47,12 @@ export interface ElectronHostDevice {
   clearCache?: (includeDiskFiles: boolean) => boolean | Promise<boolean>;
   startNavigationTimeout?: (navigationTimeoutMs: number, message: string) => void | Promise<void>;
   pageLoadedSuccessfully?: () => void | Promise<void>;
+  /**
+   * Android: whether a navigation away from this document would discard unsaved work.
+   * The host confirms a shared-link navigation unless this reported false — see
+   * services/unsavedChangesReport.
+   */
+  setUnsavedChanges?: (hasUnsavedChanges: boolean) => void | Promise<void>;
   keepScreenOn?: (enabled: boolean) => void | Promise<void>;
   share?: (url: string, title: string, text: string) => void | Promise<void>;
   openLinkExternal?: (url: string) => void | Promise<void>;
