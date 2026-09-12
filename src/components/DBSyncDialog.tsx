@@ -1553,7 +1553,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       {showUpdatedSongsDialog && (
         <div className="modal-backdrop show dbsync-dialog-backdrop">
           <div className="modal d-block">
-            <div className="modal-dialog modal-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" onClick={(e) => e.stopPropagation()}>
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title">{t("LocallyUpdatedItems") || "Locally Updated Items"}</h5>
