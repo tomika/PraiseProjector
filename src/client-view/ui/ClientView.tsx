@@ -14,6 +14,7 @@ import { useClientViewState, useClientViewStore } from "../controller/ClientView
 import { canUseSessions } from "../controller/ClientViewStore";
 import { AboutDialog } from "./AboutDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { TextConfirmDialog } from "./TextConfirmDialog";
 import { InstructionsEditorDialog } from "./InstructionsEditorDialog";
 import { LoginDialog } from "./LoginDialog";
 import { MainToolbar } from "./MainToolbar";
@@ -106,6 +107,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       {state.instructionsEditorOpen && <InstructionsEditorDialog />}
       {state.aboutOpen && <AboutDialog />}
       {state.confirmAnim && <ConfirmDialog />}
+      {state.confirmText && <TextConfirmDialog />}
       {state.startupSessionScan && <StartupScanIndicator address={state.startupSessionScan.address} />}
     </div>
   );

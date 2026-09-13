@@ -16,6 +16,9 @@
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { EMPTY_SYNC_STATUS, todoBadgeKind, type SyncStatus, type TodoBadgeKind } from "../../state/syncStatusStore";
+import type { StringKey } from "../../localization/LocalizationContext";
+import { requestOwnClientViewOnHome } from "../../services/clientViewHandoff";
+import { hasUnsavedChanges } from "../../services/unsavedChangesReport";
 import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
@@ -26,6 +29,7 @@ import type {
   ClientCapabilities,
   ClientConfig,
   ClientMode,
+  ClientStorageScope,
   DeviceInfo,
   Display,
   ExternalSearchMode,
@@ -213,11 +217,22 @@ interface PersistedClientViewState {
   songId: string;
 }
 
-/** device-preference key (the port namespaces it, e.g. "pp-pref-client-view-state"). */
+/** device-preference key (the port namespaces it, e.g. "pp-pref-client-view-state").
+ *  The local scope keeps the original key, so an existing embedded-client snapshot
+ *  survives the split; remote worlds get their own — see {@link persistKeyForScope}. */
 const PERSIST_KEY = "client-view-state";
 const PERSIST_VERSION = 3;
 /** Coalesce rapid state changes into one write (localStorage is synchronous). */
 const PERSIST_DEBOUNCE_MS = 400;
+
+/** One snapshot key per data world. Without this, the embedded Direct client
+ *  (local database) and the standalone Rest entry (cloud catalogue) — two
+ *  documents on the same origin — restore each other's song and leader ids, and
+ *  a song the other world does not have resolves to empty text: a blank song view
+ *  with no error. See {@link ClientStorageScope}. */
+function persistKeyForScope(scope: ClientStorageScope): string {
+  return scope === "local" ? PERSIST_KEY : `${PERSIST_KEY}-${scope}`;
+}
 
 export interface ClientViewState {
   mode: ClientMode;
@@ -318,6 +333,10 @@ export interface ClientViewState {
    *  or null when none is showing. Mirrors the legacy `confirm(anim)` popup whose
    *  body IS the animated SVG (e.g. "erase", "overwrite"). */
   confirmAnim: string | null;
+  /** The open text confirmation (localization keys for its title and question),
+   *  or null when none is showing. Separate from {@link confirmAnim}, whose body
+   *  IS a legacy animated SVG and therefore cannot carry an arbitrary question. */
+  confirmText: { titleKey: StringKey; messageKey: StringKey } | null;
   displaySettings: DisplaySettings;
   /** The shared light/dark preference (auto/light/dark), mirrored from the
    *  `pp-settings.theme` key the full view also owns. Not persisted in the
@@ -468,6 +487,7 @@ function initialState(): ClientViewState {
     instructionsEditorText: "",
     aboutOpen: false,
     confirmAnim: null,
+    confirmText: null,
     displaySettings: { ...defaultDisplaySettings },
     themeSetting: initialTheme,
     isDark: computeIsDark(initialTheme),
@@ -510,7 +530,15 @@ export class ClientViewStore {
    *  dialog state lives in `confirmAnim`, the resolver is kept off-snapshot. */
   private confirmResolver: ((ok: boolean) => void) | null = null;
 
-  constructor(private readonly api: ClientApi) {}
+  /** Resolver for the in-flight {@link confirmMessage} promise; see above. */
+  private confirmTextResolver: ((ok: boolean) => void) | null = null;
+
+  /** Snapshot key of the adapter's data world (see {@link persistKeyForScope}). */
+  private readonly persistKey: string;
+
+  constructor(private readonly api: ClientApi) {
+    this.persistKey = persistKeyForScope(api.storageScope);
+  }
 
   // ── useSyncExternalStore bindings (stable identities) ────────────────────────
 
@@ -772,7 +800,7 @@ export class ClientViewStore {
   /** Read the persisted snapshot, dropping anything from an incompatible version. */
   private loadPersisted(): PersistedClientViewState | undefined {
     try {
-      const raw = this.api.device.getPreference(PERSIST_KEY);
+      const raw = this.api.device.getPreference(this.persistKey);
       if (!raw) return undefined;
       const parsed = JSON.parse(raw) as Partial<PersistedClientViewState> | null;
       if (!parsed || typeof parsed !== "object" || parsed.version !== PERSIST_VERSION) return undefined;
@@ -914,7 +942,7 @@ export class ClientViewStore {
       const json = JSON.stringify(this.snapshotForPersist());
       if (json === this.lastPersistedJson) return;
       this.lastPersistedJson = json;
-      this.api.device.setPreference(PERSIST_KEY, json);
+      this.api.device.setPreference(this.persistKey, json);
     } catch {
       /* storage may be unavailable (private mode / quota) — non-fatal */
     }
@@ -2016,6 +2044,25 @@ export class ClientViewStore {
     resolve?.(ok);
   }
 
+  /** Ask a plain yes/no question (localized by the dialog) and resolve true on OK.
+   *  The animated confirm above has no room for one-off wording. */
+  confirmMessage(titleKey: StringKey, messageKey: StringKey): Promise<boolean> {
+    this.confirmTextResolver?.(false);
+    return new Promise<boolean>((resolve) => {
+      this.confirmTextResolver = resolve;
+      this.set({ confirmText: { titleKey, messageKey } });
+    });
+  }
+
+  /** Resolve the open text confirmation (OK = true; Cancel / backdrop / Esc =
+   *  false) and close it. */
+  resolveTextConfirm(ok: boolean): void {
+    const resolve = this.confirmTextResolver;
+    this.confirmTextResolver = null;
+    this.set({ confirmText: null });
+    resolve?.(ok);
+  }
+
   /** Open an external URL through the host (external browser on native shells). */
   openExternalUrl(url: string): void {
     this.api.device.openExternal(url);
@@ -2040,10 +2087,22 @@ export class ClientViewStore {
     window.location.assign(this.fullEditorUrl);
   }
 
-  /** Leave a locked client session via the native host home when available, or
-   *  fall back to the web full-editor/start route for online sessions. */
-  returnHome(): void {
+  /** Leave a borrowed entry — a locked session, or a shared link opened natively —
+   *  through the native host home when available, falling back to the web
+   *  full-editor/start route for online sessions.
+   *
+   *  Both routes REPLACE this document, so a mounted editor's draft would go with
+   *  it; the full view guards its own switch the same way (clientViewSwitchGuard).
+   */
+  async returnHome(): Promise<void> {
+    if (hasUnsavedChanges() && !(await this.confirmMessage("UnsavedChanges", "AskLeaveViewWithUnsavedChanges"))) return;
     if (this.state.capabilities.hasHostHome) {
+      // This entry was someone else's view, not a change of heart about which UI
+      // the user prefers — so ask the arriving document for the app's own client
+      // view instead of rewriting the stored preference here. That document also
+      // owns the decision to fall back to the full view (an empty local database
+      // has nothing for a client view to show).
+      requestOwnClientViewOnHome();
       this.api.device.goHome();
       return;
     }

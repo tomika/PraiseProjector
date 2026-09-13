@@ -2313,6 +2313,17 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   width: min(92vw, 460px);
 }
 
+/* Text confirmation (a question with no animated-SVG message of its own). */
+.cv-text-confirm-dialog {
+  width: min(92vw, 420px);
+  gap: 12px;
+}
+
+.cv-text-confirm-message {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
 /* Confirmation dialog (legacy `confirm`) — animated-SVG message + ok/cancel icon
    buttons. Narrower than the form dialogs and centred. */
 .cv-confirm-dialog {

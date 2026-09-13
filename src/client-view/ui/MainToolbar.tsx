@@ -250,7 +250,7 @@ export function MainToolbar({
       </div>
     ),
     home: state.capabilities.canReturnHome ? (
-      <div id="btnHome" className="btnDiv" title="Home" onClick={() => store.returnHome()}>
+      <div id="btnHome" className="btnDiv" title="Home" onClick={() => void store.returnHome()}>
         <img className="btnImg" src={icon("home.svg")} alt="Home" />
       </div>
     ) : null,

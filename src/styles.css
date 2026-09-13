@@ -378,6 +378,13 @@
   outline: none !important;
 }
 
+/* Boot gate for a handoff from a borrowed client view (see main.tsx RootView):
+   which view opens depends on the local database, which is not readable yet. The
+   fill is OPAQUE because the view behind it is the one that may be replaced. */
+.pp-view-gate.loading-overlay {
+  background-color: var(--pp-bg-color);
+}
+
 /* Loading overlay for long operations */
 .loading-overlay {
   position: fixed;

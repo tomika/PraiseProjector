@@ -27,6 +27,10 @@ export function createUnsavedChangesRegistry(report: (dirty: boolean) => void) {
     remove(source: symbol) {
       if (sources.delete(source)) publish();
     },
+    /** The combined state, for in-page navigation that has to ask first. */
+    has(): boolean {
+      return [...sources.values()].some(Boolean);
+    },
   };
 }
 
@@ -45,4 +49,11 @@ const pageSource = Symbol("page");
 /** The page's own state is combined with every mounted editor's report. */
 export function reportUnsavedChanges(hasUnsavedChanges: boolean): void {
   unsavedChangesRegistry.set(pageSource, hasUnsavedChanges);
+}
+
+/** Whether anything on this page would lose a draft if the document went away.
+ *  The native host learns this through the report above; in-page code that
+ *  navigates the document itself (the client view's home button) asks here. */
+export function hasUnsavedChanges(): boolean {
+  return unsavedChangesRegistry.has();
 }

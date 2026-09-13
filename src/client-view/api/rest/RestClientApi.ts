@@ -17,6 +17,7 @@ import type {
   ClientCapabilities,
   ClientConfig,
   ClientMode,
+  ClientStorageScope,
   DeviceApi,
   DisplayApi,
   PlaylistApi,
@@ -29,6 +30,9 @@ import { createAuthApi, createDeviceApi, createDisplayApi, createPlaylistApi, cr
 
 export class RestClientApi implements ClientApi {
   private readonly core = new RestCore();
+
+  /** Cloud- or host-backed: never the local database this device edits. */
+  readonly storageScope: ClientStorageScope = "remote";
 
   readonly song: SongApi;
   readonly playlist: PlaylistApi;

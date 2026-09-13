@@ -53,6 +53,7 @@ import type {
   AuthApi,
   ClientCapabilities,
   ClientMode,
+  ClientStorageScope,
   DeviceApi,
   DisplayApi,
   HostViewApi,
@@ -91,6 +92,9 @@ export interface DirectAuthBridge {
 
 export class DirectClientApi implements ClientApi {
   readonly mode: ClientMode = "App";
+
+  /** The in-process embed reads and writes the host's own local database. */
+  readonly storageScope: ClientStorageScope = "local";
   private readonly displaySource = new DirectDisplaySource(getCurrentDisplay, subscribeCurrentDisplayChange);
 
   private songListUnsub: (() => void) | null = null;
@@ -167,6 +171,8 @@ export class DirectClientApi implements ClientApi {
       leaderRight: ppdFollower ? (this.ppdAccess?.leaderModeAvailable ?? false) : false,
       leaderMode: ppdFollower && this.leaderMode,
       lockedToSession: false,
+      // Always the panel inside the full view's document, never its own page.
+      standaloneDocument: false,
     });
   }
 

@@ -50,6 +50,18 @@ import type { SyncStatus } from "../../state/syncStatusStore";
 export type ClientMode = "App" | "Client";
 
 /**
+ * Which DATA WORLD an adapter's state belongs to. It namespaces the persisted
+ * client-view snapshot, because two documents on the SAME origin restore each
+ * other's ids otherwise: `index.html`'s embedded Direct client runs on the local
+ * database, while the standalone `client-view.html` entry (a shared /public.html
+ * link, the PWA) runs on the cloud catalogue. A snapshot written by one then
+ * makes the other restore a song/leader its own world does not have — the song
+ * data resolves to empty and the view renders a blank page with no error. A
+ * host-served client is already isolated: it is served from the HOST's origin.
+ */
+export type ClientStorageScope = "local" | "remote";
+
+/**
  * Host-granted access level for a webserver-served client, as classified by the
  * Electron embedded webserver (`getClientType`) and injected into the served
  * page as `window.__ppAccess`. GUEST is a view-only follower; LEADER/LOCAL may
@@ -139,8 +151,11 @@ export interface ClientCapabilities {
   /** A local webserver backend is reachable for iWeb-style browser clients. */
   hasWebServerBackend: boolean;
   /**
-   * A locked session has a meaningful home target. True for online/cloud session
-   * viewers, and for native hosts that expose `hostDevice.goHome`.
+   * This entry has a meaningful home to return to: an online/cloud session viewer
+   * (which leaves through the web start route), or any borrowed entry running
+   * inside a native host that exposes `hostDevice.goHome` — a locked session, and
+   * a standalone entry whose full-editor switch was withdrawn (a shared link
+   * opened in the app). Drives the toolbar home button.
    */
   canReturnHome: boolean;
 }
@@ -549,6 +564,10 @@ export interface DeviceApi {
 export interface ClientApi {
   /** Which data source the active backend represents. */
   readonly mode: ClientMode;
+
+  /** The data world this adapter's persisted state belongs to (see
+   *  {@link ClientStorageScope}). */
+  readonly storageScope: ClientStorageScope;
 
   /** One-time startup. Resolves once the backend is ready to serve requests. */
   init(config: ClientConfig): Promise<void>;

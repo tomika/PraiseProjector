@@ -17,7 +17,9 @@ import "./App.css";
 import { cloudApi } from "../common/cloudApi";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClientViewApp } from "./client-view/boot/ClientViewApp";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { Database } from "../db-common/Database";
+import { consumeClientViewHandoff } from "./services/clientViewHandoff";
 import { OnlineSessionProvider } from "./contexts/OnlineSessionContext";
 import { readPersistedSettings } from "./services/settingsStore";
 import type { Settings } from "./types";
@@ -32,6 +34,11 @@ import "./shared/performance.css";
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
 const SHOW_CLIENT_KEY = "pp-show-client-view";
+
+/** How long the handoff gate waits for the local database before giving up and
+ *  opening the full view. Storage that never resolves (a blocked IndexedDB in a
+ *  private window, a full disk) must not leave the user on a spinner. */
+const HANDOFF_DB_TIMEOUT_MS = 5000;
 type AutomaticViewSwitch = Settings["automaticViewSwitch"];
 
 disableDefaultZoom();
@@ -92,6 +99,13 @@ function RootView() {
   // fresh entry and must continue to seed from the live full-view host state.
   const [restorePersistedClientOnEntry, setRestorePersistedClientOnEntry] = useState(showClient);
   const [openOptionsOnClientEntry, setOpenOptionsOnClientEntry] = useState(false);
+  // A standalone client view (a shared link opened in the Android app, a served
+  // follower page) sent us here through the native host's goHome(). It asks for
+  // this app's OWN client view, but that view is worth opening only if there is
+  // something in the local database to show — so hold the choice until the
+  // database of the RESOLVED user is readable. See services/clientViewHandoff.
+  const [decidingHandoff, setDecidingHandoff] = useState(() => consumeClientViewHandoff());
+  const { isLoading: isAuthLoading } = useAuth();
   const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
   const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
   const previousPagingLayoutRef = useRef(isPagingLayout);
@@ -109,19 +123,71 @@ function RootView() {
   );
 
   // Single setter that also persists, so every switch path (events + the client
-  // view's home button) keeps the saved UI choice in sync.
-  const setShowClient = useCallback((value: boolean) => {
+  // view's home button) keeps the saved UI choice in sync. `persist: false` is for
+  // a view chosen FOR the user rather than BY them (the handoff below), which must
+  // not silently become their remembered choice.
+  const setShowClient = useCallback((value: boolean, persist = true) => {
     setShowClientState(value);
     if (!value) {
       setOpenOptionsOnClientEntry(false);
       setRestorePersistedClientOnEntry(false);
     }
+    if (!persist) return;
     try {
       localStorage.setItem(SHOW_CLIENT_KEY, value ? "1" : "0");
     } catch {
       /* storage may be unavailable (private mode) — non-fatal */
     }
   }, []);
+  // Close the handoff gate exactly once, on whichever arrives first: the song
+  // count, a failure, or the deadline. The flag is a ref so the two effects below
+  // share it (and so StrictMode's remount cannot decide twice).
+  const handoffSettledRef = useRef(false);
+  const finishHandoff = useCallback(
+    (hasSongs: boolean) => {
+      if (handoffSettledRef.current) return;
+      handoffSettledRef.current = true;
+      // Songs → the client view this entry asked for. None → the full view, the
+      // only place a synchronizable, empty database can be filled. Either way this
+      // is the destination of ONE navigation, not a new view preference — the user
+      // asked to leave a borrowed view, not to change which UI their app opens in.
+      setShowClient(hasSongs, false);
+      // A handoff is a FRESH entry into this app's client view, even when the
+      // stored preference happens to be "client view": seed it from the live
+      // full-view state, not from a snapshot of some earlier session.
+      setRestorePersistedClientOnEntry(false);
+      setDecidingHandoff(false);
+    },
+    [setShowClient]
+  );
+  // The deadline is armed when the GATE opens, not when auth settles: the auth
+  // context clears isLoading only after Database.switchUser, so a database that
+  // never loads would otherwise keep the read below from ever starting — and with
+  // it the timeout — leaving the whole UI covered by the gate indefinitely.
+  useEffect(() => {
+    if (!decidingHandoff) return;
+    const timer = setTimeout(() => finishHandoff(false), HANDOFF_DB_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [decidingHandoff, finishHandoff]);
+  // Read the song count once the database of the RESOLVED user is readable. The
+  // auth context owns Database.switchUser and clears isLoading only after that
+  // switch, so waiting on it is what keeps this from reading a logged-in user's
+  // anonymous database (Database.waitForReady would happily initialize one).
+  // App stays mounted underneath the gate, so its own startup runs meanwhile.
+  useEffect(() => {
+    if (!decidingHandoff || isAuthLoading) return;
+    let cancelled = false;
+    Database.waitForReady()
+      .then((database) => {
+        if (!cancelled) finishHandoff(database.getSongs().length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) finishHandoff(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [decidingHandoff, isAuthLoading, finishHandoff]);
   const refreshAutomaticViewSwitch = useCallback(() => {
     setAutomaticViewSwitch(readAutomaticViewSwitch());
   }, []);
@@ -206,13 +272,21 @@ function RootView() {
   // App stays mounted (hidden) while the client view is shown, so its state —
   // selection, projection, webserver/projector wiring — is preserved and the
   // embedded view can drive it through the shared CurrentSongStore.
+  const showClientView = showClient && !decidingHandoff;
   return (
     <>
       <WebAppUpdateActivityBar />
-      <div hidden={showClient}>
+      <div hidden={showClientView}>
         <App />
       </div>
-      {showClient && <ClientViewApp config={embeddedClientConfig} onHome={enterMainView} />}
+      {showClientView && <ClientViewApp config={embeddedClientConfig} onHome={enterMainView} />}
+      {/* Opaque while the handoff decides: the view underneath is the one that may
+          still be replaced, and a half-second flash of the wrong UI reads as a bug. */}
+      {decidingHandoff && (
+        <div className="pp-view-gate loading-overlay" role="status" aria-busy="true">
+          <div className="loading-spinner" />
+        </div>
+      )}
     </>
   );
 }

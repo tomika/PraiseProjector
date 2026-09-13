@@ -98,6 +98,12 @@ export interface CapabilityInputs {
    * not even serve the editor shell (see electron/webserver.ts).
    */
   fullEditorReachable?: boolean;
+  /**
+   * This client view owns its own document (a standalone entry page), rather than
+   * being the panel embedded in the full view. An embedded view leaves through its
+   * host's in-process switch, so it must never offer the native home button.
+   */
+  standaloneDocument: boolean;
 }
 
 /** Derive the capability snapshot for the given role + context. Pure. */
@@ -108,7 +114,16 @@ export function deriveCapabilities(input: CapabilityInputs): ClientCapabilities 
     hasHostBridge,
     hasHostHome,
     hasWebServerBackend,
-    canReturnHome: input.lockedToSession && (input.onlineSession || hasHostHome),
+    // A "borrowed" entry is one the user did not open as their own app: a session
+    // viewer, or a standalone entry that withdrew the full-editor switch (a shared
+    // /public.html link opened natively). Both are dead ends inside a native shell
+    // without this, because the native app's own home is the only way out — the
+    // internal webserver does not even serve the editor shell, and the shared-link
+    // entry runs on the cloud catalogue rather than this device's database.
+    // Web visitors have no host bridge, so they keep the online-session route only.
+    canReturnHome:
+      (hasHostHome && (input.lockedToSession || (input.standaloneDocument && input.fullEditorReachable === false))) ||
+      (input.lockedToSession && input.onlineSession),
   };
 
   if (input.role === "ClientServed") {

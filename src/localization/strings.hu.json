@@ -81,6 +81,7 @@
   "UnsavedChanges": "Nem mentett változtatások",
   "AskSwitchToClientViewWithUnsavedChanges": "A dal nem mentett módosításokat tartalmaz. Átvált kliens nézetre?",
   "SwitchToClientView": "Váltás kliens nézetre",
+  "AskLeaveViewWithUnsavedChanges": "A befejezetlen szerkesztés elveszik. Elhagyod ezt a nézetet?",
   "AskDiscardChangesAndLoadNewSong": "Nem mentett módosítások vannak. El akarja vetni őket és betölteni az új dalt?",
   "AskDiscardChangesAndReload": "Nem mentett módosítások vannak. El akarja vetni őket és újratölteni az eredeti dalt?",
   "ConfirmSave": "Mentés megerősítése",

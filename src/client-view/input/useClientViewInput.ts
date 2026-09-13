@@ -24,6 +24,7 @@ function editableTarget(target: EventTarget | null): boolean {
 function inputBlocked(store: ClientViewStore): boolean {
   const state = store.getSnapshot();
   return (
+    !!state.confirmText ||
     state.loginDialogOpen ||
     (state.sessionsDialogOpen && !state.sessionsDialogStartupHidden) ||
     state.instructionsEditorOpen ||

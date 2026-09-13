@@ -33,6 +33,7 @@ function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): Capabil
     leaderRight: false,
     leaderMode: false,
     lockedToSession: false,
+    standaloneDocument: false,
     ...over,
   };
 }
@@ -100,6 +101,19 @@ test("ClientServed: locked-session home only for online sessions or host goHome"
   assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, onlineSession: true })).canReturnHome, true);
   assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: true, hasHostHome: true })).canReturnHome, true);
   assert.equal(deriveCapabilities(inputs("ClientServed", { lockedToSession: false, onlineSession: true, hasHostHome: true })).canReturnHome, false);
+});
+
+test("a standalone entry without the full-editor switch goes home through the native host", () => {
+  // The shared /public.html link opened in the Android app: cloud-backed, no
+  // editor switch, and the native app's own home is the only way out.
+  const shared = { standaloneDocument: true, fullEditorReachable: false } as const;
+  assert.equal(deriveCapabilities(inputs("AppRest", { ...shared, hasHostHome: true })).canReturnHome, true);
+  // The same entry in a browser (the /public.html showcase iframe) has no host.
+  assert.equal(deriveCapabilities(inputs("AppRest", { ...shared, hasHostHome: false })).canReturnHome, false);
+  // An entry that kept its editor switch uses that, not the home button.
+  assert.equal(deriveCapabilities(inputs("AppRest", { standaloneDocument: true, hasHostHome: true })).canReturnHome, false);
+  // The embedded panel leaves through its host view's in-process switch.
+  assert.equal(deriveCapabilities(inputs("AppDirect", { fullEditorReachable: false, hasHostHome: true })).canReturnHome, false);
 });
 
 // ── App roles: always in control, no leader toggle ───────────────────────────

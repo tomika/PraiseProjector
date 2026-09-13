@@ -345,6 +345,7 @@ export class RestCore {
       leaderMode: this.leaderMode,
       lockedToSession: !!this.config.lockedToSession,
       fullEditorReachable: this.config.allowFullEditor !== false,
+      standaloneDocument: this.config.entryMode !== "embedded",
     });
   }
 
