@@ -34,13 +34,15 @@
 
 .editor-tabs-header .nav-item {
   display: flex;
-  flex: 1 1 33.3333%;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
 }
 
 .editor-tabs-header .nav-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
   min-height: 2.5rem;
   min-width: 0;
@@ -48,6 +50,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.editor-tabs-header > .editor-tabs-measure {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  visibility: hidden;
+  pointer-events: none;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+}
+
+.editor-tabs-measure .nav-item {
+  flex: 0 0 auto;
+}
+
+.editor-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-tabs-icons .nav-item {
+  flex: 1 1 0;
+}
+
+.editor-tabs-icons .nav-link {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+.editor-tabs-icons .editor-tab-label {
+  display: none;
+}
+
+.editor-tabs-icons .editor-tab-icon {
+  display: inline-block;
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 .edit-toggle-button {

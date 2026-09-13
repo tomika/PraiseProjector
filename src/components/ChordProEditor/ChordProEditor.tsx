@@ -18,6 +18,76 @@ import type { PerformanceFeatureMode } from "../../types";
 
 export type ChordProEditorTab = "wysiwyg" | "meta" | "chordpro";
 
+const EDITOR_TABS: { id: ChordProEditorTab; labelKey: StringKey; iconClass: string }[] = [
+  { id: "wysiwyg", labelKey: "WYSWYGEditor", iconClass: "fa fa-music" },
+  { id: "meta", labelKey: "MetaDataTab", iconClass: "fa fa-info-circle" },
+  { id: "chordpro", labelKey: "ChordProCodeEditor", iconClass: "fa fa-code" },
+];
+const EDITOR_TABS_ICON_MODE_HYSTERESIS_PX = 24;
+
+function EditorTabs({
+  activeTab,
+  onTabChange,
+  t,
+}: {
+  activeTab: ChordProEditorTab;
+  onTabChange: (tab: ChordProEditorTab) => void;
+  t: (key: StringKey) => string;
+}) {
+  const navRef = React.useRef<HTMLUListElement>(null);
+  const measureRef = React.useRef<HTMLUListElement>(null);
+  const [isIconMode, setIsIconMode] = React.useState(false);
+
+  React.useLayoutEffect(() => {
+    const nav = navRef.current;
+    const measure = measureRef.current;
+    if (!nav || !measure) return;
+
+    const updateTabMode = () => {
+      const availableWidth = Math.floor(nav.clientWidth);
+      const requiredTextWidth = Math.ceil(measure.scrollWidth);
+      setIsIconMode((previous) => requiredTextWidth > availableWidth - (previous ? EDITOR_TABS_ICON_MODE_HYSTERESIS_PX : 0));
+    };
+
+    updateTabMode();
+    const observer = new ResizeObserver(updateTabMode);
+    observer.observe(nav);
+    observer.observe(measure);
+    return () => observer.disconnect();
+  }, [t]);
+
+  return (
+    <>
+      <ul className="nav nav-tabs editor-tabs-measure" ref={measureRef} aria-hidden="true">
+        {EDITOR_TABS.map((tab) => (
+          <li className="nav-item" key={tab.id}>
+            <span className="nav-link">{t(tab.labelKey)}</span>
+          </li>
+        ))}
+      </ul>
+      <ul className={`nav nav-tabs${isIconMode ? " editor-tabs-icons" : ""}`} ref={navRef}>
+        {EDITOR_TABS.map((tab) => (
+          <li className="nav-item" key={tab.id}>
+            <a
+              className={`nav-link${activeTab === tab.id ? " active" : ""}`}
+              href="#"
+              aria-label={t(tab.labelKey)}
+              title={t(tab.labelKey)}
+              onClick={(event) => {
+                event.preventDefault();
+                onTabChange(tab.id);
+              }}
+            >
+              {isIconMode && <i className={`editor-tab-icon ${tab.iconClass}`} aria-hidden="true" />}
+              <span className="editor-tab-label">{t(tab.labelKey)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 interface ChordProEditorProps {
   song: Song | null;
   onLineSelect?: (lineNumber: number) => void;
@@ -1391,44 +1461,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
             >
               <Icon type={IconType.EDIT} />
             </button>
-            <ul className="nav nav-tabs">
-              <li className="nav-item single-line">
-                <a
-                  className={`nav-link ${activeTab === "wysiwyg" ? "active" : ""}`}
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    this.handleTabChange("wysiwyg");
-                  }}
-                >
-                  {t("WYSWYGEditor")}
-                </a>
-              </li>
-              <li className="nav-item single-line">
-                <a
-                  className={`nav-link ${activeTab === "meta" ? "active" : ""}`}
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    this.handleTabChange("meta");
-                  }}
-                >
-                  {t("MetaDataTab")}
-                </a>
-              </li>
-              <li className="nav-item single-line">
-                <a
-                  className={`nav-link ${activeTab === "chordpro" ? "active" : ""}`}
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    this.handleTabChange("chordpro");
-                  }}
-                >
-                  {t("ChordProCodeEditor")}
-                </a>
-              </li>
-            </ul>
+            <EditorTabs activeTab={activeTab} onTabChange={this.handleTabChange} t={t} />
           </div>
         )}
         <div className="tab-content flex-grow-1">
