@@ -814,10 +814,23 @@ const upsertOffer = (packet: HostDevicePacket, message: PpdMessage) => {
     protocolVersion: message.version,
     capabilities: message.capabilities,
   };
+  // A host that keeps its webserver enabled changes from `udp_<device>` to
+  // `web_<url>` when PPD is switched off, then back again when PPD is enabled.
+  // Both identities otherwise coexist for the full liveness window and render the
+  // same host twice. Source address + advertised URL identify that transition
+  // without merging unrelated PPD peers that merely share a display name.
+  let removedAlias = false;
+  if (session.url && /^https?:\/\//i.test(session.url)) {
+    for (const [id, candidate] of discoveredSessions) {
+      if (id === sessionId || candidate.address !== session.address || candidate.url !== session.url) continue;
+      discoveredSessions.delete(id);
+      removedAlias = true;
+    }
+  }
   discoveredSessions.set(sessionId, session);
   // Publish only a genuine appearance/change — a peer that simply keeps answering
   // must not re-render the list once per scan round.
-  if (!existing || sessionSignature(existing) !== sessionSignature(session)) notifySessionsChanged();
+  if (removedAlias || !existing || sessionSignature(existing) !== sessionSignature(session)) notifySessionsChanged();
 };
 
 // ── Nearby discovery lifecycle ─────────────────────────────────────────────────
@@ -1057,7 +1070,7 @@ const onDeviceMessage = async (payload: { op: string; param: unknown }) => {
         if (nearbyDiscovering && !connectedNearbyEndpoints.has(data.id)) {
           void resolvePromise(getHostDevice()?.connectNearby?.(data.id) ?? false);
         }
-      } else if (!discoveredSessions.has(data.id)) {
+      } else if (!data.id.startsWith("web_") && !discoveredSessions.has(data.id)) {
         // Electron's mirror of its own UDP discoveries — no handshake, no payload;
         // it only exists so the list can show a peer before its offer arrives.
         discoveredSessions.set(data.id, {

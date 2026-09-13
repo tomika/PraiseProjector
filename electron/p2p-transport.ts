@@ -18,6 +18,13 @@ import { WebServer } from "./webserver";
 const UDP_PREFIX = "udp_";
 const BT_PREFIX = "bt_";
 
+/** URL-only UDP offers already carry the `web_` namespace. Keep it intact: adding
+ * `udp_` would make the same offer use a different identity in the native and
+ * renderer discovery caches. */
+export function toP2PSessionId(sessionId: string): string {
+  return sessionId.startsWith("web_") ? sessionId : UDP_PREFIX + sessionId;
+}
+
 /**
  * Unified session info that works across transports
  */
@@ -186,7 +193,7 @@ export class P2PTransport {
       const udpSessions = this.udpServer.getDiscoveredSessions();
       for (const session of udpSessions) {
         sessions.push({
-          id: UDP_PREFIX + session.id,
+          id: toP2PSessionId(session.id),
           name: session.name,
           deviceId: session.deviceId,
           hostId: session.hostId,

@@ -233,6 +233,24 @@ export class UdpServer {
       capabilities: message.capabilities,
     };
 
+    // Switching PPD off while the webserver stays on changes this host's identity
+    // from device-based to URL-based (and switching it back does the reverse).
+    // Retire the previous identity immediately instead of keeping both rows alive
+    // until the stale-session window expires.
+    if (session.url) {
+      for (const [id, existing] of this.discoveredSessions) {
+        if (id === sessionId || existing.address !== session.address || existing.url !== session.url) continue;
+        this.discoveredSessions.delete(id);
+        for (const listener of this.sessionChangeListeners) {
+          try {
+            listener("disappeared", id, existing.name);
+          } catch {
+            /* listener errors are intentionally ignored */
+          }
+        }
+      }
+    }
+
     this.discoveredSessions.set(sessionId, session);
     for (const listener of this.sessionChangeListeners) {
       try {

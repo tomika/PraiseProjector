@@ -23,7 +23,7 @@ import os from "node:os";
 const execAsync = promisify(execCb);
 import { getProxyConfigValue, initializeProxy } from "./proxy";
 import { UdpServer, getUdpServerInstance } from "./udp";
-import { P2PTransport, getP2PTransportInstance } from "./p2p-transport";
+import { P2PTransport, getP2PTransportInstance, toP2PSessionId } from "./p2p-transport";
 import { initializeWebServer, getWebServerInstance, type WebServerSettings } from "./webserver";
 import { Settings } from "../src/types";
 import type { WebServerConfig } from "../common/webserver-interface";
@@ -1194,7 +1194,7 @@ app.on("ready", () => {
     });
     udpServer.onSessionChanged((type, sessionId, name) => {
       sendHostDeviceMessage("nearby", {
-        id: `udp_${sessionId}`,
+        id: toP2PSessionId(sessionId),
         name,
         event: type === "discovered" ? "discovered" : "disappeared",
       });
