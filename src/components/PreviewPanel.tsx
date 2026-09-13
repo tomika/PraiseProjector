@@ -2971,7 +2971,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     {previewTabs.map((tab) => (
                       <li className="nav-item" key={tab.id}>
                         <a
-                          className={`nav-link ${activeTab === tab.id ? "active" : ""}`}
+                          className={`nav-link${!isTabContentCollapsed && activeTab === tab.id ? " active" : ""}`}
                           href="#"
                           aria-label={tab.label}
                           title={tab.label}

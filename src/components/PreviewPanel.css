@@ -87,6 +87,10 @@
   min-width: 0;
 }
 
+.projecting-tabs-row .nav-tabs:not(.preview-tabs-icons) .nav-item {
+  flex-basis: auto;
+}
+
 .projecting-tabs-row .nav-tabs .nav-link {
   display: flex;
   align-items: center;

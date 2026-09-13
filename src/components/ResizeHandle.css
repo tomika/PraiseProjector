@@ -49,3 +49,7 @@
 .resize-handle-outer.resize-handle-disabled .resize-handle-inner {
   cursor: default;
 }
+
+.resize-handle-outer.resize-handle-disabled .resize-handle-inner {
+  display: none;
+}
