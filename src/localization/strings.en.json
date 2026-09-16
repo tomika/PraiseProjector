@@ -821,7 +821,7 @@
   "UpdateChecking": "Checking for updates...",
   "UpdateUpToDate": "App is up to date",
   "UpdateInstall": "Install & Restart",
-  "Updating...": "Installing... Please wait",
+  "Updating...": "Installing... Please\u00a0wait",
   "UpdateManualInstallRequired": "Manual Update Required",
   "UpdateAutoInstallNotAvailable": "Automatic install is not available for this macOS build.",
   "UpdateAutoInstallDetail": "This app was built without a macOS code signature, so the update cannot be applied automatically. Please download the latest mac.zip from the releases page, replace the app in Applications, then restart PraiseProjector.",

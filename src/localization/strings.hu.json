@@ -821,7 +821,7 @@
   "UpdateChecking": "Frissítések ellenőrzése...",
   "UpdateUpToDate": "Az alkalmazás naprakész",
   "UpdateInstall": "Telepítés és újraindítás",
-  "Updating...": "Telepítés folyamban... Kérjük várjon",
+  "Updating...": "Telepítés\u00a0folyamban... Kérjük\u00a0várjon",
   "UpdateManualInstallRequired": "Kézi frissítés szükséges",
   "UpdateAutoInstallNotAvailable": "Az automatikus telepítés nem elérhető ehhez a macOS verzióhoz.",
   "UpdateAutoInstallDetail": "Ez az alkalmazás macOS kód aláírás nélkül lett létrehozva, ezért a frissítést nem lehet automatikusan elvégezni. Kérjük töltse le a legújabb mac.zip fájlt a kiadások oldaláról, cserélje le az alkalmazást az Applications mappában, majd indítsa újra a PraiseProjector-t.",
