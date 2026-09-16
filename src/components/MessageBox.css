@@ -8,6 +8,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Gutter for the dialog on small screens; the container uses no margin of its
+     own so the reserved space is predictable when computing its max sizes. */
+  padding: 16px;
+  /* Last-resort escape hatch: if a browser still overflows (e.g. an oversized
+     footer), the whole dialog stays reachable by scrolling the overlay. */
+  overflow: auto;
   /* Message boxes must remain actionable even when the portalled tutorial is open. */
   z-index: 31000;
 }
@@ -16,12 +22,22 @@
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  min-width: 400px;
-  max-width: 600px;
-  margin: 20px;
+  /* Shrink-to-fit between 400 and 600px as before, but never wider/taller than
+     the viewport minus the overlay padding: the min()s let both bounds yield on
+     narrow screens instead of pushing the dialog off-screen. */
+  min-width: min(400px, 100%);
+  max-width: min(600px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  /* Column layout so the body is the only part that scrolls: title and buttons
+     stay visible however long the message is. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .messagebox-header {
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-bottom: 1px solid #dee2e6;
 }
@@ -30,27 +46,83 @@
   margin: 0;
   font-size: 1.25rem;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .messagebox-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
 }
 
 .messagebox-body p {
   margin: 0;
   line-height: 1.5;
+  /* Messages may contain explicit "
+" line breaks (e.g. AskOldSync). pre-line
+     honours them while still collapsing incidental whitespace and wrapping. */
+  white-space: pre-line;
+  /* Long URLs / file paths / unbroken tokens must not push the dialog wider. */
+  overflow-wrap: anywhere;
 }
 
 .messagebox-footer {
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-top: 1px solid #dee2e6;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
 
 .messagebox-footer .btn {
   min-width: 80px;
+}
+
+/* Phone-sized screens: trim the paddings and let the buttons shrink so three
+   of them still fit on one row instead of wrapping. */
+@media (max-width: 420px) {
+  .messagebox-overlay {
+    padding: 8px;
+  }
+
+  .messagebox-container {
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .messagebox-header,
+  .messagebox-footer {
+    padding: 12px 14px;
+  }
+
+  .messagebox-body {
+    padding: 14px;
+  }
+
+  .messagebox-footer {
+    gap: 8px;
+  }
+
+  .messagebox-footer .btn {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
+/* Short viewports (landscape phones): the message area gets whatever is left. */
+@media (max-height: 420px) {
+  .messagebox-header,
+  .messagebox-footer {
+    padding: 10px 16px;
+  }
+
+  .messagebox-body {
+    padding: 12px 16px;
+  }
 }
 
 /* Dark mode styles */
