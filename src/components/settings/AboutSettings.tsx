@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { cloudApi } from "../../../common/cloudApi";
@@ -21,6 +21,24 @@ const AboutSettings: React.FC = () => {
   const showCommit = typeof __APP_SHOW_COMMIT__ !== "undefined" ? __APP_SHOW_COMMIT__ : false;
   const versionDisplay = showCommit && commit ? `${version} (${commit})` : version;
   const isElectronRuntime = !!window.electronAPI;
+  const isNativeBundleRuntime = typeof window.hostDevice?.getWebAppBundleStatus === "function";
+  const [hostVersion, setHostVersion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isNativeBundleRuntime) return;
+    let cancelled = false;
+    const readVersion = async () => {
+      try {
+        const nativeVersion = await window.hostDevice?.version?.();
+        if (!cancelled) setHostVersion(nativeVersion || null);
+      } catch (error) {
+        console.warn("Cannot read the installed app version", error);
+      }
+    };
+    void readVersion();
+    return () => {
+      cancelled = true;
+    };
+  }, [isNativeBundleRuntime]);
   const selectedUpdateChannel = settings?.updateChannel ?? "stable";
   const licenseSections = getSettingsAboutLicenseSections(isElectronRuntime ? "full-electron" : "frontend-only");
 
@@ -93,7 +111,11 @@ const AboutSettings: React.FC = () => {
     <div className="container-fluid">
       <h3>{t("AboutTitle")}</h3>
       <p>{t("AboutDescription")}</p>
-      <p>{t("AboutVersion").replace("{version}", versionDisplay)}</p>
+      <p>
+        {isNativeBundleRuntime
+          ? t("AboutInstalledVersion").replace("{version}", hostVersion ?? "?")
+          : t("AboutVersion").replace("{version}", versionDisplay)}
+      </p>
       {isElectronRuntime && (
         <div className="mb-3">
           <div className="d-flex align-items-center gap-2 flex-wrap">
