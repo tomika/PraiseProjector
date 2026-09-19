@@ -1479,7 +1479,14 @@ export class ChordProEditor extends ChordDrawer {
     if (this.contentFontSizePx == null) return;
     const naturalSize = this.fontSizeFromCssFont(display.lyricsFont);
     if (naturalSize == null) return;
-    this.applyMetricScale(display, directives, this.contentFontSizePx / naturalSize);
+    const factor = this.contentFontSizePx / naturalSize;
+    this.applyMetricScale(display, directives, factor);
+    // Include diagrams in every font-size trial so fitting measures their final
+    // footprint. These are fresh theme sizes, never a previous trial's sizes.
+    for (const size of [display.guitarChordSize, display.pianoChordSize]) {
+      size.width = Math.max(1, size.width * factor);
+      size.height = Math.max(1, size.height * factor);
+    }
   }
 
   private applyStylesForCurrentTheme() {
