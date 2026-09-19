@@ -56,12 +56,11 @@ export interface DiagramLayoutOptions {
 /**
  * Chord-diagram placement policy.
  *
- * After unrenderable chords are filtered out by `canRender`, a resolved target
- * ratio WIDER than the song ratio places fixed-size diagrams to the RIGHT in
- * top-to-bottom columns; otherwise they go BELOW in left-to-right rows.
- *
- * The `width + verticalMargin` term in the side branch (a vertical margin added
- * to a width) is a long-standing quirk, preserved deliberately.
+ * Compare grids below and beside the song at the scale the host will actually
+ * use to fit the composite to its pane. The diagram strip may be wider than the
+ * lyrics: an extra row can shrink the whole song more than that added width.
+ * A non-positive target ratio keeps the width-constrained, below-song layout
+ * used by scrolling hosts.
  */
 export function placeChordDiagrams(
   chords: readonly string[],
@@ -74,7 +73,6 @@ export function placeChordDiagrams(
   const chordGap = 4;
   const chordStepX = chordSize.width + chordGap;
   const chordStepY = chordSize.height + chordGap;
-  const placements: DiagramPlacement[] = [];
   // Chord formatting can collapse distinct authored variants onto the same
   // displayed chord (for example G2 -> G in simplified mode). Diagram nodes
   // are retained by that displayed label, so duplicate labels must not reserve
@@ -86,39 +84,51 @@ export function placeChordDiagrams(
     return true;
   });
 
-  if (targetRatio > songSize.width / songSize.height) {
-    let x = songSize.width + options.horizontalMargin;
-    let y = options.verticalMargin;
-    let width = songSize.width;
-    for (const chord of renderableChords) {
-      placements.push({ chord, x, y });
-      width = x + chordSize.width + options.horizontalMargin;
-      y += chordStepY;
-      if (y + chordSize.height > songSize.height) {
-        y = options.verticalMargin;
-        x += chordStepX;
-      }
-    }
-    return { placements, width: width + options.verticalMargin, height: songSize.height };
+  const count = renderableChords.length;
+  if (count === 0) return { placements: [], ...songSize };
+
+  const belowGrid = (columns: number) => ({
+    side: false,
+    perLine: columns,
+    width: Math.max(songSize.width, columns * chordStepX - chordGap),
+    height: songSize.height + 2 * options.verticalMargin + Math.ceil(count / columns) * chordStepY - chordGap,
+  });
+  const sideGrid = (rows: number) => ({
+    side: true,
+    perLine: rows,
+    width: songSize.width + 2 * options.horizontalMargin + Math.ceil(count / rows) * chordStepX - chordGap,
+    height: Math.max(songSize.height, 2 * options.verticalMargin + rows * chordStepY - chordGap),
+  });
+
+  // Without a page aspect ratio, preserve the text's width and wrap only when
+  // the next full diagram cannot fit. A single oversized diagram still has to
+  // contribute its true width to the composite bounds.
+  const naturalColumns = Math.max(1, Math.min(count, Math.floor((songSize.width + chordGap) / chordStepX)));
+  let best = belowGrid(naturalColumns);
+  if (Number.isFinite(targetRatio) && targetRatio > 0) {
+    // In a normalized pane of targetRatio x 1, minimizing this extent maximizes
+    // min(paneWidth / width, paneHeight / height), i.e. the visible font/box size.
+    const extent = (grid: typeof best) => Math.max(grid.width / targetRatio, grid.height);
+    const consider = (candidate: typeof best) => {
+      const difference = extent(candidate) - extent(best);
+      if (difference < 0 || (difference === 0 && candidate.width * candidate.height < best.width * best.height)) best = candidate;
+    };
+    // Evaluate only dimensions here; allocate placements once for the winner.
+    // Descending capacities retain full rows/columns when several grids tie.
+    for (let perLine = count; perLine >= 1; perLine -= 1) consider(belowGrid(perLine));
+    for (let perLine = count; perLine >= 1; perLine -= 1) consider(sideGrid(perLine));
   }
 
-  // The below-song strip owns the full composite width, so begin at its left
-  // edge. The song's horizontal margin is already part of `songSize.width`;
-  // applying it again here needlessly shortens the first row and can wrap a
-  // diagram even when the diagrams fit edge-to-edge.
-  let x = 0;
-  let y = songSize.height + options.verticalMargin;
-  let height = songSize.height;
-  for (const chord of renderableChords) {
-    placements.push({ chord, x, y });
-    height = y + chordSize.height;
-    x += chordStepX;
-    if (x + chordSize.width > songSize.width) {
-      x = 0;
-      y += chordStepY;
-    }
-  }
-  return { placements, width: songSize.width, height: height + options.verticalMargin };
+  const placements = renderableChords.map((chord, index) => {
+    const line = Math.floor(index / best.perLine);
+    const slot = index % best.perLine;
+    return {
+      chord,
+      x: best.side ? songSize.width + options.horizontalMargin + line * chordStepX : slot * chordStepX,
+      y: best.side ? options.verticalMargin + slot * chordStepY : songSize.height + options.verticalMargin + line * chordStepY,
+    };
+  });
+  return { placements, width: best.width, height: best.height };
 }
 
 export interface LayoutSnapshot {
@@ -1617,7 +1627,7 @@ export class DomSongRenderer {
     //   • a pane-fitted host (fitsToPane → clipMetaToSongWidth) sets 0
     //     DELIBERATELY in FIT_WIDTH/scroll mode to mean "always stack diagrams
     //     BELOW" — the song is width-fit and scrolls vertically, so there is no
-    //     side room. Honour that 0 (0 is never > a positive song ratio → below);
+    //     side room. Honour that 0 by keeping the width-constrained layout;
     //   • a natural-size host (the desktop editor, which never calls fitToPane
     //     and leaves targetRatio at its 0 default) means "unset" → the live host
     //     aspect decides.
