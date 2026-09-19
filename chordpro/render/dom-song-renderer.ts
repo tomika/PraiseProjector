@@ -43,6 +43,8 @@ export interface DiagramPlacement {
 
 export interface DiagramLayoutResult {
   readonly placements: readonly DiagramPlacement[];
+  /** Centers the song above a wider bottom strip; zero for side diagrams. */
+  readonly songOffsetX: number;
   /** Composite extents including the diagram region. */
   readonly width: number;
   readonly height: number;
@@ -51,6 +53,8 @@ export interface DiagramLayoutResult {
 export interface DiagramLayoutOptions {
   readonly horizontalMargin: number;
   readonly verticalMargin: number;
+  /** Metadata height already included in songSize; reserved across the page. */
+  readonly headerHeight?: number;
 }
 
 /**
@@ -73,6 +77,7 @@ export function placeChordDiagrams(
   const chordGap = 4;
   const chordStepX = chordSize.width + chordGap;
   const chordStepY = chordSize.height + chordGap;
+  const headerHeight = options.headerHeight ?? 0;
   // Chord formatting can collapse distinct authored variants onto the same
   // displayed chord (for example G2 -> G in simplified mode). Diagram nodes
   // are retained by that displayed label, so duplicate labels must not reserve
@@ -85,7 +90,7 @@ export function placeChordDiagrams(
   });
 
   const count = renderableChords.length;
-  if (count === 0) return { placements: [], ...songSize };
+  if (count === 0) return { placements: [], songOffsetX: 0, ...songSize };
 
   const belowGrid = (columns: number) => ({
     side: false,
@@ -97,7 +102,7 @@ export function placeChordDiagrams(
     side: true,
     perLine: rows,
     width: songSize.width + 2 * options.horizontalMargin + Math.ceil(count / rows) * chordStepX - chordGap,
-    height: Math.max(songSize.height, 2 * options.verticalMargin + rows * chordStepY - chordGap),
+    height: Math.max(songSize.height, headerHeight + 2 * options.verticalMargin + rows * chordStepY - chordGap),
   });
 
   // Without a page aspect ratio, preserve the text's width and wrap only when
@@ -105,7 +110,7 @@ export function placeChordDiagrams(
   // contribute its true width to the composite bounds.
   const naturalColumns = Math.max(1, Math.min(count, Math.floor((songSize.width + chordGap) / chordStepX)));
   let best = belowGrid(naturalColumns);
-  if (Number.isFinite(targetRatio) && targetRatio > 0) {
+  if (targetRatio > 0) {
     // In a normalized pane of targetRatio x 1, minimizing this extent maximizes
     // min(paneWidth / width, paneHeight / height), i.e. the visible font/box size.
     const extent = (grid: typeof best) => Math.max(grid.width / targetRatio, grid.height);
@@ -125,10 +130,10 @@ export function placeChordDiagrams(
     return {
       chord,
       x: best.side ? songSize.width + options.horizontalMargin + line * chordStepX : slot * chordStepX,
-      y: best.side ? options.verticalMargin + slot * chordStepY : songSize.height + options.verticalMargin + line * chordStepY,
+      y: best.side ? headerHeight + options.verticalMargin + slot * chordStepY : songSize.height + options.verticalMargin + line * chordStepY,
     };
   });
-  return { placements, width: best.width, height: best.height };
+  return { placements, songOffsetX: best.side ? 0 : (best.width - songSize.width) / 2, width: best.width, height: best.height };
 }
 
 export interface LayoutSnapshot {
@@ -600,7 +605,8 @@ export class DomSongRenderer {
   private invalidationGeneration = 0;
   private lastViewportWidth = -1;
   private viewportTitleGeometry: { width: number; rootOffset: number } | null = null;
-  private viewportTitleState: { margin: number; measuredWidth: number; requestedAlign: string; compositeWidth: number } | null = null;
+  private viewportTitleState: { margin: number; measuredWidth: number; requestedAlign: string; compositeWidth: number; songOffsetX: number } | null =
+    null;
   private lastCommitKey = "";
   private disposed = false;
   private geometry: SongGeometryIndex | null = null;
@@ -1102,17 +1108,28 @@ export class DomSongRenderer {
     const chordStrip = this.doc.createElement("div");
     chordStrip.className = "chp-dom-chord-strip";
     const stripWidth = this.renderChordStrip(chordStrip, plan, layout);
-    const bodyLeft = stripWidth + plan.display.horizontalMargin;
+    const diagrams = this.doc.createElement("div");
+    diagrams.className = "chp-dom-chord-diagrams";
+    const composite = this.buildDiagrams(diagrams, layout, stripWidth);
+    const songOffsetX = composite.songOffsetX;
+    // Composite placement owns these offsets; the content builders leave them
+    // untouched so their call order cannot reset the song's centering inset.
+    chordStrip.style.left = `${songOffsetX + plan.display.horizontalMargin}px`;
+    this.metaRoot.style.marginLeft = `${songOffsetX + plan.display.horizontalMargin}px`;
+    const bodyLeft = songOffsetX + stripWidth + plan.display.horizontalMargin;
 
     const body = this.doc.createElement("div");
     body.className = "chp-dom-body";
     body.style.marginLeft = `${bodyLeft}px`;
     body.style.marginRight = `${plan.display.horizontalMargin}px`;
+    // The composite can be wider than the song. Keep CSS alignment inside the
+    // same natural-width box used by layout and interaction geometry.
+    body.style.width = `${Math.max(0, layout.width - 2 * plan.display.horizontalMargin)}px`;
     body.style.setProperty("--chp-tag-lane", `${layout.tagLaneWidth}px`);
     body.style.setProperty("--chp-tag-gap", `${layout.tagGap}px`);
     body.style.setProperty("--chp-comment-border", plan.display.commentBorder);
 
-    const geometry = buildGeometryIndex(plan, layout, stripWidth);
+    const geometry = buildGeometryIndex(plan, layout, songOffsetX + stripWidth);
     body.appendChild(this.buildHighlightRoot(plan, geometry, layout, bodyLeft));
 
     for (const occurrenceLayout of layout.occurrences) {
@@ -1171,10 +1188,6 @@ export class DomSongRenderer {
       body.appendChild(occurrenceNode);
     }
 
-    const diagrams = this.doc.createElement("div");
-    diagrams.className = "chp-dom-chord-diagrams";
-    const composite = this.buildDiagrams(diagrams, layout, stripWidth);
-
     // Swap ONLY the rebuilt sections. The persistent meta root and caret stay
     // attached by identity, so replacing them (as a whole-root replaceChildren
     // would) cannot blur a focused metadata input or drop an IME composition.
@@ -1200,7 +1213,7 @@ export class DomSongRenderer {
     this.root.style.backgroundColor = inheritsOwningSurface ? "transparent" : plan.display.backgroundColor;
     this.root.classList.toggle("chp-dom-differential", this.input.differential);
     this.root.style.visibility = "visible";
-    this.positionViewportTitle(plan, composite.width);
+    this.positionViewportTitle(plan, composite.width, songOffsetX);
     // Diagram boxes are only known once placed, and they overlay the song, so
     // the index carries them for hit resolution ahead of the chords.
     const diagramSize = this.input.diagrams?.size;
@@ -1235,7 +1248,6 @@ export class DomSongRenderer {
    */
   private renderMeta(plan: DisplayPlan, layout: SongLayoutResult) {
     const metaRoot = this.metaRoot;
-    metaRoot.style.marginLeft = `${plan.display.horizontalMargin}px`;
     metaRoot.style.marginRight = `${plan.display.horizontalMargin}px`;
     // A pane-fitted host clips metadata to the SONG's content width — never the
     // composite width, which can include a right-hand diagram region — so an
@@ -1245,7 +1257,7 @@ export class DomSongRenderer {
     const metaBox = layout.width - 2 * plan.display.horizontalMargin;
     const clipped = !!this.input.clipMetaToSongWidth && metaBox > 0;
     metaRoot.classList.toggle("chp-dom-meta-clipped", clipped);
-    if (clipped) metaRoot.style.width = `${metaBox}px`;
+    if (metaBox > 0) metaRoot.style.width = `${metaBox}px`;
     else metaRoot.style.removeProperty("width");
 
     const host = this.input.readOnly ? null : (this.input.metaInputs ?? null);
@@ -1279,6 +1291,7 @@ export class DomSongRenderer {
           measuredWidth: measuredMeta.get(entry.id) ?? 0,
           requestedAlign: entry.align,
           compositeWidth: layout.width,
+          songOffsetX: 0,
         };
       } else {
         row.style.removeProperty("position");
@@ -1313,9 +1326,10 @@ export class DomSongRenderer {
    * only the title row back across that margin so its alignment box is the host
    * viewport; the body and every other metadata row keep their song geometry.
    */
-  private positionViewportTitle(plan: DisplayPlan, compositeWidth: number) {
+  private positionViewportTitle(plan: DisplayPlan, compositeWidth: number, songOffsetX: number) {
     if (!this.input.viewportAlignedTitle) return;
-    if (this.viewportTitleState) this.viewportTitleState = { ...this.viewportTitleState, margin: plan.display.horizontalMargin, compositeWidth };
+    if (this.viewportTitleState)
+      this.viewportTitleState = { ...this.viewportTitleState, margin: plan.display.horizontalMargin, compositeWidth, songOffsetX };
     this.applyViewportTitleGeometry();
     this.input.metaInputs?.relayout?.("title");
   }
@@ -1328,7 +1342,9 @@ export class DomSongRenderer {
     const rootOffset = this.viewportTitleGeometry?.rootOffset ?? Math.max(0, (viewportWidth - state.compositeWidth) / 2);
     const availableWidth = Math.max(1, viewportWidth - 2 * state.margin);
     row.style.position = "relative";
-    row.style.left = `${-rootOffset}px`;
+    // Metadata follows the centered song; the viewport title cancels that
+    // inset as well as the host's outer centering translation.
+    row.style.left = `${-rootOffset - state.songOffsetX}px`;
     row.style.width = `${availableWidth}px`;
     row.style.overflow = "hidden";
     row.style.textAlign = safeMetaAlignment(state.requestedAlign, state.measuredWidth, availableWidth);
@@ -1386,13 +1402,12 @@ export class DomSongRenderer {
     const input = this.input.chordStrip;
     if (!input || input.chords.length === 0 || this.input.readOnly) return 0;
 
-    // The strip starts below the metadata block, at the left
-    // margin. An absolutely positioned child is placed from the root's padding
+    // The strip starts below the metadata block; commit owns its horizontal
+    // placement. An absolutely positioned child is placed from the root's padding
     // box, so these are root-local coordinates — the same space the geometry
     // index uses, hence the vertical margin is included explicitly.
     const metaHeight = layout.meta.reduce((total, entry) => total + entry.height, 0);
     const gap = input.gap;
-    strip.style.left = `${plan.display.horizontalMargin}px`;
     strip.style.top = `${plan.display.verticalMargin + metaHeight}px`;
 
     let top = 0;
@@ -1619,7 +1634,7 @@ export class DomSongRenderer {
     if (!diagrams || diagrams.chords.length === 0) {
       for (const canvas of this.diagramNodes.values()) canvas.remove();
       this.diagramNodes.clear();
-      return { width: songWidth, height: layout.height, placements: [] as readonly DiagramPlacement[] };
+      return { width: songWidth, height: layout.height, songOffsetX: 0, placements: [] as readonly DiagramPlacement[] };
     }
 
     // Resolve the side/below target ratio. A positive value is an explicit
@@ -1641,7 +1656,13 @@ export class DomSongRenderer {
       { width: songWidth, height: layout.height },
       diagrams.size,
       targetRatio,
-      { horizontalMargin: this.input.display.horizontalMargin, verticalMargin: this.input.display.verticalMargin },
+      {
+        horizontalMargin: this.input.display.horizontalMargin,
+        verticalMargin: this.input.display.verticalMargin,
+        // Only a viewport-aligned title can extend over the diagram region.
+        // Song-width metadata leaves the side columns available from the top.
+        headerHeight: this.input.viewportAlignedTitle ? layout.meta.reduce((height, entry) => height + entry.height, 0) : 0,
+      },
       diagrams.canRender
     );
 
@@ -1667,7 +1688,7 @@ export class DomSongRenderer {
       region.appendChild(svg);
       diagrams.draw(entry.chord, svg);
     }
-    return { width: placement.width, height: placement.height, placements: placement.placements };
+    return placement;
   }
 
   private hostRatio() {

@@ -106,8 +106,8 @@ export interface SongGeometryIndex {
   readonly songMaxRight: number;
   readonly highlightPadding: number;
   /**
-   * Width of the chord-template strip gutter. A drag released left of it is a
-   * no-drop (the chord returns to the strip).
+   * Right edge of the chord-template strip gutter, including any song centering
+   * inset. A drag released left of it is a no-drop (the chord returns to the strip).
    */
   readonly stripWidth: number;
   readonly width: number;
@@ -121,10 +121,9 @@ export interface SongGeometryIndex {
  * metadata block precede the body, and each occurrence stacks by its layout
  * height in document order.
  *
- * `leftOffset` is the renderer-owned chord-template strip gutter, which shifts
- * the whole song right. The canvas did the same by passing
- * `horizontalMargin + chordStripWidth` as `_drawSongOnly`'s left margin; the
- * pure layout stays strip-unaware either way.
+ * `leftOffset` includes the chord-template strip gutter and any inset that
+ * centers the song above a wider diagram strip. All interaction coordinates
+ * must follow the same shift as the visible song; the pure layout stays local.
  */
 export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, leftOffset = 0): SongGeometryIndex {
   const metaHeight = layout.meta.reduce((total, entry) => total + entry.height, 0);
