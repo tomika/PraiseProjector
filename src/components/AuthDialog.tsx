@@ -1,9 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { useLocalization } from "../localization/LocalizationContext";
 import "./AuthDialog.css";
 
 interface AuthDialogProps {
-  onConfirm: (username: string, password: string, token: string) => void;
+  /** May be async — while the returned promise is pending the dialog stays open in a locked "signing in" state. */
+  onConfirm: (username: string, password: string, token: string) => void | Promise<void>;
   onCancel: () => void;
   onLogout?: () => void;
   showOffline?: boolean;
@@ -16,8 +17,69 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
   const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // The login request keeps the dialog open but locks the whole form until it settles.
+  const [submitting, setSubmitting] = useState(false);
   const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
+  const refocusObserverRef = useRef<MutationObserver | null>(null);
+  const refocusAfterSubmitRef = useRef(false);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      refocusObserverRef.current?.disconnect();
+      refocusObserverRef.current = null;
+    };
+  }, []);
+
+  // A failed login pops a MessageBox over this dialog (portalled to body, its OK button
+  // autofocused), so grabbing focus right away would only fight with it — wait it out.
+  const focusPasswordWhenUnblocked = useCallback(() => {
+    const tryFocus = () => {
+      if (document.querySelector(".messagebox-overlay")) return false;
+      passwordRef.current?.focus();
+      return true;
+    };
+
+    refocusObserverRef.current?.disconnect();
+    refocusObserverRef.current = null;
+    if (tryFocus()) return;
+
+    const observer = new MutationObserver(() => {
+      if (!mountedRef.current || tryFocus()) {
+        observer.disconnect();
+        if (refocusObserverRef.current === observer) refocusObserverRef.current = null;
+      }
+    });
+    refocusObserverRef.current = observer;
+    observer.observe(document.body, { childList: true, subtree: true });
+  }, []);
+
+  const runConfirm = useCallback(
+    async (user: string, pass: string, token: string) => {
+      setSubmitting(true);
+      try {
+        await onConfirm(user, pass, token);
+      } finally {
+        // On success the parent closes (unmounts) us; otherwise hand the form back.
+        // The refocus itself has to wait for the re-render that re-enables the field,
+        // so it is only armed here and carried out by the effect below.
+        if (mountedRef.current) {
+          refocusAfterSubmitRef.current = true;
+          setSubmitting(false);
+        }
+      }
+    },
+    [onConfirm]
+  );
+
+  React.useEffect(() => {
+    if (submitting || !refocusAfterSubmitRef.current) return;
+    refocusAfterSubmitRef.current = false;
+    focusPasswordWhenUnblocked();
+  }, [submitting, focusPasswordWhenUnblocked]);
 
   React.useEffect(() => {
     // Reset state when dialog opens (fixes Electron input issue on second open)
@@ -27,7 +89,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
 
     // Auto-submit if token is present
     if (initialToken) {
-      onConfirm(initialUsername, "", initialToken);
+      void runConfirm(initialUsername, "", initialToken);
       return;
     }
 
@@ -41,15 +103,17 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
   }, [initialUsername, initialToken]);
 
   const handleOK = () => {
+    if (submitting) return;
     const trimmedUsername = username.trim();
     const trimmedPassword = password.trim();
     // Clear password immediately after submit for security
     setPassword("");
     setShowPassword(false);
-    onConfirm(trimmedUsername, trimmedPassword, "");
+    void runConfirm(trimmedUsername, trimmedPassword, "");
   };
 
   const handleCancel = () => {
+    if (submitting) return;
     // Clear password on cancel for security
     setPassword("");
     setShowPassword(false);
@@ -86,6 +150,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
                   className="form-control"
                   autoComplete="off"
                   value={username}
+                  disabled={submitting}
                   onChange={(e) => setUsername(e.target.value)}
                   onKeyPress={handleKeyPress}
                 />
@@ -103,12 +168,14 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
                     className="form-control"
                     autoComplete="new-password"
                     value={password}
+                    disabled={submitting}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyPress={handleKeyPress}
                   />
                   <button
                     className="btn btn-outline-secondary"
                     type="button"
+                    disabled={submitting}
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={t("TogglePasswordVisibility")}
                   >
@@ -129,15 +196,22 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ onConfirm, onCancel, onLogout, 
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-primary" onClick={handleOK}>
-                {t("OK")}
+              <button className="btn btn-primary" onClick={handleOK} disabled={submitting}>
+                {submitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    {t("LoggingIn")}
+                  </>
+                ) : (
+                  t("OK")
+                )}
               </button>
               {showOffline && onLogout && (
-                <button className="btn btn-secondary" onClick={onLogout}>
+                <button className="btn btn-secondary" onClick={onLogout} disabled={submitting}>
                   {t("Guest")}
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={handleCancel}>
+              <button className="btn btn-secondary" onClick={handleCancel} disabled={submitting}>
                 {t("Cancel")}
               </button>
             </div>

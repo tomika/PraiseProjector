@@ -93,6 +93,7 @@
   "SongTitleRequired": "Title Required",
   "SongTitleRequiredMessage": "Please enter a title before saving the song.",
   "AskOverwriteSchedule": "Overwrite existing schedule for {0} on {1}?",
+  "LoggingIn": "Signing in...",
   "LoginFailed": "Login Failed",
   "LoginFailedCheckCredentials": "Please check your credentials.",
   "SyncLimitReached": "Sync Limit Reached",

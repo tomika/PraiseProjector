@@ -93,6 +93,7 @@
   "SongTitleRequired": "Cím szükséges",
   "SongTitleRequiredMessage": "Kérjük, adjon címet a dalnak a mentés el\u0151tt.",
   "AskOverwriteSchedule": "Felülírja a meglévő ütemezést ({0}) ezen a napon: {1}?",
+  "LoggingIn": "Bejelentkezés...",
   "LoginFailed": "Bejelentkezés sikertelen",
   "LoginFailedCheckCredentials": "Kérjük, ellenőrizze a bejelentkezési adatokat.",
   "SyncLimitReached": "Szinkronizálási limit elérve",
