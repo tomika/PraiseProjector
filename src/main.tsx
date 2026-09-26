@@ -15,6 +15,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "font-awesome/css/font-awesome.min.css";
 import "./App.css";
 import { cloudApi } from "../common/cloudApi";
+import { cloudApiBaseUrl } from "./config";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClientViewApp } from "./client-view/boot/ClientViewApp";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -66,6 +67,11 @@ if (window.electronAPI?.proxyGet && window.electronAPI?.proxyPost) {
     proxyPost: window.electronAPI.proxyPost,
     proxyAbort: window.electronAPI.proxyAbort,
   });
+} else if (!window.electronAPI?.getCloudApiHost) {
+  // Web mode: the base URL must be in place before the first render. Child effects
+  // run before App's loadInitialCredentials(), and UserPanel's mount peek would
+  // otherwise go to a root-relative "/peek" instead of the cloud API.
+  cloudApi.setBaseUrl(cloudApiBaseUrl);
 }
 
 function isAutomaticViewSwitch(value: unknown): value is AutomaticViewSwitch {
