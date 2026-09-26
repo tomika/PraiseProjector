@@ -95,6 +95,79 @@ export async function setRawDatabase(json: string, username?: string): Promise<v
 }
 
 /**
+ * Get the raw JSON string an account's database would be loaded from: the
+ * IndexedDB copy, or the legacy localStorage copy that migrateFromLocalStorage
+ * has not moved yet (it runs only when that account becomes active). Unlike
+ * getRawDatabase a read error is thrown, so a failure is never mistaken for
+ * "this account has no database".
+ * @param username - The username (empty string or undefined for guest)
+ * @returns The raw JSON string, or null if the account has no database at all
+ */
+export async function getStoredRawDatabase(username?: string): Promise<string | null> {
+  const key = getStorageKey(username);
+  return (await dbStorage.getItem<string>(key)) ?? localStorage.getItem(key);
+}
+
+/**
+ * Set several raw JSON databases all-or-nothing (for a multi-account import):
+ * either every one of them is stored or none is changed.
+ * @param entries - The raw JSON strings with the username each belongs to
+ */
+export async function setRawDatabases(entries: { json: string; username?: string }[]): Promise<void> {
+  const writes = entries.map((entry) => {
+    // Validate JSON first
+    JSON.parse(entry.json);
+    return { key: getStorageKey(entry.username), json: entry.json };
+  });
+  await dbStorage.ready();
+
+  if (dbStorage.driver() === localforage.INDEXEDDB) {
+    // One IndexedDB transaction: a failing put (e.g. quota) aborts all of them.
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("PraiseProjector");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction("database", "readwrite");
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted"));
+        const store = transaction.objectStore("database");
+        for (const write of writes) store.put(write.json, write.key);
+      });
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  // Other localForage drivers have no multi-key transaction: put back what was there on failure.
+  const previous = new Map<string, string | null>();
+  try {
+    for (const write of writes) {
+      previous.set(write.key, await dbStorage.getItem<string>(write.key));
+      await dbStorage.setItem(write.key, write.json);
+    }
+  } catch (error) {
+    // Undo in reverse order: each step then returns to a state that fitted
+    // before, whereas the original order can run out of quota while a later
+    // import still occupies the space an earlier, larger original needs. One
+    // failing restore must not keep the remaining ones from being put back.
+    for (const [key, value] of [...previous].reverse()) {
+      try {
+        if (value === null) await dbStorage.removeItem(key);
+        else await dbStorage.setItem(key, value);
+      } catch (restoreError) {
+        console.error("DatabaseStorage", `Failed to restore key after a failed import: ${key}`, restoreError);
+      }
+    }
+    throw error;
+  }
+}
+
+/**
  * Remove database from storage
  * @param username - The username (empty string or undefined for guest)
  */
@@ -167,6 +240,8 @@ export const databaseStorage = {
   save: saveDatabase,
   getRaw: getRawDatabase,
   setRaw: setRawDatabase,
+  getStoredRaw: getStoredRawDatabase,
+  setRawMany: setRawDatabases,
   remove: removeDatabase,
   listKeys: listDatabaseKeys,
   migrateFromLocalStorage,

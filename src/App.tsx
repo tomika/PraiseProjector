@@ -22,6 +22,7 @@ const SessionsForm = lazy(() => import("./components/SessionsForm"));
 const SongImporterWizard = lazy(() => import("./components/SongImporterWizard/SongImporterWizard").then((m) => ({ default: m.SongImporterWizard })));
 const CompareDialog = lazy(() => import("./components/CompareDialog"));
 const SongCheckDialog = lazy(() => import("./components/SongCheckDialog"));
+const MigrationPackImportDialog = lazy(() => import("./components/MigrationPackImportDialog"));
 
 import { Song } from "../db-common/Song";
 import { PlaylistEntry } from "../db-common/PlaylistEntry";
@@ -69,6 +70,8 @@ import { Database, FormatFoundReason, SongOrder } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
+import { isMigrationPackFile, readMigrationPack, summarizeDatabaseJson } from "./services/migrationPack";
+import type { MigrationPackImportItem } from "./components/MigrationPackImportDialog";
 import { findScheduledPlaylist, ScheduledPlaylist } from "./services/playlistOrigin";
 import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
 import { getEmptyDisplay } from "../common/pp-utils";
@@ -512,6 +515,7 @@ const AppContent: React.FC = () => {
   const [showSessionsForm, setShowSessionsForm] = useState(false);
   const [showSongCheck, setShowSongCheck] = useState(false);
   const [isImporting, setIsImporting] = useState(false); // Loading state for database import
+  const [migrationImportItems, setMigrationImportItems] = useState<MigrationPackImportItem[] | null>(null);
   const [eulaAccepted, setEulaAccepted] = useState(() => localStorage.getItem("pp-eula-accepted") === EULA_DATE);
   const [showEulaView, setShowEulaView] = useState(false);
   const [playlistSelection, setPlaylistSelection] = useState<PlaylistSelectionEvent | null>(null);
@@ -2859,12 +2863,39 @@ const AppContent: React.FC = () => {
     saveErrorNotifiedRef.current = false;
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".ppdb,.json";
+    input.accept = ".ppdb,.json,.ppmigrate";
     input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
       try {
+        if (isMigrationPackFile(file.name)) {
+          // A migration pack holds one database per account; the user picks which to take.
+          const databases = await readMigrationPack(await file.text());
+          if (!databases?.length) {
+            showMessage(t("Error"), t("ImportInvalidData"));
+            return;
+          }
+          const items: MigrationPackImportItem[] = [];
+          for (const database of databases) {
+            // Includes a database still in legacy localStorage; a read error fails the
+            // import rather than presenting the account as having no database.
+            const localJson = await databaseStorage.getStoredRaw(database.username);
+            let local: MigrationPackImportItem["local"] = null;
+            if (localJson !== null) {
+              try {
+                local = summarizeDatabaseJson(localJson);
+              } catch (error) {
+                console.warn("App", `Could not summarize the local database of "${database.username}"`, error);
+                local = "unreadable";
+              }
+            }
+            items.push({ ...database, local });
+          }
+          setMigrationImportItems(items);
+          return;
+        }
+
         // Accept current JSON exports and legacy C# XML .ppdb files (plain text or ZIP-compressed).
         // Load and verify the data before showing confirmation dialog
         const envelope = await normalizeImportedDatabase(file);
@@ -2923,6 +2954,28 @@ const AppContent: React.FC = () => {
     };
     input.click();
   }, [showConfirm, showMessage, t]);
+
+  // Write the chosen account databases of a migration pack to storage, then reload
+  const handleMigrationPackImport = useCallback(
+    async (selected: MigrationPackImportItem[]) => {
+      setMigrationImportItems(null);
+      setIsImporting(true);
+      try {
+        // All-or-nothing: a failure part-way must not leave some accounts replaced.
+        await databaseStorage.setRawMany(selected);
+        setIsImporting(false);
+        showMessage(t("ImportDatabaseTitle"), t("ImportSuccess"), () => {
+          // Reload the page to load the new database
+          window.location.reload();
+        });
+      } catch (error) {
+        setIsImporting(false);
+        console.error("App", "Failed to import migration pack", error);
+        showMessage(t("Error"), t("ImportFailed"));
+      }
+    },
+    [showMessage, t]
+  );
 
   // Replace database with online data (matching C# OnReplaceDatabaseMenuItemClicked)
   const handleReplaceDatabase = useCallback(() => {
@@ -3438,6 +3491,16 @@ const AppContent: React.FC = () => {
                 <div className="mt-2">{t("ImportDatabaseTitle")}...</div>
               </div>
             </div>
+          )}
+          {migrationImportItems && (
+            <Suspense fallback={null}>
+              <MigrationPackImportDialog
+                items={migrationImportItems}
+                currentUsername={Database.getCurrentUsername()}
+                onImport={(selected) => void handleMigrationPackImport(selected)}
+                onClose={() => setMigrationImportItems(null)}
+              />
+            </Suspense>
           )}
           {showSongCheck && (
             <Suspense

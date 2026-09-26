@@ -1,0 +1,23 @@
+/*
+  Override Bootstrap modal-backdrop opacity to prevent semi-transparency.
+  Bootstrap's default .modal-backdrop.show uses opacity which makes content transparent.
+*/
+.migration-import-backdrop.modal-backdrop.show {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  opacity: 1 !important;
+  z-index: 1050;
+}
+
+/* Ensure the modal itself appears above its own backdrop */
+.migration-import-backdrop .modal {
+  z-index: 1051;
+}
+
+.migration-import-table td,
+.migration-import-table th {
+  vertical-align: middle;
+}
+
+.migration-import-table .migration-import-summary {
+  font-size: 0.9rem;
+}
