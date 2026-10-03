@@ -163,7 +163,16 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<
 
 export function createSongApi(core: RestCore): SongApi {
   return {
-    searchSongs: (text, options) => cloudApi.searchSongs(text, options?.limit, options?.songIds),
+    // The list renders one row per songId (React key), so drop repeated hits —
+    // older servers' search index could return the same song several times.
+    searchSongs: async (text, options) => {
+      const seen = new Set<string>();
+      return (await cloudApi.searchSongs(text, options?.limit, options?.songIds)).filter((entry) => {
+        if (seen.has(entry.songId)) return false;
+        seen.add(entry.songId);
+        return true;
+      });
+    },
     listAllSongs: async () => {
       const songs = await cloudApi.fetchAllSongs();
       core.songListEvents.emit(songs);

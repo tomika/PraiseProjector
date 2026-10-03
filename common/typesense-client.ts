@@ -110,9 +110,14 @@ export class TypesenseClient {
         const endPos = lyrics.indexOf("\n", headEndPos + 1);
         if (endPos >= 0) headEndPos = endPos;
       }
+      const version = parseInt(r.version.toString());
       return {
+        // Explicit document id: without it Typesense generates a random one, so
+        // "upsert" never replaces anything and every incremental re-index adds
+        // another copy of the same song version (duplicate search hits).
+        id: `${r.id}_${version}`,
         songId: r.id,
-        version: parseInt(r.version.toString()),
+        version,
         title: meta.title ?? "",
         lyrics,
         headEndPos,
@@ -228,6 +233,9 @@ export class TypesenseClient {
         return "";
       }
     };
+    // Indexes built before documents had explicit ids can still hold copies of the
+    // same song version; keep only the best-ranked hit of each.
+    const seen = new Set<string>();
     return (res.hits ?? [])
       .map((hit) => ({
         songId: hit.document.songId,
@@ -242,6 +250,12 @@ export class TypesenseClient {
       .sort((a, b) => {
         const cdiff = a.found.cost - b.found.cost;
         return cdiff || a.title.localeCompare(b.title);
+      })
+      .filter((x) => {
+        const key = `${x.songId}_${x.version}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
   }
 }
