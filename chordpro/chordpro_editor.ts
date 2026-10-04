@@ -1162,7 +1162,10 @@ export class ChordProEditor extends ChordDrawer {
       this.longPressStart = this.touchChordContextMenuBlocked ? null : { x: t0.clientX, y: t0.clientY };
       this.longPressSelection = this.touchChordContextMenuBlocked ? null : { start: this.selectionStart, end: this.selectionEnd };
       releaseTouchEventTarget();
-      if (t0.target instanceof HTMLElement) {
+      // A touch beside the text targets the editor root itself. Both root
+      // listeners would then see currentTarget === parent_div and drop the
+      // event, so touchend never cancels the long-press timer.
+      if (t0.target instanceof HTMLElement && t0.target !== this.parent_div) {
         touchEventTarget = t0.target;
         touchEventTarget.addEventListener("touchmove", onTouchMove, touchTargetOpts);
         touchEventTarget.addEventListener("touchend", onTouchEnd, touchTargetOpts);

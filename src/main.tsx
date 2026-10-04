@@ -25,7 +25,9 @@ import { OnlineSessionProvider } from "./contexts/OnlineSessionContext";
 import { readPersistedSettings } from "./services/settingsStore";
 import type { Settings } from "./types";
 import { disableDefaultZoom } from "./utils/disableDefaultZoom";
-import { shouldUsePagingLayout } from "./utils/viewLayout";
+import { shouldUsePagingLayout, shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
+import { useOrientation } from "./hooks/useOrientation";
+import { useWindowWidth } from "./hooks/useWindowWidth";
 import { installUiAnimationPreference } from "./shared/performanceSettings";
 import { reportPageLoadedSuccessfully } from "./services/webAppLaunchReport";
 import { requestClientViewSwitch } from "./services/clientViewSwitchGuard";
@@ -119,7 +121,11 @@ function RootView() {
   const [decidingHandoff, setDecidingHandoff] = useState(() => consumeClientViewHandoff());
   const { isLoading: isAuthLoading } = useAuth();
   const [automaticViewSwitch, setAutomaticViewSwitch] = useState<AutomaticViewSwitch>(() => readAutomaticViewSwitch());
-  const [isPagingLayout, setIsPagingLayout] = useState(() => isPagingViewport());
+  // Keyboard-tolerant orientation: a soft keyboard shrinking the viewport must
+  // not count as a rotation and swap the active view under the user's caret.
+  const viewportWidth = useWindowWidth();
+  const orientation = useOrientation();
+  const isPagingLayout = shouldUsePagingLayoutForOrientation(viewportWidth, orientation);
   const previousPagingLayoutRef = useRef(isPagingLayout);
   const clientEntryRequestRef = useRef(0);
   const clientEntryAbortRef = useRef<AbortController | null>(null);
@@ -203,9 +209,6 @@ function RootView() {
   const refreshAutomaticViewSwitch = useCallback(() => {
     setAutomaticViewSwitch(readAutomaticViewSwitch());
   }, []);
-  const refreshOrientation = useCallback(() => {
-    setIsPagingLayout(isPagingViewport());
-  }, []);
   const enterClientView = useCallback(
     async (openOptionsOnWideEntry: boolean) => {
       if (showClient) return;
@@ -250,14 +253,6 @@ function RootView() {
       window.removeEventListener("storage", handleStorage);
     };
   }, [refreshAutomaticViewSwitch]);
-  useEffect(() => {
-    window.addEventListener("resize", refreshOrientation);
-    window.addEventListener("orientationchange", refreshOrientation);
-    return () => {
-      window.removeEventListener("resize", refreshOrientation);
-      window.removeEventListener("orientationchange", refreshOrientation);
-    };
-  }, [refreshOrientation]);
   useEffect(() => {
     if (previousPagingLayoutRef.current === isPagingLayout) return;
     previousPagingLayoutRef.current = isPagingLayout;
