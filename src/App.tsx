@@ -95,7 +95,7 @@ import {
 import type { PpdSessionAccess, PpdWatchEndReason } from "../common/ppd-control";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
-import { CLIENT_VIEW_DISPLAY_UPDATE_EVENT, isClientViewDisplayUpdateEnvelope } from "./services/clientViewDisplayUpdate";
+import { CLIENT_VIEW_DISPLAY_UPDATE_EVENT, createClientViewDisplayUpdateListener } from "./services/clientViewDisplayUpdate";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 import { TutorialHost } from "./tutorial/TutorialHost";
@@ -1529,18 +1529,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     // Route the embedded client view's display changes through the same handler
     // used for remote webserver clients, so selection/preview/projector stay in sync.
-    const cvHandler = (e: Event) => {
-      const eventDetail = (e as CustomEvent<unknown>).detail;
-      const envelope = isClientViewDisplayUpdateEnvelope(eventDetail) ? eventDetail : null;
-      if (envelope) envelope.handled = true;
-      const detail = envelope?.update ?? (eventDetail as DisplayUpdateRequest);
-      if (!detail) {
-        envelope?.complete();
-        return;
-      }
-      const queued = enqueue(() => remoteDisplayUpdateHandler(detail as DisplayUpdateRequest));
-      if (envelope) void queued.then(envelope.complete, envelope.complete);
-    };
+    const cvHandler = createClientViewDisplayUpdateListener(enqueue, (update) => remoteDisplayUpdateHandler(update as DisplayUpdateRequest));
     window.addEventListener(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, cvHandler);
     const cvSelectionHandler = (e: Event) => {
       const detail = (e as CustomEvent<string | null>).detail ?? null;

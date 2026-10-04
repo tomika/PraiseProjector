@@ -14,6 +14,18 @@ import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
 import { MonitorDisplay } from "../types/electron";
 import ImageSelector from "./preview/ImageSelector";
+import {
+  SECTION_LIST_LOCAL_KEY_COMMANDS,
+  buildSectionRepeatCounts,
+  decideSectionControl,
+  repeatGroupBounds,
+  sectionRepeatTotal,
+  type SectionListCommand,
+} from "./preview/sectionControlCommands";
+import { SECTION_CONTROL_COMMANDS, type SectionControlCommand } from "../../common/hardware-input";
+import { isHardwareConsumed, isHardwareHandled } from "../hardware-input/hardwareInputRuntime";
+import { useHardwareTarget } from "../hardware-input/useHardwareTarget";
+import { isAppModalOpen } from "../hardware-input/modalGuard";
 import { Settings } from "../types";
 import { useSessionUrl } from "../hooks/useSessionUrl";
 import { Panel, PanelGroup, type ImperativePanelHandle } from "react-resizable-panels";
@@ -34,20 +46,6 @@ const PREVIEW_PANEL_COLLAPSED_SIZE_FALLBACK = 4;
 const PREVIEW_PANEL_WITH_TAB_CONTENT_FALLBACK_PX = 168;
 const PREVIEW_TABS_ICON_MODE_HYSTERESIS_PX = 24;
 const subscribeProjectionClientPresenceStore = (listener: () => void) => subscribeProjectionClientPresence(listener);
-
-type SectionListActionKey =
-  | "ArrowDown"
-  | "ArrowRight"
-  | "ArrowUp"
-  | "ArrowLeft"
-  | "Home"
-  | "End"
-  | "PageDown"
-  | "PageUp"
-  | " "
-  | "Enter"
-  | "Backspace"
-  | "Escape";
 
 function normalizePreviewPanelCollapseMode(mode: unknown): PreviewPanelCollapseMode {
   return PREVIEW_PANEL_COLLAPSE_MODES.includes(mode as PreviewPanelCollapseMode) ? (mode as PreviewPanelCollapseMode) : "expanded";
@@ -80,6 +78,9 @@ export interface PreviewPanelMethods {
   getSelectedSectionIndex: () => number;
   setSelectedSectionIndex: (index: number) => void;
   setSectionListFocused: () => void;
+  /** The semantic section-command entry shared by the section list keys, the
+   *  Controls-tab buttons and the hardware runtime. False when not handled. */
+  runSectionCommand: (command: SectionListCommand) => boolean;
 }
 
 // Section display modes matching C# SectionListBox.Item.Mode
@@ -310,42 +311,42 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const previewControlButtons = useMemo(
       () => [
         {
-          key: "Home" as SectionListActionKey,
+          command: "next-first" as SectionListCommand,
           iconClass: "fa fa-step-backward",
           tooltip: tt("preview_controls_home"),
         },
         {
-          key: "PageUp" as SectionListActionKey,
+          command: "next-previous-block" as SectionListCommand,
           iconClass: "fa fa-angle-double-up",
           tooltip: tt("preview_controls_page_up"),
         },
         {
-          key: "ArrowUp" as SectionListActionKey,
+          command: "next-up" as SectionListCommand,
           iconClass: "fa fa-arrow-up",
           tooltip: tt("preview_controls_up"),
         },
         {
-          key: "Backspace" as SectionListActionKey,
+          command: "project-current-block-start" as SectionListCommand,
           iconClass: "fa fa-undo",
           tooltip: tt("preview_controls_backspace"),
         },
         {
-          key: "End" as SectionListActionKey,
+          command: "next-last" as SectionListCommand,
           iconClass: "fa fa-step-forward",
           tooltip: tt("preview_controls_end"),
         },
         {
-          key: "PageDown" as SectionListActionKey,
+          command: "next-next-block" as SectionListCommand,
           iconClass: "fa fa-angle-double-down",
           tooltip: tt("preview_controls_page_down"),
         },
         {
-          key: "ArrowDown" as SectionListActionKey,
+          command: "next-down" as SectionListCommand,
           iconClass: "fa fa-arrow-down",
           tooltip: tt("preview_controls_down"),
         },
         {
-          key: "Enter" as SectionListActionKey,
+          command: "project-next-or-repeat" as SectionListCommand,
           iconClass: "fa fa-sign-in",
           tooltip: tt("preview_controls_enter"),
         },
@@ -976,38 +977,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         .join("\n");
     }, [availableFonts, getFontOptionClassName]);
 
-    const buildSectionRepeatCounts = useCallback((sectionList: SectionItem[]): Display["sectionRepeatCounts"] => {
-      const grouped = new Map<string, { section: number; from: number; to: number; multiplier: number; uniqueRanges: Set<string> }>();
-      for (const section of sectionList) {
-        const multiplier = section.instructedMultiplier ?? 1;
-        if (section.instructedIndex == null || multiplier <= 1) continue;
-        // `block` keeps distinct same-signature occurrences separate.
-        const key = `${section.instructedIndex}|${section.block}|${multiplier}|${section.instructedSignature || ""}`;
-        const existing = grouped.get(key);
-        if (!existing) {
-          grouped.set(key, {
-            section: section.instructedIndex,
-            from: section.from,
-            to: section.to,
-            multiplier,
-            uniqueRanges: new Set<string>([`${section.from}:${section.to}`]),
-          });
-          continue;
-        }
-        existing.from = Math.min(existing.from, section.from);
-        existing.to = Math.max(existing.to, section.to);
-        existing.uniqueRanges.add(`${section.from}:${section.to}`);
-      }
-
-      const result = Array.from(grouped.values())
-        // Join repeats only when whole repeated section fits one projected row.
-        .filter((x) => x.uniqueRanges.size === 1)
-        .map(({ section, from, to, multiplier }) => ({ section, from, to, multiplier }))
-        .sort((a, b) => a.section - b.section || a.from - b.from || a.to - b.to);
-      return result.length > 0 ? result : undefined;
-    }, []);
-
-    const sectionRepeatCounts = useMemo(() => buildSectionRepeatCounts(sections), [sections, buildSectionRepeatCounts]);
+    const sectionRepeatCounts = useMemo(() => buildSectionRepeatCounts(sections), [sections]);
     const repeatProgressRef = useRef<{ sectionIndex: number; repeatIndex: number }>({ sectionIndex: -1, repeatIndex: 1 });
     const [selectedRepeatIndex, setSelectedRepeatIndex] = useState(1);
 
@@ -1024,52 +994,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     }, [selectedSectionIndex, sections]);
 
     const getSectionRepeatTotal = useCallback(
-      (section: SectionItem): number => {
-        if (section.instructedIndex == null) return 1;
-        const containing = sectionRepeatCounts?.find(
-          (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
-        );
-        const fallback = sectionRepeatCounts?.find((item) => item.section === section.instructedIndex);
-        const multiplier = containing?.multiplier ?? fallback?.multiplier ?? 1;
-        if (!Number.isFinite(multiplier) || multiplier <= 1) return 1;
-        return Math.max(2, Math.floor(multiplier));
-      },
+      (section: SectionItem): number => sectionRepeatTotal(section, sectionRepeatCounts),
       [sectionRepeatCounts]
     );
 
     const getRepeatGroupBounds = useCallback(
-      (index: number) => {
-        if (index < 0 || index >= sections.length) return { start: index, end: index, repeatTotal: 1 };
-        const section = sections[index];
-        if (section.instructedIndex == null) return { start: index, end: index, repeatTotal: 1 };
-
-        const repeatEntry = sectionRepeatCounts?.find(
-          (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
-        );
-
-        const repeatTotal =
-          repeatEntry && Number.isFinite(repeatEntry.multiplier) && repeatEntry.multiplier > 1 ? Math.max(2, Math.floor(repeatEntry.multiplier)) : 1;
-
-        if (!repeatEntry || repeatTotal <= 1) return { start: index, end: index, repeatTotal: 1 };
-
-        let start = index;
-        while (start > 0) {
-          const prev = sections[start - 1];
-          if (prev.instructedIndex !== section.instructedIndex) break;
-          if (prev.from < repeatEntry.from || prev.to > repeatEntry.to) break;
-          start--;
-        }
-
-        let end = index;
-        while (end + 1 < sections.length) {
-          const next = sections[end + 1];
-          if (next.instructedIndex !== section.instructedIndex) break;
-          if (next.from < repeatEntry.from || next.to > repeatEntry.to) break;
-          end++;
-        }
-
-        return { start, end, repeatTotal };
-      },
+      (index: number) => repeatGroupBounds(sections, sectionRepeatCounts, index),
       [sections, sectionRepeatCounts]
     );
 
@@ -1156,29 +1086,40 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       [sections, getSectionRepeatTotal, selectedSectionIndex, onSelectedSectionIndexChange, sectionRepeatCounts, updateDisplayState]
     );
 
-    // Helper function to get next checked section index (matching C# GetNextOf logic)
-    const getNextCheckedIndex = useCallback(
-      (startIndex: number, sectionList: ExtendedSectionItem[]): number => {
-        if (sectionList.length === 0) return -1;
+    // Toggle section checkbox
+    const toggleSectionCheck = useCallback((index: number) => {
+      setSections((prev) => {
+        const newSections = [...prev];
+        newSections[index] = { ...newSections[index], checked: !newSections[index].checked };
+        return newSections;
+      });
+    }, []);
 
-        const start = startIndex < 0 ? -1 : startIndex;
-        let acceptSelected = false;
-
-        for (let i = start + 1; i !== start; i++) {
-          if (i >= sectionList.length) {
-            i = 0;
-            if (acceptSelected) break;
-            acceptSelected = true;
-          }
-
-          if (sectionList[i].checked && (acceptSelected || selectedSectionIndex !== i)) {
-            return i;
-          }
+    /**
+     * The single section-command entry: the section list keys, the Controls-tab
+     * buttons and the hardware runtime all come through here. The decision is pure
+     * (sectionControlCommands); this panel stays the owner of the marker, the
+     * projected selection, repeats and every projection side effect.
+     */
+    const runSectionCommand = useCallback(
+      (command: SectionListCommand): boolean => {
+        const decision = decideSectionControl(command, {
+          sections,
+          selectedIndex: selectedSectionIndex,
+          nextIndex: nextSectionIndex,
+          repeatProgress: repeatProgressRef.current,
+          repeatGroupBounds: getRepeatGroupBounds,
+        });
+        if (!decision) return false;
+        if (decision.next !== undefined) {
+          nextNavigatedByKeyRef.current = true;
+          setNextSectionIndex(decision.next);
         }
-
-        return -1;
+        if (decision.toggle !== undefined) toggleSectionCheck(decision.toggle);
+        if (decision.select) selectSectionIndex(decision.select.index, decision.select.options);
+        return true;
       },
-      [selectedSectionIndex]
+      [sections, selectedSectionIndex, nextSectionIndex, getRepeatGroupBounds, toggleSectionCheck, selectSectionIndex]
     );
 
     // Expose methods to parent component via ref
@@ -1220,18 +1161,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
         setSectionListFocused: (): void => {
           sectionListRef.current?.focus();
         },
+        runSectionCommand,
       }),
-      [sections, selectedSectionIndex, selectSectionIndex]
+      [sections, selectedSectionIndex, selectSectionIndex, runSectionCommand]
     );
-
-    // Toggle section checkbox
-    const toggleSectionCheck = useCallback((index: number) => {
-      setSections((prev) => {
-        const newSections = [...prev];
-        newSections[index] = { ...newSections[index], checked: !newSections[index].checked };
-        return newSections;
-      });
-    }, []);
 
     // Get background color for section based on display mode (matching C# StateColor logic)
     const getSectionBgColor = (mode: SectionDisplayMode): string => {
@@ -1793,172 +1726,41 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       selectSectionIndex(index, { advanceRepeat: selectedSectionIndex === index });
     };
 
-    const handleSectionListAction = useCallback(
-      (key: string): boolean => {
-        if (sections.length === 0) return false;
-
-        // Helper to check if index is valid for next selection
-        const isValidNextIndex = (i: number) => i >= 0 && i < sections.length && i !== selectedSectionIndex && sections[i].checked;
-
-        switch (key) {
-          case "ArrowDown":
-          case "ArrowRight": {
-            // Move nextIndex forward (matching C# OnKeyDown Keys.Down/Right)
-            const newNext = getNextCheckedIndex(nextSectionIndex, sections);
-            if (newNext >= 0) {
-              nextNavigatedByKeyRef.current = true;
-              setNextSectionIndex(newNext);
-            }
-            return true;
-          }
-
-          case "ArrowUp":
-          case "ArrowLeft": {
-            // Move nextIndex backward (matching C# OnKeyDown Keys.Up/Left)
-            // Find item whose next would be current nextIndex
-            for (let i = 0; i < sections.length; i++) {
-              if (i !== selectedSectionIndex && sections[i].checked && getNextCheckedIndex(i, sections) === nextSectionIndex) {
-                nextNavigatedByKeyRef.current = true;
-                setNextSectionIndex(i);
-                break;
-              }
-            }
-            return true;
-          }
-
-          case "Home": {
-            // Move to first valid next item (matching C# OnKeyDown Keys.Home)
-            let i = 0;
-            while (i < sections.length && !isValidNextIndex(i)) i++;
-            if (i < sections.length) {
-              nextNavigatedByKeyRef.current = true;
-              setNextSectionIndex(i);
-            }
-            return true;
-          }
-
-          case "End": {
-            // Move to last valid next item (matching C# OnKeyDown Keys.End)
-            let i = sections.length - 1;
-            while (i >= 0 && !isValidNextIndex(i)) i--;
-            if (i >= 0) {
-              nextNavigatedByKeyRef.current = true;
-              setNextSectionIndex(i);
-            }
-            return true;
-          }
-
-          case "PageDown": {
-            // Move to next block (matching C# OnKeyDown Keys.PageDown)
-            let i = nextSectionIndex >= 0 ? nextSectionIndex : selectedSectionIndex >= 0 ? selectedSectionIndex : 0;
-            if (i >= 0 && i < sections.length) {
-              const block = sections[i].block;
-              while (i < sections.length && sections[i].block === block) i++;
-              while (i < sections.length && !isValidNextIndex(i)) i++;
-              if (i < sections.length) {
-                nextNavigatedByKeyRef.current = true;
-                setNextSectionIndex(i);
-              }
-            }
-            return true;
-          }
-
-          case "PageUp": {
-            // Move to previous block (matching C# OnKeyDown Keys.PageUp)
-            let i = nextSectionIndex >= 0 ? nextSectionIndex : selectedSectionIndex >= 0 ? selectedSectionIndex : sections.length - 1;
-            let found = false;
-            while (!found && i-- > 0) {
-              const block = sections[i].block;
-              for (; i >= 0 && sections[i].block === block; i--) {
-                if (isValidNextIndex(i)) {
-                  found = true;
-                  nextNavigatedByKeyRef.current = true;
-                  setNextSectionIndex(i);
-                }
-              }
-            }
-            return true;
-          }
-
-          case " ": {
-            // Toggle checkbox on selected item (matching C# OnKeyPress space)
-            if (selectedSectionIndex >= 0) {
-              toggleSectionCheck(selectedSectionIndex);
-            }
-            return true;
-          }
-
-          case "Enter": {
-            // Advance repeats at the end of the split-group, not per fragment.
-            if (selectedSectionIndex >= 0 && sections[selectedSectionIndex]) {
-              const group = getRepeatGroupBounds(selectedSectionIndex);
-              const repeatIndex = repeatProgressRef.current.sectionIndex === selectedSectionIndex ? repeatProgressRef.current.repeatIndex : 1;
-              if (group.repeatTotal > 1 && selectedSectionIndex === group.end && repeatIndex < group.repeatTotal) {
-                selectSectionIndex(group.start, {
-                  repeatIndexOverride: repeatIndex + 1,
-                  bumpRepeatNonce: true,
-                  forceEmit: true,
-                });
-                return true;
-              }
-            }
-
-            if (nextSectionIndex >= 0) {
-              const selectedGroup = getRepeatGroupBounds(selectedSectionIndex);
-              const nextInSameGroup = selectedSectionIndex >= 0 && nextSectionIndex >= selectedGroup.start && nextSectionIndex <= selectedGroup.end;
-              const repeatIndex = repeatProgressRef.current.sectionIndex === selectedSectionIndex ? repeatProgressRef.current.repeatIndex : 1;
-
-              if (nextInSameGroup && selectedGroup.repeatTotal > 1) {
-                selectSectionIndex(nextSectionIndex, { repeatIndexOverride: repeatIndex, preserveRepeatNonce: true });
-              } else {
-                selectSectionIndex(nextSectionIndex);
-              }
-            }
-            return true;
-          }
-
-          case "Backspace": {
-            // set selection to first section of current block
-            if (selectedSectionIndex >= 0) {
-              const currentBlock = sections[selectedSectionIndex].block;
-              let i = selectedSectionIndex;
-              while (i >= 0 && sections[i].block === currentBlock) i--;
-              if (i + 1 < sections.length) {
-                selectSectionIndex(i + 1);
-              }
-            }
-            return true;
-          }
-
-          case "Escape": {
-            // Clear selection
-            selectSectionIndex(-1);
-            return true;
-          }
-
-          default:
-            return false;
-        }
-      },
-      [sections, selectedSectionIndex, nextSectionIndex, getNextCheckedIndex, toggleSectionCheck, selectSectionIndex, getRepeatGroupBounds]
-    );
-
-    // Keyboard handler for section list (matching C# SectionListBox.OnKeyDown and OnKeyPress)
+    // The section list's own keys are only the list-local Escape / Space. The eight
+    // base keys (Home, PageUp, Up/Left, Backspace, End, PageDown, Down/Right, Enter)
+    // come through the hardware router with the active full-view profile, so a key a
+    // custom profile removed or remapped cannot run from a hardcoded handler here.
     const handleSectionListKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
-        if (handleSectionListAction(e.key)) {
-          e.preventDefault();
-        }
+        if (isHardwareHandled(e.nativeEvent) || isHardwareConsumed(e.nativeEvent)) return;
+        const command = SECTION_LIST_LOCAL_KEY_COMMANDS[e.key];
+        if (command && runSectionCommand(command)) e.preventDefault();
       },
-      [handleSectionListAction]
+      [runSectionCommand]
     );
 
+    // This panel is the full view's hardware target. MIDI and full-view-scope keys
+    // reach it whatever Preview tab is selected; section-list-scope keys only while
+    // the list has focus. Real modal dialogs own their input.
+    useHardwareTarget("full-view", {
+      canHandle: (row) => {
+        if (isAppModalOpen()) return "protected";
+        const action = (row.command as { action: string }).action;
+        if (!SECTION_CONTROL_COMMANDS.includes(action as SectionControlCommand)) return "no";
+        return sections.length > 0 ? "yes" : "no";
+      },
+      execute: (row) => {
+        runSectionCommand((row.command as { action: SectionControlCommand }).action);
+      },
+      inSectionList: (target) => !!sectionListRef.current && target instanceof Node && sectionListRef.current.contains(target),
+    });
+
     const handleSectionControlButtonPress = useCallback(
-      (key: SectionListActionKey) => {
-        handleSectionListAction(key);
+      (command: SectionListCommand) => {
+        runSectionCommand(command);
         sectionListRef.current?.focus();
       },
-      [handleSectionListAction]
+      [runSectionCommand]
     );
 
     const handleCheckboxClick = (e: React.MouseEvent, index: number) => {
@@ -2406,13 +2208,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
               <div className="preview-controls-grid" role="group" aria-label={t("Controls")}>
                 {previewControlButtons.map((button) => (
                   <button
-                    key={button.key}
+                    key={button.command}
                     type="button"
                     className="btn btn-light preview-controls-btn"
                     title={button.tooltip}
                     aria-label={button.tooltip}
                     onPointerDown={(e) => e.preventDefault()}
-                    onClick={() => handleSectionControlButtonPress(button.key)}
+                    onClick={() => handleSectionControlButtonPress(button.command)}
                   >
                     <i className={button.iconClass} aria-hidden="true" />
                   </button>

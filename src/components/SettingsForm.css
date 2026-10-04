@@ -318,3 +318,11 @@
 .client-access-list.disabled .admin-client-row {
   cursor: default;
 }
+
+/* The global dark button border (#2f2630) is nearly invisible on the dialog
+   background, so outline buttons read like plain labels. Raise it inside the
+   settings dialog and its nested dialogs only. */
+[data-theme="dark"] .settings-modal-dialog,
+[data-theme="dark"] .hw-dialog-backdrop {
+  --pp-button-border-color: #6c757d;
+}

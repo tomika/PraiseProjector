@@ -27,6 +27,8 @@ const GLOBS = [
   "chordpro/**/*.{ts,css}",
   "scripts/run-chordpro-tests.js",
   "scripts/run-search-tests.js",
+  "scripts/run-node-tests.js",
+  "tests/**/*.ts",
 ];
 
 const prettierCli = require.resolve("prettier/bin/prettier.cjs");

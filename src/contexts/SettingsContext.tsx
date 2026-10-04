@@ -6,6 +6,8 @@ import { syncSettingsToBackend } from "../services/settingsSync";
 import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
 import { normalizePerformancePreferences } from "../shared/performanceSettings";
 import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } from "../../common/ppd-control";
+import { defaultHardwareInputSettings } from "../../common/hardware-input";
+import { hardwareInputForLoadedSettings } from "../hardware-input/hardwareInputSettings";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -132,6 +134,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ppdWatchTimeoutSeconds: PPD_DEFAULT_WATCH_TIMEOUT_SECONDS,
       clientViewActiveInputProfileId: "factory",
       clientViewInputProfiles: [],
+      hardwareInput: defaultHardwareInputSettings(),
       fullViewChordProPageTurnMode: "auto",
       clientViewPageTurnMode: "auto",
       clientViewLivePitchPreviewMode: "auto",
@@ -208,6 +211,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const merged = { ...defaultSettings, ...loaded };
         merged.ppdWatchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(loaded.ppdWatchTimeoutSeconds);
         merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));
+        // Hardware profiles migrate from the RAW object: the default value merged in
+        // above must never hide saved legacy profiles.
+        merged.hardwareInput = hardwareInputForLoadedSettings(loaded as Record<string, unknown>);
         if (merged.searchMethod !== "typesense") merged.searchMethod = "traditional";
         // Migrate old showPreferredOnly boolean to preferenceFilter string
         const raw = loadedSettings as unknown as Record<string, unknown>;

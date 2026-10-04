@@ -392,11 +392,17 @@ export interface ProjectRequest {
   instructions?: string;
 }
 
+export interface ProjectOptions {
+  /** Checked right before the display changes (after any loading): false drops a
+   *  projection that a newer one superseded, so a slow request never lands last. */
+  isCurrent?: () => boolean;
+}
+
 export interface DisplayApi {
   /** The current display snapshot (song + position + transpose/capo/…). */
   getCurrent(): Display;
   /** Project a song at a position. The canonical "show this" operation. */
-  project(request: ProjectRequest): Promise<void>;
+  project(request: ProjectRequest, options?: ProjectOptions): Promise<void>;
   /** Highlight a lyric range / section within the current song. */
   highlight(from: number, to: number, section?: number): Promise<void>;
   /** Apply a transpose value. `commit` false = local visual preview only (per

@@ -289,8 +289,9 @@ export class DirectClientApi implements ClientApi {
   // Drive the host app via the SAME event the webserver clients use, so the main
   // UI's selection/preview/playlist AND the projector all follow along — not just
   // the shared CurrentSongStore (App.tsx remoteDisplayUpdateHandler).
-  private dispatchDisplayUpdate(detail: Record<string, unknown>): void {
-    void dispatchClientViewDisplayUpdate(detail);
+  /** `isCurrent` travels with the update: the host may queue it behind other display work. */
+  private dispatchDisplayUpdate(detail: Record<string, unknown>, isCurrent?: () => boolean): void {
+    void dispatchClientViewDisplayUpdate(detail, false, isCurrent);
   }
 
   /** Refresh the cached style only when its persisted value really changed.
@@ -321,11 +322,12 @@ export class DirectClientApi implements ClientApi {
   }
 
   private createDisplayApi(): DisplayApi {
-    const dispatch = (detail: Record<string, unknown>) => this.dispatchDisplayUpdate(detail);
+    const dispatch = (detail: Record<string, unknown>, isCurrent?: () => boolean) => this.dispatchDisplayUpdate(detail, isCurrent);
     const songId = () => this.displaySource.getCurrent().songId;
     return {
       getCurrent: () => this.withChordProStyles(this.displaySource.getCurrent()),
-      project: async (request) => {
+      project: async (request, options) => {
+        if (options?.isCurrent?.() === false) return;
         const update = {
           command: "display_update",
           id: request.songId,
@@ -337,7 +339,7 @@ export class DirectClientApi implements ClientApi {
           instructions: request.instructions,
         } as const;
         if (this.isFollowingPpd()) await sendHostDevicePpdDisplayUpdate(update);
-        else dispatch(update);
+        else dispatch(update, options?.isCurrent);
       },
       highlight: async (from, to, section) => {
         if (this.isFollowingPpd()) {

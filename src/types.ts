@@ -1,5 +1,6 @@
 import type { ChordProStylesSettings } from "../common/chordpro-styles";
 import type { ClientViewInputProfile } from "../common/client-view-input";
+import type { HardwareInputSettings } from "../common/hardware-input";
 
 /**
  * Startup session auto-scan preference for the client view. `off` disables the
@@ -81,10 +82,15 @@ export interface Settings {
   clientViewSessionsFoundPopup: ClientViewAutoScanMode;
   /** Seconds without a PPD response before a followed local session is considered disconnected. */
   ppdWatchTimeoutSeconds: number;
-  /** Active input profile for the new client view. `factory` is built in/read-only. */
+  /** Legacy (pre-hardware-tab) active client input profile. Migration input only:
+   *  once `hardwareInput` is stored, nothing reads or edits this field. */
   clientViewActiveInputProfileId: string;
-  /** User-created input profiles only; the factory profile stays in code. */
+  /** Legacy client input profiles; migration input only (see `hardwareInput`). */
   clientViewInputProfiles: ClientViewInputProfile[];
+  /** Hardware control profiles of both views — the single owner of keyboard/MIDI
+   *  bindings. Absent until a migration or a hardware settings save writes it.
+   *  A value written by a newer build is kept untouched (see hardware-input-migration). */
+  hardwareInput?: HardwareInputSettings;
 
   // Renderer-local performance and animation preferences.
   fullViewChordProPageTurnMode: PerformanceFeatureMode;

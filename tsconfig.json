@@ -17,5 +17,5 @@
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "common", "chordpro", "db-common"]
+  "include": ["src", "common", "chordpro", "db-common", "tests"]
 }

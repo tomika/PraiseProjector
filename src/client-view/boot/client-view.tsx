@@ -10,9 +10,12 @@ import { disableDefaultZoom } from "../../utils/disableDefaultZoom";
 import { mountClientView } from "./mountClientView";
 import { installUiAnimationPreference } from "../../shared/performanceSettings";
 import "../../shared/performance.css";
+import { ensureHardwareInputMigrated } from "../../hardware-input/hardwareInputSettings";
 
 disableDefaultZoom();
 installUiAnimationPreference();
+// The standalone client has no SettingsContext; it shares the one migration entry point.
+ensureHardwareInputMigrated();
 
 // Establish a stable base font size for the UI chrome and the ChordPro renderer,
 // which reads document.documentElement.style.fontSize as its baseline (the legacy

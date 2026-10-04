@@ -19,6 +19,7 @@ import { reportPageLoadedSuccessfully } from "../../services/webAppLaunchReport"
 import { reportUnsavedChanges } from "../../services/unsavedChangesReport";
 import { setMidiSoundfontUrl } from "../../../chordpro/midi";
 import { WebAppUpdateActivityBar } from "../../components/WebAppUpdateActivityBar";
+import { getHardwareInputRuntime } from "../../hardware-input/hardwareInputRuntime";
 
 function readLaunchConfigFromUrl(): Pick<
   ClientConfig,
@@ -78,6 +79,11 @@ export async function mountClientView(rootEl: HTMLElement, config: ClientConfig 
     ...readLaunchConfigFromUrl(),
     ...config,
   });
+
+  // A standalone page hosts only the client view: it is the one active hardware target.
+  const runtime = getHardwareInputRuntime();
+  runtime.start();
+  runtime.setActiveView("client-view");
 
   createRoot(rootEl).render(
     <LocalizationProvider>

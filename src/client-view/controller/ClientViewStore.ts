@@ -14,6 +14,10 @@
  */
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
+import { validateCommand } from "../../../common/hardware-action-catalog";
+import type { PreselectionCommand } from "../../../common/hardware-input";
+import { chordSettings, directCommandChange, type DirectClientCommand } from "./hardwareCommandChanges";
+import { preselectionPlan, selectedLeaderEntriesOf, visibleListRows, type ListRow } from "./preselectionCommands";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
 import { EMPTY_SYNC_STATUS, todoBadgeKind, type SyncStatus, type TodoBadgeKind } from "../../state/syncStatusStore";
 import type { StringKey } from "../../localization/LocalizationContext";
@@ -147,6 +151,9 @@ export interface DisplaySettings {
   autoTone: boolean;
   /** Chord-box diagram mode. */
   chordBoxType: ChordBoxKind;
+  /** Separate memories: hiding chords must not forget the last visible/diagram mode. */
+  lastVisibleChordMode?: Exclude<ChordBoxKind, "NO_CHORDS">;
+  lastDiagramType?: "GUITAR" | "PIANO";
   /** Enable capo handling (legacy chkUseCapo). The toolbar control remains
    *  visible; when off, capo value selection is disabled. */
   useCapo: boolean;
@@ -511,6 +518,8 @@ export class ClientViewStore {
   private leaderSelectionRevision = 0;
   private disposed = false;
   private lifecycleToken = 0;
+  /** Bumped by every song selection; see {@link loadLocalEntry}. */
+  private songSelectionRevision = 0;
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
   /** Whether the viewport uses the wide two-pane client layout. In that layout
@@ -833,6 +842,11 @@ export class ClientViewStore {
           ? legacy.zoomAutoWrap
           : legacy.zoomSizingMode === "AUTO_HEIGHT" || legacy.zoomSizingMode === "MANUAL";
       patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode, zoomAutoWrap };
+      const restored = patch.displaySettings;
+      if (!["", "GUITAR", "PIANO"].includes(restored.lastVisibleChordMode ?? "missing"))
+        restored.lastVisibleChordMode = restored.chordBoxType === "NO_CHORDS" ? "" : restored.chordBoxType;
+      if (restored.lastDiagramType !== "GUITAR" && restored.lastDiagramType !== "PIANO")
+        restored.lastDiagramType = restored.chordBoxType === "PIANO" ? "PIANO" : "GUITAR";
     }
     if (typeof persisted.optionsOpen === "boolean") patch.optionsOpen = persisted.optionsOpen;
     if (typeof persisted.leaderMode === "boolean") patch.leaderMode = persisted.leaderMode;
@@ -1166,40 +1180,51 @@ export class ClientViewStore {
     this.api.hostView?.syncLoadedSong(this.state.display.songId || null);
   }
 
-  async selectDatabaseSong(songId: string): Promise<void> {
+  /** `shouldApply`: the caller's own condition for the selection to still land
+   *  (e.g. a hardware command's isCurrent); the result says whether it landed. */
+  async selectDatabaseSong(songId: string, shouldApply?: () => boolean): Promise<boolean> {
     this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("database");
-    await this.loadLocalEntry({ songId });
+    return this.loadLocalEntry({ songId }, true, shouldApply);
   }
 
-  async selectFilteredSong(songId: string): Promise<void> {
+  async selectFilteredSong(songId: string, shouldApply?: () => boolean): Promise<boolean> {
     this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("filter");
-    await this.loadLocalEntry({ songId });
+    return this.loadLocalEntry({ songId }, true, shouldApply);
   }
 
   /** Project a specific working-playlist entry, preserving its per-item
    *  transpose/capo/instructions values (legacy updateTableFromEntries row pick). */
-  async selectPlaylistEntry(entry: PlaylistEntry): Promise<void> {
+  async selectPlaylistEntry(entry: PlaylistEntry, shouldApply?: () => boolean): Promise<boolean> {
     this.set({ hotkeySongId: null });
     this.setNavigationMode("playlist");
-    await this.projectEntry(entry);
+    return this.projectEntry(entry, shouldApply);
   }
 
   /** Project a row from a selected archived/leader playlist without adding it to
    *  the working playlist. Prev/next then walks that selected archive list. */
-  async selectArchiveEntry(entry: PlaylistEntry): Promise<void> {
+  async selectArchiveEntry(entry: PlaylistEntry, shouldApply?: () => boolean): Promise<boolean> {
     this.pendingLocalRestore = null;
     this.set({ hotkeySongId: null });
     this.setNavigationMode("archive");
-    await this.loadLocalEntry(entry);
+    return this.loadLocalEntry(entry, true, shouldApply);
   }
 
-  private async loadLocalEntry(entry: NavEntry, closeOptions = true): Promise<void> {
+  /** Whether the selection started as `revision` is still the latest one and its caller still wants it. */
+  private selectionLands(revision: number, shouldApply: () => boolean): boolean {
+    return !this.disposed && revision === this.songSelectionRevision && shouldApply();
+  }
+
+  /** A slow load never lands over a newer selection (a click, a page turn, a hardware command). */
+  private async loadLocalEntry(entry: NavEntry, closeOptions = true, shouldApply: () => boolean = () => true): Promise<boolean> {
+    const revision = ++this.songSelectionRevision;
     const data = await this.api.song.getSongData(entry.songId);
+    if (!this.selectionLands(revision, shouldApply)) return false;
     this.applyLoadedLocalEntry(entry, data, closeOptions);
+    return true;
   }
 
   private applyLoadedLocalEntry(entry: NavEntry, data: SongData, closeOptions: boolean): void {
@@ -1224,14 +1249,24 @@ export class ClientViewStore {
     if (closeOptions) this.closePortraitOptions();
   }
 
-  private async projectEntry(entry: NavEntry): Promise<void> {
-    await this.api.display.project({
-      songId: entry.songId,
-      transpose: entry.transpose ?? 0,
-      capo: entry.capo,
-      instructions: entry.instructions,
-    });
+  /** The adapter checks the selection right before the display changes, so a slow
+   *  projection never lands over a newer selection (see {@link loadLocalEntry}). */
+  private async projectEntry(entry: NavEntry, shouldApply: () => boolean = () => true): Promise<boolean> {
+    const revision = ++this.songSelectionRevision;
+    const lands = () => this.selectionLands(revision, shouldApply);
+    await this.api.display.project(
+      {
+        songId: entry.songId,
+        transpose: entry.transpose ?? 0,
+        capo: entry.capo,
+        instructions: entry.instructions,
+      },
+      { isCurrent: lands }
+    );
+    // A newer selection owns the options panel by now.
+    if (!lands()) return false;
     this.closePortraitOptions();
+    return true;
   }
 
   /** The legacy "▶" quick-load: add the row to the working playlist when it is
@@ -1651,9 +1686,7 @@ export class ClientViewStore {
   /** The songs of the currently selected leader + dated playlist (the rows the
    *  picker shows for "pick items"). Empty when nothing is selected. */
   selectedLeaderEntries(): PlaylistEntry[] {
-    const profile = this.state.leaderProfiles.find((p) => p.leaderId === this.state.selectedLeaderId);
-    const playlist = profile?.playlists.find((pl) => pl.label === this.state.selectedPlaylistLabel);
-    return playlist?.songs ?? [];
+    return selectedLeaderEntriesOf(this.state);
   }
 
   /** Choose a leader in the picker; resets the date to that leader's newest. */
@@ -1823,41 +1856,73 @@ export class ClientViewStore {
   /** Open/close options from the configurable input layer. Closing commits the
    * keyboard-selected song just like the legacy Home action did. Pointer clicks
    * keep their immediate projection behaviour through {@link toggleOptions}. */
-  async hotkeyToggleOptions(): Promise<void> {
+  async hotkeyToggleOptions(isCurrent: () => boolean = () => true): Promise<void> {
     if (!this.state.optionsOpen) {
       this.set({ optionsOpen: true, hotkeySongId: this.state.display.songId || null, hotkeyActiveControl: null });
       return;
     }
     const songId = this.state.hotkeySongId;
-    const row = this.hotkeyVisibleSongRows().find((entry) => entry.songId === songId);
+    const row = visibleListRows(this.state).find((entry) => entry.songId === songId);
     const listMode = this.state.listMode;
     const filteredDatabase = !!this.state.searchText.trim();
     this.set({ optionsOpen: false, hotkeyActiveControl: null, hotkeySongId: null });
     if (!songId || !row || songId === this.state.display.songId) return;
-    if (listMode === "playlist") await this.selectPlaylistEntry(row as PlaylistEntry);
-    else if (listMode === "leaderlists") await this.selectArchiveEntry(row as PlaylistEntry);
-    else if (filteredDatabase) await this.selectFilteredSong(songId);
-    else await this.selectDatabaseSong(songId);
+    const lifecycle = this.lifecycleToken;
+    await this.showListRow(row, listMode, filteredDatabase, () => this.lifecycleToken === lifecycle && isCurrent());
   }
 
-  /** The rows currently rendered by the active options-panel list mode. */
-  private hotkeyVisibleSongRows(): NavEntry[] {
-    if (this.state.listMode === "playlist") {
-      const filter = this.state.playlistFilterText.trim();
-      const showFilteredRows = !!filter && (!this.state.playlistSearching || this.state.playlistSearchResults.length > 0);
-      if (!showFilteredRows) return this.state.playlist;
-      const resultIds = new Set(this.state.playlistSearchResults.map((entry) => entry.songId));
-      return this.state.playlist.filter((entry) => resultIds.has(entry.songId));
+  /** Shows a row of the options-panel list exactly as clicking it would; true when it landed. */
+  private showListRow(row: ListRow, listMode: ListMode, filteredDatabase: boolean, shouldApply: () => boolean): Promise<boolean> {
+    if (listMode === "playlist") return this.selectPlaylistEntry(row as PlaylistEntry, shouldApply);
+    if (listMode === "leaderlists") return this.selectArchiveEntry(row as PlaylistEntry, shouldApply);
+    if (filteredDatabase) return this.selectFilteredSong(row.songId, shouldApply);
+    return this.selectDatabaseSong(row.songId, shouldApply);
+  }
+
+  /**
+   * Runs a hardware command on the preselected song of the options panel (see
+   * {@link preselectionPlan}). Returns the value the hardware feedback shows, or
+   * false when nothing happened.
+   */
+  async executePreselectionCommand(
+    command: PreselectionCommand,
+    isCurrent: () => boolean = () => true
+  ): Promise<{ value: string | number | boolean } | false> {
+    if (this.disposed || !isCurrent() || isFollowerView(this.state) || !validateCommand("client-view", command).ok) return false;
+    const plan = preselectionPlan(this.state, command);
+    if (!plan) return false;
+    // The command may outlive its moment (a view or profile switch, a newer
+    // selection, a moved cursor): nothing of it lands after that, nor its feedback.
+    const lifecycle = this.lifecycleToken;
+    const current = () => !this.disposed && this.lifecycleToken === lifecycle && isCurrent();
+    const cursor = this.state.hotkeySongId;
+    switch (plan.kind) {
+      case "show": {
+        const landed = await this.showListRow(plan.row, this.state.listMode, !!this.state.searchText.trim(), current);
+        return landed ? { value: plan.row.title } : false;
+      }
+      case "add":
+        await this.setPlaylist([...this.state.playlist, toPlaylistEntry(plan.row)]);
+        return current() ? { value: true } : false;
+      case "remove":
+        await this.removeFromPlaylist(plan.index);
+        if (!current()) return false;
+        // Only a cursor nobody moved meanwhile follows to the removed row's neighbour.
+        if (this.state.optionsOpen && this.state.hotkeySongId === cursor) this.set({ hotkeySongId: plan.cursor });
+        return { value: false };
+      case "move":
+        await this.reorderPlaylist(plan.from, plan.to);
+        return current() ? { value: `${plan.to + 1}/${this.state.playlist.length}` } : false;
+      case "update":
+        await this.updatePlaylistEntry(plan.index, plan.patch);
+        return current() ? { value: "transpose" in plan.patch ? plan.patch.transpose : plan.patch.capo } : false;
     }
-    if (this.state.listMode === "leaderlists") return this.selectedLeaderEntries();
-    if (!this.state.searchText.trim()) return this.state.songs;
-    return this.state.searching && this.state.searchResults.length === 0 ? this.state.songs : this.state.searchResults;
   }
 
   /** Move the preselected row in the list that is currently visible without
    * projecting it until the options panel is closed. */
   hotkeyMoveSongSelection(next: boolean): void {
-    const rows = this.hotkeyVisibleSongRows();
+    const rows = visibleListRows(this.state);
     if (!rows.length) return;
     const current = this.state.hotkeySongId ?? this.state.display.songId;
     const currentIndex = rows.findIndex((row) => row.songId === current);
@@ -2121,7 +2186,48 @@ export class ClientViewStore {
   }
 
   setDisplaySetting<K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]): void {
-    this.set({ displaySettings: { ...this.state.displaySettings, [key]: value } });
+    this.set({
+      displaySettings:
+        key === "chordBoxType" ? chordSettings(this.state.displaySettings, value as ChordBoxKind) : { ...this.state.displaySettings, [key]: value },
+    });
+  }
+
+  /** Direct hardware actions have their own semantics; legacy focus-based hotkeys stay intact. */
+  async executeDirectInputCommand(command: DirectClientCommand, isCurrent: () => boolean = () => true): Promise<boolean> {
+    if (this.disposed || !isCurrent() || !validateCommand("client-view", command).ok) return false;
+    if (command.action === "transpose" && isViewingRemoteDisplay(this.state)) return false;
+    const change = directCommandChange(this.state, command);
+    if (Object.keys(change).length === 0) return false;
+    const lifecycle = this.lifecycleToken;
+    const songId = this.state.display.songId;
+    const projectedId = this.api.display.getCurrent().songId;
+    // Adapters re-emit an equal network state on every poll; only a real
+    // status/transport change ends the command's target.
+    const networkKey = (state: ClientViewState) => `${state.network.status}|${state.network.transport ?? ""}`;
+    const network = networkKey(this.state);
+    const current = () =>
+      !this.disposed &&
+      this.lifecycleToken === lifecycle &&
+      isCurrent() &&
+      this.state.display.songId === songId &&
+      this.api.display.getCurrent().songId === projectedId &&
+      networkKey(this.state) === network &&
+      (command.action !== "transpose" || !isViewingRemoteDisplay(this.state));
+    const { transpose, capo, ...localChange } = change;
+    if (Object.keys(localChange).length) this.set(localChange);
+    if (transpose !== undefined) {
+      await this.previewTranspose(transpose);
+      if (current()) await this.commitTranspose();
+    }
+    if (capo !== undefined) {
+      // A follower's capo is a local preference, even when a Direct/PPD adapter exists.
+      if (isViewingRemoteDisplay(this.state)) this.set({ capo, display: { ...this.state.display, capo } });
+      else {
+        await this.previewCapo(capo);
+        if (current() && !isViewingRemoteDisplay(this.state)) await this.commitCapo();
+      }
+    }
+    return current();
   }
 
   /** Selecting a sizing mode also makes the zoomed song view active. */

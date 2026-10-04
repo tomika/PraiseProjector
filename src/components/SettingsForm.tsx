@@ -12,6 +12,7 @@ import ImagesSettings from "./settings/ImagesSettings";
 import AboutSettings from "./settings/AboutSettings";
 import ChordProStylesSettings from "./settings/ChordProStylesSettings";
 import ClientViewSettings from "./settings/ClientViewSettings";
+import HardwareControlSettings from "./settings/HardwareControlSettings";
 import PerformanceSettings from "./settings/PerformanceSettings";
 import ClientsSettings from "./settings/ClientsSettings";
 import { Leader } from "../../db-common";
@@ -40,6 +41,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
   const validTabs = new Set([
     "general",
     "client-view",
+    "hardware-control",
     "performance",
     "searching",
     "projecting",
@@ -301,6 +303,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
     const tabs = {
       general: <GeneralSettings settings={settings} updateSetting={updateSetting} />,
       "client-view": <ClientViewSettings settings={settings} updateSetting={updateSetting} />,
+      "hardware-control": <HardwareControlSettings settings={settings} updateSetting={updateSetting} isActive={activeTab === "hardware-control"} />,
       performance: <PerformanceSettings settings={settings} updateSetting={updateSetting} />,
       searching: <SearchingSettings settings={settings} updateSetting={updateSetting} />,
       projecting: <ProjectingSettings settings={settings} updateSetting={updateSetting} />,
@@ -396,6 +399,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "client-view" ? "active" : ""}`} href="#" onClick={() => setActiveTab("client-view")}>
                 {t("SettingsPageClientView")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "hardware-control" ? "active" : ""}`} href="#" onClick={() => setActiveTab("hardware-control")}>
+                {t("SettingsPageHardwareControl")}
               </a>
             </li>
             <li className="nav-item">

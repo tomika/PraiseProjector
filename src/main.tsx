@@ -31,6 +31,8 @@ import { reportPageLoadedSuccessfully } from "./services/webAppLaunchReport";
 import { requestClientViewSwitch } from "./services/clientViewSwitchGuard";
 import { WebAppUpdateActivityBar } from "./components/WebAppUpdateActivityBar";
 import "./shared/performance.css";
+import { ensureHardwareInputMigrated } from "./hardware-input/hardwareInputSettings";
+import { getHardwareInputRuntime } from "./hardware-input/hardwareInputRuntime";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
@@ -47,6 +49,10 @@ installUiAnimationPreference();
 
 // Install console interceptor early to capture all logs
 installConsoleInterceptor();
+
+// Migrate legacy hardware-control profiles once, before any reader (SettingsContext,
+// the client view, the input runtime) sees the persisted settings.
+ensureHardwareInputMigrated();
 
 // Forward frontend log entries to backend so both the dialog and
 // the separate log viewer window can show them tagged as "frontend"
@@ -279,6 +285,13 @@ function RootView() {
   // selection, projection, webserver/projector wiring — is preserved and the
   // embedded view can drive it through the shared CurrentSongStore.
   const showClientView = showClient && !decidingHandoff;
+  // Hardware input executes only in the view that is actually visible: the hidden
+  // App never acts on an event meant for the client view, and nothing executes
+  // while the handoff gate decides.
+  useEffect(() => getHardwareInputRuntime().start(), []);
+  useEffect(() => {
+    getHardwareInputRuntime().setActiveView(decidingHandoff ? null : showClientView ? "client-view" : "full-view");
+  }, [decidingHandoff, showClientView]);
   return (
     <>
       <WebAppUpdateActivityBar />

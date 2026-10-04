@@ -227,8 +227,10 @@ export function createDisplayApi(core: RestCore): DisplayApi {
   const pushCurrent = () => pushDisplay(core, core.getDisplay());
   return {
     getCurrent: () => core.getDisplay(),
-    project: async (request) => {
+    project: async (request, options) => {
       const data = await core.loadSongData(request.songId);
+      // Superseded while loading: neither the local display nor the push may change.
+      if (options?.isCurrent?.() === false) return;
       core.setDisplay({
         ...core.getDisplay(),
         songId: request.songId,

@@ -13,6 +13,9 @@ export type ClientViewDisplayUpdateEnvelope = {
   complete: () => void;
   /** Set synchronously by the App listener before it queues the update. */
   handled: boolean;
+  /** The sender's condition, checked again when the queued update finally runs:
+   *  false drops an update superseded while the host's queue was busy. */
+  isCurrent?: () => boolean;
 };
 
 export function isClientViewDisplayUpdateEnvelope(value: unknown): value is ClientViewDisplayUpdateEnvelope {
@@ -23,9 +26,13 @@ export function isClientViewDisplayUpdateEnvelope(value: unknown): value is Clie
   );
 }
 
-export function dispatchClientViewDisplayUpdate(update: Record<string, unknown>, waitForApply = false): Promise<void> {
+export function dispatchClientViewDisplayUpdate(update: Record<string, unknown>, waitForApply = false, isCurrent?: () => boolean): Promise<void> {
   if (!waitForApply) {
-    window.dispatchEvent(new CustomEvent(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, { detail: update }));
+    // An envelope only to carry the sender's condition to the queue.
+    const detail: Record<string, unknown> | ClientViewDisplayUpdateEnvelope = isCurrent
+      ? { update, complete: () => undefined, handled: false, isCurrent }
+      : update;
+    window.dispatchEvent(new CustomEvent(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, { detail }));
     return Promise.resolve();
   }
 
@@ -38,7 +45,7 @@ export function dispatchClientViewDisplayUpdate(update: Record<string, unknown>,
       resolve();
     };
     const timeout = window.setTimeout(complete, APPLY_TIMEOUT_MS);
-    const envelope: ClientViewDisplayUpdateEnvelope = { update, complete, handled: false };
+    const envelope: ClientViewDisplayUpdateEnvelope = { update, complete, handled: false, ...(isCurrent ? { isCurrent } : {}) };
     window.dispatchEvent(
       new CustomEvent<ClientViewDisplayUpdateEnvelope>(CLIENT_VIEW_DISPLAY_UPDATE_EVENT, {
         detail: envelope,
@@ -49,4 +56,29 @@ export function dispatchClientViewDisplayUpdate(update: Record<string, unknown>,
     // for every PPD control update.
     if (!envelope.handled) complete();
   });
+}
+
+/**
+ * The App side of the bridge: queues each update behind the host's other display
+ * work, and drops it there when its sender stopped wanting it in the meantime.
+ */
+export function createClientViewDisplayUpdateListener(
+  enqueue: (job: () => Promise<void>) => Promise<void>,
+  apply: (update: Record<string, unknown>) => Promise<void>
+): (event: Event) => void {
+  return (event) => {
+    const eventDetail = (event as CustomEvent<unknown>).detail;
+    const envelope = isClientViewDisplayUpdateEnvelope(eventDetail) ? eventDetail : null;
+    if (envelope) envelope.handled = true;
+    const update = envelope?.update ?? (eventDetail as Record<string, unknown> | null);
+    if (!update) {
+      envelope?.complete();
+      return;
+    }
+    const queued = enqueue(async () => {
+      if (envelope?.isCurrent?.() === false) return;
+      await apply(update);
+    });
+    if (envelope) void queued.then(envelope.complete, envelope.complete);
+  };
 }

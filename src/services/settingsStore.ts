@@ -36,14 +36,64 @@ export function readPersistedSettings(): Partial<Settings> {
  * standalone client view and the full view share one source of truth.
  */
 export function writePersistedSettings(patch: Partial<Settings>): Partial<Settings> {
+  return writePersistedSettingsResult(patch).settings;
+}
+
+export interface PersistedSettingsWrite {
+  /** The merged settings object (what readers see in memory). */
+  settings: Partial<Settings>;
+  /** False when storage was unavailable or rejected the write. */
+  persisted: boolean;
+}
+
+/** {@link writePersistedSettings} that also reports whether the write reached storage,
+ *  so a caller can tell a durable save from an in-memory-only update. */
+export function writePersistedSettingsResult(patch: Partial<Settings>): PersistedSettingsWrite {
   const next = { ...readPersistedSettings(), ...patch };
+  let persisted = false;
   try {
-    window.localStorage?.setItem(SETTINGS_KEY, JSON.stringify(next));
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+      persisted = true;
+    }
   } catch {
     /* storage is optional in embedded webviews */
   }
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-settings-changed"));
-  return next;
+  return { settings: next, persisted };
+}
+
+/** The raw persisted `pp-settings` text (cache key for derived reads). */
+export function readPersistedSettingsText(): string | null {
+  try {
+    return typeof window !== "undefined" ? (window.localStorage?.getItem(SETTINGS_KEY) ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+const HARDWARE_LEGACY_BACKUP_KEY = "pp-hardware-input-legacy-backup";
+
+/** Stores the one-time restore point of the legacy hardware fields. An existing
+ *  backup is never replaced. Returns whether a backup is now in storage. */
+export function writeHardwareLegacyBackup(backup: object): boolean {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    if (window.localStorage.getItem(HARDWARE_LEGACY_BACKUP_KEY) !== null) return true;
+    window.localStorage.setItem(HARDWARE_LEGACY_BACKUP_KEY, JSON.stringify(backup));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readHardwareLegacyBackup(): unknown {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage?.getItem(HARDWARE_LEGACY_BACKUP_KEY) : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The light/dark theme preference, stored under `theme` in the `pp-settings`
