@@ -19,6 +19,7 @@ import { openLanSessionUrl } from "../../../services/sessionNavigation";
 import { isErrorResponse } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry } from "../../../../common/pp-types";
 import type { LicenseSection } from "../../../about-licenses";
+import { sortSongEntriesByTitle } from "../ClientApi";
 import type { AuthApi, DeviceApi, DeviceInfo, DisplayApi, PlaylistApi, SessionApi, SessionFeatureKey, SongApi } from "../ClientApi";
 import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
@@ -174,7 +175,7 @@ export function createSongApi(core: RestCore): SongApi {
       });
     },
     listAllSongs: async () => {
-      const songs = await cloudApi.fetchAllSongs();
+      const songs = sortSongEntriesByTitle(await cloudApi.fetchAllSongs());
       core.songListEvents.emit(songs);
       return songs;
     },

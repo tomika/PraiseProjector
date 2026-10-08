@@ -67,7 +67,7 @@ import type {
   SongEntry,
   Unsubscribe,
 } from "../ClientApi";
-import type { ClientApi } from "../ClientApi";
+import { sortSongEntriesByTitle, type ClientApi } from "../ClientApi";
 import { readSessionToggleSettings, saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { isWebServerRuntimeAvailable } from "../../../services/webServerBridge";
 import { openLanSessionUrl } from "../../../services/sessionNavigation";
@@ -412,7 +412,7 @@ export class DirectClientApi implements ClientApi {
   }
 
   private createSongApi(): SongApi {
-    const allEntries = () => Database.getInstance().getSongs().map(toEntry);
+    const allEntries = () => sortSongEntriesByTitle(Database.getInstance().getSongs().map(toEntry));
     return {
       searchSongs: async (text, options) => {
         const query = text.trim();

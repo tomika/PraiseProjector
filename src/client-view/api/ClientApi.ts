@@ -305,14 +305,23 @@ export interface HostViewApi {
   syncLoadedSong(loadedSongId: string | null): void;
 }
 
+/** Title order of the database song list — the same comparison the desktop song
+ *  tree uses (`SongOrder.Alphabetical`). Neither the local DB nor `/songs`
+ *  guarantees any order, so every {@link SongApi} adapter sorts with this. */
+export function sortSongEntriesByTitle<T extends SongEntry>(songs: T[]): T[] {
+  return songs.sort((a, b) => a.title.localeCompare(b.title));
+}
+
 export interface SongApi {
   /** App mode: filter the local database. Client: server-side search. */
   searchSongs(text: string, options?: SearchOptions): Promise<SongFound[]>;
-  /** The full song catalogue available to the current backend. */
+  /** The full song catalogue available to the current backend, sorted by title
+   *  (see {@link sortSongEntriesByTitle}). */
   listAllSongs(): Promise<SongEntry[]>;
   /** Full ChordPro text + chord system for a single song. */
   getSongData(songId: string): Promise<SongData>;
-  /** Emits whenever the available song list changes (sync, DB switch, …). */
+  /** Emits whenever the available song list changes (sync, DB switch, …); the
+   *  list is sorted by title like {@link listAllSongs}. */
   subscribeSongList(callback: (songs: SongEntry[]) => void): Unsubscribe;
 
   /** Optional two-way binding to the host app's LeftPanel filter; present only on
