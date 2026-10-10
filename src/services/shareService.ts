@@ -1,17 +1,14 @@
 import { cloudApi } from "../../common/cloudApi";
 import { openShareDialog } from "./shareDialogBridge";
+import { publicWebRootFromBase } from "../../common/site-urls";
 
 /**
- * Public web root that serves `public.html` (e.g. `https://praiseprojector.com`).
- * Derived from the runtime cloud API base (set by AuthContext), with the trailing
- * `/praiseprojector` API path suffix and any trailing slashes stripped — matching
- * {@link normalizePublicWebRoot} in `hooks/useSessionUrl`.
+ * Public web root that serves `public.html`, derived from the runtime cloud API base
+ * (set by AuthContext). Web builds use a page-relative API base, so on the retired
+ * `.com` origin this canonicalizes to the `.hu` website (see `publicWebRootFromBase`).
  */
 function publicWebRoot(): string {
-  return cloudApi
-    .getBaseUrl()
-    .replace(/\/+$/, "")
-    .replace(/\/praiseprojector$/i, "");
+  return publicWebRootFromBase(cloudApi.getBaseUrl());
 }
 
 /**

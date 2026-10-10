@@ -65,11 +65,10 @@ import { DeviceMessage, PpdPacket, HostDevice, Nearby, NearbyMessageParam, HostD
 import { Settings } from "../common/settings";
 import { formatLocalDateLabel } from "../common/date-only";
 import { entryIsFound, getEmptyDisplay } from "../common/pp-utils";
+import { PRAISEPROJECTOR_WEBSITE_URL, publicWebRootFromBase } from "../common/site-urls";
 import { ChordBoxType } from "../chordpro/chord_drawer";
 import { NoteHitBox } from "../chordpro/ui_base";
 import type { ChordProStylesSettings } from "../chordpro/chordpro_styles";
-
-export const praiseProjectorOrigin = "https://praiseprojector.com";
 
 type ErrorCallback = (error: Error) => void;
 
@@ -1506,7 +1505,7 @@ export class App extends AppBase {
     if (iconReport) {
       const externalOpen = this.hostDevice?.openLinkExternal;
       iconReport.onclick = () => {
-        const url = praiseProjectorOrigin + "/#contact";
+        const url = PRAISEPROJECTOR_WEBSITE_URL + "/#contact";
         if (externalOpen) externalOpen(url);
         else window.open(url, "_blank");
       };
@@ -5093,7 +5092,7 @@ export class App extends AppBase {
   }
 
   private async sharePublicLink() {
-    const { url, title } = this.genActualSongUrl(window.location.protocol + "//" + window.location.host + "/public.html");
+    const { url, title } = this.genActualSongUrl(publicWebRootFromBase(window.location.origin) + "/public.html");
     if (this.hostDevice) {
       try {
         if (this.hostDevice.share(url, title)) {

@@ -13,12 +13,11 @@ import { getClientViewAboutLicenseSections, type LicenseSection } from "../../ab
 import type { DeviceInfo } from "../api/ClientApi";
 import { requestTutorialStart } from "../../tutorial/tutorialEvents";
 import { useLocalization } from "../../localization/LocalizationContext";
+import { PRAISEPROJECTOR_WEBSITE_URL } from "../../../common/site-urls";
 
 declare const __APP_VERSION__: string;
 declare const __APP_COMMIT__: string;
 declare const __APP_SHOW_COMMIT__: boolean;
-
-const WEBSITE_URL = "https://praiseprojector.com";
 
 type DeviceInfoLine = { key: string; label: string; value: string };
 
@@ -120,7 +119,7 @@ export function AboutDialog() {
           <p className="cv-about-thanks">Thanks to everyone who shared their code and/or contributed to the project.</p>
           <p>
             For more information about usage and licensing visit{" "}
-            <button type="button" className="cv-about-link" onClick={() => openUrl(WEBSITE_URL)}>
+            <button type="button" className="cv-about-link" onClick={() => openUrl(PRAISEPROJECTOR_WEBSITE_URL)}>
               PraiseProjector&apos;s website
             </button>
             .

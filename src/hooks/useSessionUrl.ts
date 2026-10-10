@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useOnlineSession } from "../contexts/OnlineSessionContext";
 import { cloudApiHost } from "../config";
 import { cloudApi } from "../../common/cloudApi";
+import { publicWebRootFromBase } from "../../common/site-urls";
 import { Settings } from "../types";
 import { qrCodeCacheService } from "../services/QRCodeCacheService";
 import { isWebServerRuntimeAvailable } from "../services/webServerBridge";
@@ -33,13 +34,6 @@ export function buildLocalUrl(settings: Partial<Settings> | null | undefined, fo
 }
 
 /**
- * Pure helper — normalize an API base or host to the public web root.
- */
-export function normalizePublicWebRoot(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "").replace(/\/praiseprojector$/i, "");
-}
-
-/**
  * The web root the session URLs must point at: the SAME host the app actually talks
  * to, resolved at runtime (`cloudApi.getBaseUrl()` — set from Electron's
  * proxy-config.json, RestCore's config, or `cloudApiBaseUrl` in web mode). The
@@ -56,7 +50,7 @@ function runtimeCloudBaseUrl(): string {
  * Pass `baseUrl` to pin a specific host; omit it to follow the runtime cloud base.
  */
 export function buildCloudUrl(sessionOwnerId: string, baseUrl?: string): string {
-  const webRoot = normalizePublicWebRoot(baseUrl || runtimeCloudBaseUrl());
+  const webRoot = publicWebRootFromBase(baseUrl || runtimeCloudBaseUrl());
   return `${webRoot}/webapp/client-view.html?follow=${encodeURIComponent(sessionOwnerId)}`;
 }
 

@@ -1,5 +1,5 @@
 import { HostDevice } from "./host-device";
-import { praiseProjectorOrigin } from "./praiseprojector";
+import { PRAISEPROJECTOR_WEBSITE_URL } from "../common/site-urls";
 import { getClientWebAppLicenseSections } from "./about-licenses";
 
 declare const __APP_VERSION__: string;
@@ -57,7 +57,7 @@ export function getAboutBoxHtml(info?: { login?: string }) {
         <td><strong>Thanks for everyone who shared their code and/or contributed in project.</strong></td>
     </tr>
     <tr>
-        <td>For more information about usage and licensing visit <a href="#" onclick="window.open('${praiseProjectorOrigin}')">PraiseProjector's website</a></td>
+        <td>For more information about usage and licensing visit <a href="#" onclick="window.open('${PRAISEPROJECTOR_WEBSITE_URL}')">PraiseProjector's website</a></td>
     </tr>
     ${(() => {
       const info = HostDevice.hostDevice?.info();
