@@ -80,6 +80,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const lastPeekedLocalDbVersionRef = useRef<number | null>(null);
   const syncMenuRef = useRef<HTMLDivElement>(null);
   const lastPeekCheckRef = useRef(0);
+  const peekRequestRef = useRef(0);
   // Tracks which action to perform after successful login (null = none).
   const pendingActionAfterLoginRef = useRef<(() => void) | null>(null);
   const deferredPostLoginActionRef = useRef<(() => void) | null>(null);
@@ -117,6 +118,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
 
   const fetchPeek = useCallback(
     async (options?: { force?: boolean }) => {
+      const requestId = ++peekRequestRef.current;
       const shouldInvalidateCache = options?.force || lastPeekedLocalDbVersionRef.current !== localDbVersion;
       if (shouldInvalidateCache) {
         cloudApi.invalidatePeekCache();
@@ -124,11 +126,13 @@ const UserPanel: React.FC<UserPanelProps> = ({
 
       try {
         const peek = await cloudApi.fetchPeek(true);
+        if (requestId !== peekRequestRef.current) return;
         setPendingSongCount(peek.pendingSongCount ?? 0);
         setCloudDbVersion(peek.dbVersion ?? null);
         setCloudAuthFailed(false);
         lastPeekedLocalDbVersionRef.current = localDbVersion;
       } catch (error) {
+        if (requestId !== peekRequestRef.current) return;
         // Only flag cloud auth failed for explicit auth failures.
         if (isCloudApiErrorKind(error, "auth") && isAuthenticated && !isAuthLoading) {
           setCloudAuthFailed(true);
@@ -144,8 +148,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
   );
 
   // Keep a stable ref so the polling effect doesn't need fetchPeek in its deps.
-  // This prevents auth-state flickers (isGuest/isAuthLoading) from re-creating
-  // the interval and firing a kickoff peek on every change.
+  // Polling reads the latest auth and database state through this ref.
   const fetchPeekRef = useRef(fetchPeek);
   useEffect(() => {
     fetchPeekRef.current = fetchPeek;
@@ -188,6 +191,8 @@ const UserPanel: React.FC<UserPanelProps> = ({
   }, []);
 
   useEffect(() => {
+    if (isAuthLoading) return;
+    const peekRequests = peekRequestRef;
     const tick = setInterval(() => {
       if (Date.now() - lastPeekCheckRef.current >= peekIntervalMs) {
         fetchPeekRef.current();
@@ -195,14 +200,15 @@ const UserPanel: React.FC<UserPanelProps> = ({
     }, PEEK_POLL_TICK_MS);
 
     const kickoff = setTimeout(() => {
-      fetchPeekRef.current();
+      fetchPeekRef.current({ force: true });
     }, 0);
 
     return () => {
       clearInterval(tick);
       clearTimeout(kickoff);
+      peekRequests.current++;
     };
-  }, [username, peekIntervalMs]);
+  }, [username, authStatus, isAuthLoading, peekIntervalMs]);
 
   // Listen for external refresh requests (e.g. after SongCheckDialog processes songs)
   useEffect(() => {

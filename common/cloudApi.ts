@@ -223,6 +223,7 @@ export class CloudApiService {
     includeUpstream: boolean;
   } | null = null;
   private peekCacheTtlMs = CloudApiService.DEFAULT_PEEK_CACHE_TTL_MS;
+  private peekGeneration = 0;
 
   /** Override the peek cache TTL (milliseconds). Call with the user-configured
    *  peek interval so that all callers share the same deduplication window. */
@@ -233,6 +234,8 @@ export class CloudApiService {
   /** Force the next fetchPeek() to go to the network regardless of cache age. */
   invalidatePeekCache(): void {
     this.peekCache = null;
+    this.peekInFlight = null;
+    this.peekGeneration++;
   }
 
   setProxy(proxyApi: IProxyAPI) {
@@ -240,6 +243,7 @@ export class CloudApiService {
   }
 
   setToken(token: string | null): void {
+    if (this.getTokenIdentity(this.authToken) !== this.getTokenIdentity(token)) this.invalidatePeekCache();
     this.authToken = token;
     this.accessTokenExp = 0;
     if (token) {
@@ -256,6 +260,21 @@ export class CloudApiService {
         }
       }
     }
+  }
+
+  // Used only to scope cached metadata, never to authenticate a token.
+  private getTokenIdentity(token: string | null): string | null {
+    const raw = token?.startsWith("Bearer ") ? token.substring(7) : token;
+    if (raw?.startsWith("atk.")) {
+      try {
+        const payload = raw.split(".")[1];
+        const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { sub?: unknown };
+        if (typeof claims.sub === "string" && claims.sub) return `user:${claims.sub}`;
+      } catch {
+        // Unknown/legacy tokens keep the conservative per-token invalidation.
+      }
+    }
+    return raw === null ? null : `token:${raw}`;
   }
 
   getAuthorizationHeader(): string {
@@ -315,6 +334,9 @@ export class CloudApiService {
             login: response.login,
             hasLeaderId: !!response.leaderId,
           });
+          // The temporary cookie-only request must not look like a logout.
+          // Compare the renewed token against the original session identity.
+          this.authToken = savedAuth;
           this.setToken(response.token);
           // Notify AuthContext to persist the new access token
           window.dispatchEvent(
@@ -718,19 +740,22 @@ export class CloudApiService {
     if (this.peekInFlight && this.peekInFlight.includeUpstream === includeUpstream) {
       return this.peekInFlight.request;
     }
+    const generation = this.peekGeneration;
     const request = (async () => {
       try {
         const endpoint = includeUpstream ? "/peek?version=2" : "/peek";
         const response = await this.apiCall<unknown>(endpoint);
         const result = this.parseResponse(peekResponseCodec, response);
-        this.peekCache = {
-          result,
-          expiresAt: Date.now() + this.peekCacheTtlMs,
-          includeUpstream,
-        };
+        if (generation === this.peekGeneration) {
+          this.peekCache = {
+            result,
+            expiresAt: Date.now() + this.peekCacheTtlMs,
+            includeUpstream,
+          };
+        }
         return result;
       } finally {
-        if (this.peekInFlight?.includeUpstream === includeUpstream) this.peekInFlight = null;
+        if (generation === this.peekGeneration && this.peekInFlight?.includeUpstream === includeUpstream) this.peekInFlight = null;
       }
     })();
     this.peekInFlight = { request, includeUpstream };
