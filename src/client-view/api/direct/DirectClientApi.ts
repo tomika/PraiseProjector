@@ -21,7 +21,7 @@ import { Database, FormatFoundReason, SongOrder } from "../../../../db-common/Da
 import { Playlist } from "../../../../db-common/Playlist";
 import { PlaylistEntry } from "../../../../db-common/PlaylistEntry";
 import type { Leader } from "../../../../db-common/Leader";
-import { cloudApi } from "../../../../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../../../../common/cloudApi";
 import { getEmptyDisplay } from "../../../../common/pp-utils";
 import { formatLocalDateKey, formatLocalDateLabel } from "../../../../common/date-only";
 import { getCurrentDisplay, getEditedSong, subscribeCurrentDisplayChange, updateCurrentDisplay } from "../../../state/CurrentSongStore";
@@ -721,6 +721,8 @@ export class DirectClientApi implements ClientApi {
           this.relayFollowedDisplay(display);
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
+          // An auth reset cancels the request, but following remains active.
+          if (isCloudApiErrorKind(error, "aborted") || (error instanceof Error && error.name === "AbortError")) continue;
           this.setNetworkState({ status: "error", transport: "web", error: error instanceof Error ? error.message : String(error) });
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }

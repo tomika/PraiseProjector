@@ -8,7 +8,7 @@
  * form of the REST behaviour the legacy client already implements.
  */
 
-import { cloudApi } from "../../../../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../../../../common/cloudApi";
 import {
   getLocalBroadcastAddresses,
   getLocalNetworkAddresses,
@@ -34,16 +34,18 @@ function displayUpdateLeaderId(core: RestCore): string | undefined {
   return core.leader?.id ?? (core.mode === "Client" ? core.config.leaderId : undefined);
 }
 
-function storeToken(token: string, keep: boolean): void {
+function storeToken(token: string, keep: boolean, login?: string): void {
   try {
     const ls = window.localStorage;
     const ss = window.sessionStorage;
+    ls?.removeItem(TOKEN_KEY);
+    ss?.removeItem(TOKEN_KEY);
+    ls?.removeItem("sessionLogin");
+    ss?.removeItem("sessionLogin");
     if (token) {
-      if (keep) ls?.setItem(TOKEN_KEY, token);
-      else ss?.setItem(TOKEN_KEY, token);
-    } else {
-      ls?.removeItem(TOKEN_KEY);
-      ss?.removeItem(TOKEN_KEY);
+      const storage = keep ? ls : ss;
+      storage?.setItem(TOKEN_KEY, token);
+      if (login) storage?.setItem("sessionLogin", login);
     }
   } catch {
     /* storage may be unavailable (private mode); auth still works for the session */
@@ -53,6 +55,20 @@ function storeToken(token: string, keep: boolean): void {
 function readToken(): string {
   try {
     return window.sessionStorage?.getItem(TOKEN_KEY) || window.localStorage?.getItem(TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+// Identity is only an expectation sent to the server, never proof of auth.
+function readTokenLogin(token: string): string {
+  try {
+    const saved = window.sessionStorage?.getItem("sessionLogin") || window.localStorage?.getItem("sessionLogin");
+    if (saved) return saved;
+    const raw = token.replace(/^Bearer /, "");
+    if (!raw.startsWith("atk.")) return "";
+    const claims = JSON.parse(atob(raw.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { sub?: unknown };
+    return typeof claims.sub === "string" ? claims.sub : "";
   } catch {
     return "";
   }
@@ -369,6 +385,13 @@ export function createSessionApi(core: RestCore): SessionApi {
 }
 
 export function createAuthApi(core: RestCore): AuthApi {
+  let authEpoch = 0;
+  let restorePromise: Promise<void> | null = null;
+  const beginChange = () => {
+    cloudApi.resetSession();
+    restorePromise = null;
+    return ++authEpoch;
+  };
   const applyLeader = (login: string, leaderId: string | undefined): void => {
     core.setAuthed(true, leaderId ? { id: leaderId, name: login } : null);
   };
@@ -376,48 +399,82 @@ export function createAuthApi(core: RestCore): AuthApi {
     isAuthed: () => cloudApi.isAuthed(),
     currentLeader: () => core.leader,
     login: async (user, password, keepLoggedIn) => {
+      const epoch = beginChange();
+      storeToken("", false);
+      core.setAuthed(false, null);
       cloudApi.setFixedHeader("X-PP-Expected-User", "");
       try {
         cloudApi.setToken(null);
-        await cloudApi.logoutSession(core.clientId);
+        await cloudApi.logoutSession(core.clientId, { timeoutMs: 4_000, clearCookiesAfterSnapshot: true });
       } catch {
         /* clearing stale auth before an explicit login is best-effort */
       }
-      cloudApi.setToken("Basic " + btoa(user + ":" + password));
-      const res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true });
+      if (epoch !== authEpoch) return;
+      const res = await cloudApi.fetchSession(core.clientId, {
+        skipRefresh: true,
+        authToken: "Basic " + btoa(user + ":" + password),
+        timeoutMs: 4_000,
+      });
+      if (epoch !== authEpoch) return;
       if (isErrorResponse(res)) throw new Error(String(res.error));
+      if (res.login !== user || !res.token) throw new Error("Session identity mismatch");
       cloudApi.setToken("Bearer " + res.token);
-      storeToken(res.token, keepLoggedIn);
+      cloudApi.setFixedHeader("X-PP-Expected-User", res.login);
+      storeToken(res.token, keepLoggedIn, res.login);
       applyLeader(res.login, res.leaderId);
     },
     logout: async () => {
+      const epoch = beginChange();
+      storeToken("", false);
+      core.setAuthed(false, null);
+      cloudApi.setFixedHeader("X-PP-Expected-User", "");
       try {
-        await cloudApi.logoutSession(core.clientId);
+        await cloudApi.logoutSession(core.clientId, { timeoutMs: 4_000, clearCookiesAfterSnapshot: true });
       } catch {
         /* network errors during logout are non-fatal */
       } finally {
-        cloudApi.setToken(null);
-        storeToken("", false);
-        core.setAuthed(false, null);
+        if (epoch === authEpoch) cloudApi.setToken(null);
       }
     },
-    restoreSession: async () => {
-      const token = readToken();
-      if (!token) {
-        cloudApi.setToken(null);
-        return;
-      }
-      cloudApi.setToken("Bearer " + token);
-      try {
-        const res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true });
-        if (isErrorResponse(res)) throw new Error(String(res.error));
-        if (res.token) cloudApi.setToken("Bearer " + res.token);
-        applyLeader(res.login, res.leaderId);
-      } catch {
-        cloudApi.setToken(null);
-        storeToken("", false);
-        core.setAuthed(false, null);
-      }
+    restoreSession: () => {
+      if (restorePromise) return restorePromise;
+      const epoch = authEpoch;
+      const request = (async () => {
+        const token = readToken();
+        if (!token) return;
+        const expectedUser = readTokenLogin(token);
+        cloudApi.setFixedHeader("X-PP-Expected-User", expectedUser);
+        try {
+          let res;
+          try {
+            res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true, authToken: token, timeoutMs: 4_000 });
+          } catch (error) {
+            if (epoch !== authEpoch || !isCloudApiErrorKind(error, "auth")) throw error;
+            // A short-lived access token can expire while its refresh cookie is
+            // still valid. Give the cookie a chance before discarding the login.
+            res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true, authToken: null, timeoutMs: 4_000 });
+          }
+          if (epoch !== authEpoch) return;
+          if (isErrorResponse(res)) throw new Error(String(res.error));
+          if (!res.token || (expectedUser && res.login !== expectedUser)) throw new Error("Session identity mismatch");
+          if (res.token) {
+            cloudApi.setToken("Bearer " + res.token);
+            storeToken(res.token, !!window.localStorage?.getItem(TOKEN_KEY), res.login);
+          }
+          cloudApi.setFixedHeader("X-PP-Expected-User", res.login);
+          applyLeader(res.login, res.leaderId);
+        } catch (error) {
+          if (epoch !== authEpoch) return;
+          cloudApi.setToken(null);
+          if (isCloudApiErrorKind(error, "auth")) storeToken("", false);
+          core.setAuthed(false, null);
+        }
+      })();
+      restorePromise = request;
+      void request.finally(() => {
+        if (restorePromise === request) restorePromise = null;
+      });
+      return request;
     },
     requestHighlightPermission: async (verifyOnly) => {
       if (core.isFollowingPpd()) return core.requestPpdHighlightPermission(!!verifyOnly);

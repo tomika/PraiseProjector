@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Display } from "../../../../common/pp-types";
-import { DirectDisplaySource } from "./DirectDisplaySource.ts";
+import type { Display } from "../../../../../common/pp-types";
+import { DirectDisplaySource } from "../DirectDisplaySource.ts";
 
 const song = (songId: string, transpose: number): Display => ({ songId, song: songId, system: "G", from: 0, to: 0, transpose });
 

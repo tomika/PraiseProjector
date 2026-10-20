@@ -46,7 +46,9 @@ type CloudRequestOptions = {
   timeoutMs?: number;
   clearCookiesAfterSnapshot?: boolean;
   responseType?: "json" | "text";
+  includePpHeaders?: boolean;
   cache?: RequestCache;
+  allowSignedOutSession?: boolean;
 };
 
 export type DisplayUpdateResult = "DONE" | "SKIPPED" | "NO_SESSION" | "UNAUTHORIZED" | "UNKNOWN_LEADER" | "ERROR";
@@ -80,6 +82,7 @@ type ProxyRequestOptions = {
   requestId: string;
   timeoutMs?: number;
   clearCookiesAfterSnapshot?: boolean;
+  omitCookies?: boolean;
 };
 
 function isRetryableStatus(status: number) {
@@ -201,6 +204,9 @@ export class CloudApiService {
   private accessTokenExp: number = 0; // unix seconds
   private clientId: string = "";
   private refreshPromise: Promise<boolean> | null = null;
+  private authGeneration = 0;
+  private tokenRevision = 0;
+  private sessionEnabled = true;
   // Base URL for API calls (set via setBaseUrl)
   private baseUrl: string = "";
   // Track in-flight requests for abort support
@@ -243,6 +249,49 @@ export class CloudApiService {
   }
 
   setToken(token: string | null): void {
+    if (this.authToken !== token) this.authGeneration++;
+    this.applyToken(token);
+  }
+
+  /** Cancel work belonging to the previous login/logout intent, even in cookie mode. */
+  resetSession(): void {
+    this.authGeneration++;
+    this.abortAll();
+    this.refreshPromise = null;
+    this.applyToken(null);
+    this.invalidatePeekCache();
+  }
+
+  /** HttpOnly cookies may survive an offline logout in a PWA. Never use them
+   * again until an explicit login succeeds, including after a page restart. */
+  setSessionEnabled(enabled: boolean): void {
+    this.sessionEnabled = enabled;
+    try {
+      if (typeof window !== "undefined") {
+        if (enabled) window.localStorage.removeItem(this.getSessionStateKey());
+        else window.localStorage.setItem(this.getSessionStateKey(), "signed-out");
+      }
+    } catch {
+      // Private/disabled storage still preserves the current document's intent.
+    }
+    if (!enabled) this.resetSession();
+  }
+
+  getSessionStateKey(): string {
+    return `pp-session-state:${this.baseUrl.replace(/\/+$/, "")}`;
+  }
+
+  isSessionEnabled(): boolean {
+    if (!this.sessionEnabled) return false;
+    try {
+      if (typeof window !== "undefined") return window.localStorage.getItem(this.getSessionStateKey()) !== "signed-out";
+    } catch {
+      // Fall back to the current document's state.
+    }
+    return this.sessionEnabled;
+  }
+
+  private applyToken(token: string | null): void {
     if (this.getTokenIdentity(this.authToken) !== this.getTokenIdentity(token)) this.invalidatePeekCache();
     this.authToken = token;
     this.accessTokenExp = 0;
@@ -282,10 +331,14 @@ export class CloudApiService {
   }
 
   isAuthed(): boolean {
-    return !!this.authToken;
+    return this.isSessionEnabled() && !!this.authToken;
   }
 
   setFixedHeader(name: string, value: string): void {
+    if (name.toLowerCase() === "x-pp-expected-user" && this.fixedHeaders.get(name) !== value) {
+      this.authGeneration++;
+      this.invalidatePeekCache();
+    }
     this.fixedHeaders.set(name, value);
   }
 
@@ -304,7 +357,8 @@ export class CloudApiService {
    * Electron proxy cookie jar, or by the browser in web mode).
    * Concurrent callers share a single in-flight request.
    */
-  private async refreshSession(options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<boolean> {
+  private async refreshSession(): Promise<boolean> {
+    if (!this.isSessionEnabled()) return false;
     if (!this.clientId) return false;
     if (this.refreshPromise) return this.refreshPromise;
 
@@ -314,58 +368,63 @@ export class CloudApiService {
       hadAuthToken: !!this.authToken,
       accessTokenExp: this.accessTokenExp,
     });
-    this.refreshPromise = (async () => {
+    const generation = this.authGeneration;
+    const request = (async () => {
       const savedAuth = this.authToken;
-      const savedExp = this.accessTokenExp;
       try {
-        // Clear the expired access token so the request relies on the refresh
-        // cookie alone (server's v2 refresh flow at /session).
-        this.authToken = null;
-        this.accessTokenExp = 0;
-
+        // Override authentication for this request only. Other requests must
+        // never observe a temporary logout or send another user's credentials.
         const response = await this.fetchSession(this.clientId, {
           skipRefresh: true,
-          signal: options?.signal,
-          timeoutMs: options?.timeoutMs,
+          authToken: null,
+          timeoutMs: 4_000,
         });
+        if (generation !== this.authGeneration) throw new CloudApiError("aborted", "Session changed during refresh");
+
+        const expectedUser = this.fixedHeaders.get("X-PP-Expected-User");
+        if (expectedUser && response.login !== expectedUser) return false;
 
         if (response.token) {
+          this.tokenRevision++;
           console.debug("[CloudApi] refreshSession: success, new token received", {
             login: response.login,
             hasLeaderId: !!response.leaderId,
           });
-          // The temporary cookie-only request must not look like a logout.
-          // Compare the renewed token against the original session identity.
-          this.authToken = savedAuth;
-          this.setToken(response.token);
+          // Preserve the transport's auth mode: browser/Android use cookies.
+          if (savedAuth) this.applyToken(response.token);
           // Notify AuthContext to persist the new access token
-          window.dispatchEvent(
-            new CustomEvent("pp-tokens-refreshed", {
-              detail: { accessToken: response.token },
-            })
-          );
+          if (typeof window !== "undefined")
+            window.dispatchEvent(
+              new CustomEvent("pp-tokens-refreshed", {
+                detail: { accessToken: response.token, login: response.login },
+              })
+            );
           return true;
         }
       } catch (e) {
-        // Refresh failed — restore previous token (caller will handle 401)
+        if (generation !== this.authGeneration) throw new CloudApiError("aborted", "Session changed during refresh");
+        // A temporary outage must not be reported as an expired session.
+        if (!isCloudApiErrorKind(e, "auth")) throw e;
         console.debug("[CloudApi] refreshSession: failed", {
           error: e instanceof Error ? e.message : e,
-          restoringPreviousToken: !!savedAuth,
         });
-        this.authToken = savedAuth;
-        this.accessTokenExp = savedExp;
       }
       return false;
     })();
+    this.refreshPromise = request;
 
     try {
-      return await this.refreshPromise;
+      return await request;
     } finally {
-      this.refreshPromise = null;
+      if (this.refreshPromise === request) this.refreshPromise = null;
     }
   }
 
   setBaseUrl(url: string): void {
+    if (url !== this.baseUrl) {
+      this.authGeneration++;
+      this.invalidatePeekCache();
+    }
     this.baseUrl = url;
   }
 
@@ -392,7 +451,7 @@ export class CloudApiService {
     for (const [name, value] of this.fixedHeaders) {
       mergedHeaders[name] = value;
     }
-    if (this.authToken && !mergedHeaders["Authorization"] && !mergedHeaders["authorization"]) {
+    if (this.isSessionEnabled() && this.authToken && !mergedHeaders["Authorization"] && !mergedHeaders["authorization"]) {
       if (this.authToken.startsWith("Basic ") || this.authToken.startsWith("Bearer ")) {
         mergedHeaders["Authorization"] = this.authToken;
       } else {
@@ -444,7 +503,7 @@ export class CloudApiService {
     }
 
     if (error instanceof Error) {
-      if (error.message.includes("aborted")) {
+      if (error.name === "AbortError" || error.message.includes("aborted")) {
         return new CloudApiError("aborted", "aborted", { endpoint });
       }
       if (isLikelyNetworkErrorMessage(error.message)) {
@@ -456,7 +515,25 @@ export class CloudApiService {
     return new CloudApiError("http", "Unknown error", { endpoint });
   }
 
+  private waitForRefresh(signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) return Promise.reject(new CloudApiError("aborted", "aborted"));
+    // A caller may stop waiting without cancelling the shared refresh needed by
+    // another request. The refresh has its own timeout and auth-generation guard.
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new CloudApiError("aborted", "aborted"));
+      signal.addEventListener("abort", abort, { once: true });
+      void this.refreshSession()
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener("abort", abort));
+    });
+  }
+
   private async apiCall<T>(endpoint: string, postData?: unknown, options?: CloudRequestOptions): Promise<T> {
+    const sessionEnabled = this.isSessionEnabled();
+    const useCookies = sessionEnabled || !!options?.allowSignedOutSession;
+    const generation = this.authGeneration;
+    const sessionChanged = () =>
+      generation !== this.authGeneration || (!options?.allowSignedOutSession && sessionEnabled !== this.isSessionEnabled());
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
     const timeoutMs = options?.timeoutMs === undefined ? undefined : Math.max(1, options.timeoutMs);
 
@@ -482,18 +559,26 @@ export class CloudApiService {
 
       // Proactively refresh the access token before it expires (the refresh
       // cookie is handled transparently by the proxy cookie jar / browser).
-      if (!options?.skipRefresh && this.isAccessTokenExpiringSoon()) {
+      if (sessionEnabled && !options?.skipRefresh && this.isAccessTokenExpiringSoon()) {
         console.debug("[CloudApi] apiCall: access token expiring soon, proactive refresh", {
           endpoint,
           accessTokenExp: this.accessTokenExp,
         });
-        await this.refreshSession({ signal: combinedSignal, timeoutMs });
+        // Renewal before expiry is best-effort: the current token may still
+        // authorize this request. A refresh after an actual 401 must still fail.
+        await this.waitForRefresh(combinedSignal).catch((error) => {
+          if (isCloudApiErrorKind(error, "aborted")) throw error;
+        });
       }
 
       // Check if we're in Electron and should use the proxy
       let refreshAttempted = false;
 
       for (let attempt = 0; ; attempt++) {
+        if (combinedSignal.aborted || sessionChanged()) {
+          throw new CloudApiError("aborted", "Session changed or request aborted", { endpoint });
+        }
+        const requestRevision = this.tokenRevision;
         const headers = { ...this.getHeaders(), ...options?.headers };
 
         if (this.proxyApi) {
@@ -503,6 +588,7 @@ export class CloudApiService {
             requestId,
             timeoutMs,
             clearCookiesAfterSnapshot: options?.clearCookiesAfterSnapshot,
+            omitCookies: !useCookies,
           };
           const abortProxy = () => this.proxyApi?.proxyAbort?.(requestId);
           combinedSignal.addEventListener("abort", abortProxy, { once: true });
@@ -516,7 +602,7 @@ export class CloudApiService {
             combinedSignal.removeEventListener("abort", abortProxy);
           }
 
-          if (combinedSignal.aborted) {
+          if (combinedSignal.aborted || sessionChanged()) {
             throw timedOut
               ? new CloudApiError("network", `Request timed out after ${timeoutMs}ms`, { endpoint })
               : new CloudApiError("aborted", "aborted", { endpoint });
@@ -537,18 +623,20 @@ export class CloudApiService {
               continue;
             }
             if (errorResult.error.status === 401) {
-              // Clear token on 401 so auth state reflects the failed session.
-              this.authToken = null;
               // Try refreshing the access token once before giving up
-              if (!refreshAttempted && !options?.skipRefresh) {
+              if (sessionEnabled && !refreshAttempted && !options?.skipRefresh) {
                 refreshAttempted = true;
+                // Another request may already have renewed this rejected token.
+                if (requestRevision !== this.tokenRevision) continue;
                 console.debug("[CloudApi] apiCall: Electron proxy returned 401, attempting refresh", { endpoint });
-                if (await this.refreshSession({ signal: combinedSignal, timeoutMs })) {
+                if (await this.waitForRefresh(combinedSignal)) {
                   console.debug("[CloudApi] apiCall: refresh after Electron 401 succeeded", { endpoint });
                   continue;
                 }
                 console.debug("[CloudApi] apiCall: refresh after Electron 401 failed", { endpoint });
               }
+              if (combinedSignal.aborted || sessionChanged()) throw new CloudApiError("aborted", "Session changed or request aborted", { endpoint });
+              if (!options?.skipRefresh) this.setToken(null);
               throw new CloudApiError("auth", "401", { status: 401, endpoint });
             }
 
@@ -564,6 +652,9 @@ export class CloudApiService {
 
           // Proxy methods may return { data, ppHeaders }, unwrap payload for generic apiCall consumers.
           const resultData = result && "data" in result ? (result as { data: unknown }).data : null;
+          if (options?.includePpHeaders) {
+            return { data: resultData, ppHeaders: result && "ppHeaders" in result ? result.ppHeaders : {} } as T;
+          }
 
           if (options?.allowEmpty && (resultData === "" || resultData == null)) {
             return null as T;
@@ -575,24 +666,22 @@ export class CloudApiService {
 
           let response: Response;
           try {
-            response =
-              postData !== undefined
-                ? await fetch(url, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify(postData),
-                    // Allow HttpOnly session cookie auth in web mode.
-                    credentials: "include",
-                    signal: combinedSignal,
-                  })
-                : await fetch(url, {
-                    headers,
-                    credentials: "include",
-                    signal: combinedSignal,
-                    cache: options?.cache,
-                  });
+            // The Android fetch shim consumes this extension; browsers ignore it.
+            const init: RequestInit & { ppClearSessionCookies?: boolean } = {
+              method: postData !== undefined ? "POST" : "GET",
+              headers,
+              body: postData !== undefined ? JSON.stringify(postData) : undefined,
+              credentials: useCookies ? "include" : "omit",
+              signal: combinedSignal,
+              cache: options?.cache,
+              ppClearSessionCookies: options?.clearCookiesAfterSnapshot,
+            };
+            response = await fetch(url, init);
           } catch (fetchError) {
             throw this.normalizeCloudApiError(fetchError, endpoint);
+          }
+          if (combinedSignal.aborted || sessionChanged()) {
+            throw new CloudApiError("aborted", "Session changed or request aborted", { endpoint });
           }
 
           if (!response.ok) {
@@ -614,18 +703,19 @@ export class CloudApiService {
               continue;
             }
             if (response.status === 401) {
-              // Clear token on 401 so auth state reflects the failed session.
-              this.authToken = null;
               // Try refreshing the access token once before giving up
-              if (!refreshAttempted && !options?.skipRefresh) {
+              if (sessionEnabled && !refreshAttempted && !options?.skipRefresh) {
                 refreshAttempted = true;
+                if (requestRevision !== this.tokenRevision) continue;
                 console.debug("[CloudApi] apiCall: fetch returned 401, attempting refresh", { endpoint });
-                if (await this.refreshSession({ signal: combinedSignal, timeoutMs })) {
+                if (await this.waitForRefresh(combinedSignal)) {
                   console.debug("[CloudApi] apiCall: refresh after fetch 401 succeeded", { endpoint });
                   continue;
                 }
                 console.debug("[CloudApi] apiCall: refresh after fetch 401 failed", { endpoint });
               }
+              if (combinedSignal.aborted || sessionChanged()) throw new CloudApiError("aborted", "Session changed or request aborted", { endpoint });
+              if (!options?.skipRefresh) this.setToken(null);
               throw new CloudApiError("auth", "401", { status: 401, endpoint });
             }
             throw new CloudApiError("http", `HTTP ${response.status}`, { status: response.status, endpoint });
@@ -639,7 +729,11 @@ export class CloudApiService {
             return JSON.parse(text) as T;
           }
 
-          return (options?.responseType === "text" ? response.text() : response.json()) as Promise<T>;
+          const data = await (options?.responseType === "text" ? response.text() : response.json());
+          if (combinedSignal.aborted || sessionChanged()) {
+            throw new CloudApiError("aborted", "Session changed or request aborted", { endpoint });
+          }
+          return (options?.includePpHeaders ? { data, ppHeaders: extractPpHeadersFromFetch(response.headers) } : data) as T;
         }
       }
     } catch (error) {
@@ -688,16 +782,44 @@ export class CloudApiService {
     return this.parseResponse(leadersResponseCodec, response);
   }
 
-  async fetchSession(clientId: string, options?: { signal?: AbortSignal; skipRefresh?: boolean; timeoutMs?: number }): Promise<SessionResponse> {
-    const response = await this.apiCall<unknown>("/session", { clientId }, options);
-    return this.parseResponse(sessionResponseCodec, response);
+  async fetchSession(
+    clientId: string,
+    options?: { signal?: AbortSignal; skipRefresh?: boolean; timeoutMs?: number; authToken?: string | null }
+  ): Promise<SessionResponse> {
+    const token = options?.authToken;
+    const explicitLogin = !!token?.startsWith("Basic ");
+    if (!explicitLogin && !this.isSessionEnabled()) throw new CloudApiError("auth", "Session was signed out", { status: 401 });
+    const authorization = token ? (/^(Basic|Bearer) /.test(token) ? token : `Bearer ${token}`) : "";
+    const response = await this.apiCall<unknown>(
+      "/session",
+      { clientId },
+      {
+        ...options,
+        skipRefresh: true,
+        allowSignedOutSession: explicitLogin,
+        headers: token === undefined ? undefined : { Authorization: authorization },
+      }
+    );
+    const session = this.parseResponse(sessionResponseCodec, response);
+    if (explicitLogin && session.token) this.setSessionEnabled(true);
+    return session;
   }
 
   async logoutSession(
     clientId: string,
     options?: { signal?: AbortSignal; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
   ): Promise<SessionResponse> {
-    const response = await this.apiCall<unknown>("/session", { clientId, logout: true }, options);
+    this.setSessionEnabled(false);
+    const response = await this.apiCall<unknown>(
+      "/session",
+      { clientId, logout: true },
+      {
+        ...options,
+        skipRefresh: true,
+        allowSignedOutSession: true,
+        headers: { Authorization: "" },
+      }
+    );
     return this.parseResponse(sessionResponseCodec, response);
   }
 
@@ -824,49 +946,12 @@ export class CloudApiService {
 
     const path = command.startsWith("/") ? command : `/${command}`;
 
-    // Create an AbortController for this request and track it for abortAll()
-    const controller = new AbortController();
-    const combinedSignal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
-    this.inFlightRequests.add(controller);
-
-    try {
-      if (this.proxyApi) {
-        const headers = this.getHeaders();
-        const result = await this.proxyApi.proxyGet(this.baseUrl, path, headers);
-        if (result && typeof result === "object" && "error" in result) {
-          const errorResult = result as { error: { message?: string; status?: number } };
-          const status = errorResult.error?.status;
-          if (status === 401) this.authToken = null;
-          throw new Error(status ? String(status) : errorResult.error?.message || "Unknown error");
-        }
-        const data = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : result;
-        return {
-          display: this.parseResponse(displayCodec, data),
-          ppHeaders:
-            result && typeof result === "object" && "ppHeaders" in result ? ((result as { ppHeaders?: Record<string, string> }).ppHeaders ?? {}) : {},
-        };
-      }
-
-      // Fallback path for web mode (and older preload implementations).
-      const url = `${this.baseUrl}${path}`;
-      const response = await fetch(url, {
-        headers: this.getHeaders(),
-        credentials: "include",
-        signal: combinedSignal,
-      });
-      if (!response.ok) {
-        if (response.status === 401) this.authToken = null;
-        throw new Error(String(response.status));
-      }
-      const text = await response.text();
-      return {
-        display: this.parseResponse(displayCodec, text),
-        ppHeaders: extractPpHeadersFromFetch(response.headers),
-      };
-    } finally {
-      // Clean up tracking
-      this.inFlightRequests.delete(controller);
-    }
+    const response = await this.apiCall<{ data: unknown; ppHeaders: Record<string, string> }>(path, undefined, {
+      signal: options?.signal,
+      responseType: "text",
+      includePpHeaders: true,
+    });
+    return { display: this.parseResponse(displayCodec, response.data), ppHeaders: response.ppHeaders };
   }
 
   async fetchDisplayStylesQuery(options?: {
@@ -1042,39 +1127,8 @@ export class CloudApiService {
     formFields: Record<string, string | number | boolean | SongPreferenceEntry[]>,
     extraHeaders?: Record<string, string>
   ): Promise<string> {
-    const headers = this.applyCommonHeaders({
-      "Content-Type": "application/json",
-      ...extraHeaders,
-    });
-
-    const payload = JSON.stringify(formFields);
-
-    // Check if we're in Electron and should use the proxy
-    if (this.proxyApi) {
-      // Use Electron IPC proxy
-      const result = await this.proxyApi.proxyPost(this.baseUrl, endpoint, payload, headers);
-      if (result && "error" in result) {
-        const errorResult = result as { error: { message: string; status?: number } };
-        throw new Error(errorResult.error.message);
-      }
-      const responseData = result && "data" in result ? (result as { data: unknown }).data : result;
-      return typeof responseData === "string" ? responseData : JSON.stringify(responseData);
-    } else {
-      // Web mode: use fetch
-      const url = `${this.baseUrl}${endpoint}`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: payload,
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.text();
-    }
+    const result = await this.apiCall<unknown>(endpoint, formFields, { headers: extraHeaders, responseType: "text" });
+    return typeof result === "string" ? result : JSON.stringify(result);
   }
 
   /** Send an immediate push to this client's FCM registration (test-mode servers only). */

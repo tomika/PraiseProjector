@@ -6,7 +6,7 @@ import {
   normalizePerformancePreferences,
   resolvePerformanceFeature,
   resolveProjectionRenderDimensions,
-} from "./performanceSettings.ts";
+} from "../performanceSettings.ts";
 
 test("feature modes override or defer to the automatic decision", () => {
   assert.equal(resolvePerformanceFeature("off", false), false);

@@ -201,8 +201,9 @@ function persistCookiesToDisk(): void {
           await fs.promises.unlink(tempPath).catch(() => undefined);
           return;
         }
-        await fs.promises.unlink(filePath).catch(() => undefined);
-        await fs.promises.rename(tempPath, filePath);
+        // Commit synchronously after the generation check: logout must not run
+        // between that check and the rename and resurrect a persisted session.
+        fs.renameSync(tempPath, filePath);
         console.info(`[Proxy Cookie] Persisted ${cookieCount} cookie(s) across ${Object.keys(data).length} origin(s) to disk`);
       })
       .catch((error: unknown) => {
@@ -215,7 +216,7 @@ function persistCookiesToDisk(): void {
 }
 
 /** Delete persisted cookie file from disk. */
-function clearPersistedCookies(): void {
+function deletePersistedCookieFile(): void {
   try {
     const filePath = getCookieFilePath();
     if (fs.existsSync(filePath)) {
@@ -231,7 +232,7 @@ function clearPersistedCookies(): void {
 function clearCookieState(): void {
   cookieGeneration++;
   cookiePersistenceEnabled = false;
-  clearPersistedCookies();
+  deletePersistedCookieFile();
   cookieJar.clear();
 }
 
@@ -330,8 +331,16 @@ export function initializeProxy() {
     return true;
   });
 
-  ipcMain.handle("clear-persisted-cookies", () => {
-    clearCookieState();
+  ipcMain.handle("clear-session-cookies", (_event, options?: { keepSession?: boolean }) => {
+    if (options?.keepSession) {
+      // "Remember me: no" removes disk persistence, but refresh cookies must
+      // remain available until this application process exits.
+      cookiePersistenceEnabled = false;
+      cookieWriteSequence++;
+      deletePersistedCookieFile();
+    } else {
+      clearCookieState();
+    }
     return true;
   });
 
@@ -352,7 +361,7 @@ export function initializeProxy() {
       baseUrl: string,
       path: string,
       headers?: Record<string, string>,
-      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean; omitCookies?: boolean }
     ) => {
       const validation = validateProxyTarget(baseUrl);
       if (!validation.ok) {
@@ -367,13 +376,13 @@ export function initializeProxy() {
       }
 
       const url = `${baseUrl}${path}`;
-      const requestHeaders = applyRequestCookies(url, headers || {});
+      const requestHeaders = options?.omitCookies ? headers || {} : applyRequestCookies(url, headers || {});
       const requestCookieGeneration = cookieGeneration;
       if (options?.clearCookiesAfterSnapshot) clearCookieState();
       const controller = new AbortController();
       if (options?.requestId) proxyRequests.set(options.requestId, controller);
       const captureCookies = (response: { headers?: Record<string, unknown> }) => {
-        if (cookieGeneration === requestCookieGeneration) {
+        if (!controller.signal.aborted && !options?.omitCookies && cookieGeneration === requestCookieGeneration) {
           captureResponseCookies(url, response);
         } else {
           console.debug(`[Proxy Cookie] Ignoring stale response cookies for ${new URL(url).pathname}`);
@@ -403,7 +412,7 @@ export function initializeProxy() {
           ppHeaders,
         };
       } catch (error) {
-        console.error(`[Proxy GET] Failed: ${url}`, error);
+        console.error(`[Proxy GET] Failed: ${url}`, error instanceof Error ? error.message : "Unknown error");
         if (axios.isAxiosError(error)) {
           if (error.response) captureCookies(error.response);
           return {
@@ -433,7 +442,7 @@ export function initializeProxy() {
       path: string,
       data: unknown,
       headers?: Record<string, string>,
-      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean }
+      options?: { requestId: string; timeoutMs?: number; clearCookiesAfterSnapshot?: boolean; omitCookies?: boolean }
     ) => {
       const validation = validateProxyTarget(baseUrl);
       if (!validation.ok) {
@@ -448,16 +457,17 @@ export function initializeProxy() {
       }
 
       const url = `${baseUrl}${path}`;
-      const requestHeaders = applyRequestCookies(url, {
+      const baseHeaders = {
         "Content-Type": "application/json",
         ...(headers || {}),
-      });
+      };
+      const requestHeaders = options?.omitCookies ? baseHeaders : applyRequestCookies(url, baseHeaders);
       const requestCookieGeneration = cookieGeneration;
       if (options?.clearCookiesAfterSnapshot) clearCookieState();
       const controller = new AbortController();
       if (options?.requestId) proxyRequests.set(options.requestId, controller);
       const captureCookies = (response: { headers?: Record<string, unknown> }) => {
-        if (cookieGeneration === requestCookieGeneration) {
+        if (!controller.signal.aborted && !options?.omitCookies && cookieGeneration === requestCookieGeneration) {
           captureResponseCookies(url, response);
         } else {
           console.debug(`[Proxy Cookie] Ignoring stale response cookies for ${new URL(url).pathname}`);
@@ -488,7 +498,7 @@ export function initializeProxy() {
           ppHeaders,
         };
       } catch (error) {
-        console.error(`[Proxy POST] Failed: ${url}`, error);
+        console.error(`[Proxy POST] Failed: ${url}`, error instanceof Error ? error.message : "Unknown error");
         if (axios.isAxiosError(error)) {
           if (error.response) captureCookies(error.response);
           return {

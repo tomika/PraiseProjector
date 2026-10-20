@@ -189,10 +189,6 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
     cloudApi.setBaseUrl(cloudHostBasePath);
   }, [cloudHostBasePath]);
 
-  useEffect(() => {
-    cloudApi.setToken(token);
-  }, [token]);
-
   const applyPendingVersion = useCallback((): boolean => {
     if (pendingVersion === null) return false;
     console.info("Sync", `All conflicts resolved. Applying pending version: ${pendingVersion}`);

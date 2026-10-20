@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CloudApiService } from "../cloudApi";
+import { CloudApiService, isCloudApiErrorKind } from "../cloudApi";
 
 function response(pendingSongCount: number) {
   return new Response(JSON.stringify({ dbVersion: 42, pendingSongCount }), {
@@ -100,7 +100,7 @@ test("a late anonymous response cannot overwrite an authenticated cache entry", 
   pending[1](response(7));
   await authenticated;
   pending[0](response(0));
-  await anonymous;
+  await assert.rejects(anonymous, (error) => isCloudApiErrorKind(error, "aborted"));
   assert.equal((await api.fetchPeek(true)).pendingSongCount, 7);
   assert.equal(pending.length, 2);
 });

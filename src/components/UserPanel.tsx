@@ -305,7 +305,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
               commitSession();
               window.electronAPI?.persistCookies?.();
             } else {
-              window.electronAPI?.clearPersistedCookies?.();
+              window.electronAPI?.clearSessionCookies?.({ keepSession: true });
             }
           });
         }

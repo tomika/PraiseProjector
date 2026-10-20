@@ -5,7 +5,7 @@
  * type-stripping (zero new deps):
  *
  *   cd public
- *   node --experimental-strip-types --test src/shared/usePullToRefresh.test.ts
+ *   node --experimental-strip-types --test src/shared/tests/usePullToRefresh.test.ts
  *
  * The file is also type-checked + linted by the normal gate (it lives under
  * src/shared, which tsc and eslint already cover).
@@ -13,7 +13,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { levelForHoldTime, pullOffset, pullProgress, LEVEL_HOLD_MS as H } from "./usePullToRefresh.ts";
+import { levelForHoldTime, pullOffset, pullProgress, LEVEL_HOLD_MS as H } from "../usePullToRefresh.ts";
 
 test("levelForHoldTime: not armed (heldMs < 0) is level 0", () => {
   assert.equal(levelForHoldTime(-1, 3), 0);

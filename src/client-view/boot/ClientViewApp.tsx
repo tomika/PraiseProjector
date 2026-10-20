@@ -43,7 +43,7 @@ function ClientViewAppContent({ config, onHome }: { config?: ClientConfig; onHom
           commitSession();
           await window.electronAPI?.persistCookies?.();
         } else {
-          await window.electronAPI?.clearPersistedCookies?.();
+          await window.electronAPI?.clearSessionCookies?.({ keepSession: true });
         }
       },
       logout: async () => {

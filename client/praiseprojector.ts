@@ -16,7 +16,7 @@ import { ChordSelector } from "../chordpro/chord_selector";
 import { setMidiSoundfontUrl } from "../chordpro/midi";
 import { getKeyCodeString, isNumLockEnabled } from "../chordpro/keycodes";
 import { ChordDetails } from "../chordpro/note_system";
-import { cloudApi } from "../common/cloudApi";
+import { cloudApi, isCloudApiErrorKind } from "../common/cloudApi";
 import { PPD_HOST_WATCH_TIMEOUT_SECONDS, PPD_WATCH_HEARTBEAT_MS } from "../common/ppd-control";
 import {
   arrayBufferToBase64,
@@ -4115,7 +4115,7 @@ export class App extends AppBase {
           if (this.lastDisplayRequest !== req) return;
           this.lastDisplayRequest = null;
           // Don't treat abort errors as network failures; they're intentional cancellations
-          const isAbortError = code instanceof Error && code.name === "AbortError";
+          const isAbortError = (code instanceof Error && code.name === "AbortError") || isCloudApiErrorKind(code, "aborted");
           if (!isAbortError) {
             this.log("Download error: " + code);
             this.setNetworkState("offline", code);
@@ -5586,10 +5586,13 @@ export class App extends AppBase {
         } catch {
           // Ignore cleanup errors; explicit login below can still proceed.
         }
-        cloudApi.setToken("Basic " + btoa(username + ":" + password));
         let has_net = true;
         try {
-          const res = (await cloudApi.fetchSession(clientId, { skipRefresh: true, timeoutMs: 4_000 })) as SessionResponse;
+          const res = (await cloudApi.fetchSession(clientId, {
+            skipRefresh: true,
+            timeoutMs: 4_000,
+            authToken: "Basic " + btoa(username + ":" + password),
+          })) as SessionResponse;
           if (res && isErrorResponse(res)) throw res.error;
           this.login = res.login;
           this.token = res.token;
@@ -5598,7 +5601,7 @@ export class App extends AppBase {
           this.verifyNotifications(res.token, true);
           this.updateDatabase("UPDATE");
         } catch (error) {
-          has_net = error === 401;
+          has_net = !isCloudApiErrorKind(error, "network");
           if (!cloudApi.isAuthed()) this.storeSessionInfo("");
           cloudApi.setToken(null);
           if (store) store.checked = false;

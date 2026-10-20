@@ -139,7 +139,8 @@ export interface IElectronAPI {
 
   // Cookie persistence for "Remember Me" feature
   persistCookies?: () => Promise<boolean>;
-  clearPersistedCookies?: () => Promise<boolean>;
+  /** Clear memory and disk cookies; keepSession only disables/removes disk persistence. */
+  clearSessionCookies?: (options?: { keepSession?: boolean }) => Promise<boolean>;
 
   // Hostname for device identification
   getHostname?: () => Promise<string>;

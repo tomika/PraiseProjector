@@ -452,7 +452,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Cookie persistence for "Remember Me" feature
   persistCookies: () => ipcRenderer.invoke("persist-cookies") as Promise<boolean>,
-  clearPersistedCookies: () => ipcRenderer.invoke("clear-persisted-cookies") as Promise<boolean>,
+  clearSessionCookies: (options?: { keepSession?: boolean }) => ipcRenderer.invoke("clear-session-cookies", options) as Promise<boolean>,
 
   // Hostname for device identification
   getHostname: () => ipcRenderer.invoke("get-hostname") as Promise<string>,

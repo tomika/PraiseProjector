@@ -1212,10 +1212,6 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     this.hideContextMenu();
 
     try {
-      // Set auth token before making the API call (if available)
-      if (this.props.authToken) {
-        cloudApi.setToken(this.props.authToken);
-      }
       const historyEntries = await cloudApi.fetchSongHistory(selectedSong.Id);
 
       // Match C# logic: show CompareDialog if there are history versions

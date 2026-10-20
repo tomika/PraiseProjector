@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import type { Display, OnlineSessionEntry } from "../../../../common/pp-types";
-import type { PlaylistApi, SessionApi } from "../ClientApi";
-import { DirectDisplaySource } from "./DirectDisplaySource.ts";
+import type { Display, OnlineSessionEntry } from "../../../../../common/pp-types";
+import type { PlaylistApi, SessionApi } from "../../ClientApi";
+import { DirectDisplaySource } from "../DirectDisplaySource.ts";
 
 // Exercise the real adapter methods with isolated transport/host dependencies.
 // Only the adapter is transpiled: its desktop imports cannot run directly in
 // Node. DirectDisplaySource itself is imported by the strip-only runner above.
-const adapterCode = ts.transpileModule(readFileSync(new URL("./DirectClientApi.ts", import.meta.url), "utf8"), {
+const adapterCode = ts.transpileModule(readFileSync(new URL("../DirectClientApi.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 

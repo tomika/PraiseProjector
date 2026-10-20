@@ -37,11 +37,6 @@ AuthContext.displayName = "AuthContext";
 const shouldUseBearerHeader = typeof window !== "undefined" && !!window.electronAPI;
 const AUTH_REQUEST_TIMEOUT_MS = 4_000;
 
-// Guard against React StrictMode double-mount calling loadInitialCredentials
-// concurrently, which causes two session requests racing each other (the server
-// may rotate/invalidate the token on the first request, making the second 401).
-let credentialLoadInFlight = false;
-
 async function getDeviceClientId(): Promise<string> {
   const key = "pp-client-id";
   let id = localStorage.getItem(key);
@@ -84,7 +79,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     tokenRef.current = t;
     _setToken(t);
   };
-  const [username, setUsername] = useState<string | null>(null);
+  const [username, _setUsername] = useState<string | null>(null);
+  const usernameRef = useRef<string | null>(null);
+  const setUsername = (value: string | null) => {
+    usernameRef.current = value;
+    _setUsername(value);
+  };
+  const persistSessionRef = useRef(!shouldUseBearerHeader);
   const [authStatus, setAuthStatus] = useState<AuthStatus>("guest");
   const [networkUnavailable, setNetworkUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,6 +97,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // cookies. Guards against a stale logout clearing a newer session's cookie jar.
   const authEpochRef = useRef(0);
   const authRequestControllerRef = useRef<AbortController | null>(null);
+  const credentialLoadRef = useRef<Promise<void> | null>(null);
+
+  const beginAuthChange = useCallback(() => {
+    authEpochRef.current++;
+    authRequestControllerRef.current?.abort();
+    credentialLoadRef.current = null;
+    cloudApi.resetSession();
+    setIsVerificationPending(false);
+    return authEpochRef.current;
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== cloudApi.getSessionStateKey() || event.newValue !== "signed-out") return;
+      if (cloudApi.isSessionEnabled() || (!usernameRef.current && !tokenRef.current)) return;
+      beginAuthChange();
+      cloudApi.setSessionEnabled(false);
+      authRequestControllerRef.current = null;
+      setUser(null);
+      setToken(null);
+      setUsername(null);
+      setAuthStatus("guest");
+      setNetworkUnavailable(false);
+      cloudApi.setFixedHeader("X-PP-Expected-User", "");
+      setIsLoading(true);
+      const epoch = authEpochRef.current;
+      void Database.switchUser("").finally(() => {
+        if (authEpochRef.current === epoch) setIsLoading(false);
+      });
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [beginAuthChange]);
 
   const setOnLoginSuccess = useCallback((callback: (leaderId?: string) => void) => {
     setOnLoginSuccessCallback(() => callback);
@@ -106,6 +140,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
    *  localStorage so it can survive page reloads / short app restarts.
    *  Set `persist=false` for fresh logins until the user decides on "Remember Me". */
   const applySession = useCallback((session: SessionResponse, persist = true, acquireNotifications = false) => {
+    persistSessionRef.current = persist;
     setUser(session);
     setToken(session.token);
     setNetworkUnavailable(false);
@@ -131,11 +166,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     options?: { signal?: AbortSignal; epoch?: number }
   ): Promise<SessionResponse | null> => {
     try {
+      if (options?.signal?.aborted || (options?.epoch !== undefined && authEpochRef.current !== options.epoch)) return null;
       const authType = authToken ? (authToken.startsWith("Bearer ") ? "Bearer" : authToken.startsWith("Basic ") ? "Basic" : "raw") : "cookie-only";
       console.debug("[Auth] verifySession:", { username, authType });
-      cloudApi.setToken(authToken ?? null);
       const clientId = await getDeviceClientId();
+      if (options?.signal?.aborted || (options?.epoch !== undefined && authEpochRef.current !== options.epoch)) return null;
       const response = await cloudApi.fetchSession(clientId, {
+        authToken: authToken ?? null,
         skipRefresh: true,
         signal: options?.signal,
         timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
@@ -145,32 +182,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.debug("[Auth] verifySession: success for", username);
         return response;
       }
-      // Login mismatch: the server resolved a different user (typically from
-      // shared HttpOnly cookies set by a browser session on the same origin).
-      // Clear the stale cookies so they don't silently authenticate future
-      // requests.  The server is known to be reachable (fetchSession succeeded),
-      // so the logout call should reliably clear the HttpOnly cookies via
-      // Set-Cookie: …; Max-Age=0 in the response.
-      console.debug("[Auth] verifySession: login mismatch, expected", username, "got", response.login, "— clearing stale session");
-      if (response.login) {
-        cloudApi.setToken(null);
-        try {
-          await cloudApi.logoutSession(clientId, {
-            signal: options?.signal,
-            timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
-            clearCookiesAfterSnapshot: true,
-          });
-        } catch {
-          // Ignore errors (e.g. network issues) since we're clearing local state anyway
-        }
-        if (options?.epoch === undefined || authEpochRef.current === options.epoch) {
-          await window.electronAPI?.clearPersistedCookies?.();
-        }
-      }
+      // Another tab may have logged in as a different user. Reject this restore
+      // without logging that newer session out of the shared browser cookie jar.
+      console.debug("[Auth] verifySession: login mismatch, expected", username, "got", response.login);
       return null;
     } catch (error) {
-      if (isCloudApiErrorKind(error, "network")) {
-        console.debug("[Auth] verifySession: network unavailable");
+      if (!isCloudApiErrorKind(error, "auth")) {
         throw error;
       }
       console.debug("[Auth] verifySession: failed", error instanceof Error ? error.message : error);
@@ -178,14 +195,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const loadInitialCredentials = useCallback(async () => {
-    // Prevent concurrent execution (React StrictMode double-mount). The server
-    // may rotate the session token on first use, so a second parallel request
-    // with the same token would get 401.
-    if (credentialLoadInFlight) return;
-    credentialLoadInFlight = true;
+  const performCredentialLoad = useCallback(async () => {
     const myEpoch = authEpochRef.current;
-    authRequestControllerRef.current?.abort();
     const controller = new AbortController();
     authRequestControllerRef.current = controller;
 
@@ -197,6 +208,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // which is file:// in production builds, causing proxy validation to fail.
       if (window.electronAPI?.getCloudApiHost) {
         const host = await window.electronAPI.getCloudApiHost();
+        if (authEpochRef.current !== myEpoch) return;
         if (host) {
           cloudApi.setBaseUrl(host);
         }
@@ -207,11 +219,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Set clientId early so cloudApi can use it for automatic token refresh.
       const clientId = await getDeviceClientId();
+      if (authEpochRef.current !== myEpoch) return;
       cloudApi.setClientId(clientId);
 
       const storedUsername = localStorage.getItem("auth_username")?.trim() || "";
       const storedLegacyToken = localStorage.getItem("auth_token")?.trim() || "";
-      const storedSessionToken = localStorage.getItem("pp_session_token")?.trim() || "";
+      const storedSessionToken = tokenRef.current || localStorage.getItem("pp_session_token")?.trim() || "";
+      if (localStorage.getItem("pp_session_token")) persistSessionRef.current = true;
+      cloudApi.setFixedHeader("X-PP-Expected-User", storedUsername);
       console.debug("[Auth] loadInitialCredentials:", {
         hasUsername: !!storedUsername,
         hasSessionToken: !!storedSessionToken,
@@ -222,6 +237,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (storedUsername) {
         setUsername(storedUsername);
         await Database.switchUser(storedUsername);
+        if (authEpochRef.current !== myEpoch) return;
         // The user's local database is now ready. Unblock the UI immediately so
         // offline startup (state restore + playlist song switching) is never
         // gated on the network session verification below, which hangs until the
@@ -236,35 +252,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setNetworkUnavailable(false);
         cloudApi.setToken(null);
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
+        cloudApi.setSessionEnabled(false);
 
-        // Switch to the guest (anonymous) database and unblock the UI BEFORE the
-        // network cookie-mismatch check below, so offline guest startup is never
-        // gated on a cloud round-trip. The DB switch is local; the gated effects
+        // Switch to the guest (anonymous) database without a cloud round-trip.
+        // The DB switch is local; the gated effects
         // (App state restore / playlist song load) safely proceed once it is done
         // — they re-resolve the ready database via Database.waitForReady().
         setAuthStatus("guest");
         if (Database.getCurrentUsername() !== "") {
           await Database.switchUser("");
         }
+        if (authEpochRef.current !== myEpoch) return;
         setIsLoading(false);
 
-        // PWAs and multiple browser tabs share HttpOnly cookies with the main
-        // browser session on the same origin, while localStorage is separate.
-        // If the browser is logged in but this instance has no stored username,
-        // the shared cookies would silently authenticate every fetch request as
-        // the browser's user while the UI shows "Guest".  verifySession with an
-        // empty expected login detects the mismatch and clears the stale cookies.
-        // Awaited so restoreStoredSession() reflects the outcome, but the UI is
-        // already usable via the setIsLoading(false) above.
-        try {
-          await verifySession("", null, { signal: controller.signal, epoch: myEpoch });
-        } catch (error) {
-          if (!isCloudApiErrorKind(error, "network")) {
-            throw error;
-          }
-          console.debug("[Auth] loadInitialCredentials: guest session verification skipped while offline");
-        }
-
+        // Guest API requests omit credentials even if an offline logout left
+        // HttpOnly cookies behind. The online cleanup effect can revoke them.
         return;
       }
 
@@ -325,7 +327,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (session) {
         console.debug("[Auth] loadInitialCredentials: session restored for", storedUsername);
-        applySession(session);
+        applySession(session, persistSessionRef.current);
         return;
       }
 
@@ -342,7 +344,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.debug("[Auth] loadInitialCredentials: all methods failed, setting offline");
       localStorage.removeItem("auth_token");
       localStorage.removeItem("pp_session_token");
-      await window.electronAPI?.clearPersistedCookies?.();
+      await window.electronAPI?.clearSessionCookies?.();
       if (authEpochRef.current !== myEpoch) return;
       setUser(null);
       setToken(null);
@@ -350,26 +352,57 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       cloudApi.setToken(null);
       setAuthStatus("offline");
     } catch (error) {
+      if (authEpochRef.current !== myEpoch) return;
       if (!isCloudApiErrorKind(error, "aborted")) {
         console.error("Auth", "Failed to load initial credentials", error);
+        // Keep stored credentials on outages, rate limits and invalid server
+        // responses. Only a definitive auth failure above may discard them.
+        setUser(null);
+        setToken(null);
+        cloudApi.setToken(null);
+        setNetworkUnavailable(isCloudApiErrorKind(error, "network"));
+        setAuthStatus(usernameRef.current ? "offline" : "guest");
       }
     } finally {
-      credentialLoadInFlight = false;
       if (authRequestControllerRef.current === controller) {
         authRequestControllerRef.current = null;
       }
-      setIsVerificationPending(false);
-      if (authEpochRef.current === myEpoch) setIsLoading(false);
+      if (authEpochRef.current === myEpoch) {
+        setIsVerificationPending(false);
+        setIsLoading(false);
+      }
     }
   }, [applySession]);
 
+  const loadInitialCredentials = useCallback((): Promise<void> => {
+    // Never run two loads concurrently (e.g. React StrictMode double-mount): the
+    // server may rotate the session token on first use, so a second parallel
+    // request with the same token would get 401. Share completion as well as the
+    // request: callers restoring a session must wait for an already-running
+    // startup verification to apply its result.
+    if (credentialLoadRef.current) return credentialLoadRef.current;
+    // A restore must not abort an explicit login/logout already in progress.
+    if (authRequestControllerRef.current) return Promise.resolve();
+    const request = performCredentialLoad();
+    credentialLoadRef.current = request;
+    const clear = () => {
+      if (credentialLoadRef.current === request) credentialLoadRef.current = null;
+    };
+    void request.then(clear, clear);
+    return request;
+  }, [performCredentialLoad]);
+
   const login = async (username: string, password?: string): Promise<boolean> => {
+    if (!password) return false;
     // Invalidate any in-flight logout so its backgrounded cookie-clear cannot wipe
     // the session cookie this login is about to establish.
-    const myEpoch = ++authEpochRef.current;
-    authRequestControllerRef.current?.abort();
+    const myEpoch = beginAuthChange();
     const controller = new AbortController();
     authRequestControllerRef.current = controller;
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("pp_session_token");
+    localStorage.removeItem("auth_token");
     setIsLoading(true);
     try {
       const authToken = password ? `Basic ${btoa(`${username}:${password}`)}` : null;
@@ -377,6 +410,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return false;
       }
       const clientId = await getDeviceClientId();
+      if (authEpochRef.current !== myEpoch) return false;
       cloudApi.setClientId(clientId);
       // Explicit user switch/login: clear fixed expected-user header so the
       // session request is not constrained by the previous authenticated user.
@@ -414,17 +448,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return true;
       }
       setNetworkUnavailable(false);
-      setAuthStatus(username ? "offline" : "guest");
+      setAuthStatus(usernameRef.current ? "offline" : "guest");
       return false;
     } catch (error) {
+      if (authEpochRef.current !== myEpoch) return false;
       if (isCloudApiErrorKind(error, "network")) {
         setNetworkUnavailable(true);
-        setAuthStatus(username ? "offline" : "guest");
+        setAuthStatus(usernameRef.current ? "offline" : "guest");
         throw error;
       }
       console.error("Auth", "Login failed", error);
       setNetworkUnavailable(false);
-      setAuthStatus(username ? "offline" : "guest");
+      setAuthStatus(usernameRef.current ? "offline" : "guest");
       return false;
     } finally {
       if (authRequestControllerRef.current === controller) {
@@ -437,8 +472,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     // Snapshot this logout's intent. A later login/logout bumps the epoch, letting
     // the backgrounded task below detect it has been superseded.
-    const myEpoch = ++authEpochRef.current;
-    authRequestControllerRef.current?.abort();
+    const myEpoch = beginAuthChange();
+    cloudApi.setSessionEnabled(false);
     const controller = new AbortController();
     authRequestControllerRef.current = controller;
     setIsLoading(true);
@@ -449,7 +484,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } catch (error) {
         console.error("Notifications", "Failed to disable native notifications", error);
       }
+      if (authEpochRef.current !== myEpoch) return;
       const clientId = await getDeviceClientId();
+      if (authEpochRef.current !== myEpoch) return;
       cloudApi.setClientId(clientId);
       cloudApi.setToken(null);
       // The server-side logout must not block the local sign-out: when offline it
@@ -480,29 +517,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // fails — never let logout() reject.
       console.error("Auth", "Logout failed", error);
     } finally {
-      if (!logoutRequestStarted) {
-        await window.electronAPI?.clearPersistedCookies?.();
+      if (authEpochRef.current === myEpoch && !logoutRequestStarted) {
+        await window.electronAPI?.clearSessionCookies?.();
+        if (authRequestControllerRef.current === controller) authRequestControllerRef.current = null;
       }
-      setUser(null);
-      setToken(null);
-      setUsername(null);
-      setAuthStatus("guest");
-      setNetworkUnavailable(false);
-      cloudApi.setToken(null);
-      cloudApi.setFixedHeader("X-PP-Expected-User", "");
-      localStorage.removeItem("auth_username");
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("pp_session_token");
+      if (authEpochRef.current === myEpoch) {
+        setUser(null);
+        setToken(null);
+        setUsername(null);
+        setAuthStatus("guest");
+        setNetworkUnavailable(false);
+        cloudApi.setToken(null);
+        cloudApi.setFixedHeader("X-PP-Expected-User", "");
+        localStorage.removeItem("auth_username");
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("pp_session_token");
 
-      await Database.switchUser("");
+        await Database.switchUser("");
 
-      if (authEpochRef.current === myEpoch) setIsLoading(false);
+        if (authEpochRef.current === myEpoch) setIsLoading(false);
+      }
     }
   };
 
   const updateToken = useCallback(
     (newToken: string) => {
-      if (newToken) {
+      if (newToken && usernameRef.current && !authRequestControllerRef.current) {
         setToken(newToken);
         setNetworkUnavailable(false);
         if (!username) {
@@ -514,7 +554,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setAuthStatus("authenticated");
         cloudApi.setToken(shouldUseBearerHeader ? newToken : null);
         localStorage.removeItem("auth_token");
-        localStorage.setItem("pp_session_token", newToken);
+        if (persistSessionRef.current) localStorage.setItem("pp_session_token", newToken);
         void configureNativeNotifications(newToken, false).catch((error) =>
           console.error("Notifications", "Failed to refresh native notification registration", error)
         );
@@ -544,10 +584,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const restoreStoredSession = useCallback(async (): Promise<boolean> => {
     await loadInitialCredentials();
-    return cloudApi.isAuthed();
+    // applySession updates this ref synchronously in every runtime. Browser
+    // and Android sessions deliberately leave cloudApi's bearer token empty
+    // because subsequent requests authenticate with HttpOnly cookies.
+    return !!tokenRef.current;
   }, [loadInitialCredentials]);
 
   const markSessionExpired = useCallback(() => {
+    beginAuthChange();
+    authRequestControllerRef.current = null;
+    setIsLoading(false);
     void disableNativeNotificationRegistration().catch((error) => console.error("Notifications", "Failed to disable native notifications", error));
     setUser(null);
     setToken(null);
@@ -557,12 +603,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem("pp_session_token");
     setAuthStatus(username ? "offline" : "guest");
     cloudApi.setFixedHeader("X-PP-Expected-User", username ?? "");
-    if (!username) window.electronAPI?.clearPersistedCookies?.();
-  }, [username]);
+    if (!username) window.electronAPI?.clearSessionCookies?.();
+  }, [username, beginAuthChange]);
 
   const commitSession = useCallback(() => {
     const t = tokenRef.current;
     if (t) {
+      persistSessionRef.current = true;
       localStorage.setItem("pp_session_token", t);
     }
   }, []);
@@ -585,8 +632,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const tryGuestCookieCleanup = async () => {
       if (guestCookieCleanupRetriedRef.current) return;
       guestCookieCleanupRetriedRef.current = true;
+      const myEpoch = authEpochRef.current;
       try {
         const clientId = await getDeviceClientId();
+        if (authEpochRef.current !== myEpoch || usernameRef.current || authRequestControllerRef.current) return;
         cloudApi.setClientId(clientId);
         cloudApi.setToken(null);
         cloudApi.setFixedHeader("X-PP-Expected-User", "");
@@ -618,8 +667,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // it dispatches this event so we can update React state and localStorage.
   useEffect(() => {
     const handleTokensRefreshed = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { accessToken?: string };
-      if (detail.accessToken) {
+      const detail = (e as CustomEvent).detail as { accessToken?: string; login?: string };
+      if (detail.accessToken && detail.login === usernameRef.current) {
         updateToken(detail.accessToken);
       }
     };

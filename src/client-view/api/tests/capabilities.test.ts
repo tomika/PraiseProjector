@@ -5,7 +5,7 @@
  * runner with native TypeScript type-stripping (zero new dependencies):
  *
  *   cd public
- *   node --experimental-strip-types --test src/client-view/api/capabilities.test.ts
+ *   node --experimental-strip-types --test src/client-view/api/tests/capabilities.test.ts
  *
  * The file is also type-checked + linted by the normal gate (it lives under
  * src/client-view, which tsc and eslint already cover).
@@ -13,7 +13,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveCapabilities, type CapabilityInputs, type ClientRole } from "./capabilities.ts";
+import { deriveCapabilities, type CapabilityInputs, type ClientRole } from "../capabilities.ts";
 
 /** Build a fully-false input set for `role`, overriding only what a test cares about. */
 function inputs(role: ClientRole, over: Partial<CapabilityInputs> = {}): CapabilityInputs {

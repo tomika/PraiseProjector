@@ -5,7 +5,7 @@
  * runner with native TypeScript type-stripping (zero new dependencies):
  *
  *   cd public
- *   node --experimental-strip-types --test src/services/unsavedChangesReport.test.ts
+ *   node --experimental-strip-types --test src/services/tests/unsavedChangesReport.test.ts
  *
  * The .ts import extension is required by type-stripping and allowed by
  * allowImportingTsExtensions in tsconfig.
@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createUnsavedChangesRegistry } from "./unsavedChangesReport.ts";
+import { createUnsavedChangesRegistry } from "../unsavedChangesReport.ts";
 
 test("a clean page report cannot clear a mounted editor draft", () => {
   const reports: boolean[] = [];

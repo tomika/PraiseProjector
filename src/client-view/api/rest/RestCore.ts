@@ -12,7 +12,7 @@
  * absent (a plain browser served by the cloud), exactly like the legacy client.
  */
 
-import { CloudApiService, cloudApi } from "../../../../common/cloudApi";
+import { CloudApiService, cloudApi, isCloudApiErrorKind } from "../../../../common/cloudApi";
 import { getEmptyDisplay } from "../../../../common/pp-utils";
 import type { Display, OnlineSessionEntry, PlaylistEntry, SongData, SongEntry } from "../../../../common/pp-types";
 import type { ChordProStylesSettings } from "../../../../chordpro/chordpro_styles";
@@ -128,10 +128,18 @@ export class RestCore {
    *  it overrides the context-derived right, so the server can grant or revoke
    *  leading dynamically. */
   private headerLeaderAvailable: boolean | undefined;
+  private readonly handleSessionStorage = (event: StorageEvent): void => {
+    if (event.key !== cloudApi.getSessionStateKey() || event.newValue !== "signed-out") return;
+    if (!this.authed || cloudApi.isSessionEnabled()) return;
+    cloudApi.setSessionEnabled(false);
+    cloudApi.setFixedHeader("X-PP-Expected-User", "");
+    this.setAuthed(false, null);
+  };
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   async init(config: ClientConfig): Promise<void> {
+    window.addEventListener("storage", this.handleSessionStorage);
     this.config = config;
     // Two modes: a host-served LAN bundle is a Client (follower); everything else
     // (the standalone website / Android cloud app) is a full App that attaches to
@@ -171,6 +179,7 @@ export class RestCore {
   }
 
   dispose(): void {
+    window.removeEventListener("storage", this.handleSessionStorage);
     this.stopFollow();
     void stopHostDevicePpdHosting();
   }
@@ -608,6 +617,8 @@ export class RestCore {
           this.setNetworkState({ status: "watching", transport: "web" });
         } catch (error) {
           if (controller.signal.aborted || token !== this.followToken) return;
+          // An auth reset cancels the request, but following remains active.
+          if (isCloudApiErrorKind(error, "aborted") || (error instanceof Error && error.name === "AbortError")) continue;
           this.setNetworkState({ status: "error", transport: "web", error: error instanceof Error ? error.message : String(error) });
           await delay(2000);
         }
