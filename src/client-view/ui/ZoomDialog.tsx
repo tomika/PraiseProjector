@@ -8,7 +8,8 @@
  * long-pressing / right-clicking the zoom button and closed by clicking outside.
  *
  * Title and Meta labels use a strikethrough + blue glow when their hide-option is
- * on, matching the original `input:checked + label { text-shadow: … }` style. Auto
+ * on, matching the original `input:checked + label { text-shadow: … }` style; the ♪
+ * (ABC notation) toggle follows the same pattern. Auto
  * wrap has no label — it is the wrap.svg glyph, glowing (not struck through) when on.
  */
 
@@ -43,6 +44,10 @@ export function ZoomPanel() {
       <label className="cv-zoom-toggle">
         <input type="checkbox" checked={s.zoomHideMeta} onChange={(e) => store.setDisplaySetting("zoomHideMeta", e.target.checked)} />
         <span className="cv-zoom-label">Meta</span>
+      </label>
+      <label className="cv-zoom-toggle cv-zoom-abc-toggle" title="ABC notation">
+        <input type="checkbox" checked={s.zoomHideAbc} onChange={(e) => store.setDisplaySetting("zoomHideAbc", e.target.checked)} />
+        <span className="cv-zoom-label">{"♪"}</span>
       </label>
       <label className="cv-zoom-toggle cv-zoom-wrap-toggle" title="Auto wrap">
         <input type="checkbox" checked={s.zoomAutoWrap} onChange={(e) => store.setDisplaySetting("zoomAutoWrap", e.target.checked)} />

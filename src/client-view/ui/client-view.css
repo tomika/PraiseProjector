@@ -1497,6 +1497,12 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     0 0 0.7em #05e;
 }
 
+/* The ABC toggle is a single ♪ glyph: enlarge it so the strikethrough stays legible. */
+.cv-zoom-abc-toggle .cv-zoom-label {
+  font-size: 20px;
+  line-height: 1;
+}
+
 /* Auto wrap carries no word — it is the wrap.svg glyph. Unlike Title / Meta it
    ENABLES a feature rather than hiding one, so the checked state keeps the neon
    glow (as a drop-shadow, the icon equivalent of the labels' text-shadow) and

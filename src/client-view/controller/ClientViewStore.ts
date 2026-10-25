@@ -162,6 +162,8 @@ export interface DisplaySettings {
   /** maxText (zoom) sub-settings — applied only while maxText is on. */
   zoomHideTitle: boolean;
   zoomHideMeta: boolean;
+  /** Drop ABC (abcjs notation) blocks from the song. */
+  zoomHideAbc: boolean;
   zoomTagMode: ZoomTagMode;
   zoomSizingMode: ZoomSizingMode;
   /** Wrap over-wide lyrics lines. Automatic sizing modes may only grow the
@@ -183,6 +185,7 @@ const defaultDisplaySettings: DisplaySettings = {
   maxText: false,
   zoomHideTitle: true,
   zoomHideMeta: true,
+  zoomHideAbc: false,
   zoomTagMode: "ABBREV",
   zoomSizingMode: "FIT_PAGE",
   zoomAutoWrap: false,

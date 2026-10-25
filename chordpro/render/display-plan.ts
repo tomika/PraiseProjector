@@ -12,7 +12,14 @@ import {
 } from "../chordpro_base";
 import { Instructions, type InstructionItem } from "../chordpro_instructions";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
-import { buildChordVisualModel, CHORDFORMAT_NOCHORDS, CHORDFORMAT_NOSECTIONDUP, CHORDFORMAT_SIMPLIFIED, type ChordVisualModel } from "./chord-visual";
+import {
+  buildChordVisualModel,
+  CHORDFORMAT_NOABC,
+  CHORDFORMAT_NOCHORDS,
+  CHORDFORMAT_NOSECTIONDUP,
+  CHORDFORMAT_SIMPLIFIED,
+  type ChordVisualModel,
+} from "./chord-visual";
 import {
   differentialCoordinateToSource,
   differentialTextUnits,
@@ -717,6 +724,8 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
   const occurrences: DisplayOccurrence[] = [];
   let previousTagIdentity = "";
   const noChords = (options.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS;
+  // Instructed/transposed sequences render ABC as a grid clone, so check the origin too.
+  const noAbc = options.readOnly && (options.chordFormat & CHORDFORMAT_NOABC) === CHORDFORMAT_NOABC;
   const noSectionDuplicates = (options.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
   const repeatOrdinals = new Map<string, number>();
   const itemByInstructionIndex = new Map<number, InstructionItem>();
@@ -726,6 +735,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
   for (const projected of sequence.lines) {
     const line = projected.line;
     if (noChords && line.isInstrumental) continue;
+    if (noAbc && (line instanceof ChordProAbc || projected.origin instanceof ChordProAbc)) continue;
     const displayOrdinal = occurrences.length;
     const kind: DisplayLineKind = line instanceof ChordProAbc ? "abc" : line.isComment ? "comment" : line.isGrid ? "grid" : "lyrics";
     const sourceText: string | DifferentialText =

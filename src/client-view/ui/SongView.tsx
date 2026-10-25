@@ -34,6 +34,7 @@ import { PageFlip } from "../../../chordpro/pageFlip";
 import {
   CHORDFORMAT_BB,
   CHORDFORMAT_INKEY,
+  CHORDFORMAT_NOABC,
   CHORDFORMAT_NOCHORDS,
   CHORDFORMAT_NOSECTIONDUP,
   CHORDFORMAT_SIMPLIFIED,
@@ -145,6 +146,8 @@ function buildChordFlags(s: DisplaySettings): number {
   if (s.simplified) flags |= CHORDFORMAT_SIMPLIFIED;
   if (s.noSecChordDup) flags |= CHORDFORMAT_NOSECTIONDUP;
   if (s.autoTone) flags |= CHORDFORMAT_INKEY;
+  // A zoom sub-setting: like the other zoom* options it applies only while maxText is on.
+  if (s.maxText && s.zoomHideAbc) flags |= CHORDFORMAT_NOABC;
   return flags;
 }
 

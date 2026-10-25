@@ -34,6 +34,8 @@ export const CHORDFORMAT_SIMPLIFIED = 16;
 export const CHORDFORMAT_NOSECTIONDUP = 32;
 export const CHORDFORMAT_NOCHORDS = 64;
 export const CHORDFORMAT_INKEY = 128;
+/** Display-content flag like NOCHORDS: drops ABC blocks (and their grid projections) from the readonly plan. */
+export const CHORDFORMAT_NOABC = 256;
 
 export type ChordVisualTokenRole = "prefix" | "base-note" | "modifier" | "bass-separator" | "bass-note" | "bass-modifier" | "suffix" | "unknown-text";
 
