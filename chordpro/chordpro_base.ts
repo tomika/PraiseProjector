@@ -787,6 +787,9 @@ export type AbcRenderParams = AbcVisualParams & { currentColor?: string };
 
 export class ChordProAbc extends ChordProLine {
   private forcedLabel?: string | DifferentialText;
+  /** Set by readonly projections on their clone: the R: header shown instead of
+   *  the authored label, e.g. an instructed repeat's "Intro 3x". */
+  headerLabel?: string;
   constructor(
     doc: ChordProDocument,
     private readonly lines: (string | DifferentialText)[] = []
@@ -796,7 +799,8 @@ export class ChordProAbc extends ChordProLine {
   }
   getAbc(current = true, addLabel = true) {
     const code = this.lines.map((line) => line.toString(current)).join("\n");
-    const suffix = addLabel && this.forcedLabel ? "\nR:" + this.forcedLabel : "";
+    const label = this.headerLabel ?? this.forcedLabel;
+    const suffix = addLabel && label ? "\nR:" + label : "";
     return code + suffix;
   }
   setLabel(label: string, current: boolean) {
@@ -882,6 +886,7 @@ export class ChordProAbc extends ChordProLine {
   clone(dataOnly = false) {
     const line = new ChordProAbc(this.doc, [...this.lines]);
     line.forcedLabel = typeof this.forcedLabel === "string" ? this.forcedLabel : this.forcedLabel?.clone();
+    line.headerLabel = this.headerLabel;
     this.copyLineData(line, dataOnly);
     return line;
   }

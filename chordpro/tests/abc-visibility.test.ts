@@ -20,10 +20,13 @@ K:G
 const GRID = new ChordProDocument(getChordSystem("G"), "{start_of_grid: Intro}\nG D\n{end_of_grid}");
 mock.method(ChordProAbc.prototype, "toGrid", () => GRID.lines[0].clone(true));
 
-function plan(
-  abcMode: AbcDisplayMode | undefined,
-  options: { readOnly?: boolean; instructions?: string; instructionsMode?: DisplayInstructionsMode } = {}
-) {
+type PlanOptions = { readOnly?: boolean; instructions?: string; instructionsMode?: DisplayInstructionsMode };
+
+function plan(abcMode: AbcDisplayMode | undefined, options: PlanOptions = {}) {
+  return occurrences(abcMode, options).map((occurrence) => (occurrence.kind === "grid" ? `grid:${occurrence.text}` : occurrence.kind));
+}
+
+function occurrences(abcMode: AbcDisplayMode | undefined, options: PlanOptions = {}) {
   const system = getChordSystem("G");
   const document = new ChordProDocument(system, SONG);
   const display = defaultDisplayProperties();
@@ -48,7 +51,7 @@ function plan(
     instructions,
     abcMode,
   });
-  return result.occurrences.map((occurrence) => (occurrence.kind === "grid" ? `grid:${occurrence.text}` : occurrence.kind));
+  return result.occurrences;
 }
 
 const INSTRUCTED = { instructions: "Intro\nVerse\nIntro" };
@@ -77,6 +80,17 @@ test("instructed: NOTATION renders the block, a FIRST_LINE repeat becomes a labe
 test("instructed: HIDDEN drops an ABC-only section with every repeat", () => {
   assert.deepEqual(plan("HIDDEN", INSTRUCTED), ["lyrics", "lyrics"]);
   assert.deepEqual(plan("HIDDEN", { ...INSTRUCTED, instructionsMode: "FULL" }), ["lyrics", "lyrics"]);
+});
+
+test("instructed: the repeat count reaches the grid's tag and the notation's R: header alike", () => {
+  const repeated = { instructions: "Intro 3x\nVerse" };
+  assert.equal(occurrences("CHORDS", repeated)[0].tag?.text, "Intro 3x");
+  const notation = occurrences("NOTATION", repeated)[0];
+  assert.equal(notation.kind, "abc");
+  assert.match(notation.text, /\nR:Intro 3x$/);
+  // A single pass keeps the authored label, and editing never sees an override.
+  assert.match(occurrences("NOTATION", INSTRUCTED)[0].text, /\nR:Intro$/);
+  assert.match(occurrences("NOTATION", { readOnly: false })[0].text, /\nR:Intro$/);
 });
 
 test("editing ignores the ABC mode", () => {

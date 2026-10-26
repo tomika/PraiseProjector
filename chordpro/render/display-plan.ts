@@ -385,6 +385,26 @@ function cloneForProjection(origin: ChordProLine, abcMode: AbcDisplayMode) {
   return origin.clone(true);
 }
 
+/**
+ * A section label as readonly rendering shows it: the authored name plus the
+ * effective repeat count. The transpose modifier is left out, since the displayed
+ * chords or notation already reflect it.
+ */
+function readonlySectionLabel(line: ChordProLine) {
+  const section = line.getSectionInfo();
+  let label = section.withoutModifiers();
+  const multiplier = line.multiplierOverride ?? section.multiplier;
+  if (multiplier != null && multiplier > 1) label += ` ${multiplier}x`;
+  return label;
+}
+
+/** Notation carries its label in its own R: header rather than in the tag lane, so
+ *  a cloned block gets the readonly label there. Call it once the overrides are set. */
+function labelAbcClone(line: ChordProLine) {
+  // An unlabelled block keeps whatever R: lines it authored itself.
+  if (line instanceof ChordProAbc && line.getSectionInfo().withoutModifiers()) line.headerLabel = readonlySectionLabel(line);
+}
+
 function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instructions: Instructions, abcMode: AbcDisplayMode): DisplaySequence {
   const document = options.document;
   const firstLines = new Map<string, ProjectedLine | null>();
@@ -432,6 +452,7 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
           line.transposeOverride = item.transpose;
           line.transpose(item.transpose);
         }
+        labelAbcClone(line);
         line.instructedSectionIndex = i;
         const projected: ProjectedLine = { line, origin, item, instructionIndex: i, role: "section" };
         if (!firstLine) firstLine = projected;
@@ -512,6 +533,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
     }
     const line = cloneForProjection(origin, abcMode);
     if (transpose) line.transpose(transpose);
+    labelAbcClone(line);
     mutated = true;
     lines.push({ line, origin, item: null, role: "document" });
   }
@@ -652,9 +674,7 @@ function tagForLine(line: ChordProLine, options: BuildDisplayPlanOptions, sectio
     const section = line.getSectionInfo();
     const effectiveTranspose = line.transposeOverride ?? section.transpose;
     if (effectiveTranspose != null) {
-      let stripped = section.withoutModifiers();
-      const effectiveMultiplier = line.multiplierOverride ?? section.multiplier;
-      if (effectiveMultiplier != null && effectiveMultiplier > 1) stripped += ` ${effectiveMultiplier}x`;
+      const stripped = readonlySectionLabel(line);
       text = stripped;
       sourceText = text;
       identity = `${stripped}@${effectiveTranspose}`;

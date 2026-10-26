@@ -1025,7 +1025,12 @@ export class DomSongRenderer {
       if (!(abc instanceof ChordProAbc)) continue;
       const key = [occurrence.text, options.staffwidth, options.currentColor, options.germanAlphabet, this.measurer.styleRevision].join("|");
       const existing = this.abcNodes.get(occurrence.id);
-      if (existing?.key === key) continue;
+      if (existing?.key === key) {
+        // The notation is unchanged, but a re-projection hands over a fresh clone:
+        // track it, or getAbcVisualObject() misses the tune that is on screen.
+        existing.source = abc;
+        continue;
+      }
 
       const node = existing?.node ?? this.doc.createElement("div");
       node.className = "chp-dom-abc-content";
