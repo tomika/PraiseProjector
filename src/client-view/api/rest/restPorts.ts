@@ -8,7 +8,7 @@
  * form of the REST behaviour the legacy client already implements.
  */
 
-import { cloudApi, isCloudApiErrorKind } from "../../../../common/cloudApi";
+import { cloudApi, isAccessToken, isCloudApiErrorKind } from "../../../../common/cloudApi";
 import {
   getLocalBroadcastAddresses,
   getLocalNetworkAddresses,
@@ -445,11 +445,14 @@ export function createAuthApi(core: RestCore): AuthApi {
         const expectedUser = readTokenLogin(token);
         cloudApi.setFixedHeader("X-PP-Expected-User", expectedUser);
         try {
+          // fetchSession already renews an access token with the refresh cookie,
+          // so only a legacy token needs the separate cookie attempt below.
+          const cookieOnly = isAccessToken(token);
           let res;
           try {
-            res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true, authToken: token, timeoutMs: 4_000 });
+            res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true, authToken: cookieOnly ? null : token, timeoutMs: 4_000 });
           } catch (error) {
-            if (epoch !== authEpoch || !isCloudApiErrorKind(error, "auth")) throw error;
+            if (cookieOnly || epoch !== authEpoch || !isCloudApiErrorKind(error, "auth")) throw error;
             // A short-lived access token can expire while its refresh cookie is
             // still valid. Give the cookie a chance before discarding the login.
             res = await cloudApi.fetchSession(core.clientId, { skipRefresh: true, authToken: null, timeoutMs: 4_000 });

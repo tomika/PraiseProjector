@@ -46,6 +46,22 @@ test("standalone restore falls back to cookies and persists the rotated token", 
   assert.equal(env.core.authed, true);
 });
 
+for (const accepted of [true, false]) {
+  test(`standalone restore renews a stored access token once with the refresh cookie (${accepted ? "accepted" : "rejected"})`, async (context) => {
+    const exp = Math.floor(Date.now() / 1000) + 900;
+    const env = fixture(context, `atk.${Buffer.from(JSON.stringify({ sub: "alice", exp })).toString("base64url")}.valid`);
+    const headers: string[] = [];
+    context.mock.method(globalThis, "fetch", async (_input: unknown, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers).get("Authorization") || "");
+      return accepted ? json(session()) : json({}, 401);
+    });
+    await env.auth.restoreSession();
+    assert.deepEqual(headers, [""]);
+    assert.equal(env.localStorage.getItem("sessionId"), accepted ? "token-alice" : null);
+    assert.equal(env.core.authed, accepted);
+  });
+}
+
 test("standalone offline restore keeps the saved login for a later retry", async (context) => {
   const env = fixture(context);
   context.mock.method(globalThis, "fetch", async () => {

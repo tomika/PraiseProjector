@@ -191,6 +191,40 @@ test("explicit login credentials stay scoped to the session request", async (con
   assert.deepEqual(headers, ["Basic credentials", null]);
 });
 
+for (const proxy of [false, true]) {
+  for (const seconds of [900, -900]) {
+    test(`${proxy ? "Electron" : "browser"}: restoring ${seconds > 0 ? "valid" : "expired"} access tokens renews with cookies`, async (context) => {
+      const api = new CloudApiService();
+      const storedToken = token("alice", seconds);
+      api.setToken(storedToken);
+      api.setFixedHeader("X-PP-Expected-User", "alice");
+      const authorizations: string[] = [];
+      if (proxy) {
+        api.setProxy({
+          proxyGet: async () => assert.fail("Restore must use POST /session"),
+          proxyPost: async (_base, endpoint, _data, headers, options) => {
+            assert.equal(endpoint, "/session");
+            assert.equal(options?.omitCookies, false);
+            authorizations.push(headers?.Authorization || "");
+            return { data: session(), ppHeaders: {} };
+          },
+        });
+      } else {
+        context.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+          assert.equal(init?.credentials, "include");
+          authorizations.push(new Headers(init?.headers).get("Authorization") || "");
+          return json(session());
+        });
+      }
+      for (const authToken of [undefined, storedToken, `Bearer ${storedToken}`]) {
+        const result = await api.fetchSession("device", { authToken });
+        assert.equal(result.login, "alice");
+      }
+      assert.deepEqual(authorizations, ["", "", ""], "An access-only Authorization header suppresses Electron's refresh cookie");
+    });
+  }
+}
+
 test("aborting one caller leaves the shared refresh available to another caller", async (context) => {
   const api = new CloudApiService();
   api.setClientId("device");

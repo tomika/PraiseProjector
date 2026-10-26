@@ -1,6 +1,6 @@
 import React, { useState, useRef, useContext, useEffect, ReactNode, useCallback } from "react";
 import { SessionResponse } from "../../common/pp-types";
-import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
+import { cloudApi, isAccessToken, isCloudApiErrorKind } from "../../common/cloudApi";
 import { cloudApiBaseUrl } from "../config";
 import { Database } from "../../db-common/Database";
 
@@ -273,8 +273,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       let session: SessionResponse | null = null;
       let networkUnavailable = false;
 
-      // Try restoring the session using the stored access token (Bearer).
-      if (storedSessionToken) {
+      // Only a legacy long-lived token can restore the session as a Bearer. A v2
+      // access token is renewed with the refresh cookie (see fetchSession), which
+      // is exactly the cookie-only attempt below; sending it first would repeat
+      // the same /session request whenever renewal is rejected.
+      if (storedSessionToken && !isAccessToken(storedSessionToken)) {
         console.debug("[Auth] loadInitialCredentials: trying Bearer token");
         try {
           session = await verifySession(storedUsername, `Bearer ${storedSessionToken}`, {

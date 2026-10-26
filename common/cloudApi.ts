@@ -135,6 +135,12 @@ export function isCloudApiErrorKind(error: unknown, kind: CloudApiErrorKind): bo
   return error instanceof CloudApiError && error.kind === kind;
 }
 
+/** A short-lived v2 access token (`atk.…`), with or without a Bearer prefix.
+ *  It cannot renew a session by itself; `/session` renews with the refresh cookie. */
+export function isAccessToken(token: string | null | undefined): boolean {
+  return !!token && token.replace(/^Bearer /, "").startsWith("atk.");
+}
+
 function isLikelyNetworkErrorMessage(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
@@ -789,7 +795,11 @@ export class CloudApiService {
     const token = options?.authToken;
     const explicitLogin = !!token?.startsWith("Basic ");
     if (!explicitLogin && !this.isSessionEnabled()) throw new CloudApiError("auth", "Session was signed out", { status: 401 });
-    const authorization = token ? (/^(Basic|Bearer) /.test(token) ? token : `Bearer ${token}`) : "";
+    // /session needs a long-lived refresh credential, even when access is still
+    // valid. Sending an access bearer suppresses Electron's cookie injection and
+    // makes a remembered login fail renewal. Keep legacy bearers and Basic login.
+    const useRefreshCookie = isAccessToken(token === undefined ? this.authToken : token);
+    const authorization = !useRefreshCookie && token ? (/^(Basic|Bearer) /.test(token) ? token : `Bearer ${token}`) : "";
     const response = await this.apiCall<unknown>(
       "/session",
       { clientId },
@@ -797,7 +807,7 @@ export class CloudApiService {
         ...options,
         skipRefresh: true,
         allowSignedOutSession: explicitLogin,
-        headers: token === undefined ? undefined : { Authorization: authorization },
+        headers: token === undefined && !useRefreshCookie ? undefined : { Authorization: authorization },
       }
     );
     const session = this.parseResponse(sessionResponseCodec, response);

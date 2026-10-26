@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test, type TestContext } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { CloudApiService, isCloudApiErrorKind } from "../../../common/cloudApi";
+import { CloudApiService, isAccessToken, isCloudApiErrorKind } from "../../../common/cloudApi";
 import { installFakeWindow } from "../../../tests/support/browserEnv";
 import type { useAuth } from "../AuthContext";
 
@@ -82,7 +82,7 @@ function fixture(context: TestContext, { electron = false, stored = true } = {})
   const exports = {} as { AuthProvider: (props: { children: null }) => Auth };
   const modules: Record<string, unknown> = {
     react,
-    "../../common/cloudApi": { cloudApi: api, isCloudApiErrorKind },
+    "../../common/cloudApi": { cloudApi: api, isAccessToken, isCloudApiErrorKind },
     "../config": { cloudApiBaseUrl: "" },
     "../../db-common/Database": { Database: database },
   };
@@ -135,6 +135,42 @@ test("an HTTP server failure preserves stored credentials", async (context) => {
   assert.equal(await env.render().restoreStoredSession(), false);
   assert.equal(env.storage.getItem("pp_session_token"), "saved");
   assert.equal(env.render().authStatus, "offline");
+});
+
+test("Electron startup restores a remembered expired access token with one cookie renewal", async (context) => {
+  const env = fixture(context, { electron: true });
+  const expiredToken = `atk.${Buffer.from(JSON.stringify({ sub: "alice", exp: 1 })).toString("base64url")}.expired`;
+  env.storage.setItem("pp_session_token", expiredToken);
+  const authorizations: string[] = [];
+  env.api.setProxy({
+    proxyGet: async () => assert.fail("Restore must use POST /session"),
+    proxyPost: async (_base, _path, _data, headers) => {
+      const authorization = headers?.Authorization || "";
+      authorizations.push(authorization);
+      return authorization ? { error: { status: 401, message: "Refresh cookie required" } } : { data: session(), ppHeaders: {} };
+    },
+  });
+  assert.equal(await env.render().restoreStoredSession(), true);
+  assert.deepEqual(authorizations, [""]);
+  assert.equal(env.render().isAuthenticated, true);
+  assert.equal(env.storage.getItem("pp_session_token"), "token-alice");
+});
+
+test("a rejected cookie renewal of a stored access token is not repeated", async (context) => {
+  const env = fixture(context, { electron: true });
+  const exp = Math.floor(Date.now() / 1000) + 900;
+  env.storage.setItem("pp_session_token", `atk.${Buffer.from(JSON.stringify({ sub: "alice", exp })).toString("base64url")}.valid`);
+  const authorizations: string[] = [];
+  env.api.setProxy({
+    proxyGet: async () => assert.fail("Restore must use POST /session"),
+    proxyPost: async (_base, _path, _data, headers) => {
+      authorizations.push(headers?.Authorization || "");
+      return { error: { status: 401, message: "Invalid refresh token" } };
+    },
+  });
+  assert.equal(await env.render().restoreStoredSession(), false);
+  assert.deepEqual(authorizations, [""], "the access token and cookie-only attempts are the same request");
+  assert.equal(env.storage.getItem("pp_session_token"), null);
 });
 
 test("a definitive 401 clears rejected credentials", async (context) => {
