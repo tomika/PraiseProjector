@@ -69,6 +69,13 @@ app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
+// Renderer CDP port for the VS Code "Debug Electron Renderer" attach config. Set via env
+// rather than a --remote-debugging-port runtime arg: the js-debug node launcher does not
+// forward that arg to the Electron process, so the port never opened.
+if (process.env.PP_REMOTE_DEBUGGING_PORT) {
+  app.commandLine.appendSwitch("remote-debugging-port", process.env.PP_REMOTE_DEBUGGING_PORT);
+}
+
 // Single-instance lock to prevent multiple app instances
 // Uses Electron's built-in lock (doesn't rely on file flags, survives process crashes)
 const gotTheLock = app.requestSingleInstanceLock();
