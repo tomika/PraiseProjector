@@ -582,12 +582,10 @@ export class ClientViewStore {
     this.wire();
     await this.api.init(config);
     if (!this.isLifecycleActive(token)) return;
-    // The embedded view is backed entirely by the host's live local state. Do not
-    // hold its first render behind cloud authentication: refresh auth in the
-    // background and let the auth subscription update the UI when it settles.
-    if (config.entryMode === "embedded") {
-      void this.api.auth.restoreSession().catch(() => undefined);
-    } else {
+    // The host owns authentication for the embedded view and keeps it current
+    // through subscribeAuth. Restoring again on a UI switch can clear a live
+    // session when verification fails (for example, while offline).
+    if (config.entryMode !== "embedded") {
       await this.api.auth.restoreSession().catch(() => undefined);
       if (!this.isLifecycleActive(token)) return;
     }
