@@ -9,19 +9,27 @@
  *
  * Title and Meta labels use a strikethrough + blue glow when their hide-option is
  * on, matching the original `input:checked + label { text-shadow: … }` style; the ♪
- * (ABC notation) toggle follows the same pattern. Auto
+ * (ABC block) button cycles notation / chords only / hidden in the same look. Auto
  * wrap has no label — it is the wrap.svg glyph, glowing (not struck through) when on.
  */
 
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { icon } from "./assets";
-import type { ZoomTagMode } from "../controller/ClientViewStore";
+import type { ZoomAbcMode, ZoomTagMode } from "../controller/ClientViewStore";
 import { SIZING_MODES, ZoomSizingModeGlyph } from "./zoomSizingModes";
 
 const TAG_MODES: Array<{ value: ZoomTagMode; label: string }> = [
   { value: "VISIBLE", label: "Verse" },
   { value: "ABBREV", label: "V" },
   { value: "HIDDEN", label: "—" },
+];
+
+// Cycled by the ♪ toggle: plain = notation, glow + chord mark = chord grid only,
+// glow + strikethrough = hidden.
+const ABC_MODES: Array<{ value: ZoomAbcMode; title: string }> = [
+  { value: "NOTATION", title: "ABC blocks: full notation" },
+  { value: "CHORDS", title: "ABC blocks: chords only" },
+  { value: "HIDDEN", title: "ABC blocks: hidden" },
 ];
 
 export function ZoomPanel() {
@@ -33,6 +41,12 @@ export function ZoomPanel() {
   );
   const tagMode = TAG_MODES[tagModeIndex];
   const nextTagMode = TAG_MODES[(tagModeIndex + 1) % TAG_MODES.length];
+  const abcModeIndex = Math.max(
+    0,
+    ABC_MODES.findIndex((mode) => mode.value === s.zoomAbcMode)
+  );
+  const abcMode = ABC_MODES[abcModeIndex];
+  const nextAbcMode = ABC_MODES[(abcModeIndex + 1) % ABC_MODES.length];
 
   return (
     <div className="cv-zoom-panel">
@@ -45,10 +59,19 @@ export function ZoomPanel() {
         <input type="checkbox" checked={s.zoomHideMeta} onChange={(e) => store.setDisplaySetting("zoomHideMeta", e.target.checked)} />
         <span className="cv-zoom-label">Meta</span>
       </label>
-      <label className="cv-zoom-toggle cv-zoom-abc-toggle" title="ABC notation">
-        <input type="checkbox" checked={s.zoomHideAbc} onChange={(e) => store.setDisplaySetting("zoomHideAbc", e.target.checked)} />
-        <span className="cv-zoom-label">{"♪"}</span>
-      </label>
+      <button
+        type="button"
+        className="cv-zoom-toggle cv-zoom-abc-toggle"
+        data-mode={abcMode.value}
+        title={abcMode.title}
+        aria-label={abcMode.title}
+        onClick={() => store.setDisplaySetting("zoomAbcMode", nextAbcMode.value)}
+      >
+        <span className="cv-zoom-label">
+          {"♪"}
+          {abcMode.value === "CHORDS" && <sup className="cv-zoom-abc-chord">C</sup>}
+        </span>
+      </button>
       <label className="cv-zoom-toggle cv-zoom-wrap-toggle" title="Auto wrap">
         <input type="checkbox" checked={s.zoomAutoWrap} onChange={(e) => store.setDisplaySetting("zoomAutoWrap", e.target.checked)} />
         <span className="cv-zoom-label">

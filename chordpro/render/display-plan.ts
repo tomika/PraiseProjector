@@ -12,14 +12,7 @@ import {
 } from "../chordpro_base";
 import { Instructions, type InstructionItem } from "../chordpro_instructions";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
-import {
-  buildChordVisualModel,
-  CHORDFORMAT_NOABC,
-  CHORDFORMAT_NOCHORDS,
-  CHORDFORMAT_NOSECTIONDUP,
-  CHORDFORMAT_SIMPLIFIED,
-  type ChordVisualModel,
-} from "./chord-visual";
+import { buildChordVisualModel, CHORDFORMAT_NOCHORDS, CHORDFORMAT_NOSECTIONDUP, CHORDFORMAT_SIMPLIFIED, type ChordVisualModel } from "./chord-visual";
 import {
   differentialCoordinateToSource,
   differentialTextUnits,
@@ -361,11 +354,21 @@ export interface DisplaySequence {
   readonly labels?: string[];
 }
 
+/**
+ * How a readonly projection shows `{start_of_abc}` blocks. AUTO is the legacy
+ * rule: notation in plain document order, but a chord grid wherever the block is
+ * cloned (instructed or transposed sections). The others apply everywhere:
+ * NOTATION always renders abcjs, CHORDS always the chord grid, HIDDEN drops the
+ * block (and an instruction item whose section is nothing but ABC).
+ */
+export type AbcDisplayMode = "AUTO" | "NOTATION" | "CHORDS" | "HIDDEN";
+
 export interface ProjectDisplaySequenceOptions {
   readonly document: ChordProDocument;
   readonly readOnly: boolean;
   readonly instructionsMode: DisplayInstructionsMode;
   readonly instructions?: Instructions | null;
+  readonly abcMode?: AbcDisplayMode;
 }
 
 function genInstructionComment(document: ChordProDocument, text: string, type: ChordProCommentType = "") {
@@ -376,9 +379,18 @@ function genInstructionComment(document: ChordProDocument, text: string, type: C
   return line;
 }
 
-function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instructions: Instructions): DisplaySequence {
+/** A projection's own copy of a document line; HIDDEN ABC blocks never get this far. */
+function cloneForProjection(origin: ChordProLine, abcMode: AbcDisplayMode) {
+  if (origin instanceof ChordProAbc && abcMode !== "NOTATION") return origin.toGrid(true);
+  return origin.clone(true);
+}
+
+function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instructions: Instructions, abcMode: AbcDisplayMode): DisplaySequence {
   const document = options.document;
   const firstLines = new Map<string, ProjectedLine | null>();
+  // Sections that consist solely of hidden ABC blocks: every repeat is dropped too,
+  // instead of falling back to a label row.
+  const hiddenSections = new Set<string>();
   const groupFirstIndex = new Map<string, number>();
   const groups: number[] = new Array(instructions.items.length);
   const labels: string[] = new Array(instructions.items.length);
@@ -399,6 +411,7 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
     // different transpose still emits the full transposed block, while a repeat
     // with the same transpose collapses to the first-line preview / label comment.
     const repeatKey = item.value + "@" + (item.transpose ?? 0);
+    if (hiddenSections.has(repeatKey)) continue;
     const groupFirst = groupFirstIndex.get(repeatKey);
     // FULL renders each repeat as its own full section, so every occurrence keeps
     // its own highlight group; other modes share the first occurrence's group so
@@ -408,9 +421,12 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
 
     if (!firstLines.has(repeatKey) || options.instructionsMode === "FULL") {
       let firstLine: ProjectedLine | null = null;
+      let matched = false;
       for (const origin of document.lines) {
         if (!Instructions.matchesSection(origin, item)) continue;
-        const line = origin instanceof ChordProAbc ? origin.toGrid(true) : origin.clone(true);
+        matched = true;
+        if (abcMode === "HIDDEN" && origin instanceof ChordProAbc) continue;
+        const line = cloneForProjection(origin, abcMode);
         line.multiplierOverride = item.multiplier;
         if (item.transpose) {
           line.transposeOverride = item.transpose;
@@ -421,13 +437,15 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
         if (!firstLine) firstLine = projected;
         lines.push(projected);
       }
+      if (matched && !firstLine) hiddenSections.add(repeatKey);
       if (!firstLines.has(repeatKey)) firstLines.set(repeatKey, firstLine);
       continue;
     }
 
     if (options.instructionsMode === "FIRST_LINE") {
       const first = firstLines.get(repeatKey);
-      if (first) {
+      // Notation has no "first line" to preview; such a repeat gets the label row.
+      if (first && !(first.line instanceof ChordProAbc)) {
         const line = first.line.clone();
         line.insertString(line.text.length, " ...");
         line.multiplierOverride = item.multiplier;
@@ -451,7 +469,8 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
  * modifiers (e.g. `{soc: Chorus +2}`) applied so displayed chords reflect the
  * transpose without requiring the instructions feature.
  *
- * This is the single owner of that decision.
+ * This is the single owner of that decision, and of how ABC blocks appear in it
+ * ({@link AbcDisplayMode}).
  */
 export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): DisplaySequence {
   const document = options.document;
@@ -461,6 +480,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
   });
 
   if (!options.readOnly) return rawSequence();
+  const abcMode = options.abcMode ?? "AUTO";
 
   if (options.instructionsMode) {
     let instructions = options.instructions ?? null;
@@ -474,18 +494,27 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
         instructions.parse(defaultStr, document);
       }
     }
-    if (instructions) return projectInstructedSequence(options, instructions);
+    if (instructions) return projectInstructedSequence(options, instructions, abcMode);
   }
 
   let mutated = false;
-  const lines: ProjectedLine[] = document.lines.map((origin) => {
+  const lines: ProjectedLine[] = [];
+  for (const origin of document.lines) {
+    const abc = origin instanceof ChordProAbc;
+    if (abc && abcMode === "HIDDEN") {
+      mutated = true;
+      continue;
+    }
     const transpose = origin.getSectionInfo().transpose;
-    if (!transpose) return { line: origin, origin, item: null, role: "document" as const };
-    const line = origin instanceof ChordProAbc ? origin.toGrid(true) : origin.clone(true);
-    line.transpose(transpose);
+    if (!transpose && !(abc && abcMode === "CHORDS")) {
+      lines.push({ line: origin, origin, item: null, role: "document" });
+      continue;
+    }
+    const line = cloneForProjection(origin, abcMode);
+    if (transpose) line.transpose(transpose);
     mutated = true;
-    return { line, origin, item: null, role: "document" as const };
-  });
+    lines.push({ line, origin, item: null, role: "document" });
+  }
   return mutated ? { lines, instructed: false } : rawSequence();
 }
 
@@ -506,6 +535,8 @@ export interface BuildDisplayPlanOptions {
   readonly instructionsMode?: DisplayInstructionsMode;
   readonly instructions?: Instructions | null;
   readonly instructionsPane?: InstructionsPane;
+  /** Only consulted when no pre-resolved `sequence` is supplied. */
+  readonly abcMode?: AbcDisplayMode;
   /** Pre-resolved sequence. Supplied by the controller so the projection is computed once. */
   readonly sequence?: DisplaySequence;
   readonly keyIsAuto?: boolean;
@@ -720,12 +751,11 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
       readOnly: options.readOnly,
       instructionsMode: options.instructionsMode ?? "",
       instructions: options.instructions,
+      abcMode: options.abcMode,
     });
   const occurrences: DisplayOccurrence[] = [];
   let previousTagIdentity = "";
   const noChords = (options.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS;
-  // Instructed/transposed sequences render ABC as a grid clone, so check the origin too.
-  const noAbc = options.readOnly && (options.chordFormat & CHORDFORMAT_NOABC) === CHORDFORMAT_NOABC;
   const noSectionDuplicates = (options.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
   const repeatOrdinals = new Map<string, number>();
   const itemByInstructionIndex = new Map<number, InstructionItem>();
@@ -735,7 +765,6 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
   for (const projected of sequence.lines) {
     const line = projected.line;
     if (noChords && line.isInstrumental) continue;
-    if (noAbc && (line instanceof ChordProAbc || projected.origin instanceof ChordProAbc)) continue;
     const displayOrdinal = occurrences.length;
     const kind: DisplayLineKind = line instanceof ChordProAbc ? "abc" : line.isComment ? "comment" : line.isGrid ? "grid" : "lyrics";
     const sourceText: string | DifferentialText =

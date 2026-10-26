@@ -19,6 +19,7 @@ import * as clipboard from "./clipboard";
 import { ChordBoxType } from "./chord_drawer";
 import { NoteHitBox } from "./ui_base";
 import type { ChordProStylesSettings } from "./chordpro_styles";
+import type { AbcDisplayMode } from "./render/display-plan";
 
 const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
 
@@ -343,6 +344,11 @@ function bindEditor(editorDiv: HTMLDivElement) {
     enableInstructionRendering: (mode: InstructionsRenderMode, draw = true) => {
       const instance = getBoundEditor();
       if (instance) instance.enableInstructionRendering(mode, draw);
+    },
+    /** How readonly rendering shows ABC blocks — see display-plan's AbcDisplayMode. */
+    setAbcDisplayMode: (mode: AbcDisplayMode, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.setAbcDisplayMode(mode, draw);
     },
     /** Install (or clear with null) a tap handler that fires {from,to,section}
      *  for the tapped lyrics line — drives leader highlight control. */

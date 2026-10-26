@@ -34,7 +34,6 @@ import { PageFlip } from "../../../chordpro/pageFlip";
 import {
   CHORDFORMAT_BB,
   CHORDFORMAT_INKEY,
-  CHORDFORMAT_NOABC,
   CHORDFORMAT_NOCHORDS,
   CHORDFORMAT_NOSECTIONDUP,
   CHORDFORMAT_SIMPLIFIED,
@@ -42,6 +41,7 @@ import {
 } from "../../../chordpro/chord_drawer";
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import type { ChordProStylesSettings } from "../../../chordpro/chordpro_styles";
+import type { AbcDisplayMode } from "../../../chordpro/render/display-plan";
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
@@ -146,9 +146,13 @@ function buildChordFlags(s: DisplaySettings): number {
   if (s.simplified) flags |= CHORDFORMAT_SIMPLIFIED;
   if (s.noSecChordDup) flags |= CHORDFORMAT_NOSECTIONDUP;
   if (s.autoTone) flags |= CHORDFORMAT_INKEY;
-  // A zoom sub-setting: like the other zoom* options it applies only while maxText is on.
-  if (s.maxText && s.zoomHideAbc) flags |= CHORDFORMAT_NOABC;
   return flags;
+}
+
+/** A zoom sub-setting: like the other zoom* options it applies only while maxText
+ *  is on; otherwise ABC blocks always render as notation. */
+function abcDisplayMode(s: DisplaySettings): AbcDisplayMode {
+  return s.maxText ? s.zoomAbcMode : "NOTATION";
 }
 
 function advanceFitGeneration(host: HTMLDivElement): number {
@@ -439,6 +443,7 @@ function renderSong(
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
   const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
   const autoWrap = maxText && settings.zoomAutoWrap;
+  api.setAbcDisplayMode(abcDisplayMode(settings), false);
   api.setDisplayMode(
     maxText ? !settings.zoomHideTitle : true,
     maxText ? !settings.zoomHideMeta : true,
@@ -1165,6 +1170,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // NO_CHORDS is a pseudo box-type: hide chords entirely with an empty box.
     const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
     const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+    api.setAbcDisplayMode(abcDisplayMode(settings), false);
     api.setDisplayMode(
       maxText ? !settings.zoomHideTitle : true,
       maxText ? !settings.zoomHideMeta : true,

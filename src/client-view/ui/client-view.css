@@ -1483,7 +1483,8 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     color 0.1s;
 }
 
-.cv-zoom-toggle input:checked ~ .cv-zoom-label {
+.cv-zoom-toggle input:checked ~ .cv-zoom-label,
+.cv-zoom-abc-toggle:not([data-mode="NOTATION"]) .cv-zoom-label {
   opacity: 1;
   color: var(--cv-checked-fg);
   text-decoration: line-through;
@@ -1497,10 +1498,30 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     0 0 0.7em #05e;
 }
 
-/* The ABC toggle is a single ♪ glyph: enlarge it so the strikethrough stays legible. */
+/* The ABC toggle is a button cycling three states on a single ♪ glyph (enlarged
+   so the strikethrough stays legible): plain = notation, glow + a small chord
+   mark = chord grid only, glow + strikethrough = hidden. */
+.cv-zoom-abc-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
 .cv-zoom-abc-toggle .cv-zoom-label {
   font-size: 20px;
   line-height: 1;
+}
+
+.cv-zoom-abc-toggle[data-mode="CHORDS"] .cv-zoom-label {
+  text-decoration: none;
+}
+
+.cv-zoom-abc-chord {
+  margin-left: 1px;
+  font-size: 0.6em;
+  font-weight: bold;
 }
 
 /* Auto wrap carries no word — it is the wrap.svg glyph. Unlike Title / Meta it

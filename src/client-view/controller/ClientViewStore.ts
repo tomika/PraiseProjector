@@ -59,6 +59,8 @@ export type DarkMode = "auto" | "light" | "dark";
 
 /** maxText section-tag display: full word, abbreviation, or hidden. */
 export type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
+/** maxText ABC-block display: abcjs notation, chord grid only, or hidden. */
+export type ZoomAbcMode = "NOTATION" | "CHORDS" | "HIDDEN";
 export type ZoomSizingMode = "FIT_PAGE" | "FIT_WIDTH" | "MANUAL";
 
 /** Which collection the options-panel song list shows: the full database
@@ -162,8 +164,7 @@ export interface DisplaySettings {
   /** maxText (zoom) sub-settings — applied only while maxText is on. */
   zoomHideTitle: boolean;
   zoomHideMeta: boolean;
-  /** Drop ABC (abcjs notation) blocks from the song. */
-  zoomHideAbc: boolean;
+  zoomAbcMode: ZoomAbcMode;
   zoomTagMode: ZoomTagMode;
   zoomSizingMode: ZoomSizingMode;
   /** Wrap over-wide lyrics lines. Automatic sizing modes may only grow the
@@ -185,7 +186,7 @@ const defaultDisplaySettings: DisplaySettings = {
   maxText: false,
   zoomHideTitle: true,
   zoomHideMeta: true,
-  zoomHideAbc: false,
+  zoomAbcMode: "NOTATION",
   zoomTagMode: "ABBREV",
   zoomSizingMode: "FIT_PAGE",
   zoomAutoWrap: false,
@@ -833,6 +834,7 @@ export class ClientViewStore {
       const legacy = persisted.displaySettings as Omit<Partial<DisplaySettings>, "zoomSizingMode"> & {
         zoomScrollable?: boolean;
         zoomSizingMode?: ZoomSizingMode | "AUTO_HEIGHT";
+        zoomHideAbc?: boolean;
       };
       const sizingMode: ZoomSizingMode =
         legacy.zoomSizingMode === "FIT_PAGE" || legacy.zoomSizingMode === "FIT_WIDTH" || legacy.zoomSizingMode === "MANUAL"
@@ -844,7 +846,13 @@ export class ClientViewStore {
         typeof legacy.zoomAutoWrap === "boolean"
           ? legacy.zoomAutoWrap
           : legacy.zoomSizingMode === "AUTO_HEIGHT" || legacy.zoomSizingMode === "MANUAL";
-      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode, zoomAutoWrap };
+      const zoomAbcMode: ZoomAbcMode =
+        legacy.zoomAbcMode === "NOTATION" || legacy.zoomAbcMode === "CHORDS" || legacy.zoomAbcMode === "HIDDEN"
+          ? legacy.zoomAbcMode
+          : legacy.zoomHideAbc
+            ? "HIDDEN"
+            : "NOTATION";
+      patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode, zoomAutoWrap, zoomAbcMode };
       const restored = patch.displaySettings;
       if (!["", "GUITAR", "PIANO"].includes(restored.lastVisibleChordMode ?? "missing"))
         restored.lastVisibleChordMode = restored.chordBoxType === "NO_CHORDS" ? "" : restored.chordBoxType;

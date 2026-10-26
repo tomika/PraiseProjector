@@ -22,7 +22,7 @@ import { ChordDetails, Key, Mode } from "./note_system";
 import { Settings } from "../common/settings";
 import { NoteHitBox, Point, Rectangle } from "./ui_base";
 import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY } from "./chord_drawer";
-import { projectDisplaySequence, type DisplaySequence } from "./render/display-plan";
+import { projectDisplaySequence, type AbcDisplayMode, type DisplaySequence } from "./render/display-plan";
 import { buildChordVisualModel } from "./render/chord-visual";
 import { collectChordDiagramLabels } from "./render/diagram-chords";
 import { safeMetaAlignment } from "./layout/meta-alignment";
@@ -751,6 +751,7 @@ export class ChordProEditor extends ChordDrawer {
   private displayNormalizedChord = false;
   private differentialDisplay = false;
   private instructionsRenderMode: InstructionsRenderMode = "";
+  private abcDisplayMode: AbcDisplayMode = "AUTO";
   private instructionEditorActive = false;
   private instructionsPaneCleanup: (() => void) | null = null;
   private instructionsCoordinatorCleanup: (() => void) | null = null;
@@ -2197,6 +2198,15 @@ export class ChordProEditor extends ChordDrawer {
     if (this.instructionsRenderMode !== mode) {
       this.instructionsRenderMode = mode;
       this.invalidateDisplaySequence();
+      this.invalidateDisplaySemantics();
+    }
+    if (draw) this.draw();
+  }
+
+  /** How readonly projections show ABC blocks: notation, chord grid or not at all. */
+  setAbcDisplayMode(mode: AbcDisplayMode, draw = true) {
+    if (this.abcDisplayMode !== mode) {
+      this.abcDisplayMode = mode;
       this.invalidateDisplaySemantics();
     }
     if (draw) this.draw();
@@ -5420,7 +5430,11 @@ export class ChordProEditor extends ChordDrawer {
       this.abcjsLoadPending = true;
       void loadAbcjs().finally(() => {
         this.abcjsLoadPending = false;
-        if (!this.disposed) this.update();
+        if (this.disposed) return;
+        // The cached projection may hold ABC clones made without abcjs (an empty
+        // chord grid, an untransposed block): re-project now that it is here.
+        this.invalidateDisplaySemantics();
+        this.update();
       });
     }
     return false;
@@ -5908,6 +5922,7 @@ export class ChordProEditor extends ChordDrawer {
       readOnly: true,
       instructionsMode,
       instructions: pane === "preview" ? instructions : null,
+      abcMode: this.abcDisplayMode,
     });
     return {
       document: this.chordPro,
@@ -6485,6 +6500,7 @@ export class ChordProEditor extends ChordDrawer {
         readOnly: this.readOnly,
         instructionsMode: this.instructionsRenderMode,
         instructions: this.instructions ?? null,
+        abcMode: this.abcDisplayMode,
       });
     return this.displaySequence;
   }
