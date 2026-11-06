@@ -1013,6 +1013,8 @@
   "DiscardAndSync": "Discard & Sync",
   "DiscardChanges": "Discard Changes",
   "SaveChanges": "Save Changes",
+  "LeaveWithoutSaving": "Leave Without Saving",
+  "ContinueEditing": "Continue Editing",
   "OverwriteSong": "Overwrite Song",
   "SaveSong": "Save Song",
   "AllowRemoteControl": "Allow Remote Control",

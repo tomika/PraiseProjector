@@ -1014,6 +1014,8 @@
   "DiscardAndSync": "Elvetés és szinkronizálás",
   "DiscardChanges": "Változtatások elvetése",
   "SaveChanges": "Változtatások mentése",
+  "LeaveWithoutSaving": "Kilépés mentés nélkül",
+  "ContinueEditing": "Szerkesztés folytatása",
   "OverwriteSong": "Dal felülírása",
   "SaveSong": "Dal mentése",
   "AllowRemoteControl": "Távvezérlés engedélyezése",

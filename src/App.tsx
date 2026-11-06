@@ -1883,7 +1883,8 @@ const AppContent: React.FC = () => {
         t("UnsavedChanges"),
         t("AskDiscardChangesAndLoadNewSong"),
         () => {
-          editorPanelRef.current?.leaveEditMode?.();
+          // Discard is already confirmed: skip the save prompt, its "Continue editing" could not undo the switch.
+          editorPanelRef.current?.leaveEditMode?.(true);
           setIsEditing(false);
           const cloned = song.clone();
           setEditedSong(cloned);
@@ -1946,8 +1947,13 @@ const AppContent: React.FC = () => {
       // If text was changed, ask user if they want to save.
       // Returning false cancels edit-mode exit so the editor stays editable.
       if (currentText.trim() !== originalText.trim() && currentText.trim() !== "") {
-        const confirmed = await showConfirmAsync(t("UnsavedChanges"), t("AskSaveSongChanges"), { confirmText: t("SaveChanges") });
-        if (confirmed) {
+        const choice = await showYesNoCancelAsync(t("UnsavedChanges"), t("AskSaveSongChanges"), {
+          confirmText: t("SaveChanges"),
+          noText: t("LeaveWithoutSaving"),
+          cancelText: t("ContinueEditing"),
+        });
+        if (choice === "cancel") return false;
+        if (choice === "yes") {
           const current = getEditedSong();
           if (current) {
             // Require a title before saving — cancel exit so user can fill it in
@@ -2003,7 +2009,7 @@ const AppContent: React.FC = () => {
         }
       }
     },
-    [showConfirmAsync, showMessage, t]
+    [showYesNoCancelAsync, showMessage, t]
   );
 
   const handleReloadSong = useCallback(() => {
@@ -2147,7 +2153,7 @@ const AppContent: React.FC = () => {
         t("UnsavedChanges"),
         t("AskDiscardChangesAndCreateNew"),
         () => {
-          editorPanelRef.current?.leaveEditMode?.();
+          editorPanelRef.current?.leaveEditMode?.(true);
           setIsEditing(false);
           createNew();
         },
@@ -2339,8 +2345,8 @@ const AppContent: React.FC = () => {
           t("UnsavedChanges"),
           t("AskDiscardChangesBeforeSync"),
           async () => {
-            // User chose to discard - leave edit mode and start sync
-            editorPanelRef.current?.leaveEditMode?.();
+            // User chose to discard - leave edit mode (no second save prompt) and start sync
+            editorPanelRef.current?.leaveEditMode?.(true);
             setIsEditing(false);
             if (await checkAndSaveScheduledPlaylist()) {
               openDBSyncDialog(continueTutorialAfterSync);
