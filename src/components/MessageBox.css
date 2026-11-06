@@ -22,11 +22,13 @@
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  /* Shrink-to-fit between 400 and 600px as before, but never wider/taller than
-     the viewport minus the overlay padding: the min()s let both bounds yield on
-     narrow screens instead of pushing the dialog off-screen. */
+  /* Shrink-to-fit between 400 and 680px, but never wider/taller than the
+     viewport minus the overlay padding: the min()s let both bounds yield on
+     narrow screens instead of pushing the dialog off-screen. 680px leaves room
+     for three long localized buttons (e.g. the Hungarian unsaved-changes
+     prompt) on one row. */
   min-width: min(400px, 100%);
-  max-width: min(600px, 100%);
+  max-width: min(680px, 100%);
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   /* Column layout so the body is the only part that scrolls: title and buttons
@@ -73,17 +75,32 @@
   padding: 16px 20px;
   border-top: 1px solid #dee2e6;
   display: flex;
-  flex-wrap: wrap;
+  /* Never wrap: a row that does not fit switches to the stacked layout below
+     (decided by MessageBox.tsx, which measures the natural button widths). */
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 10px;
 }
 
 .messagebox-footer .btn {
   min-width: 80px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
-/* Phone-sized screens: trim the paddings and let the buttons shrink so three
-   of them still fit on one row instead of wrapping. */
+/* Buttons do not fit on one row: one full-width button per line, primary
+   action on top (column-reverse keeps the DOM / tab order unchanged). */
+.messagebox-footer--stacked {
+  flex-direction: column-reverse;
+  align-items: stretch;
+}
+
+.messagebox-footer--stacked .btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Phone-sized screens: trim the paddings and gaps. */
 @media (max-width: 420px) {
   .messagebox-overlay {
     padding: 8px;
@@ -105,11 +122,6 @@
 
   .messagebox-footer {
     gap: 8px;
-  }
-
-  .messagebox-footer .btn {
-    min-width: 0;
-    flex: 1 1 auto;
   }
 }
 
