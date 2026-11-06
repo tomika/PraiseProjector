@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ChordProAbc, ChordProDocument, getChordSystem } from "../chordpro_base";
 import type { DisplayPlan } from "../render/display-plan";
-import { DomSongRenderer, type AbcRenderPort, type DomSongRendererInput } from "../render/dom-song-renderer";
+import { DomSongRenderer, type AbcPlaybackAnchor, type AbcRenderPort, type DomSongRendererInput } from "../render/dom-song-renderer";
 import type { SongLayoutResult } from "../layout/song-layout";
 import { CHORDFORMAT_SUBSCRIPT } from "../render/chord-visual";
 
@@ -11,6 +11,8 @@ type TuneObject = NonNullable<ReturnType<AbcRenderPort["render"]>>;
 type AbcCacheHarness = {
   renderAbcBlocks(plan: DisplayPlan, layout: SongLayoutResult, input: DomSongRendererInput): boolean;
   getAbcVisualObject(abc: ChordProAbc): TuneObject | undefined;
+  getAbcPlaybackAnchor(abc: ChordProAbc): AbcPlaybackAnchor | undefined;
+  getAbcVisualObjectForAnchor(anchor: AbcPlaybackAnchor): TuneObject | undefined;
 };
 
 const SONG = `{start_of_abc: Intro}\nX:1\nK:G\n"G"GABc|\n{end_of_abc}`;
@@ -56,9 +58,9 @@ function abcCacheHarness(svg?: SVGSVGElement) {
   return { harness: renderer as unknown as AbcCacheHarness, rendered, options };
 }
 
-function abcPlan(abc: ChordProAbc) {
+function abcPlan(abc: ChordProAbc | null, id = "abc-occurrence", origin: ChordProAbc | null = null) {
   return {
-    occurrences: [{ id: "abc-occurrence", kind: "abc", source: abc, text: abc.getAbc() }],
+    occurrences: abc ? [{ id, kind: "abc", source: abc, origin, text: abc.getAbc() }] : [],
     display: { horizontalMargin: 0, lyricsLineHeight: 10 },
   } as unknown as DisplayPlan;
 }
@@ -137,4 +139,27 @@ test("ABC-only headers use the actual score width, retain overlong text and cach
   assert.deepEqual(harness.getAbcVisualObject(abc), { rendered: 2 }, "MIDI playback must use the second, visible render");
   harness.renderAbcBlocks(abcPlan(abc), layout, input);
   assert.equal(rendered.length, 2, "the fitted score is cached without repeated expansion or rendering");
+});
+
+test("a playback anchor finds its score again after the zoom view showed it as lyrics", () => {
+  const document = new ChordProDocument(getChordSystem("G"), SONG);
+  const origin = document.lines[0] as ChordProAbc;
+  const { harness, rendered } = abcCacheHarness();
+  const layout = { width: 300 } as SongLayoutResult;
+  const input = { system: { systemCode: "G" }, isDark: false, chordFormat: 0 } as unknown as DomSongRendererInput;
+
+  const clicked = origin.clone(true);
+  harness.renderAbcBlocks(abcPlan(clicked, "e1:l0|repeat:0", origin), layout, input);
+  const anchor = harness.getAbcPlaybackAnchor(clicked);
+  assert.deepEqual(anchor, { occurrenceId: "e1:l0|repeat:0", origin });
+  assert.equal(harness.getAbcVisualObjectForAnchor(anchor!), harness.getAbcVisualObject(clicked));
+
+  // Expanded to lyrics: the notation is gone, and with it every rendered tune.
+  harness.renderAbcBlocks(abcPlan(null), layout, input);
+  assert.equal(harness.getAbcVisualObjectForAnchor(anchor!), undefined);
+
+  // Back to notation in a new identity epoch: a fresh rendering of the same score.
+  harness.renderAbcBlocks(abcPlan(origin.clone(true), "e3:l0|repeat:0", origin), layout, input);
+  assert.equal(rendered.length, 2);
+  assert.deepEqual(harness.getAbcVisualObjectForAnchor(anchor!), { rendered: 2 });
 });

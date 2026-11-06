@@ -37,6 +37,12 @@ import { DomTextMeasurer } from "./dom-text-measurer";
 
 export type InvalidationCategory = "structure" | "metrics" | "layout" | "decoration" | "interaction";
 
+/** Where a MIDI playback started: the rendered occurrence and its document score. */
+export interface AbcPlaybackAnchor {
+  readonly occurrenceId: string;
+  readonly origin: ChordProLine;
+}
+
 export interface DiagramPlacement {
   readonly chord: string;
   readonly x: number;
@@ -640,7 +646,16 @@ export class DomSongRenderer {
   /** Owned ABC containers, keyed by occurrence id. Never rebuilt from markup strings. */
   private readonly abcNodes = new Map<
     string,
-    { node: HTMLDivElement; key: string; height: number; width: number; source: ChordProAbc; visual?: TuneObject }
+    {
+      node: HTMLDivElement;
+      key: string;
+      height: number;
+      width: number;
+      source: ChordProAbc;
+      /** The persistent document score; `source` may be a per-projection clone. */
+      origin: ChordProLine | null;
+      visual?: TuneObject;
+    }
   >();
   /** Owned diagram canvases, keyed by chord label. These are retained canvases. */
   private readonly diagramNodes = new Map<string, SVGSVGElement>();
@@ -1065,6 +1080,7 @@ export class DomSongRenderer {
         // The notation is unchanged, but a re-projection hands over a fresh clone:
         // track it, or getAbcVisualObject() misses the tune that is on screen.
         existing.source = abc;
+        existing.origin = occurrence.origin;
         continue;
       }
 
@@ -1104,7 +1120,15 @@ export class DomSongRenderer {
       // the scaled block can extend past the song's lyric width. `buildDiagrams`
       // uses this to keep the side diagram column clear of the ABC (they
       // overlapped otherwise).
-      this.abcNodes.set(occurrence.id, { node, key, height: ABC_SCALE * measured.height, width: ABC_SCALE * measured.width, source: abc, visual });
+      this.abcNodes.set(occurrence.id, {
+        node,
+        key,
+        height: ABC_SCALE * measured.height,
+        width: ABC_SCALE * measured.width,
+        source: abc,
+        origin: occurrence.origin,
+        visual,
+      });
     }
     return false;
   }
@@ -1117,6 +1141,28 @@ export class DomSongRenderer {
    */
   getAbcVisualObject(abc: ChordProAbc): TuneObject | undefined {
     for (const entry of this.abcNodes.values()) if (entry.source === abc) return entry.visual;
+    return undefined;
+  }
+
+  /**
+   * Identifies the rendered score `abc` for a MIDI playback that must keep
+   * marking it after re-projection (fresh clones) and re-rendering (a fresh tune
+   * object, e.g. when the zoom view showed it as lyrics in between).
+   */
+  getAbcPlaybackAnchor(abc: ChordProAbc): AbcPlaybackAnchor | undefined {
+    for (const [occurrenceId, entry] of this.abcNodes) if (entry.source === abc) return { occurrenceId, origin: entry.origin ?? abc };
+    return undefined;
+  }
+
+  /**
+   * The tune object on screen for `anchor`: its own occurrence while that still
+   * exists, otherwise the first rendering of the same document score. Occurrence
+   * ids are renumbered when the projection switches documents (ABC expansion).
+   */
+  getAbcVisualObjectForAnchor(anchor: AbcPlaybackAnchor): TuneObject | undefined {
+    const same = this.abcNodes.get(anchor.occurrenceId);
+    if (same && (same.origin ?? same.source) === anchor.origin) return same.visual;
+    for (const entry of this.abcNodes.values()) if ((entry.origin ?? entry.source) === anchor.origin) return entry.visual;
     return undefined;
   }
 
