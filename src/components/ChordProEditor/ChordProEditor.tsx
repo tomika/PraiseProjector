@@ -129,6 +129,9 @@ interface ChordProEditorState {
   activeTab: ChordProEditorTab;
   chordProText: string;
   metaData: Map<string, string>;
+  /** Raw text of the meta fields being typed into. The song text always stores
+   *  the trimmed value; a draft is shown only while it still trims to it. */
+  metaDrafts: ReadonlyMap<string, string>;
   commentBlockedByChords: boolean;
 }
 
@@ -321,6 +324,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
       activeTab: props.activeTab ?? "wysiwyg",
       chordProText: "",
       metaData: new Map(),
+      metaDrafts: new Map(),
       commentBlockedByChords: false,
     };
     this.isEditable = props.editMode ?? props.initialEditMode ?? false;
@@ -806,6 +810,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.setState({
       chordProText,
       metaData,
+      metaDrafts: new Map(),
     });
     return chordProText;
   }
@@ -1098,8 +1103,20 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
   private handleMetaChange = (tag: string, value: string) => {
     if (!this.isEditable) return;
+    // Trimming the field on every keystroke would swallow a space typed before
+    // the next word. Keep the raw draft in the field until it loses focus.
+    this.setState((state) => ({ metaDrafts: new Map(state.metaDrafts).set(tag, value) }));
     const updatedText = this.updateChordProMeta(this.state.chordProText, tag, value);
     this.applyChordProText(updatedText);
+  };
+
+  private handleMetaBlur = (tag: string) => {
+    if (!this.state.metaDrafts.has(tag)) return;
+    this.setState((state) => {
+      const metaDrafts = new Map(state.metaDrafts);
+      metaDrafts.delete(tag);
+      return { metaDrafts };
+    });
   };
 
   public async enterEditMode() {
@@ -1376,7 +1393,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   };
 
   renderMetaTab = () => {
-    const { metaData } = this.state;
+    const { metaData, metaDrafts } = this.state;
     const t = this.props.t || ((key: string) => key);
 
     // Common ChordPro metadata tags in order with their localization keys
@@ -1407,7 +1424,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
           </thead>
           <tbody>
             {metaTags.map(({ tag, labelKey }) => {
-              const value = metaData.get(tag) || "";
+              const stored = metaData.get(tag) || "";
+              const draft = metaDrafts.get(tag);
+              // An edit made elsewhere (song text, WYSIWYG) replaces the draft.
+              const value = draft != null && draft.trim() === stored ? draft : stored;
               return (
                 <tr key={tag}>
                   <td>{t(labelKey)}</td>
@@ -1417,6 +1437,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
                       className="form-control form-control-sm"
                       value={value}
                       onChange={(e) => this.handleMetaChange(tag, e.target.value)}
+                      onBlur={() => this.handleMetaBlur(tag)}
                       readOnly={!this.isEditable}
                       aria-label={`${t(labelKey)} value`}
                       ref={

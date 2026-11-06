@@ -3,7 +3,8 @@
 // Extracted from chordpro_editor.ts so non-editor consumers can use it without
 // pulling the full editor surface.
 
-import { ChordProDocument, ChordProLine, ChordProSectionInfo } from "./chordpro_base";
+import { ChordProAbc, ChordProDocument, ChordProLine, ChordProSectionInfo } from "./chordpro_base";
+import { isAbcjsLoaded } from "./abcjs-lazy";
 
 export type InstructionItem = {
   value: string;
@@ -30,6 +31,14 @@ export function formatTransposeSuffix(transpose: number | undefined): string {
   return " " + (transpose > 0 ? "+" : "-") + Math.abs(transpose);
 }
 
+/** One lazily built ABC expansion shared by a whole lookup pass. The document
+ *  caches the expansion itself, but validating that cache serializes the whole
+ *  song, so a loop over many unresolved (comment) lines must not repeat it. */
+function lazyAbcExpansion(doc: ChordProDocument): () => ChordProDocument {
+  let expanded: ChordProDocument | undefined;
+  return () => (expanded ??= doc.expandAbc());
+}
+
 export class Instructions {
   constructor(readonly items: InstructionItem[] = []) {}
 
@@ -37,7 +46,7 @@ export class Instructions {
     return item.info ? item.info.instructionName() : item.value;
   }
 
-  static findSection(doc: ChordProDocument, tag: string): ChordProSectionInfo | undefined {
+  static findSection(doc: ChordProDocument, tag: string, abcExpansion = lazyAbcExpansion(doc)): ChordProSectionInfo | undefined {
     if (!tag) return undefined;
     const probe = new ChordProSectionInfo("start_of_chorus:" + tag);
     const target = probe.instructionName().toLocaleLowerCase();
@@ -51,7 +60,71 @@ export class Instructions {
       if (sectionName.toLocaleLowerCase() === target) return info;
       if (!baseFallback && targetBase && info.baseTag.toLocaleLowerCase() === targetBase) baseFallback = info;
     }
+    for (const line of doc.lines) {
+      const parent = line.abcSource?.getSectionInfo();
+      if (parent?.instructionName().toLocaleLowerCase() === target) return parent;
+    }
+    const expanded = abcExpansion();
+    if (expanded !== doc)
+      for (const section of expanded.sectionInfo.values()) if (section.info.instructionName().toLocaleLowerCase() === target) return section.info;
+    // A not-yet-loaded ABC may later expose this exact verse. Preserve the text
+    // instead of silently reducing "Verse 2" to its parent "Verse".
+    if (
+      baseFallback?.name === "start_of_abc" &&
+      !doc.lines.some(
+        (line) =>
+          line instanceof ChordProAbc && line.getSectionInfo() === baseFallback && isAbcjsLoaded() && line.toChordPro().every((row) => row.isGrid)
+      )
+    )
+      return undefined;
     return baseFallback;
+  }
+
+  /** Rebind deferred ABC names after the lazy parser becomes available. Existing
+   * instruction objects keep their identity for highlighting and DOM reuse. */
+  resolveAbcSections(doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)) {
+    for (const item of this.items) {
+      if (item.multiplier != null || !item.value.trim()) continue;
+      const probe = new ChordProSectionInfo("start_of_chorus:" + item.value.trim());
+      const info = Instructions.findSection(doc, probe.instructionName(), abcExpansion);
+      if (!info) continue;
+      item.info = info;
+      item.value = info.instructionName();
+      item.multiplier = Math.max(1, probe.multiplier ?? 1);
+      item.transpose = clampTranspose(probe.transpose ?? info.transpose);
+    }
+  }
+
+  /** The instructions editor exposes the parts of a legacy whole-score entry.
+   * Repeating the whole score repeats the entire part sequence, preserving the
+   * existing performance order instead of repeating each verse in place. */
+  expandAbcSections(doc: ChordProDocument) {
+    const expanded = doc.expandAbc();
+    const items: InstructionItem[] = [];
+    for (const item of this.items) {
+      if (item.info?.name !== "start_of_abc" || item.multiplier == null) {
+        items.push(item);
+        continue;
+      }
+      const parts: ChordProSectionInfo[] = [];
+      let previous: ChordProLine | undefined;
+      for (const line of expanded.lines) {
+        if (!line.abcSource || !Instructions.matchesSection(line, item)) continue;
+        const info = line.getSectionInfo();
+        if (!previous || previous.abcSource !== line.abcSource || previous.getSectionInfo() !== info) parts.push(info);
+        previous = line;
+      }
+      if (!parts.length || parts.length * item.multiplier > 1000 || (parts.length === 1 && parts[0].instructionName() === item.value)) {
+        // Preserve unusually large aggregate repeats without allocating an
+        // unbounded number of editor controls from one imported instruction.
+        items.push(item);
+        continue;
+      }
+      for (let repeat = 0; repeat < item.multiplier; ++repeat)
+        for (const part of parts) items.push(Instructions.createSectionItem(expanded, part.instructionName(), 1, item.transpose));
+    }
+    this.items.splice(0, this.items.length, ...items);
+    this.normalize();
   }
 
   static createSectionItem(doc: ChordProDocument, tag: string, multiplier = 1, transpose?: number): InstructionItem {
@@ -64,6 +137,8 @@ export class Instructions {
 
   static matchesSection(line: ChordProLine, item: InstructionItem) {
     if (line.isComment || item.multiplier == null) return false;
+    const parent = line.abcSource?.getSectionInfo().instructionName().toLocaleLowerCase();
+    if (parent && parent === (item.info?.instructionName() ?? item.value).toLocaleLowerCase()) return true;
     if (item.info) {
       const targetTag = item.info.instructionName().toLocaleLowerCase();
       const lineTag = line.getTagInfo().tag.toString().toLocaleLowerCase();
@@ -92,13 +167,14 @@ export class Instructions {
       // ignore parse errors
     }
     this.items.splice(0, this.items.length);
+    const abcExpansion = lazyAbcExpansion(doc);
     for (const line of data.split("\n")) {
       const trimmedLine = line.trim();
       const item: InstructionItem = { value: trimmedLine };
       if (trimmedLine) {
         const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
         const canonical = probe.instructionName();
-        const section = Instructions.findSection(doc, canonical || trimmedLine);
+        const section = Instructions.findSection(doc, canonical || trimmedLine, abcExpansion);
         if (section) {
           item.info = section;
           item.value = section.instructionName();

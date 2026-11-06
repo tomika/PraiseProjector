@@ -346,6 +346,8 @@ export interface ProjectedLine {
 }
 
 export interface DisplaySequence {
+  /** A cached readonly ABC expansion, when this projection needs partial ChordPro. */
+  readonly document?: ChordProDocument;
   readonly lines: readonly ProjectedLine[];
   /** True when an instruction list produced the sequence, false for raw document order. */
   readonly instructed: boolean;
@@ -358,7 +360,8 @@ export interface DisplaySequence {
  * How a readonly projection shows `{start_of_abc}` blocks. AUTO is the legacy
  * rule: notation in plain document order, but a chord grid wherever the block is
  * cloned (instructed or transposed sections). The others apply everywhere:
- * NOTATION always renders abcjs, CHORDS always the chord grid, HIDDEN drops the
+ * NOTATION renders abcjs unless instructions address its individual parts;
+ * CHORDS converts to partial ChordPro (a grid for instrumental ABC); HIDDEN drops the
  * block (and an instruction item whose section is nothing but ABC).
  */
 export type AbcDisplayMode = "AUTO" | "NOTATION" | "CHORDS" | "HIDDEN";
@@ -380,8 +383,7 @@ function genInstructionComment(document: ChordProDocument, text: string, type: C
 }
 
 /** A projection's own copy of a document line; HIDDEN ABC blocks never get this far. */
-function cloneForProjection(origin: ChordProLine, abcMode: AbcDisplayMode) {
-  if (origin instanceof ChordProAbc && abcMode !== "NOTATION") return origin.toGrid(true);
+function cloneForProjection(origin: ChordProLine) {
   return origin.clone(true);
 }
 
@@ -445,8 +447,8 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
       for (const origin of document.lines) {
         if (!Instructions.matchesSection(origin, item)) continue;
         matched = true;
-        if (abcMode === "HIDDEN" && origin instanceof ChordProAbc) continue;
-        const line = cloneForProjection(origin, abcMode);
+        if (abcMode === "HIDDEN" && (origin instanceof ChordProAbc || origin.abcSource)) continue;
+        const line = cloneForProjection(origin);
         line.multiplierOverride = item.multiplier;
         if (item.transpose) {
           line.transposeOverride = item.transpose;
@@ -494,7 +496,7 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
  * ({@link AbcDisplayMode}).
  */
 export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): DisplaySequence {
-  const document = options.document;
+  let document = options.document;
   const rawSequence = (): DisplaySequence => ({
     lines: document.lines.map((origin) => ({ line: origin, origin, item: null, role: "document" as const })),
     instructed: false,
@@ -503,8 +505,27 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
   if (!options.readOnly) return rawSequence();
   const abcMode = options.abcMode ?? "AUTO";
 
+  let instructions = options.instructionsMode ? (options.instructions ?? null) : null;
+  const expanded = instructions ? document.expandAbc() : null;
+  // Deliberately rebinds the CALLER's instruction items in place: names that
+  // only exist once abcjs has loaded become sections, while the editor keeps the
+  // same item objects for highlighting and DOM reuse.
+  if (instructions && expanded) instructions.resolveAbcSections(document, () => expanded);
+  document = document.expandAbc((abc) => {
+    if (abcMode === "CHORDS") return true;
+    if (abcMode === "AUTO") return !!options.instructionsMode || !!abc.getSectionInfo().transpose;
+    if (!instructions) return false;
+    const converted = expanded?.lines.filter((line) => line.abcSource === abc) ?? abc.toChordPro();
+    const names = new Set(converted.map((line) => line.getSectionInfo().instructionName().toLocaleLowerCase()));
+    const parent = abc.getSectionInfo().instructionName().toLocaleLowerCase();
+    return instructions.items.some((item) => {
+      const name = (item.info?.instructionName() ?? item.value).toLocaleLowerCase();
+      return name !== parent && names.has(name);
+    });
+  });
+  const finish = (sequence: DisplaySequence): DisplaySequence => (document === options.document ? sequence : { ...sequence, document });
+
   if (options.instructionsMode) {
-    let instructions = options.instructions ?? null;
     if (!instructions) {
       // With no explicit instructions bound, fall back to the song's built-in
       // defaults (comments + section list) so `{c: …}` directive comments are
@@ -515,7 +536,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
         instructions.parse(defaultStr, document);
       }
     }
-    if (instructions) return projectInstructedSequence(options, instructions, abcMode);
+    if (instructions) return finish(projectInstructedSequence({ ...options, document }, instructions, abcMode));
   }
 
   let mutated = false;
@@ -531,13 +552,13 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
       lines.push({ line: origin, origin, item: null, role: "document" });
       continue;
     }
-    const line = cloneForProjection(origin, abcMode);
+    const line = cloneForProjection(origin);
     if (transpose) line.transpose(transpose);
     labelAbcClone(line);
     mutated = true;
     lines.push({ line, origin, item: null, role: "document" });
   }
-  return mutated ? { lines, instructed: false } : rawSequence();
+  return finish(mutated ? { lines, instructed: false } : rawSequence());
 }
 
 export interface BuildDisplayPlanOptions {
@@ -708,7 +729,7 @@ function occurrenceId(
 function instructionsAdapterForLine(line: ChordProLine, pane: InstructionsPane | undefined): InstructionsOccurrenceAdapter | null {
   if (!pane) return null;
   const info = line.getTagInfo();
-  const section = typeof info.tag === "string" ? info.tag : info.tag.flatten();
+  const section = (typeof info.tag === "string" ? info.tag : info.tag.flatten()) || line.abcSource?.getSectionInfo().normalizedInstructionName();
   if (!section) return null;
   return { pane, section, dragTagName: section };
 }
@@ -762,8 +783,6 @@ function buildGridRuns(id: string, line: ChordProLine, options: BuildDisplayPlan
  * indexed before any projection existed. Clone identity is never a key.
  */
 export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan {
-  options.identities.ensureDocument(options.document);
-  const identities = options.identities;
   const sequence =
     options.sequence ??
     projectDisplaySequence({
@@ -773,6 +792,9 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
       instructions: options.instructions,
       abcMode: options.abcMode,
     });
+  const document = sequence.document ?? options.document;
+  options.identities.ensureDocument(document);
+  const identities = options.identities;
   const occurrences: DisplayOccurrence[] = [];
   let previousTagIdentity = "";
   const noChords = (options.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS;
@@ -822,7 +844,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
 
     const tag = noChords ? null : tagForLine(line, options, sequence.labels, previousTagIdentity);
     if (tag?.text && tag.identity) previousTagIdentity = tag.identity;
-    const duplicateSection = noSectionDuplicates && !!options.document.sectionInfo.get(line.getTagInfo().key)?.duplicate;
+    const duplicateSection = noSectionDuplicates && !!document.sectionInfo.get(line.getTagInfo().key)?.duplicate;
     const suppressChords = noChords || duplicateSection;
     const chords = suppressChords
       ? []

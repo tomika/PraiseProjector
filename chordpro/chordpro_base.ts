@@ -6,6 +6,7 @@ import { ItemToPosition } from "./placer";
 import { UnicodeSymbol } from "../common/symbols";
 import { DifferentialText } from "../common/utils";
 import { parseAbcSource, resolveAbcOptions } from "./abc-options";
+import { abcToChordPro } from "./abc-to-chordpro";
 
 export type ChordSystemCode = NoteSystemCode;
 
@@ -389,6 +390,8 @@ export class ChordProLine {
   modifyRanges: { start: number; added?: boolean }[] | null = null;
   multiplierOverride?: number;
   transposeOverride?: number;
+  /** Present only on a readonly ABC expansion, never on the stored document. */
+  abcSource?: ChordProAbc;
   /**
    * For lines synthesized by `ChordProEditor.getInstructedLines()`, the
    * 0-based index of the `Instructions.items[]` entry that produced this
@@ -413,6 +416,7 @@ export class ChordProLine {
     targetLine.multiplierOverride = this.multiplierOverride;
     targetLine.transposeOverride = this.transposeOverride;
     targetLine.instructedSectionIndex = this.instructedSectionIndex;
+    targetLine.abcSource = this.abcSource;
     if (!dataOnly) {
       targetLine.sectionChordDuplicate = this.sectionChordDuplicate;
       targetLine.marked = this.marked;
@@ -788,6 +792,7 @@ export type AbcRenderParams = AbcVisualParams & { currentColor?: string };
 
 export class ChordProAbc extends ChordProLine {
   private forcedLabel?: string | DifferentialText;
+  private chordProCache?: { source: string; lines: readonly ChordProLine[] };
   /** Set by readonly projections on their clone: the R: header shown instead of
    *  the authored label, e.g. an instructed repeat's "Intro 3x". */
   headerLabel?: string;
@@ -897,6 +902,63 @@ export class ChordProAbc extends ChordProLine {
     this.copyLineData(line, dataOnly);
     return line;
   }
+  /** The same conversion serves instructions and readonly viewing. Instrumental
+   * scores deliberately retain the old single-grid representation. */
+  toChordPro(current = true): readonly ChordProLine[] {
+    if (!isAbcjsLoaded()) return [this.toGrid(true, current)];
+    const source = this.getAbc(current, false);
+    const sectionInfo = this.getSectionInfo();
+    const cacheKey = source + "\n" + sectionInfo.key;
+    if (this.chordProCache?.source === cacheKey) return this.chordProCache.lines;
+    let lines: readonly ChordProLine[];
+    try {
+      const converted = abcToChordPro(parseAbcSource(source).abc, sectionInfo.withoutModifiers(), (code) => abcjs().parseOnly(code));
+      if (!converted) lines = [this.toGrid(true, current)];
+      else {
+        const partial = new ChordProDocument(this.doc.system, "");
+        partial.lines = [];
+        for (const name of ChordProDocument.metaDataDirectives) if (this.doc.hasMeta(name)) partial.setMeta(name, this.doc.getMeta(name));
+        const chordName = (name: string) =>
+          this.doc.system.systemCode === "G"
+            ? name.replace(/^B(b|♭)?/, (_, flat) => (flat ? "B" : "H")).replace(/\/B(b|♭)?$/, (_, flat) => "/" + (flat ? "B" : "H"))
+            : name;
+        for (const section of converted) {
+          const directive = section.grid
+            ? "start_of_grid"
+            : /^(?:refr|chorus)/i.test(section.label)
+              ? "start_of_chorus"
+              : /^bridge/i.test(section.label)
+                ? "start_of_bridge"
+                : "start_of_verse";
+          const label =
+            section.label +
+            (sectionInfo.multiplier != null ? ` ${sectionInfo.multiplier}x` : "") +
+            (sectionInfo.transpose ? ` ${sectionInfo.transpose > 0 ? "+" : ""}${sectionInfo.transpose}` : "");
+          for (const row of section.rows) {
+            const line = new ChordProLine(partial);
+            line.styles.set(directive, label);
+            let lyrics = row.lyrics;
+            // Grid chord spans belong to the grid text, not its overlay row.
+            // Replace backwards so changing B-flat's spelling cannot shift a
+            // later slash-bass or repeat/ending marker.
+            if (section.grid)
+              for (const chord of [...row.chords].reverse())
+                lyrics = lyrics.slice(0, chord.pos) + chordName(chord.name) + lyrics.slice(chord.pos + chord.name.length);
+            line.setLyrics(lyrics);
+            if (!section.grid) for (const chord of row.chords) line.chords.push(new ChordProChord(line, chordName(chord.name), chord.pos));
+            line.genText();
+            partial.lines.push(line);
+          }
+        }
+        lines = partial.lines;
+      }
+    } catch {
+      // An unfinished/unsupported score remains visible and editable as notation.
+      lines = [this.clone(true)];
+    }
+    this.chordProCache = { source: cacheKey, lines };
+    return lines;
+  }
   toGrid(single: true, current?: boolean): ChordProLine;
   toGrid(single: false, current?: boolean): ChordProLine[];
   toGrid(single: boolean, current = true) {
@@ -916,7 +978,7 @@ export class ChordProAbc extends ChordProLine {
       void loadAbcjs();
       return single ? genLine() : [genLine()];
     }
-    for (const visualObj of abcjs().renderAbc("*", parseAbcSource(this.getAbc(current)).abc, {}) as TuneObjectArray) {
+    for (const visualObj of abcjs().parseOnly(parseAbcSource(this.getAbc(current)).abc)) {
       for (const line of visualObj.lines) {
         for (const staff of line.staff ?? []) {
           let found = true;
@@ -1159,7 +1221,103 @@ export class ChordProDocument {
   output = new ChordProProperties();
   private sectionInfoMap: SectionInfoMap | null = null;
   private sectionInfoInstances = new Map<string, ChordProSectionInfo>();
+  private abcExpansionCache?: { signature: string; documents: Map<string, ChordProDocument> };
   customChordModifers = new Map<string, ChordInfo>();
+
+  /** A cached, disposable document: its lines are real ChordPro objects for the
+   * existing identity/layout machinery, while their ABC parent preserves legacy
+   * section references and source-line highlighting. Never serialize it as a song. */
+  expandAbc(include: (abc: ChordProAbc) => boolean = () => true): ChordProDocument {
+    const selected = this.lines.filter(
+      (line): line is ChordProAbc => line instanceof ChordProAbc && include(line) && line.toChordPro().some((row) => !(row instanceof ChordProAbc))
+    );
+    if (!selected.length) return this;
+    const signature = JSON.stringify([isAbcjsLoaded(), this.generateDocument()]);
+    if (this.abcExpansionCache?.signature !== signature) this.abcExpansionCache = { signature, documents: new Map() };
+    const selection = selected.map((line) => this.lines.indexOf(line)).join(",");
+    const cached = this.abcExpansionCache.documents.get(selection);
+    if (cached) return cached;
+    const expanded = new ChordProDocument(this.system, "");
+    expanded.lines = [];
+    expanded.metaData = this.metaData.clone();
+    expanded.output = this.output.clone();
+    expanded.customChordModifers = this.customChordModifers;
+    const selectedSet = new Set<ChordProLine>(selected);
+    const conversions = new Map(this.lines.filter((line): line is ChordProAbc => line instanceof ChordProAbc).map((abc) => [abc, abc.toChordPro()]));
+    const names = new Map<string, Set<ChordProLine>>();
+    const rememberName = (line: ChordProLine, origin: ChordProLine) => {
+      const name = line.getSectionInfo().instructionName().toLocaleLowerCase();
+      if (!name) return;
+      const owners = names.get(name) ?? new Set<ChordProLine>();
+      owners.add(origin);
+      names.set(name, owners);
+    };
+    const allocated = new Set<string>();
+    for (const origin of this.lines) {
+      rememberName(origin, origin);
+      allocated.add(origin.getSectionInfo().instructionName().toLocaleLowerCase());
+      if (origin instanceof ChordProAbc) for (const line of conversions.get(origin)!) rememberName(line, origin);
+    }
+    const labels = new Map<ChordProAbc, Map<string, string>>();
+    const scores = [...conversions.keys()];
+    for (const [abc, rows] of conversions) {
+      const sectionLabels = new Map<string, string>();
+      labels.set(abc, sectionLabels);
+      // A legacy instrumental block keeps its authored grid name. New vocal
+      // parts (including their intros) must not shadow any authored section,
+      // parent alias, or another part's preferred name, even after prefixing.
+      if (!rows.some((row) => !row.isGrid && !(row instanceof ChordProAbc))) continue;
+      const partNames = new Set(rows.map((row) => row.getSectionInfo().instructionName().toLocaleLowerCase()));
+      const parentName = abc.getSectionInfo().instructionName().toLocaleLowerCase();
+      for (const row of rows) {
+        const info = row.getSectionInfo();
+        if (sectionLabels.has(info.key)) continue;
+        let name = info.instructionName();
+        if ((names.get(name.toLocaleLowerCase())?.size ?? 0) > 1 || (partNames.size > 1 && name.toLocaleLowerCase() === parentName)) {
+          let parent = abc.getSectionInfo().instructionName() || "ABC";
+          if (scores.some((other) => other !== abc && other.getSectionInfo().instructionName().toLocaleLowerCase() === parent.toLocaleLowerCase()))
+            parent += ` ${scores.indexOf(abc) + 1}`;
+          const prefix = `${parent} / ${name}`;
+          name = prefix;
+          let ordinal = 2;
+          while (allocated.has(name.toLocaleLowerCase()) || names.has(name.toLocaleLowerCase())) name = `${prefix} (${ordinal++})`;
+          sectionLabels.set(
+            info.key,
+            name +
+              (info.multiplier != null ? ` ${info.multiplier}x` : "") +
+              (info.transpose ? ` ${info.transpose > 0 ? "+" : ""}${info.transpose}` : "")
+          );
+        } else sectionLabels.set(info.key, info.tag);
+        allocated.add(name.toLocaleLowerCase());
+      }
+    }
+    for (const origin of this.lines) {
+      if (!(origin instanceof ChordProAbc) || !selectedSet.has(origin)) {
+        // Hit testing and persistent marks must keep targeting the actual song
+        // objects. Only converted ABC rows belong to the disposable document.
+        expanded.lines.push(origin);
+        continue;
+      }
+      const converted = conversions.get(origin)!;
+      for (let i = 0; i < converted.length; ++i) {
+        const line = converted[i].clone(true);
+        line.doc = expanded;
+        line.sourceLineNumber = origin.sourceLineNumber;
+        line.abcSource = origin;
+        const info = converted[i].getSectionInfo();
+        const label = labels.get(origin)?.get(info.key);
+        if (label != null) line.styles.set(info.name, label);
+        if (i === 0) line.comments = origin.comments.clone();
+        origin.styles.forEach((value, name) => {
+          if (!name.startsWith("start_of_")) line.styles.set(name, value);
+        });
+        expanded.lines.push(line);
+      }
+    }
+    if (this.abcExpansionCache.documents.size >= 8) this.abcExpansionCache.documents.delete(this.abcExpansionCache.documents.keys().next().value!);
+    this.abcExpansionCache.documents.set(selection, expanded);
+    return expanded;
+  }
 
   getSectionInfoFor(key: string): ChordProSectionInfo {
     let info = this.sectionInfoInstances.get(key);
@@ -1183,7 +1341,7 @@ export class ChordProDocument {
         lines.push(line_obj.text);
       } else {
         const info = line_obj.getSectionInfo();
-        const instructionName = info.normalizedInstructionName();
+        const instructionName = info.normalizedInstructionName() || line_obj.abcSource?.getSectionInfo().normalizedInstructionName();
         if (instructionName) {
           while (i + 1 < this.lines.length && this.lines[i + 1].getSectionInfo() === info) ++i;
           lines.push(instructionName);

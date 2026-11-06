@@ -15,19 +15,20 @@ type AbcCacheHarness = {
 
 const SONG = `{start_of_abc: Intro}\nX:1\nK:G\n"G"GABc|\n{end_of_abc}`;
 
-function fakeNode() {
+function fakeNode(svg?: SVGSVGElement) {
   return {
     className: "",
     dataset: {} as Record<string, string>,
     style: { width: "", removeProperty: () => "" },
     replaceChildren: () => undefined,
     remove: () => undefined,
-    querySelector: () => null,
+    querySelector: () => svg ?? null,
+    querySelectorAll: () => (svg ? [svg] : []),
   };
 }
 
 /** The renderer's ABC cache only, without a DOM: abcjs is stood in by the port. */
-function abcCacheHarness() {
+function abcCacheHarness(svg?: SVGSVGElement) {
   const renderer = Object.create(DomSongRenderer.prototype) as DomSongRenderer;
   const rendered: ChordProAbc[] = [];
   const options: Parameters<AbcRenderPort["render"]>[2][] = [];
@@ -43,8 +44,14 @@ function abcCacheHarness() {
   Object.assign(renderer, {
     abcNodes: new Map(),
     abcPort,
-    doc: { createElement: fakeNode },
-    measurer: { styleRevision: 0, measureOwnedElement: () => ({ width: 30, height: 30 }) },
+    doc: { createElement: () => fakeNode(svg) },
+    measurer: {
+      styleRevision: 0,
+      measureOwnedElement: (node: HTMLElement, prepare?: () => void) => {
+        prepare?.();
+        return { width: Number.parseFloat(node.style.width) || 30, height: 30 };
+      },
+    },
   });
   return { harness: renderer as unknown as AbcCacheHarness, rendered, options };
 }
@@ -86,4 +93,48 @@ test("superscript changes invalidate the ABC cache and follow the same chord fla
   assert.equal(rendered.length, 2);
   assert.equal(options[0].jazzchords, false);
   assert.equal(options[1].jazzchords, true);
+});
+
+/** An abcjs SVG without a viewBox attribute, as each browser reports it. */
+function headerOverflowSvg(browser: "chrome" | "firefox") {
+  const attributes = new Map([
+    ["width", "600"],
+    ["height", "200"],
+  ]);
+  const svg = {
+    getAttribute: (name: string) => attributes.get(name) ?? null,
+    setAttribute: (name: string, value: string) => attributes.set(name, value),
+    getBBox: () => ({ x: -25, width: 650 }),
+    viewBox: { baseVal: browser === "chrome" ? { x: 0, y: 0, width: 0, height: 0 } : null },
+  } as unknown as SVGSVGElement;
+  return { svg, attributes };
+}
+
+test("a missing viewBox reported as null (Firefox) still widens the SVG for overlong headers", () => {
+  const { svg, attributes } = headerOverflowSvg("firefox");
+  const { harness } = abcCacheHarness(svg);
+  const document = new ChordProDocument(getChordSystem("G"), SONG);
+  const input = { system: { systemCode: "G" }, chordFormat: 0 } as unknown as DomSongRendererInput;
+
+  harness.renderAbcBlocks(abcPlan(document.lines[0] as ChordProAbc), { width: 20 } as SongLayoutResult, input);
+  assert.equal(attributes.get("viewBox"), "-25 0 650 200");
+  assert.equal(attributes.get("width"), "650");
+});
+
+test("ABC-only headers use the actual score width, retain overlong text and cache the visible playback tune", () => {
+  const { svg, attributes } = headerOverflowSvg("chrome");
+  const { harness, rendered, options } = abcCacheHarness(svg);
+  const document = new ChordProDocument(getChordSystem("G"), SONG);
+  const abc = document.lines[0] as ChordProAbc;
+  const layout = { width: 20 } as SongLayoutResult;
+  const input = { system: { systemCode: "G" }, chordFormat: 0 } as unknown as DomSongRendererInput;
+
+  harness.renderAbcBlocks(abcPlan(abc), layout, input);
+  assert.equal(options.length, 2);
+  assert.equal(options[1].staffwidth, 600, "headers align to the staff's actual width, independent of the host viewport");
+  assert.equal(attributes.get("viewBox"), "-25 0 650 200");
+  assert.equal(attributes.get("width"), "650");
+  assert.deepEqual(harness.getAbcVisualObject(abc), { rendered: 2 }, "MIDI playback must use the second, visible render");
+  harness.renderAbcBlocks(abcPlan(abc), layout, input);
+  assert.equal(rendered.length, 2, "the fitted score is cached without repeated expansion or rendering");
 });

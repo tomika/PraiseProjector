@@ -447,6 +447,31 @@ function abcIntrinsicWidth(node: HTMLElement) {
   return typeof baseWidth === "number" && baseWidth > 0 ? `${baseWidth}px` : "";
 }
 
+/** Include overlong ABC headers in the SVG viewport instead of clipping them. */
+function fitAbcSvgBounds(node: HTMLElement) {
+  for (const svg of node.querySelectorAll("svg")) {
+    const width = Number.parseFloat(svg.getAttribute("width") ?? "");
+    const height = Number.parseFloat(svg.getAttribute("height") ?? "");
+    if (!(width > 0 && height > 0)) continue;
+    const box = svg.getBBox();
+    if (![box.x, box.width].every(Number.isFinite) || box.width <= 0) continue;
+    // abcjs sets no viewBox unless responsive. Without one, Chrome reports a
+    // zero rect but Firefox reports `baseVal` as null: treat both as absent.
+    const bounds: DOMRect | null = svg.viewBox?.baseVal ?? null;
+    const hasWidth = !!bounds && bounds.width > 0;
+    const hasHeight = !!bounds && bounds.height > 0;
+    const x = hasWidth ? bounds.x : 0;
+    const y = hasHeight ? bounds.y : 0;
+    const viewWidth = hasWidth ? bounds.width : width;
+    const viewHeight = hasHeight ? bounds.height : height;
+    const left = Math.min(x, Math.floor(box.x));
+    const right = Math.max(x + viewWidth, Math.ceil(box.x + box.width));
+    if (left === x && right === x + viewWidth) continue;
+    svg.setAttribute("viewBox", `${left} ${y} ${right - left} ${viewHeight}`);
+    svg.setAttribute("width", String((width * (right - left)) / viewWidth));
+  }
+}
+
 function revisionsKey(input: DomSongRendererInput) {
   return `${input.documentRevision}:${input.displayRevision}:${input.styleRevision}`;
 }
@@ -1049,7 +1074,17 @@ export class DomSongRenderer {
       // Double-click target metadata: the controller resolves the ABC block for
       // MIDI playback from the owning occurrence, which survives re-render.
       node.dataset.occurrenceId = occurrence.id;
-      const visual = this.abcPort.render(node, abc, options);
+      let visual = this.abcPort.render(node, abc, options);
+      const intrinsicWidth = Number.parseFloat(abcIntrinsicWidth(node));
+      // ABC-only songs can have almost no lyric/metadata width. abcjs widens
+      // the staff to fit the notes but still aligns headers to the requested
+      // narrow staffwidth, placing titles/composers outside the SVG. Lay out
+      // once more at the actual score width; the cached result stays natural
+      // width and independent of the host viewport (including FIT_PAGE).
+      if (intrinsicWidth > options.staffwidth + 1) {
+        node.replaceChildren();
+        visual = this.abcPort.render(node, abc, { ...options, staffwidth: intrinsicWidth });
+      }
       // The visible commit scales this container, and a reused node still
       // carries that transform. `getBoundingClientRect` includes transforms, so
       // measuring it as-is would return an ALREADY-scaled height and scale it
@@ -1060,8 +1095,10 @@ export class DomSongRenderer {
       // Pin the container to the generated SVG's intrinsic width
       // so the scaled box matches the notation instead of shrink-to-fitting
       // against whatever containing block it is measured or committed in.
-      node.style.width = abcIntrinsicWidth(node);
-      const measured = this.measurer.measureOwnedElement(node);
+      const measured = this.measurer.measureOwnedElement(node, () => {
+        fitAbcSvgBounds(node);
+        node.style.width = abcIntrinsicWidth(node);
+      });
       // The visible width matters as much as the height: abcjs's SVG often runs
       // WIDER than the `staffwidth` target (chord symbols, volta brackets), so
       // the scaled block can extend past the song's lyric width. `buildDiagrams`

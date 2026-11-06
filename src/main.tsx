@@ -35,6 +35,7 @@ import { WebAppUpdateActivityBar } from "./components/WebAppUpdateActivityBar";
 import "./shared/performance.css";
 import { ensureHardwareInputMigrated } from "./hardware-input/hardwareInputSettings";
 import { getHardwareInputRuntime } from "./hardware-input/hardwareInputRuntime";
+import { stopAllAbcPlayback } from "../chordpro/abc-playback-registry";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
@@ -287,6 +288,12 @@ function RootView() {
   useEffect(() => {
     getHardwareInputRuntime().setActiveView(decidingHandoff ? null : showClientView ? "client-view" : "full-view");
   }, [decidingHandoff, showClientView]);
+  // The hidden App keeps its editors alive, so their ABC MIDI playback must be
+  // stopped explicitly. The reverse switch unmounts the client view, whose
+  // editor disposal already stops its own playback.
+  useEffect(() => {
+    if (showClientView) stopAllAbcPlayback();
+  }, [showClientView]);
   return (
     <>
       <WebAppUpdateActivityBar />

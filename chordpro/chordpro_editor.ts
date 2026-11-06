@@ -16,6 +16,7 @@ import { Instrument, playChord } from "./midi";
 import type { AbcWysiwygEditor } from "./abc_editor";
 import type { NoteTimingEvent, SynthOptions, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
+import { trackAbcPlayback } from "./abc-playback-registry";
 import { abcHeaderDefaults, resolveAbcOptions, scoreOptionValues } from "./abc-options";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
@@ -112,11 +113,18 @@ function is_word_boundary_char(ch: string) {
   return !/\b/gi.exec(remove_diacritics(ch));
 }
 
-function playAbcWithSynth(
+/** The abcjs playback classes; injectable so tests can drive the async start. */
+export type AbcPlaybackEngine = {
+  CreateSynth: typeof import("abcjs").synth.CreateSynth;
+  TimingCallbacks: typeof import("abcjs").TimingCallbacks;
+};
+
+export function playAbcWithSynth(
   abcSource: string,
   options: SynthOptions,
   onError?: (error?: unknown) => void,
-  playbackVisualObj?: TuneObject
+  playbackVisualObj?: TuneObject,
+  engine?: AbcPlaybackEngine
 ): MidiPlaybackState {
   const state: MidiPlaybackState = {
     stop: () => {
@@ -191,7 +199,8 @@ function playAbcWithSynth(
       throw new Error("Could not render ABC for synth playback.");
     }
 
-    timingCallbacks = new (abcjs().TimingCallbacks)(visualObj, {
+    const { CreateSynth, TimingCallbacks } = engine ?? { CreateSynth: abcjs().synth.CreateSynth, TimingCallbacks: abcjs().TimingCallbacks };
+    timingCallbacks = new TimingCallbacks(visualObj, {
       ...(options.qpm ? { qpm: options.qpm } : !visualObj.metaText?.tempo && options.defaultQpm ? { qpm: options.defaultQpm } : {}),
       eventCallback: (event) => {
         applyPlaybackMarker(event);
@@ -199,9 +208,15 @@ function playAbcWithSynth(
       },
     });
 
-    const midiBuffer = new (abcjs().synth.CreateSynth)();
+    const midiBuffer = new CreateSynth();
+    const untrack = trackAbcPlayback(() => state.stop());
+    // init() and prime() are asynchronous: a stop (double-click, view switch)
+    // that arrives before they settle must also cancel the pending start.
+    let stopped = false;
 
     state.stop = () => {
+      stopped = true;
+      untrack();
       stopTimer();
       timingCallbacks?.stop();
       clearPlaybackMarker();
@@ -219,6 +234,7 @@ function playAbcWithSynth(
         visualObj,
         options,
         onEnded: () => {
+          untrack();
           stopTimer();
           timingCallbacks?.stop();
           clearPlaybackMarker();
@@ -226,9 +242,10 @@ function playAbcWithSynth(
           state.currentTime = state.endTime;
         },
       })
-      .then(() => midiBuffer.prime())
-      .then(({ duration }) => {
-        state.endTime = duration;
+      .then(() => (stopped ? undefined : midiBuffer.prime()))
+      .then((primed) => {
+        if (stopped || !primed) return;
+        state.endTime = primed.duration;
         state.currentTime = 0;
         startTime = performance.now();
         state.playing = true;
@@ -246,11 +263,13 @@ function playAbcWithSynth(
         }, 100);
       })
       .catch((error) => {
+        untrack();
         state.playing = false;
         stopTimer();
         timingCallbacks?.stop();
         clearPlaybackMarker();
-        onError?.(error);
+        // A stopped playback may already have been replaced by the caller.
+        if (!stopped) onError?.(error);
       });
   } catch (error) {
     clearPlaybackMarker();
@@ -759,6 +778,7 @@ export class ChordProEditor extends ChordDrawer {
   private instructionsPaneCleanup: (() => void) | null = null;
   private instructionsCoordinatorCleanup: (() => void) | null = null;
   private instructionsThemeUpdater: (() => void) | null = null;
+  private instructionsAbcUpdater: (() => void) | null = null;
   private instructionsInteractionUnlockAt = 0;
   private instructionsInteractionUnlockTimer: number | null = null;
 
@@ -1656,7 +1676,8 @@ export class ChordProEditor extends ChordDrawer {
     // Gated on `chordBoxType` alone: diagrams are NOT readonly-only.
     if (!this.chordPro || !this.chordBoxType || this.printSurface) return null;
     const chordBoxType = this.chordBoxType;
-    const chords = collectChordDiagramLabels(this.chordPro, this.system, this.chordFormat, this.readOnly, this.displayNormalizedChord);
+    const document = this.getDisplaySequence()?.document ?? this.chordPro;
+    const chords = collectChordDiagramLabels(document, this.system, this.chordFormat, this.readOnly, this.displayNormalizedChord);
     return {
       chords,
       size: chordBoxType === "PIANO" ? this.displayProps.pianoChordSize : this.displayProps.guitarChordSize,
@@ -2745,6 +2766,9 @@ export class ChordProEditor extends ChordDrawer {
    */
   private toggleAbcMidiPlayback(line_obj: ChordProAbc) {
     if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
+      // A previous playback may still be loading (not yet playing): it must not
+      // start alongside this one.
+      this.midiPlayer?.stop();
       const source = resolveAbcOptions(line_obj.getAbc(true, false), line_obj.doc.getMeta("tempo"));
       this.midiPlayer = playAbcWithSynth(
         source.abc,
@@ -5458,6 +5482,7 @@ export class ChordProEditor extends ChordDrawer {
         // The cached projection may hold ABC clones made without abcjs (an empty
         // chord grid, an untransposed block): re-project now that it is here.
         this.invalidateDisplaySemantics();
+        this.instructionsAbcUpdater?.();
         this.update();
       });
     }
@@ -5934,22 +5959,27 @@ export class ChordProEditor extends ChordDrawer {
     return null;
   }
 
+  private getInstructionsDocument() {
+    return this.instructionEditorActive ? this.chordPro?.expandAbc() : this.chordPro;
+  }
+
   private createInstructionsRendererInput(
     pane: "source" | "preview",
     instructions: Instructions | null,
     revision: number
   ): DomSongRendererInput | null {
     if (!this.chordPro) return null;
+    const document = this.chordPro.expandAbc();
     const instructionsMode: InstructionsRenderMode = pane === "preview" ? "FULL" : "";
     const sequence = projectDisplaySequence({
-      document: this.chordPro,
+      document,
       readOnly: true,
       instructionsMode,
       instructions: pane === "preview" ? instructions : null,
-      abcMode: this.abcDisplayMode,
+      abcMode: "NOTATION",
     });
     return {
-      document: this.chordPro,
+      document,
       system: this.system,
       display: this.displayProps,
       directives: this.directiveStyles,
@@ -5983,6 +6013,7 @@ export class ChordProEditor extends ChordDrawer {
     instructionsEditor.replaceChildren();
 
     if (!this.chordPro) return;
+    const document = this.getInstructionsDocument()!;
 
     if (!this.instructions) {
       const default_instructions = this.getInstructions("DEFAULT");
@@ -6170,7 +6201,7 @@ export class ChordProEditor extends ChordDrawer {
           }
         } else if (dndItem.tagName) {
           const inserted = this.chordPro
-            ? Instructions.createSectionItem(this.chordPro, dndItem.tagName)
+            ? Instructions.createSectionItem(document, dndItem.tagName)
             : ({ value: dndItem.tagName, multiplier: 1 } as InstructionItem);
           instructions.insertBefore(inserted, item, false);
           normalizeExistingItemsKeeping(inserted);
@@ -6202,7 +6233,7 @@ export class ChordProEditor extends ChordDrawer {
           this.buildInstructions(instructionsEditor, onChange);
         }
       } else if (dndItem.tagName) {
-        const inserted = this.chordPro ? Instructions.createSectionItem(this.chordPro, dndItem.tagName) : { value: dndItem.tagName, multiplier: 1 };
+        const inserted = Instructions.createSectionItem(document, dndItem.tagName);
         instructions.add(inserted, false);
         normalizeExistingItemsKeeping(inserted);
         this.buildInstructions(instructionsEditor, onChange);
@@ -6339,7 +6370,7 @@ export class ChordProEditor extends ChordDrawer {
         bindPaneInteractions(songDiv, sourceRenderer);
       }
     }
-    this.buildInstructions(instructionsEditor, (updated: Instructions) => {
+    const updatePreview = (updated: Instructions) => {
       currentPreviewInstructions = updated;
       const input = this.createInstructionsRendererInput("preview", updated, ++previewRevision);
       if (previewDiv && input) {
@@ -6350,7 +6381,20 @@ export class ChordProEditor extends ChordDrawer {
         }
       }
       onUpdate?.();
-    });
+    };
+    this.buildInstructions(instructionsEditor, updatePreview);
+    const pendingDefault = !instructions.trim() ? this.instructions?.format() : undefined;
+    this.instructionsAbcUpdater = () => {
+      if (cleaned || !this.chordPro) return;
+      const current = this.instructions?.format() ?? "";
+      this.applyInstructions(current === pendingDefault ? this.chordPro.expandAbc().getDefaultInstructions() : current, false);
+      const sourceInput = this.createInstructionsRendererInput("source", null, 0);
+      if (sourceRenderer && sourceInput) sourceRenderer.update(sourceInput, "structure");
+      this.buildInstructions(instructionsEditor, updatePreview);
+    };
+    // The instructions binding also owns the lazy-load refresh when the
+    // primary song surface has not drawn (e.g. a suppressed/hidden editor).
+    if (this.chordPro?.lines.some((line) => line instanceof ChordProAbc)) this.ensureAbcjsLoaded();
 
     this.instructionsThemeUpdater = () => {
       const sourceInput = this.createInstructionsRendererInput("source", null, 0);
@@ -6372,6 +6416,7 @@ export class ChordProEditor extends ChordDrawer {
       instructionsEditor.ondragover = null;
       instructionsEditor.replaceChildren();
       if (this.instructionsThemeUpdater) this.instructionsThemeUpdater = null;
+      this.instructionsAbcUpdater = null;
       if (this.instructionsPaneCleanup === cleanup) this.instructionsPaneCleanup = null;
       this.syncPrimarySurfaceVisibility();
     };
@@ -6383,16 +6428,20 @@ export class ChordProEditor extends ChordDrawer {
     if (this.chordPro) {
       if (instructions) {
         if (!this.instructions) this.instructions = new Instructions();
-        this.instructions.parse(instructions, this.chordPro);
+        this.instructions.parse(instructions, this.getInstructionsDocument()!);
+        if (this.instructionEditorActive) this.instructions.expandAbcSections(this.getInstructionsDocument()!);
       } else this.instructions = undefined;
-      this.invalidateDisplaySequence();
+      // The DOM renderer keys commits by semantic revisions. Dropping only
+      // the projected sequence leaves the old notation/order painted when the
+      // instructions mode itself stays enabled (including draw=false + fit).
+      this.invalidateDisplaySemantics();
       if (draw) this.draw();
     }
   }
 
   getInstructions(mode: "PRESET" | "DEFAULT" | "CURRENT" | "SETTING") {
     if (!this.chordPro) return "";
-    const doc = this.chordPro;
+    const doc = this.getInstructionsDocument()!;
 
     const genDefault = () => doc.getDefaultInstructions();
 

@@ -107,12 +107,17 @@ export class DomTextMeasurer implements TextMeasurer {
    * the ABC library rather than by font metrics. Deliberately uncached: the
    * caller owns the element's identity and its own invalidation key.
    */
-  measureOwnedElement(node: HTMLElement): MeasuredSize {
+  measureOwnedElement(node: HTMLElement, prepare?: () => void): MeasuredSize {
     this.ensureUsable();
     this.root.appendChild(node);
-    const rect = node.getBoundingClientRect();
-    node.remove();
-    return { width: rect.width, height: rect.height };
+    try {
+      // SVG text bounds are only reliable while the element is attached.
+      prepare?.();
+      const rect = node.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    } finally {
+      node.remove();
+    }
   }
 
   dispose() {

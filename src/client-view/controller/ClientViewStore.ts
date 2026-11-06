@@ -59,8 +59,8 @@ export type DarkMode = "auto" | "light" | "dark";
 
 /** maxText section-tag display: full word, abbreviation, or hidden. */
 export type ZoomTagMode = "VISIBLE" | "ABBREV" | "HIDDEN";
-/** maxText ABC-block display: abcjs notation, chord grid only, or hidden. */
-export type ZoomAbcMode = "NOTATION" | "CHORDS" | "HIDDEN";
+/** maxText ABC-block display: notation, or converted lyrics/instrumental grid. */
+export type ZoomAbcMode = "NOTATION" | "CHORDS";
 export type ZoomSizingMode = "FIT_PAGE" | "FIT_WIDTH" | "MANUAL";
 
 /** Which collection the options-panel song list shows: the full database
@@ -829,9 +829,10 @@ export class ClientViewStore {
     const patch: Partial<ClientViewState> = {};
     if (persisted.displaySettings && typeof persisted.displaySettings === "object") {
       // Merge over defaults so a snapshot missing newer keys still validates.
-      const legacy = persisted.displaySettings as Omit<Partial<DisplaySettings>, "zoomSizingMode"> & {
+      const legacy = persisted.displaySettings as Omit<Partial<DisplaySettings>, "zoomSizingMode" | "zoomAbcMode"> & {
         zoomScrollable?: boolean;
         zoomSizingMode?: ZoomSizingMode | "AUTO_HEIGHT";
+        zoomAbcMode?: ZoomAbcMode | "HIDDEN";
         zoomHideAbc?: boolean;
       };
       const sizingMode: ZoomSizingMode =
@@ -844,11 +845,13 @@ export class ClientViewStore {
         typeof legacy.zoomAutoWrap === "boolean"
           ? legacy.zoomAutoWrap
           : legacy.zoomSizingMode === "AUTO_HEIGHT" || legacy.zoomSizingMode === "MANUAL";
+      // The retired "hidden" choice asked for text instead of notation: the
+      // converted lyrics/grid mode is its closest remaining equivalent.
       const zoomAbcMode: ZoomAbcMode =
-        legacy.zoomAbcMode === "NOTATION" || legacy.zoomAbcMode === "CHORDS" || legacy.zoomAbcMode === "HIDDEN"
+        legacy.zoomAbcMode === "NOTATION" || legacy.zoomAbcMode === "CHORDS"
           ? legacy.zoomAbcMode
-          : legacy.zoomHideAbc
-            ? "HIDDEN"
+          : legacy.zoomAbcMode === "HIDDEN" || legacy.zoomHideAbc
+            ? "CHORDS"
             : "NOTATION";
       patch.displaySettings = { ...defaultDisplaySettings, ...persisted.displaySettings, zoomSizingMode: sizingMode, zoomAutoWrap, zoomAbcMode };
       const restored = patch.displaySettings;
@@ -1499,8 +1502,17 @@ export class ClientViewStore {
   }
 
   async saveInstructions(text: string): Promise<void> {
-    await this.api.display.setInstructions(text || undefined);
-    this.set({ instructionsEditorOpen: false });
+    const lifecycle = this.lifecycleToken;
+    const songId = this.state.display.songId;
+    const selectionRevision = this.songSelectionRevision;
+    // Display writes always target the projected song. A song opened locally
+    // from the database/archive must keep its changes in this view instead.
+    // Send an empty string explicitly: undefined means "no change" to the host.
+    if (this.viewingProjectedSong()) await this.api.display.setInstructions(text);
+    if (!this.isLifecycleActive(lifecycle) || selectionRevision !== this.songSelectionRevision || this.state.display.songId !== songId) return;
+    // DirectClientApi dispatches asynchronously; applying locally must not
+    // depend on the timing (or presence) of the backend's display echo.
+    this.set({ display: { ...this.state.display, instructions: text }, instructionsEditorText: text, instructionsEditorOpen: false });
   }
 
   /** The ordered collection prev/next navigation walks. It is explicit so a song

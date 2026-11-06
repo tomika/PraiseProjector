@@ -1498,9 +1498,9 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     0 0 0.7em #05e;
 }
 
-/* The ABC toggle is a button cycling three states on a single ♪ glyph (enlarged
-   so the strikethrough stays legible): plain = notation, glow + a small chord
-   mark = chord grid only, glow + strikethrough = hidden. */
+/* The ABC toggle is a button switching two states on a single ♪ glyph
+   (enlarged so the chord mark stays legible): plain = notation, glow + a small
+   chord mark = converted lyrics and chords (a grid for instrumental scores). */
 .cv-zoom-abc-toggle {
   padding: 0;
   border: 0;

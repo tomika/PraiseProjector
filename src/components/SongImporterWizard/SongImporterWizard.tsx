@@ -6,6 +6,7 @@ import { ImportLines } from "../../../db-common/ImportLine";
 import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../../db-common/ChordMap";
 import { Song } from "../../../db-common/Song";
 import { ChordProDocument, getChordSystem } from "../../../chordpro/chordpro_base";
+import { abcToChordProSong, looksLikeAbc, mapOutsideAbcBlocks } from "../../../chordpro/abc-import";
 import { ChordSelector } from "../../../chordpro/chord_selector";
 import { ChordDetails } from "../../../chordpro/note_system";
 import { Database } from "../../../db-common/Database";
@@ -38,6 +39,16 @@ const IMPORT_CHORD_SELECTOR_IDS = {
   musicChordBox: "song-import-musicChordBox",
   applySelector: "song-import-applySelector",
 } as const;
+
+/** Imported songs are created in this chord system (see handleSaveAndRestart). */
+const IMPORT_CHORD_SYSTEM = "G";
+
+/** Files loaded straight into the ChordPro editor without line classification. */
+const DIRECT_EXTENSIONS = [".chp", ".abc"];
+
+function fileExtension(name: string) {
+  return name.substring(name.lastIndexOf(".")).toLowerCase();
+}
 
 function looksLikeChordPro(text: string): boolean {
   const doc = new ChordProDocument(getChordSystem("G"), text);
@@ -153,25 +164,28 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   // Services
   const documentImporter = useRef(new DocumentImporter());
 
+  // ABC blocks write note chords and inline fields in brackets ([CEG], [K:G]):
+  // neither collected nor rewritten as ChordPro chords.
   const collectChordsFromChordPro = useCallback((text: string): Set<string> => {
     const chords = new Set<string>();
-    const chordRegex = /\[([^\]\r\n]+)\]/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = chordRegex.exec(text)) !== null) {
-      const chord = (match[1] || "").trim();
-      if (chord) chords.add(chord);
-    }
-
+    mapOutsideAbcBlocks(text, (chordPro) => {
+      for (const match of chordPro.matchAll(/\[([^\]\r\n]+)\]/g)) {
+        const chord = (match[1] || "").trim();
+        if (chord) chords.add(chord);
+      }
+      return chordPro;
+    });
     return chords;
   }, []);
 
   const normalizeChordProChords = useCallback((text: string, map: ChordMap): string => {
-    return text.replace(/\[([^\]\r\n]+)\]/g, (full, rawChord: string) => {
-      const chord = (rawChord || "").trim();
-      const normalized = map.get(chord);
-      return `[${normalized ?? chord}]`;
-    });
+    return mapOutsideAbcBlocks(text, (chordPro) =>
+      chordPro.replace(/\[([^\]\r\n]+)\]/g, (full, rawChord: string) => {
+        const chord = (rawChord || "").trim();
+        const normalized = map.get(chord);
+        return `[${normalized ?? chord}]`;
+      })
+    );
   }, []);
 
   const triggerChordFlash = useCallback((changedKeys: Iterable<string>) => {
@@ -254,6 +268,25 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     [buildChordNormalizationState, collectChordsFromChordPro]
   );
 
+  /** ABC text: header metadata moves into the song, the notation becomes a score block. */
+  const startAbcImportFlow = useCallback(
+    (abcText: string) => startChordProNormalizationFlow(abcToChordProSong(abcText, IMPORT_CHORD_SYSTEM)),
+    [startChordProNormalizationFlow]
+  );
+
+  /** Loads a .chp or .abc file straight into the editor; false for other files. */
+  const startDirectFlow = useCallback(
+    async (file: File) => {
+      const ext = fileExtension(file.name);
+      if (!DIRECT_EXTENSIONS.includes(ext)) return false;
+      const text = await file.text();
+      if (ext === ".abc") startAbcImportFlow(text);
+      else startChordProNormalizationFlow(text);
+      return true;
+    },
+    [startAbcImportFlow, startChordProNormalizationFlow]
+  );
+
   const minTabIndex = isChordProDirectFlow ? 2 : 0;
   const chordModesResolved = useHMode >= 0 && lcMollMode >= 0;
 
@@ -295,15 +328,10 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       setImportedFiles([file]);
       setIsChordProDirectFlow(false);
 
-      // Auto-load if it's a .chp file
-      const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
-      if (ext === ".chp") {
-        const text = await file.text();
-        startChordProNormalizationFlow(text);
-        return;
-      }
+      // Auto-load ChordPro and ABC files
+      await startDirectFlow(file);
     },
-    [format, startChordProNormalizationFlow, t]
+    [format, startDirectFlow, t]
   );
 
   const parseFileAndAdvance = useCallback(
@@ -353,9 +381,33 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         }
       };
 
-      const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+      // The single entry point for every route into the wizard (Next on the file
+      // tab, the next file of a batch, returning to the file tab, dropped files):
+      // ChordPro and ABC files always load directly, never as plain lines.
+      if (await startDirectFlow(file)) return;
+
+      const ext = fileExtension(file.name);
       if ([".txt", ".html", ".htm"].includes(ext)) {
         const rawText = await file.text();
+        // Pasted or dropped notation: ask before importing it as a score. Checked
+        // first, because ABC's bracketed note chords also look like ChordPro.
+        const plainText = ext === ".txt" ? rawText : await documentImporter.current.readPlainText(file);
+        if (looksLikeAbc(plainText)) {
+          setMessageBox({
+            title: t("SongImportDetectedAbcTitle"),
+            message: t("SongImportDetectedAbcMessage"),
+            onConfirm: () => {
+              setMessageBox(null);
+              startAbcImportFlow(plainText);
+            },
+            onCancel: () => {
+              setMessageBox(null);
+              setIsChordProDirectFlow(false);
+              void proceedToTab1();
+            },
+          });
+          return;
+        }
         if (looksLikeChordPro(rawText)) {
           setMessageBox({
             title: t("SongImportDetectedChordProTitle"),
@@ -376,7 +428,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
       await proceedToTab1();
     },
-    [format, startChordProNormalizationFlow, t]
+    [format, startAbcImportFlow, startChordProNormalizationFlow, startDirectFlow, t]
   );
 
   const handleFileUpload = useCallback(
@@ -430,18 +482,9 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     const firstFile = supportedFiles[0];
     setImportedFiles(supportedFiles);
     setSelectedFile(firstFile);
-
-    const ext = firstFile.name.substring(firstFile.name.lastIndexOf(".")).toLowerCase();
-    if (ext === ".chp") {
-      void firstFile.text().then((text) => {
-        startChordProNormalizationFlow(text);
-      });
-      return;
-    }
-
     setIsChordProDirectFlow(false);
     void parseFileAndAdvance(firstFile);
-  }, [format, initialFiles, parseFileAndAdvance, startChordProNormalizationFlow, t]);
+  }, [format, initialFiles, parseFileAndAdvance, t]);
 
   // === Tab 1: Line Classification ===
 
@@ -863,7 +906,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       <div className="file-input-container">
         <input
           type="file"
-          accept=".chp,.txt,.pdf,.docx,.htm,.html"
+          accept={DocumentImporter.getSupportedExtensions().join(",")}
           onChange={handleFileUpload}
           className="file-input"
           aria-label={t("SongImportSelectFileAria")}
@@ -880,6 +923,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         </p>
         <ul>
           <li>{t("SongImportFormatChp")}</li>
+          <li>{t("SongImportFormatAbc")}</li>
           <li>{t("SongImportFormatTxt")}</li>
           <li>{t("SongImportFormatDocx")}</li>
           <li>{t("SongImportFormatPdf")}</li>

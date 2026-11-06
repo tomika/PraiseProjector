@@ -12,7 +12,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mi
 export class DocumentImporter {
   /**
    * Parse a document file and extract lines of text
-   * Supports: .docx, .pdf, .html, .txt, .chp
+   * Supports: .docx, .pdf, .html, .txt, .chp, .abc
    */
   async parseDocument(file: File): Promise<ImportLines> {
     const extension = this.getFileExtension(file.name).toLowerCase();
@@ -27,6 +27,7 @@ export class DocumentImporter {
         return await this.parseHtml(file);
       case ".txt":
       case ".chp":
+      case ".abc":
         return await this.parseText(file);
       default:
         throw new Error(`Unsupported file format: ${extension}`);
@@ -120,7 +121,19 @@ export class DocumentImporter {
   }
 
   /**
-   * Parse plain text file (.txt, .chp)
+   * The text of a plain-text or HTML file as it reads, keeping its line breaks
+   * and blank lines (format detection, e.g. ABC notation copied from a page).
+   */
+  async readPlainText(file: File): Promise<string> {
+    const text = await file.text();
+    const extension = this.getFileExtension(file.name).toLowerCase();
+    if (extension !== ".html" && extension !== ".htm") return text;
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    return this.extractTextFromElement(doc.body);
+  }
+
+  /**
+   * Parse plain text file (.txt, .chp, .abc)
    */
   private async parseText(file: File): Promise<ImportLines> {
     const text = await file.text();
@@ -184,14 +197,13 @@ export class DocumentImporter {
    */
   static isSupportedFile(filename: string): boolean {
     const ext = filename.substring(filename.lastIndexOf(".")).toLowerCase();
-    const supportedExtensions = [".chp", ".txt", ".pdf", ".docx", ".htm", ".html"];
-    return supportedExtensions.includes(ext);
+    return DocumentImporter.getSupportedExtensions().includes(ext);
   }
 
   /**
    * Get list of supported file extensions
    */
   static getSupportedExtensions(): string[] {
-    return [".chp", ".txt", ".pdf", ".docx", ".htm", ".html"];
+    return [".chp", ".abc", ".txt", ".pdf", ".docx", ".htm", ".html"];
   }
 }

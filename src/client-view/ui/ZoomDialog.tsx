@@ -9,7 +9,7 @@
  *
  * Title and Meta labels use a strikethrough + blue glow when their hide-option is
  * on, matching the original `input:checked + label { text-shadow: … }` style; the ♪
- * (ABC block) button cycles notation / chords only / hidden in the same look. Auto
+ * (ABC block) button toggles notation / lyrics and chords in the same look. Auto
  * wrap has no label — it is the wrap.svg glyph, glowing (not struck through) when on.
  */
 
@@ -24,12 +24,10 @@ const TAG_MODES: Array<{ value: ZoomTagMode; label: string }> = [
   { value: "HIDDEN", label: "—" },
 ];
 
-// Cycled by the ♪ toggle: plain = notation, glow + chord mark = chord grid only,
-// glow + strikethrough = hidden.
+// Toggled by the ♪ button: plain = notation, glow + chord mark = converted lyrics/grid.
 const ABC_MODES: Array<{ value: ZoomAbcMode; title: string }> = [
   { value: "NOTATION", title: "ABC blocks: full notation" },
-  { value: "CHORDS", title: "ABC blocks: chords only" },
-  { value: "HIDDEN", title: "ABC blocks: hidden" },
+  { value: "CHORDS", title: "ABC blocks: lyrics and chords" },
 ];
 
 export function ZoomPanel() {

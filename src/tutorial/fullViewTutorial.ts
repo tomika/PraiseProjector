@@ -184,9 +184,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".song-list-panel",
             tx(
               "Áthúzás és fájlimportálás",
-              "A dal Műsortárba húzásával a kívánt pozícióba a listához adható. Külső fájl is behúzható a Dalkönyvtárba: az importáló a .chp, .txt, .pdf, .docx, .htm és .html formátumokat támogatja. Dalok egymásra vagy csoportmappára húzásával csoportok is létrehozhatók.",
+              "A dal Műsortárba húzásával a kívánt pozícióba a listához adható. Külső fájl is behúzható a Dalkönyvtárba: az importáló a .chp, .abc, .txt, .pdf, .docx, .htm és .html formátumokat támogatja. Dalok egymásra vagy csoportmappára húzásával csoportok is létrehozhatók.",
               "Drag and drop",
-              "Drag a song to the playlist to add it quickly. You can also drop external files into the song library: the importer supports .chp, .txt, .pdf, .docx, .htm and .html files. Drag songs onto another song or a group folder to group them."
+              "Drag a song to the playlist to add it quickly. You can also drop external files into the song library: the importer supports .chp, .abc, .txt, .pdf, .docx, .htm and .html files. Drag songs onto another song or a group folder to group them."
             )
           ),
           s(
