@@ -14,6 +14,7 @@ import ChordProStylesSettings from "./settings/ChordProStylesSettings";
 import ClientViewSettings from "./settings/ClientViewSettings";
 import HardwareControlSettings from "./settings/HardwareControlSettings";
 import PerformanceSettings from "./settings/PerformanceSettings";
+import ScoreSettings from "./settings/ScoreSettings";
 import ClientsSettings from "./settings/ClientsSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
@@ -49,6 +50,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
     "leaders",
     "sections",
     "chordpro-styles",
+    "score",
     "clients",
     "about",
     ...(hasWebServerRuntime ? ["webserver", "netdisplay"] : []),
@@ -321,6 +323,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
       ),
       sections: <SectionsSettings settings={settings} updateSetting={updateSetting} />,
       "chordpro-styles": <ChordProStylesSettings settings={settings} updateSetting={updateSetting} />,
+      score: <ScoreSettings settings={settings} updateSetting={updateSetting} isActive={activeTab === "score"} />,
       images: <ImagesSettings settings={settings} updateSetting={updateSetting} />,
       clients: <ClientsSettings settings={settings} updateSetting={updateSetting} />,
       webserver: <WebServerSettings settings={settings} updateSetting={updateSetting} />,
@@ -394,6 +397,11 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
             <li className="nav-item">
               <a className={`nav-link ${activeTab === "chordpro-styles" ? "active" : ""}`} href="#" onClick={() => setActiveTab("chordpro-styles")}>
                 {t("SettingsPageChordProStyles")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className={`nav-link ${activeTab === "score" ? "active" : ""}`} href="#" onClick={() => setActiveTab("score")}>
+                {t("SettingsPageScore")}
               </a>
             </li>
             <li className="nav-item">

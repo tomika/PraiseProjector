@@ -8,7 +8,7 @@
 //   - dispose()
 //   - isOpen
 
-import { mount, type AbcEditor, type LocaleId } from "abc-gui";
+import { mount, type AbcEditor, type HeaderOptionDefaults, type LocaleId } from "abc-gui";
 import "abc-gui/style.css";
 import { chordMap } from "./allchords";
 import { getChordSystem, type ChordSystemCode } from "./chordpro_base";
@@ -160,7 +160,7 @@ export class AbcWysiwygEditor {
     document.body.appendChild(this.backdrop);
   }
 
-  open(abcText: string, germanAlphabet?: boolean) {
+  open(abcText: string, headerOptionDefaults: HeaderOptionDefaults = {}) {
     if (this.disposed) return;
     this.originalAbc = abcText;
     this.currentAbc = abcText;
@@ -181,16 +181,14 @@ export class AbcWysiwygEditor {
       },
       chordEditor: (seed) => this.invokeChordEditor(seed),
       chordVerifier: (chordName, useGermanAlphabet) => this.verifyChord(chordName, useGermanAlphabet),
-      abcjsOptions: {
-        germanAlphabet,
-        jazzchords: true,
-      },
+      headerOptionDefaults,
     });
   }
 
   close(apply: boolean) {
     if (!this.isOpen) return;
-    const newText = this.currentAbc;
+    // onChange is debounced by abc-gui; read synchronously before destroying it.
+    const newText = this.editor?.getValue() ?? this.currentAbc;
     this.backdrop.style.display = "none";
     this.closeSplash();
 
@@ -215,6 +213,10 @@ export class AbcWysiwygEditor {
   setLocale(locale: LocaleId) {
     this.locale = locale;
     this.editor?.setLocale(locale);
+  }
+
+  setHeaderOptionDefaults(defaults: HeaderOptionDefaults) {
+    this.editor?.setHeaderOptionDefaults(defaults);
   }
 
   dispose() {

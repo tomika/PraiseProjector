@@ -5,6 +5,7 @@ import { ChordDetails, Key, NoteSystem, NoteSystemCode } from "./note_system";
 import { ItemToPosition } from "./placer";
 import { UnicodeSymbol } from "../common/symbols";
 import { DifferentialText } from "../common/utils";
+import { parseAbcSource, resolveAbcOptions } from "./abc-options";
 
 export type ChordSystemCode = NoteSystemCode;
 
@@ -812,7 +813,8 @@ export class ChordProAbc extends ChordProLine {
       void loadAbcjs();
       return undefined;
     }
-    return abcjs().renderAbc(element, this.getAbc(current), renderParams);
+    const source = resolveAbcOptions(this.getAbc(current), this.doc.getMeta("tempo"));
+    return abcjs().renderAbc(element, source.abc, { ...source.visual, ...renderParams });
   }
   generateSvg(renderParams?: AbcRenderParams, current = true) {
     if (!isAbcjsLoaded()) {
@@ -846,13 +848,15 @@ export class ChordProAbc extends ChordProLine {
     img.src = "data:image/svg+xml;charset=utf-8," + svg.svg;
     return img;
   }
-  generateMidi(chordsOff = false, current = true) {
+  generateMidi(chordsOff?: boolean, current = true) {
     if (!isAbcjsLoaded()) {
       void loadAbcjs();
       return undefined;
     }
-    return abcjs().synth.getMidiFile(this.getAbc(current, false), {
-      chordsOff,
+    const source = resolveAbcOptions(this.getAbc(current, false), this.doc.getMeta("tempo"));
+    return abcjs().synth.getMidiFile(source.abc, {
+      ...source.synth,
+      ...(chordsOff === undefined ? {} : { chordsOff }),
       midiOutputType: "binary",
     })[0];
   }
@@ -860,15 +864,16 @@ export class ChordProAbc extends ChordProLine {
     if (!this.forcedLabel || !line.toString(true).startsWith("R:")) this.lines.push(line);
   }
   updateMeta() {
-    let key = this.doc.getMeta("key");
-    let tempo = ""; //this.doc.getMeta("tempo"); // dont override
-    for (const line of this.lines) {
-      const current = line.toString(true);
-      if (current.startsWith("Q:")) tempo = "";
-      else if (current.startsWith("K:")) key = "";
-    }
-    if (key) this.lines.unshift("K:" + key);
-    if (tempo) this.lines.unshift("Q:" + tempo);
+    const source = this.getAbc(true, false);
+    const parsed = parseAbcSource(source);
+    if (/^\s*K:/m.test(parsed.abc)) return;
+    const key = this.doc.getAbcKey();
+    if (!key) return;
+    // K: must follow X:/metadata, immediately before music, and after the JSON envelope.
+    const body = source.slice(parsed.bodyStart).split("\n");
+    const firstMusic = body.findIndex((line) => line.trim() && !/^\s*(?:[A-Za-z]:|%)/.test(line));
+    const bodyLine = source.slice(0, parsed.bodyStart).split("\n").length - 1;
+    this.lines.splice(bodyLine + (firstMusic < 0 ? body.length : firstMusic), 0, "K:" + key);
   }
   transpose(shift: number): this {
     if (shift) {
@@ -876,8 +881,10 @@ export class ChordProAbc extends ChordProLine {
         void loadAbcjs();
         return this;
       }
-      const code = this.getAbc(true);
-      const transposed = abcjs().strTranspose(code, abcjs().renderAbc("*", code) as TuneObjectArray, shift);
+      const source = this.getAbc(true, false);
+      const parsed = parseAbcSource(source);
+      const code = source.slice(parsed.bodyStart);
+      const transposed = source.slice(0, parsed.bodyStart) + abcjs().strTranspose(code, abcjs().renderAbc("*", code) as TuneObjectArray, shift);
       this.lines.splice(0, this.lines.length);
       for (const line of transposed.split("\n")) this.push(line);
     }
@@ -909,7 +916,7 @@ export class ChordProAbc extends ChordProLine {
       void loadAbcjs();
       return single ? genLine() : [genLine()];
     }
-    for (const visualObj of abcjs().renderAbc("*", this.getAbc(current), {}) as TuneObjectArray) {
+    for (const visualObj of abcjs().renderAbc("*", parseAbcSource(this.getAbc(current)).abc, {}) as TuneObjectArray) {
       for (const line of visualObj.lines) {
         for (const staff of line.staff ?? []) {
           let found = true;
@@ -1243,6 +1250,14 @@ export class ChordProDocument {
     return (this.metaData.get("key", true) ?? "").trim();
   }
 
+  /** ABC always uses international note names, even for Hungarian/German songs. */
+  getAbcKey(name = this.key) {
+    const key = this.system.getKey(name);
+    if (!key) return "";
+    const standard = new Key(getChordSystem("S"), key.signature, key.scaleType);
+    return standard.baseNote + ["", "dor", "phr", "lyd", "mix", "m", "loc"][key.scaleType];
+  }
+
   get capo() {
     const s = this.metaData.get("capo", true).trim();
     const c = s ? parseInt(s, 10) : 0;
@@ -1348,6 +1363,12 @@ export class ChordProDocument {
             return c;
           })();
     const simple = typeof line === "string";
+    // An ABC block owns its contents, including JSON objects and grace notes.
+    // Only its closing directive may be interpreted as ChordPro.
+    if (context.pending_abc && !/^[ \t]*\{[ \t]*end_of_abc(?=[ \t:}])[ \t]*:?[ \t]*.*\}[ \t\u23ce]*$/.test(line.toString(true))) {
+      context.pending_abc.push(line);
+      return null;
+    }
     let processed = false;
     let comment_directive_type: string | undefined;
     for (let current = true; ; current = false) {

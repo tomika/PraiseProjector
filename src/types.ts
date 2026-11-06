@@ -1,6 +1,7 @@
 import type { ChordProStylesSettings } from "../common/chordpro-styles";
 import type { ClientViewInputProfile } from "../common/client-view-input";
 import type { HardwareInputSettings } from "../common/hardware-input";
+import type { ScoreDefaults } from "../common/score-settings";
 
 /**
  * Startup session auto-scan preference for the client view. `off` disables the
@@ -13,6 +14,7 @@ export type PerformanceFeatureMode = "off" | "auto" | "on";
 export type ProjectionRenderQualityMode = "performance" | "auto" | "quality";
 
 export interface Settings {
+  scoreDefaults: ScoreDefaults;
   displayBorderRect: {
     left: number;
     top: number;

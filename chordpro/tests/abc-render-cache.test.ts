@@ -4,6 +4,7 @@ import { ChordProAbc, ChordProDocument, getChordSystem } from "../chordpro_base"
 import type { DisplayPlan } from "../render/display-plan";
 import { DomSongRenderer, type AbcRenderPort, type DomSongRendererInput } from "../render/dom-song-renderer";
 import type { SongLayoutResult } from "../layout/song-layout";
+import { CHORDFORMAT_SUBSCRIPT } from "../render/chord-visual";
 
 type TuneObject = NonNullable<ReturnType<AbcRenderPort["render"]>>;
 
@@ -29,11 +30,13 @@ function fakeNode() {
 function abcCacheHarness() {
   const renderer = Object.create(DomSongRenderer.prototype) as DomSongRenderer;
   const rendered: ChordProAbc[] = [];
+  const options: Parameters<AbcRenderPort["render"]>[2][] = [];
   const abcPort: AbcRenderPort = {
     isLoaded: () => true,
     load: () => Promise.resolve(),
-    render: (_node, abc) => {
+    render: (_node, abc, params) => {
       rendered.push(abc);
+      options.push(params);
       return { rendered: rendered.length } as unknown as TuneObject;
     },
   };
@@ -43,7 +46,7 @@ function abcCacheHarness() {
     doc: { createElement: fakeNode },
     measurer: { styleRevision: 0, measureOwnedElement: () => ({ width: 30, height: 30 }) },
   });
-  return { harness: renderer as unknown as AbcCacheHarness, rendered };
+  return { harness: renderer as unknown as AbcCacheHarness, rendered, options };
 }
 
 function abcPlan(abc: ChordProAbc) {
@@ -70,4 +73,17 @@ test("unchanged notation keeps its rendered tune while tracking the re-projected
   harness.renderAbcBlocks(abcPlan(secondClone), layout, input);
   assert.equal(rendered.length, 1, "the unchanged notation is not re-rendered");
   assert.equal(harness.getAbcVisualObject(secondClone), visual);
+});
+
+test("superscript changes invalidate the ABC cache and follow the same chord flag as the rest of the song", () => {
+  const document = new ChordProDocument(getChordSystem("G"), SONG);
+  const abc = document.lines[0] as ChordProAbc;
+  const { harness, rendered, options } = abcCacheHarness();
+  const layout = { width: 300 } as SongLayoutResult;
+  const input = { system: { systemCode: "G" }, isDark: false, chordFormat: 0 } as unknown as DomSongRendererInput;
+  harness.renderAbcBlocks(abcPlan(abc), layout, input);
+  harness.renderAbcBlocks(abcPlan(abc), layout, { ...input, chordFormat: CHORDFORMAT_SUBSCRIPT });
+  assert.equal(rendered.length, 2);
+  assert.equal(options[0].jazzchords, false);
+  assert.equal(options[1].jazzchords, true);
 });

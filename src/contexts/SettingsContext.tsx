@@ -8,6 +8,7 @@ import { normalizePerformancePreferences } from "../shared/performanceSettings";
 import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } from "../../common/ppd-control";
 import { defaultHardwareInputSettings } from "../../common/hardware-input";
 import { hardwareInputForLoadedSettings } from "../hardware-input/hardwareInputSettings";
+import { createDefaultScoreDefaults, normalizeScoreDefaults } from "../../common/score-settings";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -56,6 +57,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const createDefaultSettings = useCallback((): Settings => {
     return {
+      scoreDefaults: createDefaultScoreDefaults(),
       displayBorderRect: { left: 0, top: 0, width: 0, height: 0 },
       // Display/Preview settings (matching C# Settings.settings defaults)
       displayFontName: "Time New Roman",
@@ -209,6 +211,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Merge defaults with loaded settings so new settings get their default values
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
+        merged.scoreDefaults = normalizeScoreDefaults(loaded.scoreDefaults);
         merged.ppdWatchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(loaded.ppdWatchTimeoutSeconds);
         merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));
         // Hardware profiles migrate from the RAW object: the default value merged in

@@ -2,6 +2,8 @@ import "./chordpro-dom.css";
 
 import type { TuneObject } from "abcjs";
 import { isAbcjsLoaded, loadAbcjs } from "../abcjs-lazy";
+import { abcVisualOptions, scoreOptionValues } from "../abc-options";
+import { CHORDFORMAT_SUBSCRIPT } from "./chord-visual";
 import { ChordProAbc, type ChordProChord, type ChordProDocument, type ChordProLine, type ChordSystem } from "../chordpro_base";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { safeMetaAlignment } from "../layout/meta-alignment";
@@ -1012,7 +1014,7 @@ export class DomSongRenderer {
     const maxWidth = visibleWidth / ABC_SCALE + leftMargin + horizontalSeparation;
     const options = {
       germanAlphabet: input.system.systemCode === "G",
-      jazzchords: true,
+      jazzchords: (input.chordFormat & CHORDFORMAT_SUBSCRIPT) !== 0,
       paddingleft: 0,
       paddingright: 0,
       staffwidth: maxWidth - leftMargin - horizontalSeparation,
@@ -1020,10 +1022,19 @@ export class DomSongRenderer {
       currentColor: input.isDark ? "white" : "black",
     };
 
+    const defaultsKey = JSON.stringify(abcVisualOptions(scoreOptionValues()));
     for (const occurrence of abcOccurrences) {
       const abc = occurrence.source;
       if (!(abc instanceof ChordProAbc)) continue;
-      const key = [occurrence.text, options.staffwidth, options.currentColor, options.germanAlphabet, this.measurer.styleRevision].join("|");
+      const key = [
+        occurrence.text,
+        options.staffwidth,
+        options.currentColor,
+        options.germanAlphabet,
+        options.jazzchords,
+        defaultsKey,
+        this.measurer.styleRevision,
+      ].join("|");
       const existing = this.abcNodes.get(occurrence.id);
       if (existing?.key === key) {
         // The notation is unchanged, but a re-projection hands over a fresh clone:

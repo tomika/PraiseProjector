@@ -14,14 +14,15 @@ import { getKeyCodeString } from "./keycodes";
 import { ChordSelector } from "./chord_selector";
 import { Instrument, playChord } from "./midi";
 import type { AbcWysiwygEditor } from "./abc_editor";
-import type { NoteTimingEvent, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
+import type { NoteTimingEvent, SynthOptions, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
+import { abcHeaderDefaults, resolveAbcOptions, scoreOptionValues } from "./abc-options";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
 import { ChordDetails, Key, Mode } from "./note_system";
 import { Settings } from "../common/settings";
 import { NoteHitBox, Point, Rectangle } from "./ui_base";
-import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY } from "./chord_drawer";
+import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY, CHORDFORMAT_SUBSCRIPT } from "./chord_drawer";
 import { projectDisplaySequence, type AbcDisplayMode, type DisplaySequence } from "./render/display-plan";
 import { buildChordVisualModel } from "./render/chord-visual";
 import { collectChordDiagramLabels } from "./render/diagram-chords";
@@ -111,7 +112,12 @@ function is_word_boundary_char(ch: string) {
   return !/\b/gi.exec(remove_diacritics(ch));
 }
 
-function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unknown) => void, playbackVisualObj?: TuneObject): MidiPlaybackState {
+function playAbcWithSynth(
+  abcSource: string,
+  options: SynthOptions,
+  onError?: (error?: unknown) => void,
+  playbackVisualObj?: TuneObject
+): MidiPlaybackState {
   const state: MidiPlaybackState = {
     stop: () => {
       // Replaced after synth initialization.
@@ -186,7 +192,7 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
     }
 
     timingCallbacks = new (abcjs().TimingCallbacks)(visualObj, {
-      ...(isNaN(bpm) ? {} : { qpm: bpm }),
+      ...(options.qpm ? { qpm: options.qpm } : !visualObj.metaText?.tempo && options.defaultQpm ? { qpm: options.defaultQpm } : {}),
       eventCallback: (event) => {
         applyPlaybackMarker(event);
         return undefined;
@@ -194,9 +200,6 @@ function playAbcWithSynth(abcSource: string, bpm: number, onError?: (error?: unk
     });
 
     const midiBuffer = new (abcjs().synth.CreateSynth)();
-    const options = {
-      ...(isNaN(bpm) ? {} : { qpm: bpm }),
-    };
 
     state.stop = () => {
       stopTimer();
@@ -802,6 +805,16 @@ export class ChordProEditor extends ChordDrawer {
   private abcEditor: AbcWysiwygEditor | null = null;
   private activeAbcBlock: ChordProAbc | null = null;
   private abcjsLoadPending = false;
+  private scoreDefaultsKey = JSON.stringify(scoreOptionValues());
+  private handleScoreDefaultsChanged = () => {
+    const key = JSON.stringify(scoreOptionValues());
+    if (key === this.scoreDefaultsKey) return;
+    this.scoreDefaultsKey = key;
+    this.midiPlayer?.stop();
+    this.refreshAbcEditorDefaults();
+    this.invalidateDisplaySemantics();
+    this.draw();
+  };
   private readonly rxStartsWithChord: RegExp;
 
   private midiPlayer?: MidiPlaybackState;
@@ -837,6 +850,7 @@ export class ChordProEditor extends ChordDrawer {
     options?: ChordProEditorOptions
   ) {
     super(system, chordSelector, !editable);
+    window.addEventListener("pp-settings-changed", this.handleScoreDefaultsChanged);
     this.printSurface = !!this.parent_div.closest(".print-editor-area");
     this.viewportAlignedTitle = !!options?.viewportAlignedTitle && !this.printSurface;
     this.rxStartsWithChord = new RegExp("^" + system.chordLikeRegexPattern);
@@ -1311,6 +1325,7 @@ export class ChordProEditor extends ChordDrawer {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    window.removeEventListener("pp-settings-changed", this.handleScoreDefaultsChanged);
     this.instructionsCoordinatorCleanup?.();
     this.instructionsCoordinatorCleanup = null;
     this.instructionsPaneCleanup?.();
@@ -2170,6 +2185,7 @@ export class ChordProEditor extends ChordDrawer {
     }
     if (this.chordFormat !== chordFlags) {
       this.chordFormat = chordFlags;
+      this.refreshAbcEditorDefaults();
       updateRequired = true;
       chordVisualFormatChanged = true;
     }
@@ -2729,10 +2745,10 @@ export class ChordProEditor extends ChordDrawer {
    */
   private toggleAbcMidiPlayback(line_obj: ChordProAbc) {
     if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
-      const abcSource = line_obj.getAbc(true, false);
+      const source = resolveAbcOptions(line_obj.getAbc(true, false), line_obj.doc.getMeta("tempo"));
       this.midiPlayer = playAbcWithSynth(
-        abcSource,
-        parseInt(line_obj.doc.getMeta("tempo"), 10),
+        source.abc,
+        source.synth,
         (error) => {
           console.error("Midifile playing error: " + error);
           this.midiPlayer = undefined;
@@ -2839,7 +2855,16 @@ export class ChordProEditor extends ChordDrawer {
       this.abcEditor.setDark(this.isDark);
     }
     this.activeAbcBlock = abc;
-    this.abcEditor.open(abc.getAbc(), this.chordPro?.system.systemCode === "G");
+    abc.updateMeta();
+    this.abcEditor.open(abc.getAbc(true, false), this.getAbcEditorDefaults());
+  }
+
+  private getAbcEditorDefaults() {
+    return abcHeaderDefaults(this.chordPro?.getMeta("tempo") ?? "", this.system.systemCode === "G", (this.chordFormat & CHORDFORMAT_SUBSCRIPT) !== 0);
+  }
+
+  private refreshAbcEditorDefaults() {
+    this.abcEditor?.setHeaderOptionDefaults(this.getAbcEditorDefaults());
   }
 
   private checkChordBoxOrTemplateHit(e: MouseEvent) {
@@ -4379,9 +4404,8 @@ export class ChordProEditor extends ChordDrawer {
     const suffix = line.splitAt(this.cursorPos);
     if (!suffix) return false;
 
-    const metaKey = this.chordPro.key;
-    const key = (metaKey ? this.system.getKey(metaKey)?.name : "") || this.guessKey() || "C";
-    const tonic = this.system.getKey(key)?.baseNote.charAt(0) || "C";
+    const key = this.chordPro.getAbcKey(this.chordPro.key || this.guessKey()) || "C";
+    const tonic = key.charAt(0);
     const abc = new ChordProAbc(this.chordPro, ["X:1", `K:${key}`, tonic]);
     this.chordPro.lines.splice(lineIndex + 1, 0, abc);
 

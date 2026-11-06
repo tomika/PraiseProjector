@@ -1,4 +1,7 @@
 import type { Settings } from "../types";
+import { PERSISTED_SETTINGS_KEY as SETTINGS_KEY, readPersistedSettingsText } from "../../common/persisted-settings";
+
+export { readPersistedSettingsText };
 
 /**
  * Single low-level owner of the persisted `pp-settings` blob.
@@ -9,9 +12,8 @@ import type { Settings } from "../types";
  * `RestCore`), read and write the same `pp-settings` key, so the source of truth has
  * to be a plain module — not React state. `SettingsContext` is a *consumer* of this
  * store (it re-reads on the change event), not its authority.
+ * The raw storage read lives in `common/persisted-settings.ts` for modules outside `src/`.
  */
-
-const SETTINGS_KEY = "pp-settings";
 
 /** Settings keys that can be written from outside `SettingsContext` (the session
  *  hub's feature toggles). `SettingsContext` re-reads exactly these on the change
@@ -22,7 +24,7 @@ export const SESSION_TOGGLE_KEYS = ["externalWebDisplayEnabled", "iWebEnabled", 
  *  empty object when nothing is stored or storage is unavailable (embedded webviews). */
 export function readPersistedSettings(): Partial<Settings> {
   try {
-    const raw = typeof window !== "undefined" ? window.localStorage?.getItem(SETTINGS_KEY) : null;
+    const raw = readPersistedSettingsText();
     return raw ? (JSON.parse(raw) as Partial<Settings>) : {};
   } catch {
     return {};
@@ -61,15 +63,6 @@ export function writePersistedSettingsResult(patch: Partial<Settings>): Persiste
   }
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-settings-changed"));
   return { settings: next, persisted };
-}
-
-/** The raw persisted `pp-settings` text (cache key for derived reads). */
-export function readPersistedSettingsText(): string | null {
-  try {
-    return typeof window !== "undefined" ? (window.localStorage?.getItem(SETTINGS_KEY) ?? null) : null;
-  } catch {
-    return null;
-  }
 }
 
 const HARDWARE_LEGACY_BACKUP_KEY = "pp-hardware-input-legacy-backup";
