@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import * as songLanguage from "../../../../common/song-language";
 
 // Render the actual wrapper with only its browser/desktop dependencies stubbed.
 // Compare/import editors deliberately omit settings to retain their own display.
@@ -36,6 +37,7 @@ test("language defaults do not inject global display settings into compare/impor
       if (name.endsWith("/TooltipContext")) return { useTooltips: () => ({}) };
       if (name.endsWith("/MessageBoxContext")) return { useMessageBox: () => ({}) };
       if (name.endsWith("/useSettings")) return { useSettings: () => ({ settings: globalSettings }) };
+      if (name.endsWith("/common/song-language")) return songLanguage;
       return {};
     },
   });
@@ -48,4 +50,8 @@ test("language defaults do not inject global display settings into compare/impor
   const editor = wrapper({ song: null, settings: explicit }, null).props;
   assert.equal(editor.settings, explicit);
   assert.equal(editor.frequentSongLanguages, explicit.songLanguageFilter);
+
+  // Showing every language leaves the default language for new songs on top.
+  const allLanguages = { songLanguageFilter: null, defaultSongLanguage: "de" };
+  assert.deepEqual(wrapper({ song: null, settings: allLanguages }, null).props.frequentSongLanguages, ["de"]);
 });

@@ -60,6 +60,7 @@ import { useLocalization } from "./localization/LocalizationContext";
 import { cloudApi, type DisplaySessionTarget, type DisplayUpdateResult } from "./../common/cloudApi";
 import { useOnlineSession } from "./contexts/OnlineSessionContext";
 import { matchesSongLanguage, normalizeSongLanguageFilter } from "../common/song-language";
+import { readSongLanguageSettings } from "../common/song-language-settings";
 import { cloudApiHost } from "./config";
 import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryWithData, LeaderDBProfile } from "../common/pp-types";
 import * as t from "io-ts";
@@ -111,6 +112,13 @@ import { reportUnsavedChanges } from "./services/unsavedChangesReport";
 
 type LeadersResponse = LeaderDBProfile[];
 type PanelType = "side" | "editor" | "preview";
+
+/** The host's catalogue language filter. The webserver may answer before
+ * SettingsContext has loaded, so fall back to the persisted value rather than
+ * the default, which would widen a narrowed catalogue. */
+function hostSongLanguageFilter(settings: Settings | null): string[] | null {
+  return settings ? normalizeSongLanguageFilter(settings.songLanguageFilter) : readSongLanguageSettings().songLanguageFilter;
+}
 
 /** Opaque local revision for the JS-hosted PPD transport. The REST endpoint may
  * use a different hash; RestCore deliberately caches its response under this
@@ -1572,7 +1580,7 @@ const AppContent: React.FC = () => {
         // Route handling
         if (apiRequest.method === "GET" && apiRequest.path === "/songs") {
           const songId = apiRequest.query.id as string;
-          const languages = normalizeSongLanguageFilter(settingsRef.current?.songLanguageFilter);
+          const languages = hostSongLanguageFilter(settingsRef.current);
           const songs = songId
             ? songId
                 .split(",")
@@ -1660,7 +1668,7 @@ const AppContent: React.FC = () => {
           // Session clients use the host's catalogue preferences. An explicit
           // language query may narrow that catalogue; playlist lookups by id
           // remain available even when their language is hidden from browsing.
-          const hostLanguages = songIds.length ? null : normalizeSongLanguageFilter(settingsRef.current?.songLanguageFilter);
+          const hostLanguages = songIds.length ? null : hostSongLanguageFilter(settingsRef.current);
           const requestedLanguages = typeof languageQuery === "string" ? normalizeSongLanguageFilter(languageQuery.split(",")) : null;
           const songLanguageFilter =
             hostLanguages === null

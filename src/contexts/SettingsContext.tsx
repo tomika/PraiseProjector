@@ -9,7 +9,7 @@ import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } fr
 import { defaultHardwareInputSettings } from "../../common/hardware-input";
 import { hardwareInputForLoadedSettings } from "../hardware-input/hardwareInputSettings";
 import { createDefaultScoreDefaults, normalizeScoreDefaults } from "../../common/score-settings";
-import { DEFAULT_SONG_LANGUAGE, normalizeSongLanguage, normalizeSongLanguageFilter } from "../../common/song-language";
+import { DEFAULT_SONG_LANGUAGE, DEFAULT_SONG_LANGUAGE_FILTER, normalizeSongLanguage, normalizeSongLanguageFilter } from "../../common/song-language";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -183,7 +183,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       theme: "auto", // Auto-detect from system
       language: "auto", // Auto-detect from system
       defaultSongLanguage: DEFAULT_SONG_LANGUAGE,
-      songLanguageFilter: [DEFAULT_SONG_LANGUAGE],
+      songLanguageFilter: DEFAULT_SONG_LANGUAGE_FILTER,
       leaderProfileUpdateMode: "allSources", // Allow profile updates from all sources by default
       preferenceFilter: "all" as const, // Show all songs (excluding ignored) by default
       // QR Code settings

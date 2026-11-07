@@ -7,6 +7,7 @@ import { calculateAutoFontSize } from "../../hooks/useResponsiveFontSize";
 import { cloudApi } from "../../../common/cloudApi";
 import "./GeneralSettings.css";
 import SongLanguageSelect from "../SongLanguageSelect";
+import { frequentSongLanguagesOf } from "../../../common/song-language";
 
 /** Android pushes native events by calling this global directly (see MainActivity.sendDeviceMessage). */
 type GlobalWindowWithHandler = { handleDeviceMessage?: (raw: string) => void };
@@ -211,7 +212,7 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               id="defaultSongLanguage"
               label={t("DefaultSongLanguage")}
               value={settings.defaultSongLanguage}
-              frequent={settings.songLanguageFilter}
+              frequent={frequentSongLanguagesOf(settings)}
               onChange={(value) => updateSetting("defaultSongLanguage", value)}
             />
           </div>

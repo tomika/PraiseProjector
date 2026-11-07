@@ -16,7 +16,7 @@ import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../.
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import type { PerformanceFeatureMode } from "../../types";
 import SongLanguageSelect from "../SongLanguageSelect";
-import { matchesSongLanguage, normalizeSongLanguageFilter, songLanguageName } from "../../../common/song-language";
+import { frequentSongLanguagesOf, matchesSongLanguage, normalizeSongLanguageFilter, songLanguageName } from "../../../common/song-language";
 import { readSongLanguageSettings } from "../../../common/song-language-settings";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -1536,7 +1536,7 @@ const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<Cho
       <ChordProEditor
         {...props}
         frequentSongLanguages={
-          props.frequentSongLanguages === undefined ? (props.settings ?? settings)?.songLanguageFilter : props.frequentSongLanguages
+          props.frequentSongLanguages === undefined ? frequentSongLanguagesOf(props.settings ?? settings) : props.frequentSongLanguages
         }
         onSongLanguageChange={
           props.onSongLanguageChange

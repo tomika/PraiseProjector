@@ -23,10 +23,12 @@ export function normalizeSongLanguage(value: unknown): string {
   return isSongLanguage(code) ? code : DEFAULT_SONG_LANGUAGE;
 }
 
-// null explicitly selects every language; an empty selection shows no songs.
+// null selects every language; an empty selection shows no songs.
+export const DEFAULT_SONG_LANGUAGE_FILTER = null;
+
+// An unset or malformed filter falls back to the default (every language).
 export function normalizeSongLanguageFilter(value: unknown): string[] | null {
-  if (value === null) return null;
-  if (!Array.isArray(value)) return [DEFAULT_SONG_LANGUAGE];
+  if (!Array.isArray(value)) return DEFAULT_SONG_LANGUAGE_FILTER;
   return Array.from(
     new Set(
       value
@@ -35,6 +37,14 @@ export function normalizeSongLanguageFilter(value: unknown): string[] | null {
         .filter(isSongLanguage)
     )
   );
+}
+
+// Languages the pickers list first: the filter's selection or, while every
+// language is shown, the default language for new songs.
+export function frequentSongLanguagesOf(
+  settings: { songLanguageFilter?: readonly string[] | null; defaultSongLanguage?: string } | null | undefined
+): readonly string[] {
+  return settings?.songLanguageFilter ?? [normalizeSongLanguage(settings?.defaultSongLanguage)];
 }
 
 export function matchesSongLanguage(language: unknown, filter: readonly string[] | null): boolean {

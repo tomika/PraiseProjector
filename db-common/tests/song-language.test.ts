@@ -140,7 +140,8 @@ for (const conflictMode of ["overwrite", "select"] as const) {
 }
 
 test("language selection distinguishes all, none, malformed settings and outside-filter choices", () => {
-  assert.deepEqual(normalizeSongLanguageFilter(undefined), ["hu"]);
+  assert.equal(normalizeSongLanguageFilter(undefined), null);
+  assert.equal(normalizeSongLanguageFilter("hu"), null);
   assert.deepEqual(normalizeSongLanguageFilter(["HU", "en", "hu", "invalid"]), ["hu", "en"]);
   assert.equal(normalizeSongLanguageFilter(null), null);
   assert.deepEqual(normalizeSongLanguageFilter([]), []);

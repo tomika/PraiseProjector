@@ -1,5 +1,5 @@
 import { readPersistedSettingsText } from "./persisted-settings";
-import { DEFAULT_SONG_LANGUAGE, normalizeSongLanguage, normalizeSongLanguageFilter } from "./song-language";
+import { DEFAULT_SONG_LANGUAGE, DEFAULT_SONG_LANGUAGE_FILTER, normalizeSongLanguage, normalizeSongLanguageFilter } from "./song-language";
 
 export function readSongLanguageSettings(): { defaultSongLanguage: string; songLanguageFilter: string[] | null } {
   try {
@@ -10,6 +10,6 @@ export function readSongLanguageSettings(): { defaultSongLanguage: string; songL
       songLanguageFilter: normalizeSongLanguageFilter(settings?.songLanguageFilter),
     };
   } catch {
-    return { defaultSongLanguage: DEFAULT_SONG_LANGUAGE, songLanguageFilter: [DEFAULT_SONG_LANGUAGE] };
+    return { defaultSongLanguage: DEFAULT_SONG_LANGUAGE, songLanguageFilter: DEFAULT_SONG_LANGUAGE_FILTER };
   }
 }
