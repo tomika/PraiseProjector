@@ -6,6 +6,32 @@
   width: 100%;
 }
 
+.song-tree-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.song-tree-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+/* Faint reminder that a filter hides songs. It stays put while the tree
+   scrolls and lets every click through. Placed above the rows because dark-mode
+   rows are opaque; right offset clears the vertical scrollbar. */
+.song-tree-filter-watermark {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 0.75rem;
+  z-index: 1;
+  font-size: 3rem;
+  line-height: 1;
+  opacity: 0.12;
+  pointer-events: none;
+}
+
 .filter-checkboxes {
   font-size: 0.875rem;
   padding: 0 0.3125rem;

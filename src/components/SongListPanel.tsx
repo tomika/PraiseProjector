@@ -2214,6 +2214,21 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     return typeof document !== "undefined" ? createPortal(menu, document.body) : menu;
   }
 
+  /** Restrictions that hide songs without showing up in the search box: the
+   *  context-menu content toggles, the preferred-only mode and the song-language
+   *  setting. They are easy to forget, so the tree shows a filter watermark. */
+  private hasHiddenTreeFilter(hasLeader: boolean): boolean {
+    const { showSongs, showTextOnly, showScoreOnly, showMarked, preferenceFilter } = this.state;
+    return (
+      !showSongs ||
+      !showTextOnly ||
+      !showScoreOnly ||
+      !showMarked ||
+      (hasLeader && preferenceFilter === "preferred-only") ||
+      this.props.settings.songLanguageFilter != null
+    );
+  }
+
   render() {
     const { filter, selectedSong, preferenceFilter, showInlineSearchOptions } = this.state;
     const hasLeader = !!this.props.selectedLeader;
@@ -2320,19 +2335,26 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             </button>
           </div>
         </div>
-        <div
-          className="flex-grow-1 overflow-auto"
-          ref={(el) => {
-            this.scrollContainerRef = el;
-          }}
-          onScroll={this.handleTreeScroll}
-          onContextMenu={this.handleContextMenu}
-          onDragOver={this.handleExternalDragOver}
-          onDrop={this.handleExternalFileDrop}
-          onKeyDown={this.handleKeyDown}
-          tabIndex={0}
-        >
-          {this.renderVirtualizedSongTree(hasLeader, selectedSong)}
+        <div className="song-tree-viewport">
+          <div
+            className="song-tree-scroll"
+            ref={(el) => {
+              this.scrollContainerRef = el;
+            }}
+            onScroll={this.handleTreeScroll}
+            onContextMenu={this.handleContextMenu}
+            onDragOver={this.handleExternalDragOver}
+            onDrop={this.handleExternalFileDrop}
+            onKeyDown={this.handleKeyDown}
+            tabIndex={0}
+          >
+            {this.renderVirtualizedSongTree(hasLeader, selectedSong)}
+          </div>
+          {this.hasHiddenTreeFilter(hasLeader) && (
+            <div className="song-tree-filter-watermark" aria-hidden="true">
+              <i className="fa fa-filter"></i>
+            </div>
+          )}
         </div>
         {this.renderContextMenu()}
 
