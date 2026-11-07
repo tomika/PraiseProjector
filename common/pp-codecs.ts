@@ -17,6 +17,7 @@
  */
 
 import * as t from "io-ts";
+import { isSongLanguage } from "./song-language";
 
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
@@ -107,14 +108,22 @@ export const songPreferenceEntryCodec = t.intersection([t.type({ songId: t.strin
 //  Song data & entries
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const songDataCodec = t.type({
-  text: t.string,
-  system: chordSystemCodec,
-});
+export const songLanguageCodec = new t.Type<string, string, unknown>(
+  "SongLanguage",
+  isSongLanguage,
+  (value, context) => {
+    const code = typeof value === "string" ? value.trim().toLowerCase() : value;
+    return isSongLanguage(code) ? t.success(code) : t.failure(value, context);
+  },
+  t.identity
+);
+
+// Keep language optional on the wire: old clients must preserve server metadata.
+export const songDataCodec = uniType({ text: t.string, system: chordSystemCodec }, { language: songLanguageCodec });
 
 export const songEntryCodec = uniType(
   { songId: t.string, title: t.string },
-  { transpose: t.number, capo: t.number, instructions: t.string, songdata: songDataCodec }
+  { transpose: t.number, capo: t.number, instructions: t.string, songdata: songDataCodec, language: songLanguageCodec }
 );
 
 export const songDBEntryCodec = t.intersection([songEntryCodec, uniType({ version: t.number }, { groupId: t.string })]);
@@ -127,6 +136,7 @@ export const pendingSongStateCodec = t.union([t.literal("PENDING"), t.literal("R
 
 export const songDBPendingEntryCodec = t.intersection([
   songDBEntryWithDataCodec,
+  t.partial({ currentLanguage: songLanguageCodec }),
   t.type({
     current: t.string,
     state: pendingSongStateCodec,
@@ -277,7 +287,7 @@ export const peekResponseCodec = t.type({
   pendingSongCount: t.number,
 });
 
-export const editSongResponseCodec = uniType({ version: t.number, song: t.string, system: chordSystemCodec }, {});
+export const editSongResponseCodec = uniType({ version: t.number, song: t.string, system: chordSystemCodec }, { language: songLanguageCodec });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  PPD protocol message codecs
@@ -377,7 +387,10 @@ export const sessionRequestCodec = uniType({ clientId: t.string }, { logout: t.b
 
 export const editSongRequestCodec = t.type({ id: t.string });
 
-export const suggestRequestCodec = uniType({ id: t.string, version: t.number, song: t.string }, { system: chordSystemCodec, leaderId: t.string });
+export const suggestRequestCodec = uniType(
+  { id: t.string, version: t.number, song: t.string },
+  { system: chordSystemCodec, leaderId: t.string, language: songLanguageCodec }
+);
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
 export const syncedLeaderEntryCodec = t.intersection([

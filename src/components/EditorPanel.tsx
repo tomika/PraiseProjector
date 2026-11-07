@@ -12,6 +12,8 @@ interface EditorPanelProps {
   onLineSelect?: (lineNumber: number) => void;
   onEditModeChange?: (isEditing: boolean) => void;
   onTextChange?: (newText: string) => void;
+  onSongLanguageChange?: (language: string) => void;
+  hasUnsavedChanges?: boolean;
   settings?: Settings | null;
   setProjectedSongText?: (newSongText: string) => void;
   // Called before entering edit mode - return Promise<boolean> to allow/cancel
@@ -106,6 +108,8 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
       settings,
       setProjectedSongText,
       onTextChange,
+      onSongLanguageChange,
+      hasUnsavedChanges,
       onBeforeEnterEditMode,
       onAfterLeaveEditMode,
       originalText,
@@ -130,6 +134,8 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
           settings={settings}
           setProjectedSongText={setProjectedSongText}
           onTextChange={onTextChange}
+          onSongLanguageChange={onSongLanguageChange}
+          hasUnsavedChanges={hasUnsavedChanges}
           onBeforeEnterEditMode={onBeforeEnterEditMode}
           onAfterLeaveEditMode={onAfterLeaveEditMode}
           originalText={originalText}

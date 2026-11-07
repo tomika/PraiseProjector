@@ -179,6 +179,8 @@ export interface Settings {
 
   // Language setting: 'en', 'hu', or 'auto' (follows system preference)
   language: "en" | "hu" | "auto";
+  defaultSongLanguage: string;
+  songLanguageFilter: string[] | null;
 
   // Leader profile update mode: controls when leader preferences are updated
   leaderProfileUpdateMode: "leaderPageOnly" | "uiChangesAlso" | "allSources";

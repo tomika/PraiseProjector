@@ -11,6 +11,12 @@ export type AboutRuntimeMode = "frontend-only" | "full-electron";
 
 const electronFrontendWebApp: ThirdPartyEntry[] = [
   {
+    name: "Twemoji flag graphics (Twitter, Inc. and contributors)",
+    url: "https://github.com/twitter/twemoji/tree/v14.0.2",
+    licence: "CC-BY 4.0",
+    licenceUrl: "https://github.com/twitter/twemoji/blob/v14.0.2/LICENSE-GRAPHICS",
+  },
+  {
     name: "React",
     url: "https://github.com/facebook/react",
     licence: "MIT License",

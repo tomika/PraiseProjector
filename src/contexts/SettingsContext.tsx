@@ -9,6 +9,7 @@ import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } fr
 import { defaultHardwareInputSettings } from "../../common/hardware-input";
 import { hardwareInputForLoadedSettings } from "../hardware-input/hardwareInputSettings";
 import { createDefaultScoreDefaults, normalizeScoreDefaults } from "../../common/score-settings";
+import { DEFAULT_SONG_LANGUAGE, normalizeSongLanguage, normalizeSongLanguageFilter } from "../../common/song-language";
 
 const storeApi = {
   loadSettings: async (): Promise<Settings> => {
@@ -181,6 +182,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       logAutoExpandParams: true, // Auto-expand object params when expanding a log entry
       theme: "auto", // Auto-detect from system
       language: "auto", // Auto-detect from system
+      defaultSongLanguage: DEFAULT_SONG_LANGUAGE,
+      songLanguageFilter: [DEFAULT_SONG_LANGUAGE],
       leaderProfileUpdateMode: "allSources", // Allow profile updates from all sources by default
       preferenceFilter: "all" as const, // Show all songs (excluding ignored) by default
       // QR Code settings
@@ -211,6 +214,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Merge defaults with loaded settings so new settings get their default values
         const loaded = loadedSettings as Partial<Settings>;
         const merged = { ...defaultSettings, ...loaded };
+        merged.defaultSongLanguage = normalizeSongLanguage(loaded.defaultSongLanguage);
+        merged.songLanguageFilter = normalizeSongLanguageFilter(loaded.songLanguageFilter);
         merged.scoreDefaults = normalizeScoreDefaults(loaded.scoreDefaults);
         merged.ppdWatchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(loaded.ppdWatchTimeoutSeconds);
         merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));

@@ -59,6 +59,7 @@ import { useWakeLock } from "./hooks/useWakeLock";
 import { useLocalization } from "./localization/LocalizationContext";
 import { cloudApi, type DisplaySessionTarget, type DisplayUpdateResult } from "./../common/cloudApi";
 import { useOnlineSession } from "./contexts/OnlineSessionContext";
+import { matchesSongLanguage, normalizeSongLanguageFilter } from "../common/song-language";
 import { cloudApiHost } from "./config";
 import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryWithData, LeaderDBProfile } from "../common/pp-types";
 import * as t from "io-ts";
@@ -455,7 +456,7 @@ const AppContent: React.FC = () => {
             },
             (songId) => {
               const song = Database.getInstance().getSongById(songId);
-              return song ? { text: song.Text, system: song.System } : undefined;
+              return song ? { text: song.Text, system: song.System, language: song.Language } : undefined;
             }
           );
         } else {
@@ -1209,7 +1210,7 @@ const AppContent: React.FC = () => {
       const hasContent = song.Text.trim().length > 0;
       return hasContent;
     }
-    const isDifferent = song.Text !== dbSong.Text;
+    const isDifferent = !song.hasSameContent(dbSong);
     return isDifferent;
   }, []);
 
@@ -1571,12 +1572,13 @@ const AppContent: React.FC = () => {
         // Route handling
         if (apiRequest.method === "GET" && apiRequest.path === "/songs") {
           const songId = apiRequest.query.id as string;
+          const languages = normalizeSongLanguageFilter(settingsRef.current?.songLanguageFilter);
           const songs = songId
             ? songId
                 .split(",")
                 .map((s) => db.getSongById(s))
                 .filter((s) => s != null)
-            : db.getSongs();
+            : db.getSongs().filter((song) => matchesSongLanguage(song.Language, languages));
 
           const entries: SongDBEntryWithData[] = songs.map((song) => {
             const pref = leftPanelRef.current?.getPreferencesForSongId(song.Id) ?? leader?.getPreference(song.Id);
@@ -1654,6 +1656,24 @@ const AppContent: React.FC = () => {
             .filter(Boolean);
           const parsedLimit = limit ? parseInt(limit) : NaN;
           const maxResults = Number.isNaN(parsedLimit) ? (songIds.length > 0 ? songIds.length : 30) : parsedLimit;
+          const languageQuery = apiRequest.query.languages;
+          // Session clients use the host's catalogue preferences. An explicit
+          // language query may narrow that catalogue; playlist lookups by id
+          // remain available even when their language is hidden from browsing.
+          const hostLanguages = songIds.length ? null : normalizeSongLanguageFilter(settingsRef.current?.songLanguageFilter);
+          const requestedLanguages = typeof languageQuery === "string" ? normalizeSongLanguageFilter(languageQuery.split(",")) : null;
+          const songLanguageFilter =
+            hostLanguages === null
+              ? requestedLanguages
+              : requestedLanguages === null
+                ? hostLanguages
+                : hostLanguages.filter((code) => requestedLanguages.includes(code));
+          const searchSettings = settingsRef.current
+            ? {
+                ...settingsRef.current,
+                songLanguageFilter,
+              }
+            : undefined;
           const results = await db.filter(
             text,
             leader,
@@ -1661,12 +1681,13 @@ const AppContent: React.FC = () => {
             true,
             true,
             SongOrder.LessCostMatch,
-            settingsRef.current,
+            searchSettings,
             songIds.length > 0 ? songIds : undefined
           );
           const data: SongFound[] = results.slice(0, maxResults > 0 ? maxResults : undefined).map((found) => ({
             songId: found.song.Id,
             title: found.song.Title,
+            language: found.song.Language,
             found: { type: FormatFoundReason(found.reason), cost: found.cost, snippet: found.snippet },
           }));
           response = {
@@ -1946,7 +1967,7 @@ const AppContent: React.FC = () => {
     async (currentText: string, originalText: string): Promise<boolean | void> => {
       // If text was changed, ask user if they want to save.
       // Returning false cancels edit-mode exit so the editor stays editable.
-      if (currentText.trim() !== originalText.trim() && currentText.trim() !== "") {
+      if ((currentText.trim() !== originalText.trim() || checkCanSaveSong()) && currentText.trim() !== "") {
         const choice = await showYesNoCancelAsync(t("UnsavedChanges"), t("AskSaveSongChanges"), {
           confirmText: t("SaveChanges"),
           noText: t("LeaveWithoutSaving"),
@@ -2009,7 +2030,7 @@ const AppContent: React.FC = () => {
         }
       }
     },
-    [showYesNoCancelAsync, showMessage, t]
+    [showYesNoCancelAsync, showMessage, t, checkCanSaveSong]
   );
 
   const handleReloadSong = useCallback(() => {
@@ -2136,7 +2157,7 @@ const AppContent: React.FC = () => {
   const handleNewSong = useCallback(() => {
     const createNew = () => {
       // Create a new empty song with prompt text (matching C# LoadSong(new Song(Properties.Strings.EmptySongPrompt)))
-      const newSong = new Song(t("EmptySongPrompt"));
+      const newSong = new Song(t("EmptySongPrompt"), "G", undefined, settings?.defaultSongLanguage);
       setEditedSong(newSong);
       updateCurrentSongText(newSong.Text);
       // Enter edit mode and focus (matching C# if(editor.MakeEditable(true)) editor.Focus())
@@ -2164,7 +2185,7 @@ const AppContent: React.FC = () => {
     }
 
     createNew();
-  }, [canSaveSong, showConfirm, t]);
+  }, [canSaveSong, showConfirm, t, settings?.defaultSongLanguage]);
 
   // Print current song – opens a dedicated print window/tab
   const handlePrint = useCallback(() => {
@@ -2243,7 +2264,7 @@ const AppContent: React.FC = () => {
     void Promise.allSettled(
       ids.map(async (songId) => {
         const data = await requestHostDevicePpdSongData(songId);
-        const song = new Song(data.text, data.system);
+        const song = new Song(data.text, data.system, undefined, data.language);
         song.Id = songId;
         return song;
       })
@@ -2998,7 +3019,7 @@ const AppContent: React.FC = () => {
     const currentEditedSong = getEditedSong();
     if (currentEditedSong) {
       const dbSong = db.getSongById(currentEditedSong.Id);
-      if (dbSong && dbSong.Text !== currentEditedSong.Text) {
+      if (dbSong && !dbSong.hasSameContent(currentEditedSong)) {
         // Song was modified in sync - reload it
         const reloaded = dbSong.clone();
         setEditedSong(reloaded);
@@ -3010,7 +3031,7 @@ const AppContent: React.FC = () => {
     const currentProjectedSong = getProjectedSong();
     if (currentProjectedSong) {
       const dbSong = db.getSongById(currentProjectedSong.Id);
-      if (dbSong && dbSong.Text !== currentProjectedSong.Text) {
+      if (dbSong && !dbSong.hasSameContent(currentProjectedSong)) {
         // Projected song was modified in sync - reload it
         setProjectedSong(dbSong.clone());
       }
@@ -3074,6 +3095,14 @@ const AppContent: React.FC = () => {
   function handleTextChange(newText: string): void {
     const current = getEditedSong();
     if (current) updateEditedSong((song: Song) => song.updateChordProText(newText));
+  }
+
+  function handleSongLanguageChange(language: string): void {
+    const current = getEditedSong();
+    if (!current || current.Language === language) return;
+    const song = current.clone();
+    song.Language = language;
+    setEditedSong(song);
   }
 
   const prepareFullTutorial = useCallback(() => {
@@ -3222,6 +3251,8 @@ const AppContent: React.FC = () => {
                         activeTab={editorTab}
                         onActiveTabChange={setEditorTab}
                         onTextChange={handleTextChange}
+                        onSongLanguageChange={handleSongLanguageChange}
+                        hasUnsavedChanges={canSaveSong}
                         settings={settings}
                         setProjectedSongText={updateCurrentSongText}
                         onBeforeEnterEditMode={handleBeforeEnterEditMode}
@@ -3334,6 +3365,8 @@ const AppContent: React.FC = () => {
                       activeTab={editorTab}
                       onActiveTabChange={setEditorTab}
                       onTextChange={handleTextChange}
+                      onSongLanguageChange={handleSongLanguageChange}
+                      hasUnsavedChanges={canSaveSong}
                       settings={settings}
                       setProjectedSongText={updateCurrentSongText}
                       onBeforeEnterEditMode={handleBeforeEnterEditMode}

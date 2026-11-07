@@ -10,7 +10,6 @@ import { cloudApi, isCloudApiErrorKind } from "../../common/cloudApi";
 import { convertHistoryEntryToSongWithHistory } from "./compareDialogUtils";
 import LeaderDataMergeDialog from "./LeaderDataMergeDialog";
 import "./DBSyncDialog.css";
-import { ChordSystemCode } from "../../chordpro/chordpro_base";
 import { SyncRequest, SyncResponse } from "../../common/pp-types";
 import { useTooltips } from "../localization/TooltipContext";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
@@ -555,15 +554,18 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
           continue;
         }
 
-        const song = new Song(songdata.text, songdata.system as ChordSystemCode);
-        song.Id = s.songId;
-        song.version = s.version;
-        if ("groupId" in s && s.groupId != null) song.GroupId = s.groupId;
+        const song = Song.fromServer({
+          songId: s.songId,
+          title: "title" in s ? s.title : "",
+          version: s.version,
+          groupId: "groupId" in s ? s.groupId : undefined,
+          songdata,
+        });
 
         const existing = database.getSong(s.songId);
 
         if (existing && existing.version === 0) {
-          if (existing.Text === song.Text && existing.Title === song.Title) {
+          if (existing.hasSameContent(song)) {
             // Exact match - safe to overwrite
             database.setSong(song);
           } else {
@@ -1052,7 +1054,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
         // User resolved the conflict
         const data = item.data as { original: Song; current: Song };
         mergedSong.Id = data.original.Id;
-        if (data.current.Text !== mergedSong.Text) {
+        if (!data.current.hasSameContent(mergedSong)) {
           database.setSong(mergedSong);
         }
         removeItemAndCheckSync(item.id);
@@ -1221,25 +1223,24 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
   const handleUpdatedSongCompareClose = useCallback(
     (songId: string, compareType: "backup" | "server", mergedSong?: Song) => {
       if (mergedSong && updatedSongCompare) {
-        const localText = updatedSongCompare.localSong.Text;
-        const otherText = updatedSongCompare.otherSong.Text;
-        const selectedText = mergedSong.Text;
+        const matchesLocal = mergedSong.hasSameContent(updatedSongCompare.localSong);
+        const matchesOther = mergedSong.hasSameContent(updatedSongCompare.otherSong);
 
         if (compareType === "backup") {
           // Left=backup, Right=local. If user picked left (backup) → revert, if right (local) → upload
-          if (selectedText === otherText) {
+          if (matchesOther) {
             // User selected backup version → revert
             handleUpdatedSongDecision(songId, "revert");
-          } else if (selectedText === localText) {
+          } else if (matchesLocal) {
             // User selected local version → upload
             handleUpdatedSongDecision(songId, "upload");
           }
         } else {
           // Left=local, Right=server. If user picked left (local) → upload, if right (server) → revert
-          if (selectedText === localText) {
+          if (matchesLocal) {
             // User selected local version → upload
             handleUpdatedSongDecision(songId, "upload");
-          } else if (selectedText === otherText) {
+          } else if (matchesOther) {
             // User selected server version → revert
             handleUpdatedSongDecision(songId, "revert");
           }

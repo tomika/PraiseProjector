@@ -22,6 +22,7 @@ import "./SongImporterWizard.css";
 import { ChordBoxType, ChordDrawer } from "../../../chordpro/chord_drawer";
 import { defaultDisplayProperties } from "../../../chordpro/chordpro_styles";
 import { NoteHitBox } from "../../../chordpro/ui_base";
+import { readSongLanguageSettings } from "../../../common/song-language-settings";
 
 const CompareDialog = lazy(() => import("../CompareDialog"));
 
@@ -125,6 +126,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   const [generatedChordPro, setGeneratedChordPro] = useState("");
   const [isChordProDirectFlow, setIsChordProDirectFlow] = useState(false);
   const [editorSong, setEditorSong] = useState<Song | null>(null);
+  const [importLanguage, setImportLanguage] = useState(() => readSongLanguageSettings().defaultSongLanguage);
 
   // MessageBox state
   const [messageBox, setMessageBox] = useState<{
@@ -742,14 +744,14 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       if (isChordProDirectFlow) {
         const normalizedChordPro = normalizeChordProChords(generatedChordPro, chordMap);
         setGeneratedChordPro(normalizedChordPro);
-        setEditorSong(new Song(normalizedChordPro));
+        setEditorSong(new Song(normalizedChordPro, "G", undefined, importLanguage));
         setCurrentTab(3);
         return;
       }
 
       const chordPro = ChordProConverter.convertToChordPro(filteredLines, chordMap);
       setGeneratedChordPro(chordPro);
-      setEditorSong(new Song(chordPro));
+      setEditorSong(new Song(chordPro, "G", undefined, importLanguage));
       setCurrentTab(3);
     };
 
@@ -777,6 +779,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     generatedChordPro,
     getUnknownNormalizedChords,
     isChordProDirectFlow,
+    importLanguage,
     normalizeChordProChords,
     t,
   ]);
@@ -790,7 +793,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   const handleSaveAndRestart = useCallback(async () => {
     try {
       // Parse ChordPro and create song
-      const song = new Song(generatedChordPro, "G");
+      const song = new Song(generatedChordPro, "G", undefined, importLanguage);
 
       if (!song.Title || !song.Title.trim()) {
         // force user to set title before saving
@@ -871,7 +874,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         onCancel: () => setMessageBox(null),
       });
     }
-  }, [database, format, generatedChordPro, importedFiles, onClose, onSongImported, selectedFile, setCompareDialogState, t]);
+  }, [database, format, generatedChordPro, importLanguage, importedFiles, onClose, onSongImported, selectedFile, setCompareDialogState, t]);
 
   // === Navigation ===
 
@@ -1159,7 +1162,16 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     <div className="wizard-tab chordpro-editor-tab">
       <h2>{t("SongImportEditChordProTitle")}</h2>
       <div className="chordpro-editor-wrapper">
-        <ChordProEditorComponent ref={chordProEditorRef} song={editorSong} onTextChange={handleChordProChange} initialEditMode={true} />
+        <ChordProEditorComponent
+          ref={chordProEditorRef}
+          song={editorSong}
+          onTextChange={handleChordProChange}
+          initialEditMode={true}
+          onSongLanguageChange={(language) => {
+            setImportLanguage(language);
+            setEditorSong((previous) => (previous ? new Song(generatedChordPro, previous.System, undefined, language) : previous));
+          }}
+        />
       </div>
     </div>
   );

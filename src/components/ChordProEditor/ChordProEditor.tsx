@@ -15,6 +15,10 @@ import "./ChordProEditor.css";
 import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import type { PerformanceFeatureMode } from "../../types";
+import SongLanguageSelect from "../SongLanguageSelect";
+import { matchesSongLanguage, normalizeSongLanguageFilter, songLanguageName } from "../../../common/song-language";
+import { readSongLanguageSettings } from "../../../common/song-language-settings";
+import { useSettings } from "../../hooks/useSettings";
 
 export type ChordProEditorTab = "wysiwyg" | "meta" | "chordpro";
 
@@ -95,6 +99,9 @@ interface ChordProEditorProps {
   settings?: Settings | null;
   setProjectedSongText?: (newLyrics: string) => void;
   onTextChange?: (newText: string) => void; // For import wizard
+  onSongLanguageChange?: (language: string) => void;
+  frequentSongLanguages?: readonly string[] | null;
+  hasUnsavedChanges?: boolean;
   initialEditMode?: boolean; // Start in edit mode
   editMode?: boolean; // Controlled edit mode used by the full-view editor
   activeTab?: ChordProEditorTab;
@@ -1165,7 +1172,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     // Ask the parent (e.g. save prompt / title check) BEFORE visually leaving edit mode.
     // If the callback returns false the exit is cancelled and we stay editable.
     // skipPrompt bypasses this (e.g. when reloading a song after user already confirmed discard).
-    if (!skipPrompt && this.props.onAfterLeaveEditMode && currentText !== "" && currentText !== originalText) {
+    if (!skipPrompt && this.props.onAfterLeaveEditMode && currentText !== "" && (currentText !== originalText || this.props.hasUnsavedChanges)) {
       console.debug("Editor", "Calling onAfterLeaveEditMode");
       const result = await this.props.onAfterLeaveEditMode(this.state.chordProText, this.props.originalText ?? this.props.song?.Text ?? "");
       if (result === false) {
@@ -1423,6 +1430,17 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>{t("SongLanguage")}</td>
+              <td>
+                <SongLanguageSelect
+                  value={this.props.song?.Language ?? "hu"}
+                  frequent={this.props.frequentSongLanguages}
+                  disabled={!this.isEditable || !this.props.onSongLanguageChange}
+                  onChange={(code) => this.props.onSongLanguageChange?.(code)}
+                />
+              </td>
+            </tr>
             {metaTags.map(({ tag, labelKey }) => {
               const stored = metaData.get(tag) || "";
               const draft = metaDrafts.get(tag);
@@ -1506,6 +1524,7 @@ const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<Cho
     const { t, language } = useLocalization();
     const { tt } = useTooltips();
     const { showConfirm } = useMessageBox();
+    const { settings, updateSettingWithAutoSave } = useSettings();
     const getAdaptiveChordProSlow = React.useCallback(
       () =>
         (props.pageTurnMode === "auto" || (props.pageTurnMode === undefined && !!props.performanceAdaptivePaging)) &&
@@ -1516,6 +1535,29 @@ const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<Cho
     return (
       <ChordProEditor
         {...props}
+        frequentSongLanguages={
+          props.frequentSongLanguages === undefined ? (props.settings ?? settings)?.songLanguageFilter : props.frequentSongLanguages
+        }
+        onSongLanguageChange={
+          props.onSongLanguageChange
+            ? (code) => {
+                props.onSongLanguageChange?.(code);
+                const filter = normalizeSongLanguageFilter((props.settings ?? settings)?.songLanguageFilter);
+                if (!matchesSongLanguage(code, filter)) {
+                  showConfirm(
+                    t("SongLanguageFilter"),
+                    t("AddSongLanguageToFilterMessage").replace("{0}", songLanguageName(code, language)),
+                    () => {
+                      const current = readSongLanguageSettings().songLanguageFilter;
+                      if (current !== null && !current.includes(code)) updateSettingWithAutoSave("songLanguageFilter", [...current, code]);
+                    },
+                    undefined,
+                    { confirmText: t("Add"), cancelText: t("No") }
+                  );
+                }
+              }
+            : undefined
+        }
         t={t}
         tt={tt}
         language={language}

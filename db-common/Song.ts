@@ -7,6 +7,7 @@ import * as t from "io-ts";
 import { chordSystemCodec, songDataCodec, uniType } from "../common/pp-codecs";
 import { ChordProDocument, getChordSystem } from "../chordpro/chordpro_base";
 import { Instructions } from "../chordpro/chordpro_instructions";
+import { normalizeSongLanguage, DEFAULT_SONG_LANGUAGE } from "../common/song-language";
 
 export const songStoreCodec = uniType(
   {
@@ -68,6 +69,7 @@ export class Song {
   private _group_id: string = "";
   public version: number = 0;
   private _system: ChordSystemCode;
+  private _language: string = DEFAULT_SONG_LANGUAGE;
   private _text: string;
   private _title: string = "";
   private _lyrics: string = "";
@@ -97,16 +99,17 @@ export class Song {
     return this._doc;
   }
 
-  constructor(t: string, s: ChordSystemCode = "G", change?: SongChange) {
+  constructor(t: string, s: ChordSystemCode = "G", change?: SongChange, language: string = DEFAULT_SONG_LANGUAGE) {
     this._text = t.replace(Song.rxEmptyLines, "\n");
     this._system = s;
+    this._language = normalizeSongLanguage(language);
     this._id = uuidv4();
     this._change = change;
     this.parse();
   }
 
   public static fromServer(data: SongDBEntryWithData): Song {
-    const song = new Song(data.songdata.text, data.songdata.system);
+    const song = new Song(data.songdata.text, data.songdata.system, undefined, data.songdata.language);
     song.Id = data.songId;
     song.version = data.version;
     if (data.groupId) song.GroupId = data.groupId;
@@ -117,7 +120,7 @@ export class Song {
     let song: Song;
     try {
       const json = decode(songStoreCodec, _json);
-      song = new Song(json.songdata.text, json.songdata.system);
+      song = new Song(json.songdata.text, json.songdata.system, undefined, json.songdata.language);
       song._id = json.songId;
       song.version = json.version;
       if (json.groupId) song._group_id = json.groupId;
@@ -153,6 +156,20 @@ export class Song {
 
   public get System() {
     return this._system;
+  }
+  public get Language(): string {
+    return this._language;
+  }
+  public set Language(value: string) {
+    const language = normalizeSongLanguage(value);
+    if (this._language !== language) {
+      this._language = language;
+      this.version = 0;
+    }
+  }
+
+  public hasSameContent(other: Song): boolean {
+    return this.Text === other.Text && this.System === other.System && this.Language === other.Language && this.GroupId === other.GroupId;
   }
   public get Title(): string {
     return this._title;
@@ -471,7 +488,7 @@ export class Song {
   }
 
   public ToUpdate(): SongUpdate {
-    return { songId: this.Id, songdata: { text: this._text, system: this._system }, groupId: this._group_id };
+    return { songId: this.Id, songdata: { text: this._text, system: this._system, language: this._language }, groupId: this._group_id };
   }
 
   public toJSON(): t.TypeOf<typeof songStoreCodec> {

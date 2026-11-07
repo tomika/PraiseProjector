@@ -78,9 +78,11 @@ import { loadPpdSongLocalFirst } from "../../../services/ppdSongFallback";
 import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
 import { dispatchClientViewDisplayUpdate } from "../../../services/clientViewDisplayUpdate";
 import { DirectDisplaySource } from "./DirectDisplaySource";
+import { matchesSongLanguage } from "../../../../common/song-language";
+import { readSongLanguageSettings } from "../../../../common/song-language-settings";
 
-function toEntry(song: { Id: string; Title: string }): SongEntry {
-  return { songId: song.Id, title: song.Title };
+function toEntry(song: { Id: string; Title: string; Language: string }): SongEntry {
+  return { songId: song.Id, title: song.Title, language: song.Language };
 }
 
 export interface DirectAuthBridge {
@@ -412,7 +414,15 @@ export class DirectClientApi implements ClientApi {
   }
 
   private createSongApi(): SongApi {
-    const allEntries = () => sortSongEntriesByTitle(Database.getInstance().getSongs().map(toEntry));
+    const allEntries = () => {
+      const filter = readSongLanguageSettings().songLanguageFilter;
+      return sortSongEntriesByTitle(
+        Database.getInstance()
+          .getSongs()
+          .filter((song) => matchesSongLanguage(song.Language, filter))
+          .map(toEntry)
+      );
+    };
     return {
       searchSongs: async (text, options) => {
         const query = text.trim();
@@ -422,13 +432,23 @@ export class DirectClientApi implements ClientApi {
         // match snippets (lyrics/meta excerpts with highlights) — not a naive
         // title-only substring scan that returned the title as the "snippet".
         const allowedIds = options?.songIds?.length ? new Set(options.songIds) : undefined;
-        const results = await Database.getInstance().filter(query, null, true, true, true, SongOrder.LessCostMatch, undefined, allowedIds);
+        const results = await Database.getInstance().filter(
+          query,
+          null,
+          true,
+          true,
+          true,
+          SongOrder.LessCostMatch,
+          { typesenseUrl: "", typesenseApiKey: "", songLanguageFilter: options?.songIds ? null : readSongLanguageSettings().songLanguageFilter },
+          allowedIds
+        );
         return results
           .filter((found) => !allowedIds || allowedIds.has(found.song.Id))
           .slice(0, options?.limit ?? options?.songIds?.length ?? 100)
           .map((found) => ({
             songId: found.song.Id,
             title: found.song.Title,
+            language: found.song.Language,
             found: { type: FormatFoundReason(found.reason), cost: found.cost, snippet: found.snippet },
           }));
       },
@@ -440,7 +460,7 @@ export class DirectClientApi implements ClientApi {
           cache: this.ppdSongCache,
           loadLocal: () => {
             const song = Database.getInstance().getSongById(songId);
-            return song ? { text: song.Text, system: song.System } : undefined;
+            return song ? { text: song.Text, system: song.System, language: song.Language } : undefined;
           },
           loadRemote: requestHostDevicePpdSongData,
         });
@@ -581,7 +601,7 @@ export class DirectClientApi implements ClientApi {
           () => getCurrentDisplay(),
           (songId) => {
             const song = Database.getInstance().getSongById(songId);
-            return song ? { text: song.Text, system: song.System } : undefined;
+            return song ? { text: song.Text, system: song.System, language: song.Language } : undefined;
           }
         );
         if (started) this.setNetworkState({ status: "leading", transport: "ppd" });

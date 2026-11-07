@@ -3,10 +3,12 @@ import { CollectionCreateSchema } from "typesense/lib/Typesense/Collections";
 import { SearchResponseHit } from "typesense/lib/Typesense/Documents";
 import { log, logError } from "./pp-log";
 import { SongFoundInfo, SongFoundType } from "./pp-types";
+import { normalizeSongLanguage } from "./song-language";
 
 const schema: CollectionCreateSchema = {
   name: "ppsongs",
   fields: [
+    { name: "language", type: "string", facet: true, optional: true },
     { name: "created", type: "float", optional: true, index: false },
     { name: "uploader", type: "string", optional: true, index: false },
     { name: "owner", type: "string", optional: true, index: false },
@@ -22,6 +24,7 @@ type DocumentType = {
   created: number;
   uploader: string;
   owner: string;
+  language: string;
   lyrics: string;
   headEndPos: number;
   meta: { [key: string]: string | number };
@@ -34,6 +37,7 @@ export type SongInfo = {
   created?: Date;
   uploader?: string;
   owner?: string;
+  language?: string;
 };
 
 export class TypesenseClient {
@@ -125,6 +129,7 @@ export class TypesenseClient {
         created: r.created ? r.created.getTime() : 0,
         uploader: r.uploader ?? "",
         owner: r.owner ?? "",
+        language: normalizeSongLanguage(r.language),
       };
     });
 
@@ -154,7 +159,7 @@ export class TypesenseClient {
     }
   }
 
-  async search(query: string, limit?: number, songIds?: string[]): Promise<(SongFoundInfo & { version: number })[]> {
+  async search(query: string, limit?: number, songIds?: string[], languages?: readonly string[]): Promise<(SongFoundInfo & { version: number })[]> {
     const escapeFilterValue = (value: string) => "`" + value.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`";
     const searchParameters = {
       q: query,
@@ -164,7 +169,16 @@ export class TypesenseClient {
       per_page: limit,
       query_by_weights: this.queryWeights,
       order_by: "_text_match:desc",
-      ...(songIds?.length ? { filter_by: `songId:=[${songIds.map(escapeFilterValue).join(",")}]` } : {}),
+      ...(songIds?.length || languages?.length
+        ? {
+            filter_by: [
+              songIds?.length ? `songId:=[${songIds.map(escapeFilterValue).join(",")}]` : "",
+              languages?.length ? `language:=[${languages.map(escapeFilterValue).join(",")}]` : "",
+            ]
+              .filter(Boolean)
+              .join(" && "),
+          }
+        : {}),
     };
     const res = await this.client.collections<DocumentType>(schema.name).documents().search(searchParameters);
     const decodeType = (document: DocumentType, fieldName: string, matches: string[] | string[][]): SongFoundType => {
@@ -241,6 +255,7 @@ export class TypesenseClient {
         songId: hit.document.songId,
         version: hit.document.version,
         title: hit.document.title,
+        language: normalizeSongLanguage(hit.document.language),
         found: processHit(hit, ++baseCost),
         created: formatDate(hit.document.created),
         owner: hit.document.owner,

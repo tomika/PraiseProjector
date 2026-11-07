@@ -237,8 +237,12 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
       {selectedEntry && (
         <React.Suspense fallback={<div className="loading-overlay" />}>
           <CompareDialog
-            originalSong={selectedEntryHasPreviousVersion ? new Song(selectedEntry.current!, selectedEntry.songdata.system) : null}
-            songsToCompare={[new Song(selectedEntry.songdata.text, selectedEntry.songdata.system)]}
+            originalSong={
+              selectedEntryHasPreviousVersion
+                ? new Song(selectedEntry.current!, selectedEntry.songdata.system, undefined, selectedEntry.currentLanguage)
+                : null
+            }
+            songsToCompare={[new Song(selectedEntry.songdata.text, selectedEntry.songdata.system, undefined, selectedEntry.songdata.language)]}
             mode="SongCheck"
             onClose={handleCompareClose}
             leftLabel={selectedEntryHasPreviousVersion ? t("SongCheckCurrentVersion") : t("SongCheckNewSong")}

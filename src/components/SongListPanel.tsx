@@ -956,7 +956,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       prevSettings.searchMethod !== nextSettings.searchMethod ||
       prevSettings.useTextSimilarities !== nextSettings.useTextSimilarities ||
       prevSettings.traditionalSearchCaseSensitive !== nextSettings.traditionalSearchCaseSensitive ||
-      prevSettings.traditionalSearchWholeWords !== nextSettings.traditionalSearchWholeWords
+      prevSettings.traditionalSearchWholeWords !== nextSettings.traditionalSearchWholeWords ||
+      JSON.stringify(prevSettings.songLanguageFilter) !== JSON.stringify(nextSettings.songLanguageFilter)
     ) {
       this.updateCategories();
     }

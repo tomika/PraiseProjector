@@ -184,6 +184,8 @@ export function createSongApi(core: RestCore): SongApi {
     // older servers' search index could return the same song several times.
     searchSongs: async (text, options) => {
       const seen = new Set<string>();
+      // A remote catalogue is filtered by its server, independently of this
+      // browser's preferences for its own editable database.
       return (await cloudApi.searchSongs(text, options?.limit, options?.songIds)).filter((entry) => {
         if (seen.has(entry.songId)) return false;
         seen.add(entry.songId);
@@ -191,7 +193,8 @@ export function createSongApi(core: RestCore): SongApi {
       });
     },
     listAllSongs: async () => {
-      const songs = sortSongEntriesByTitle(await cloudApi.fetchAllSongs());
+      const entries = await cloudApi.fetchAllSongs();
+      const songs = sortSongEntriesByTitle(entries);
       core.songListEvents.emit(songs);
       return songs;
     },

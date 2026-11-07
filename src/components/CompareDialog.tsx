@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { diffWords } from "diff";
 import { Song, SongChange } from "../../db-common/Song";
+import { SongLanguageLabel } from "./SongLanguageSelect";
 import { Database } from "../../db-common/Database";
 import { PendingSongState } from "../../common/pp-types";
 import { useLocalization, StringKey } from "../localization/LocalizationContext";
@@ -106,7 +107,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
     // If current song has no embedded change metadata, reuse it from matching history entry.
     // History entries carry uploader@timestamp in Song.Change.
     if (!actualChange && originalSong) {
-      const matchingHistory = songsToCompare.find((s) => s.Text === originalSong.Text && s.Change);
+      const matchingHistory = songsToCompare.find((s) => s.Text === originalSong.Text && s.Language === originalSong.Language && s.Change);
       if (matchingHistory) {
         actualChange = matchingHistory.Change;
       }
@@ -123,7 +124,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
     // Add all history versions
     for (const s of songsToCompare) {
       // Skip if it's the same as original
-      if (originalSong && s.Text === originalSong.Text) continue;
+      if (originalSong && s.Text === originalSong.Text && s.Language === originalSong.Language) continue;
       versions.push({
         label: getVersionLabel(s, false, actualText, t),
         song: s,
@@ -217,16 +218,18 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   };
 
   const handleSaveLeft = () => {
-    if (originalSong) {
-      const merged = new Song(leftContent, originalSong.System);
+    if (leftSong) {
+      const merged = leftSong.clone();
+      merged.updateChordProText(leftContent);
       onClose(merged);
     }
   };
 
   const handleSaveRight = () => {
-    const song = isHistoryMode ? getRightSongForHistory() : comparedSong;
+    const song = rightSong;
     if (song) {
-      const merged = new Song(rightContent, song.System);
+      const merged = song.clone();
+      merged.updateChordProText(rightContent);
       onClose(merged);
     }
   };
@@ -340,12 +343,17 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
           {!leftCollapsed && (
             <>
               {groupIdChanged && renderGroupChangeBadge(leftGroupId, leftSong)}
+              {leftSong && (
+                <div className="d-flex align-items-center gap-1">
+                  <SongLanguageLabel code={leftSong.Language} />
+                </div>
+              )}
               {showCode ? (
                 <textarea className="compare-code-textarea" value={leftContent} readOnly wrap="off" aria-label="Left ChordPro Code" />
               ) : (
                 <ChordProEditor
                   key={`left-${isHistoryMode ? leftVersionIndex : currentIndex}`}
-                  song={new Song(leftContent)}
+                  song={new Song(leftContent, leftSong?.System, undefined, leftSong?.Language)}
                   initialEditMode={editableInConflict}
                   previewOnly={usePreviewOnly}
                 />
@@ -377,7 +385,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
             ) : (
               <ChordProEditor
                 key={`diff-${isHistoryMode ? `${leftVersionIndex}-${rightVersionIndex}` : currentIndex}`}
-                song={new Song(rightContent)}
+                song={new Song(rightContent, rightSong?.System, undefined, rightSong?.Language)}
                 compareBase={leftContent}
                 initialEditMode={false}
               />
@@ -405,12 +413,17 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
           {!rightCollapsed && (
             <>
               {groupIdChanged && renderGroupChangeBadge(rightGroupId, rightSong)}
+              {rightSong && (
+                <div className="d-flex align-items-center gap-1">
+                  <SongLanguageLabel code={rightSong.Language} />
+                </div>
+              )}
               {showCode ? (
                 <textarea className="compare-code-textarea" value={rightContent} readOnly wrap="off" aria-label="Right ChordPro Code" />
               ) : (
                 <ChordProEditor
                   key={`right-${isHistoryMode ? rightVersionIndex : currentIndex}`}
-                  song={new Song(rightContent)}
+                  song={new Song(rightContent, rightSong?.System, undefined, rightSong?.Language)}
                   initialEditMode={editableInConflict}
                   previewOnly={usePreviewOnly}
                 />

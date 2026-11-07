@@ -1249,5 +1249,15 @@
   "ScorePaddingTop": "Top padding (px)",
   "ScorePaddingBottom": "Bottom padding (px)",
   "ScoreSongDefaultsDescription": "Key and fallback tempo follow the song. A score's own key and tempo take precedence. Chord names follow the song's notation system; chord superscripts follow the application's chord display setting.",
-  "ScoreResetDefaults": "Reset score defaults"
+  "ScoreResetDefaults": "Reset score defaults",
+  "SongLanguage": "Song language",
+  "DefaultSongLanguage": "Default language for new songs",
+  "SongLanguageFilter": "Song languages to show",
+  "SongLanguagesAll": "All languages",
+  "SongLanguagesNone": "No languages selected",
+  "SongLanguageSearch": "Find a language",
+  "SongLanguagesFrequent": "Frequently used",
+  "SongLanguagesOther": "Other languages",
+  "SongLanguagesNoneFound": "No matching languages",
+  "AddSongLanguageToFilterMessage": "This song is now in {0}, which is not included in your language filter. Add this language to the filter as well?"
 }

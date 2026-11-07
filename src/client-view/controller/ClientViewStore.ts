@@ -19,6 +19,7 @@ import type { PreselectionCommand } from "../../../common/hardware-input";
 import { chordSettings, directCommandChange, type DirectClientCommand } from "./hardwareCommandChanges";
 import { preselectionPlan, selectedLeaderEntriesOf, visibleListRows, type ListRow } from "./preselectionCommands";
 import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
+import { readSongLanguageSettings } from "../../../common/song-language-settings";
 import { EMPTY_SYNC_STATUS, todoBadgeKind, type SyncStatus, type TodoBadgeKind } from "../../state/syncStatusStore";
 import type { StringKey } from "../../localization/LocalizationContext";
 import { requestOwnClientViewOnHome } from "../../services/clientViewHandoff";
@@ -698,11 +699,24 @@ export class ClientViewStore {
     // (`storage`), so the two views never diverge.
     if (typeof window !== "undefined") {
       const onThemeChange = () => this.syncTheme();
+      let languageFilter = JSON.stringify(readSongLanguageSettings().songLanguageFilter);
+      const onSongLanguagesChanged = () => {
+        if (this.api.storageScope !== "local") return;
+        const next = JSON.stringify(readSongLanguageSettings().songLanguageFilter);
+        if (next === languageFilter) return;
+        languageFilter = next;
+        void this.loadSongs();
+        void this.runSearch(this.state.searchText);
+      };
       window.addEventListener("pp-settings-changed", onThemeChange);
+      window.addEventListener("pp-settings-changed", onSongLanguagesChanged);
+      window.addEventListener("storage", onSongLanguagesChanged);
       window.addEventListener("pp-theme-changed", onThemeChange);
       window.addEventListener("storage", onThemeChange);
       this.unsubscribes.push(() => {
         window.removeEventListener("pp-settings-changed", onThemeChange);
+        window.removeEventListener("pp-settings-changed", onSongLanguagesChanged);
+        window.removeEventListener("storage", onSongLanguagesChanged);
         window.removeEventListener("pp-theme-changed", onThemeChange);
         window.removeEventListener("storage", onThemeChange);
       });

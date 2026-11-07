@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { calculateAutoFontSize } from "../../hooks/useResponsiveFontSize";
 import { cloudApi } from "../../../common/cloudApi";
 import "./GeneralSettings.css";
+import SongLanguageSelect from "../SongLanguageSelect";
 
 /** Android pushes native events by calling this global directly (see MainActivity.sendDeviceMessage). */
 type GlobalWindowWithHandler = { handleDeviceMessage?: (raw: string) => void };
@@ -203,6 +204,25 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
               <option value="hu">Magyar</option>
             </select>
             <small className="form-text text-muted">{t("LanguageDescription")}</small>
+          </div>
+          <div className="song-language-settings-row">
+            <label htmlFor="defaultSongLanguage">{t("DefaultSongLanguage")}</label>
+            <SongLanguageSelect
+              id="defaultSongLanguage"
+              label={t("DefaultSongLanguage")}
+              value={settings.defaultSongLanguage}
+              frequent={settings.songLanguageFilter}
+              onChange={(value) => updateSetting("defaultSongLanguage", value)}
+            />
+          </div>
+          <div className="song-language-settings-row">
+            <label htmlFor="songLanguageFilter">{t("SongLanguageFilter")}</label>
+            <SongLanguageSelect
+              id="songLanguageFilter"
+              multiple
+              value={settings.songLanguageFilter}
+              onChange={(value) => updateSetting("songLanguageFilter", value)}
+            />
           </div>
           <div className="form-check">
             <input

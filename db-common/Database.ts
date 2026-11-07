@@ -15,6 +15,7 @@ import { decode, parseAndDecode } from "../common/io-utils";
 import * as t from "io-ts";
 import { TinyEmitter } from "tiny-emitter";
 import { databaseStorage, getStorageKey } from "./DatabaseStorage";
+import { matchesSongLanguage } from "../common/song-language";
 
 export interface DatabaseSettings {
   searchMethod?: "traditional" | "typesense";
@@ -24,6 +25,7 @@ export interface DatabaseSettings {
   traditionalSearchCaseSensitive?: boolean;
   traditionalSearchWholeWords?: boolean;
   useTextSimilarities?: boolean;
+  songLanguageFilter?: readonly string[] | null;
 }
 // --- MinHash hash coefficients (deterministic LCG-generated) ---
 const MINHASH_NUM_HASHES = 64;
@@ -397,7 +399,7 @@ class Database {
   }
 
   private songToTypesenseInfo(song: Song) {
-    return { id: song.Id, version: song.version, text: song.Text };
+    return { id: song.Id, version: song.version, text: song.Text, language: song.Language };
   }
 
   public verifySearchEngine(settings: DatabaseSettings | null) {
@@ -916,9 +918,7 @@ class Database {
     if (updatedSong.version === 0) {
       const backup = this.songBackup.get(updatedSong.Id);
       if (backup) {
-        const u = updatedSong.ToUpdate();
-        const b = backup.song.ToUpdate();
-        if (u.songdata.text === b.songdata.text && u.songdata.system === b.songdata.system && (u.groupId ?? null) === (b.groupId ?? null)) {
+        if (updatedSong.hasSameContent(backup.song)) {
           updatedSong.version = backup.version;
           this.songBackup.delete(updatedSong.Id);
           console.debug("Database", `Song ${updatedSong.Id} reverted to original — restored version ${backup.version}`);
@@ -933,6 +933,9 @@ class Database {
   }
 
   public setSong(song: Song): void {
+    // A confirmed server version becomes the baseline for future local edits.
+    // Keeping an older backup here would allow a later revert to undo the sync.
+    if (song.version > 0) this.clearSongBackup(song.Id);
     this.songs.set(song.Id, song);
     this.addSongToSearchEngine(song);
     this.save();
@@ -1369,6 +1372,7 @@ class Database {
           settings.useTextSimilarities === false ? 0 : 1,
           settings.typesenseUrl ?? "",
           settings.typesenseApiKey ?? "",
+          JSON.stringify(settings.songLanguageFilter ?? null),
         ].join("")
       : "-";
 
@@ -1472,15 +1476,22 @@ class Database {
     const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
     const allowedSongIds = Database.toSongIdSet(songIds);
+    if (settings.songLanguageFilter?.length === 0) return res;
 
     this.ensureTypesenseInit(settings);
 
-    const hits = await this.typesense!.search(expr, maxResults || undefined, allowedSongIds ? [...allowedSongIds] : undefined);
+    const hits = await this.typesense!.search(
+      expr,
+      maxResults || undefined,
+      allowedSongIds ? [...allowedSongIds] : undefined,
+      settings.songLanguageFilter ?? undefined
+    );
 
     for (const hit of hits) {
       if (allowedSongIds && !allowedSongIds.has(hit.songId)) continue;
       const song = this.songs.get(hit.songId);
       if (!song) continue;
+      if (!matchesSongLanguage(song.Language, settings.songLanguageFilter ?? null)) continue;
 
       if (!(markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes)) continue;
       if (!(song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)) continue;
@@ -1573,6 +1584,7 @@ class Database {
         const filters = filterData.matchesTo(this.words);
 
         for (const song of candidates) {
+          if (!matchesSongLanguage(song.Language, settings?.songLanguageFilter ?? null)) continue;
           if (
             (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
             (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
@@ -1595,6 +1607,7 @@ class Database {
         }
       } else {
         for (const song of candidates) {
+          if (!matchesSongLanguage(song.Language, settings?.songLanguageFilter ?? null)) continue;
           if (
             (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
             (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
@@ -1954,12 +1967,13 @@ class Database {
         // Check for conflict: local song has version=0 (modified locally but not synced)
         if (existingSong.version === 0) {
           // If texts are different, it's a conflict
-          if (existingSong.Text !== serverSong.Text || existingSong.Title !== serverSong.Title) {
+          if (!existingSong.hasSameContent(serverSong)) {
             if (conflictMode === "keep-local") {
               // Keep local version, skip server update
               continue;
             } else if (conflictMode === "overwrite") {
               // Take server version
+              this.clearSongBackup(serverSongData.songId);
               this.songs.set(serverSongData.songId, serverSong);
               count++;
               continue;
@@ -1974,6 +1988,7 @@ class Database {
 
         // Normal update: server version is newer
         if (existingSong.version < serverSongData.version || existingSong.version === 0) {
+          this.clearSongBackup(serverSongData.songId);
           this.songs.set(serverSongData.songId, serverSong);
           count++;
         }

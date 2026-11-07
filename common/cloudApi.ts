@@ -1116,10 +1116,12 @@ export class CloudApiService {
   }
 
   /** Search for songs by text query */
-  async searchSongs(text: string, limit?: number, songIds?: string[]): Promise<SongFound[]> {
+  async searchSongs(text: string, limit?: number, songIds?: string[], languages?: readonly string[] | null): Promise<SongFound[]> {
+    if (languages?.length === 0) return [];
     let endpoint = `/search?text=${encodeURIComponent(text)}`;
     if (limit !== undefined) endpoint += `&limit=${limit}`;
     if (songIds?.length) endpoint += `&songId=${songIds.map((id) => encodeURIComponent(id)).join(",")}`;
+    if (languages) endpoint += `&languages=${languages.map((code) => encodeURIComponent(code)).join(",")}`;
     return this.apiCall<SongFound[]>(endpoint);
   }
 
