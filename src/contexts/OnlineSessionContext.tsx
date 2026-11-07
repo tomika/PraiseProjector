@@ -24,7 +24,14 @@ interface OnlineSessionContextType {
   setDisabled: () => void;
 }
 
-const OnlineSessionContext = createContext<OnlineSessionContextType | undefined>(undefined);
+// Preserve context identity across hot reloads so existing providers and
+// refreshed consumers still share the same session.
+const OnlineSessionContext: React.Context<OnlineSessionContextType | undefined> =
+  import.meta.hot?.data.onlineSessionContext ?? createContext<OnlineSessionContextType | undefined>(undefined);
+
+if (import.meta.hot) {
+  import.meta.hot.data.onlineSessionContext = OnlineSessionContext;
+}
 
 export function OnlineSessionProvider({ children }: { children: ReactNode }) {
   const { authStatus, user } = useAuth();

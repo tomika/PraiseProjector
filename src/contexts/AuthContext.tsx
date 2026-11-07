@@ -29,10 +29,16 @@ interface AuthContextType {
   setOnLoginSuccess: (callback: (leaderId?: string) => void) => void;
 }
 
-// Use a module-level variable to preserve context across HMR reloads
-// This prevents "useAuth must be used within an AuthProvider" errors during development
-const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
+// Preserve context identity across hot reloads: a re-evaluated module would
+// otherwise create a new context that the still-mounted provider does not feed,
+// and every refreshed consumer would get useAuth's HMR fallback (isLoading: true).
+const AuthContext: React.Context<AuthContextType | undefined> =
+  import.meta.hot?.data?.authContext ?? React.createContext<AuthContextType | undefined>(undefined);
 AuthContext.displayName = "AuthContext";
+
+if (import.meta.hot) {
+  import.meta.hot.data.authContext = AuthContext;
+}
 
 const shouldUseBearerHeader = typeof window !== "undefined" && !!window.electronAPI;
 const AUTH_REQUEST_TIMEOUT_MS = 4_000;
