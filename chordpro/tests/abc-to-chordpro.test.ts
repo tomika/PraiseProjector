@@ -168,6 +168,50 @@ test("an unchorded instrumental intro in a vocal score remains an addressable gr
   assert.equal(displayPlan(document, "NOTATION", "Intro").occurrences.length, 1);
 });
 
+test("a two-staff instrumental intro is one grid row of chord symbols, without pedal annotations", () => {
+  const { abc } = score(
+    'X:1\nM:4/4\nL:1/8\n%%score {1|2}\nV:1 clef=treble\nV:2 clef=bass\nK:E\nP:Intro\n[V:1] "C#m"z2 D6 | "E""^rit."z2 F2 D4 :|\n[V:2] "_Ped."C,E,-E,6 | "_Ped."E,G,/B,/-B,6 :|\nP:Verse\n[V:1] "E"EEEEE |\nw: Lá-tom az é-lő'
+  );
+  const rows = abc.toChordPro();
+  assert.deepEqual(
+    rows.map((line) => [line.getTagInfo().tag, line.lyrics]),
+    [
+      ["Intro", "C♯m E :|"],
+      ["Verse", "Látom az élő"],
+    ]
+  );
+  assert.ok(rows[0].isGrid);
+});
+
+test("an instrumental intro takes its chords from whichever voice of the staff carries them", () => {
+  const { abc } = score('X:1\n%%score (1 2)\nK:C\nP:Intro\n[V:1] c4 d4 |\n[V:2] "C"C,4 "G"G,,4 :|\nP:Verse\n[V:1] "C"CDEF |\nw: Sing this song now');
+  const rows = abc.toChordPro();
+  assert.deepEqual(
+    rows.map((line) => [line.getTagInfo().tag, line.lyrics]),
+    [
+      ["Intro", "C G :|"],
+      ["Verse", "Sing this song now"],
+    ]
+  );
+});
+
+test("the same progression written on both piano staves is one grid row; different ones stay separate", () => {
+  const intro = (bass: string) =>
+    score(`X:1\n%%score {1|2}\nK:C\nP:Intro\n[V:1] "C"c4 "G"d4 |\n[V:2] ${bass} |\nP:Verse\n[V:1] "C"CDEF |\nw: Sing this song now`).abc.toChordPro();
+  assert.deepEqual(
+    intro('"C"C,4 "G"G,,4')
+      .filter((line) => line.isGrid)
+      .map((line) => line.lyrics),
+    ["C G"]
+  );
+  assert.deepEqual(
+    intro('"Am"A,,4 "F"F,,4')
+      .filter((line) => line.isGrid)
+      .map((line) => line.lyrics),
+    ["C G", "Am F"]
+  );
+});
+
 test("Hungarian long digraphs are abbreviated except at compound boundaries and before -szor", () => {
   const { abc } = score(
     "X:1\nK:C\nCDEF GABc|cBAG FEDC|CDEF GABc|\nw: Ösz-sze visz-sza asz-szony köny-nyű egy-gyé dísz-szel dísz-szemle jegy-gyű-rű húsz-szor rossz-szal"
@@ -369,6 +413,14 @@ test("an unchorded accompaniment staff still allows the vocal staff's lyrics and
   assert.equal(rows[0].lyrics, "Sing this song now");
   assert.equal(rows[0].chords[0].chord, "C");
   assert.equal(rows[0].chords[0].pos, 0);
+});
+
+test("annotations on an accompaniment staff are not chords and do not block the vocal conversion", () => {
+  const { abc } = score('X:1\n%%score (one) (two)\nK:C\nV:one\n"C""^mf"CDEF|\nw: Sing this song now\nV:two\n"_Ped."GABc|');
+  const rows = abc.toChordPro();
+  assert.equal(rows.length, 1);
+  assert.ok(!(rows[0] instanceof ChordProAbc));
+  assert.equal(rows[0].text, "[C]Sing this song now");
 });
 
 test("legacy instrumental section aliases still resolve to their parent", () => {

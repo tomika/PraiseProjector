@@ -127,11 +127,33 @@ function hungarianContraction(word: string, next: string): number {
   return HUNGARIAN_COMPOUND_STEMS.has(left) ? 0 : contraction;
 }
 
+/** Chord symbols only: quoted annotations ("_Ped.", "^D.S.") share abcjs's
+ * chord array but are placed above/below/beside the note, never "default". */
+function chordSymbols(event: AbcEvent): NonNullable<AbcElem["chord"]> {
+  if (event.el_type !== "note") return [];
+  const chords: AbcElem["chord"] = event.chord;
+  return chords?.filter((chord) => chord.position === "default") ?? [];
+}
+
+const hasChord = (event: AbcEvent) => chordSymbols(event).length > 0;
+const hasSyllable = (event: AbcEvent) => !!event.lyric?.some((lyric) => lyric.syllable);
+
+/** The voices an instrumental line converts: one per distinct chord progression,
+ * or its top voice for the bars alone. */
+function instrumentalVoices(voices: readonly AbcEvent[][]): AbcEvent[][] {
+  const progressions = new Set<string>();
+  const chorded = voices.filter((voice) => {
+    if (!voice.some(hasChord)) return false;
+    const progression = voice.flatMap((event) => chordSymbols(event).map((chord) => chord.name)).join(" ");
+    if (progressions.has(progression)) return false;
+    progressions.add(progression);
+    return true;
+  });
+  return chorded.length ? chorded : voices.slice(0, 1);
+}
+
 function gridToken(event: AbcEvent): string[] {
-  if (event.el_type === "note") {
-    const chords: AbcElem["chord"] = event.chord;
-    return chords?.map((chord) => chord.name) ?? [];
-  }
+  if (event.el_type === "note") return chordSymbols(event).map((chord) => chord.name);
   if (event.el_type !== "bar") return [];
   const bar = event;
   const tokens: string[] = [];
@@ -165,7 +187,7 @@ function lyricRow(events: readonly AbcEvent[]): AbcChordProRow {
     let syllable = lyric?.syllable.replace(/\u00a0/g, " ").replace(/\\([\\\-_*|~])/g, "$1") ?? "";
     if (!lyrics) syllable = syllable.replace(/^\d+[.)]?\s+/, "");
     if (syllable && space && lyrics) lyrics += " ";
-    for (const chord of event.chord ?? []) if (chord.position === "default") chords.push({ name: chord.name, pos: lyrics.length });
+    for (const chord of chordSymbols(event)) chords.push({ name: chord.name, pos: lyrics.length });
     if (syllable) {
       // Hungarian hyphenation repeats a long digraph on both syllables
       // (ösz-sze); the joined word spells it abbreviated (össze).
@@ -221,24 +243,19 @@ export function abcToChordPro(source: string, label: string, parse: (abc: string
       if (tune.warnings?.length) throw new Error("ABC lyrics could not be aligned without parser warnings");
       for (const line of tune.lines) {
         const allVoices = (line.staff ?? []).flatMap((staff) => (staff.voices ?? []) as AbcEvent[][]);
-        const vocalVoices = allVoices.filter((voice) => voice.some((event) => event.lyric?.some((lyric) => lyric.syllable)));
+        const vocalVoices = allVoices.filter((voice) => voice.some(hasSyllable));
         if (vocalVoices.length > 1) throw new Error("Simultaneous vocal voices require separate lyric parts");
-        // A second staff is simultaneous too: appending its chords after the
-        // vocal staff would change their musical position instead of aligning
+        // Another voice or staff is simultaneous too: appending its chords after
+        // the sung voice would change their musical position instead of aligning
         // them to the lyrics. Keep the score until time-based alignment exists.
-        if (
-          vocalVoices.length &&
-          allVoices.some((voice) => voice !== vocalVoices[0] && voice.some((event) => event.el_type === "note" && event.chord?.length))
-        )
-          throw new Error("Accompaniment chord staves require musical-time alignment");
-        for (const staff of line.staff ?? []) {
-          // A vocal melody can share a staff with accompaniment. Never interleave
-          // simultaneous lyric voices into one line of text.
-          const voices = (staff.voices ?? []) as AbcEvent[][];
-          const voice = voices.find((events) => events.some((event) => event.lyric?.some((lyric) => lyric.syllable))) ?? voices[0];
-          if (!voice) continue;
-          if (voices.some((other) => other !== voice && other.some((event) => event.el_type === "note" && event.chord?.length)))
-            throw new Error("Accompaniment chord voices require musical-time alignment");
+        if (vocalVoices.length && allVoices.some((voice) => voice !== vocalVoices[0] && voice.some(hasChord)))
+          throw new Error("Accompaniment chord voices require musical-time alignment");
+        // Simultaneous voices play the same bars, so an unchorded one never adds
+        // a row. An instrumental line converts its chorded voice wherever it is
+        // (a piano intro's chords may sit on the bass staff), or its top voice
+        // for the bars alone. Chords written on several voices stay one row per
+        // distinct progression until time-based alignment can merge them.
+        for (const voice of vocalVoices.length ? vocalVoices : instrumentalVoices(allVoices)) {
           const byPart = new Map<number, AbcEvent[]>();
           for (const event of voice) {
             if (event.el_type !== "note" && event.el_type !== "bar") continue;
@@ -257,7 +274,7 @@ export function abcToChordPro(source: string, label: string, parse: (abc: string
   }
   for (let i = 0; i < parts.length; ++i) {
     const part = parts[i];
-    const vocalLanes = rows[i].map((verse) => verse.some((events) => events.some((event) => event.lyric?.some((lyric) => lyric.syllable))));
+    const vocalLanes = rows[i].map((verse) => verse.some((events) => events.some(hasSyllable)));
     const vocal = vocalLanes.some(Boolean);
     const verses = vocal ? Math.max(part.verses, vocalLanes.lastIndexOf(true) + 1) : 1;
     for (let lane = 0; lane < verses; ++lane) {
