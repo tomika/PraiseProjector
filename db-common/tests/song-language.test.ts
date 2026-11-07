@@ -57,7 +57,7 @@ test("language filters apply to browsing and search without changing the sync/up
   db.addSong(hu);
   db.addSong(en);
   const filter = (query: string, languages: string[] | null) =>
-    db.filter(query, null, true, true, true, 0, {
+    db.filter(query, null, true, true, true, true, 0, {
       typesenseUrl: "",
       typesenseApiKey: "",
       useTextSimilarities: false,

@@ -199,6 +199,7 @@ interface SongListPanelState {
   selectedSong: Song | null;
   showSongs: boolean; // Show items with chords (miShowSong)
   showTextOnly: boolean; // Show text-only items (miShowText)
+  showScoreOnly: boolean; // Show score-only (ABC notation only) items
   showMarked: boolean; // Show marked items (miShowMarked)
   showPreferredOnly?: never; // removed - use preferenceFilter
   preferenceFilter: "all" | "preferred-only" | "show-ignored"; // Filter mode for song list
@@ -323,10 +324,16 @@ const DraggableSongItem: React.FC<{
     iconType = IconType.ALERT;
   } else {
     const isStarred = song.version === 0;
-    if (isStarred) {
-      iconType = song.TextOnly ? IconType.STARRED_TEXT : IconType.STARRED_MUSIC;
-    } else {
-      iconType = song.TextOnly ? IconType.TEXT_ONLY : IconType.MUSIC;
+    switch (song.ContentKind) {
+      case "text":
+        iconType = isStarred ? IconType.STARRED_TEXT : IconType.TEXT_ONLY;
+        break;
+      case "score":
+        iconType = isStarred ? IconType.STARRED_SCORE : IconType.SCORE;
+        break;
+      default:
+        iconType = isStarred ? IconType.STARRED_MUSIC : IconType.MUSIC;
+        break;
     }
   }
 
@@ -817,6 +824,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       selectedSong: props.selectedSong ?? null,
       showSongs: true, // Default checked (miShowSong)
       showTextOnly: true, // Default checked (miShowText)
+      showScoreOnly: true,
       showMarked: true, // Default checked (miShowMarked)
       preferenceFilter: props.settings.preferenceFilter ?? "all",
       orderMode: "cost", // Default to LessCostMatch
@@ -944,6 +952,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
       prevState.filter === this.state.filter &&
       prevState.showSongs === this.state.showSongs &&
       prevState.showTextOnly === this.state.showTextOnly &&
+      prevState.showScoreOnly === this.state.showScoreOnly &&
       prevState.showMarked === this.state.showMarked &&
       prevState.orderMode === this.state.orderMode
     ) {
@@ -1392,7 +1401,7 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
 
   async updateCategories() {
     const requestSeq = ++this.updateCategoriesRequestSeq;
-    const { filter, showSongs, showTextOnly, showMarked, preferenceFilter, orderMode } = this.state;
+    const { filter, showSongs, showTextOnly, showScoreOnly, showMarked, preferenceFilter, orderMode } = this.state;
     const db = Database.getInstance();
 
     // Map orderMode to SongOrder enum
@@ -1402,12 +1411,13 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
     else if (orderMode === "cost") order = 2; // SongOrder.LessCostMatch
 
     // Call Database.filter with all parameters matching C# implementation
-    // filter, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order
+    // filter, leader, includeItemsWithChords, includeItemsWithoutChords, includeScoreOnlyItems, includeItemsWithNotes, order
     const filteredSongs = await db.filter(
       filter,
       this.props.selectedLeader ?? null, // Pass selected leader for filtering
       showSongs, // includeItemsWithChords
       showTextOnly, // includeItemsWithoutChords
+      showScoreOnly, // includeScoreOnlyItems
       showMarked, // includeItemsWithNotes
       order,
       this.props.settings // Pass settings for search configuration
@@ -2005,7 +2015,8 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   }
 
   renderContextMenu() {
-    const { contextMenuVisible, contextMenuX, contextMenuY, showSongs, showTextOnly, showMarked, orderMode, selectedSong } = this.state;
+    const { contextMenuVisible, contextMenuX, contextMenuY, showSongs, showTextOnly, showScoreOnly, showMarked, orderMode, selectedSong } =
+      this.state;
     const { t } = this.props;
     const { tt } = this.props;
 
@@ -2100,6 +2111,16 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
             >
               <i className={`fa fa-${showTextOnly ? "check-" : ""}square-o me-2`}></i>
               {t?.("SongListShowTextOnlyItems") || "Show text-only items"}
+            </div>
+            <div
+              className="songlist-context-menu-item"
+              onClick={() => {
+                this.setState({ showScoreOnly: !showScoreOnly }, () => this.updateCategories());
+                this.hideContextMenu();
+              }}
+            >
+              <i className={`fa fa-${showScoreOnly ? "check-" : ""}square-o me-2`}></i>
+              {t?.("SongListShowScoreOnlyItems") || "Show score-only items"}
             </div>
           </SongListSubmenu>
           <div className="songlist-context-menu-divider"></div>

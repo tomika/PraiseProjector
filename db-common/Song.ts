@@ -5,7 +5,7 @@ import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../common/pp-t
 import { decode } from "../common/io-utils";
 import * as t from "io-ts";
 import { chordSystemCodec, songDataCodec, uniType } from "../common/pp-codecs";
-import { ChordProDocument, getChordSystem } from "../chordpro/chordpro_base";
+import { ChordProDocument, getChordSystem, rxAbcEndDirective } from "../chordpro/chordpro_base";
 import { Instructions } from "../chordpro/chordpro_instructions";
 import { normalizeSongLanguage, DEFAULT_SONG_LANGUAGE } from "../common/song-language";
 
@@ -34,6 +34,15 @@ export type SongChange = {
   uploader: string;
   created: Date;
 };
+
+/**
+ * Song-tree content class; every song belongs to exactly one, so the tree's
+ * content filters partition the songs:
+ * - `text`: neither bracketed chords nor ABC notation.
+ * - `music`: bracketed chords, or ABC notation alongside lyrics/other content lines.
+ * - `score`: ABC notation only, apart from metadata, directives and comments.
+ */
+export type SongContentKind = "text" | "music" | "score";
 
 export class Song {
   public static readonly SectionType = {
@@ -77,7 +86,7 @@ export class Song {
   private _simplified: string | null = null;
   private _words: string[] | null = null;
   private _metadata: Map<string, string> = new Map();
-  private _textOnly: boolean = false;
+  private _contentKind: SongContentKind = "text";
   private _headerWordCount: number = -1;
   private _change?: SongChange;
   private _notes: string = "";
@@ -91,6 +100,39 @@ export class Song {
   private static rxTagged = /\[([^\]]*)\]/g;
   private static rxEmptyLines = /(\r?\n)+/g;
   private static rxNotes = /^# notes:(.*)$/m;
+  // Applied to trimmed lines. rxChordTag is non-global on purpose: a shared /g
+  // regex keeps lastIndex between test() calls on different songs.
+  private static rxChordTag = /\[[^\]]*\]/;
+  private static rxDirectiveLine = /^\{.*\}$/;
+  private static rxAbcStart = /^\{[ \t]*start_of_abc(?=[ \t:}]).*\}$/;
+
+  /** Classify ChordPro lines for the song tree (see SongContentKind). Outside ABC
+   *  blocks any bracket tag counts as a chord, as it always has; inside them
+   *  brackets are ABC chords and inline fields (`[CEG]`, `[K:G]`). Metadata,
+   *  other directives and `#` comments are not content. An unterminated ABC
+   *  block runs to the end of the song, as in the ChordPro parser. */
+  private static classifyContent(lines: readonly string[]): SongContentKind {
+    let inAbc = false;
+    let hasAbc = false;
+    let hasChords = false;
+    let hasOtherContent = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (inAbc) {
+        if (rxAbcEndDirective.test(trimmed)) inAbc = false;
+        continue;
+      }
+      if (Song.rxAbcStart.test(trimmed)) {
+        inAbc = hasAbc = true;
+        continue;
+      }
+      if (!trimmed) continue;
+      if (!hasChords && Song.rxChordTag.test(trimmed)) hasChords = true;
+      if (!trimmed.startsWith("#") && !Song.rxDirectiveLine.test(trimmed)) hasOtherContent = true;
+    }
+    if (hasAbc && !hasOtherContent) return "score";
+    return hasAbc || hasChords ? "music" : "text";
+  }
 
   // Lazily built ChordPro AST for this song. Invalidated whenever `_text` changes.
   private _doc?: ChordProDocument;
@@ -216,8 +258,8 @@ export class Song {
   public get Capo(): number {
     return this._capo;
   }
-  public get TextOnly(): boolean {
-    return this._textOnly;
+  public get ContentKind(): SongContentKind {
+    return this._contentKind;
   }
 
   public get InvalidChords(): string[] {
@@ -331,8 +373,6 @@ export class Song {
   }
 
   private parse() {
-    this._textOnly = !Song.rxTagged.test(this._text);
-
     this._group_id = "";
 
     const m = this._text.match(Song.rxNotes);
@@ -365,6 +405,7 @@ export class Song {
     let bInGrid = false;
     let block = 0;
     const lines = this._text.split("\n");
+    this._contentKind = Song.classifyContent(lines);
     let currentType: number = Song.SectionType.unknown;
     let currentTag = "";
 

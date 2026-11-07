@@ -205,6 +205,13 @@ code {
   height: 0.85em;
 }
 
+/* Song-tree score (treble clef) icon: sized like a font icon glyph */
+.pp-score-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+}
+
 /* Icons inside buttons should be larger to fill button space */
 .btn .button-icon,
 .btn .icon,

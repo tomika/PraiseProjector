@@ -1688,6 +1688,7 @@ const AppContent: React.FC = () => {
             true,
             true,
             true,
+            true,
             SongOrder.LessCostMatch,
             searchSettings,
             songIds.length > 0 ? songIds : undefined

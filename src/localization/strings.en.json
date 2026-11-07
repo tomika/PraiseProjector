@@ -205,6 +205,7 @@
   "SongListShowMarkedItems": "Show marked items",
   "SongListShowSongItems": "Show items with chords",
   "SongListShowTextOnlyItems": "Show text-only items",
+  "SongListShowScoreOnlyItems": "Show score-only items",
   "SongListOrdering": "Ordering",
   "SongListOrderAlphabetical": "Alphabetical",
   "SongListOrderMoreRecent": "More recent",

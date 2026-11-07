@@ -205,6 +205,7 @@
   "SongListShowMarkedItems": "Megjelölt elemek mutatása",
   "SongListShowSongItems": "Akkordos elemek mutatása",
   "SongListShowTextOnlyItems": "Csak szöveges elemek mutatása",
+  "SongListShowScoreOnlyItems": "Csak kottás elemek mutatása",
   "SongListOrdering": "Rendezés",
   "SongListOrderAlphabetical": "ABC sorrend",
   "SongListOrderMoreRecent": "Újabbak elöl",

@@ -22,6 +22,11 @@ export function fixChordProText(text: string) {
   return text.replace(/\r/g, "");
 }
 
+/** The only line that closes an ABC block: a whole-line `{end_of_abc}` directive
+ *  (⏎ is the editor's line-end marker). Everything before it, including JSON
+ *  envelopes and grace notes (`{g}`), belongs to the score. */
+export const rxAbcEndDirective = /^[ \t]*\{[ \t]*end_of_abc(?=[ \t:}])[ \t]*:?[ \t]*.*\}[ \t⏎]*$/;
+
 export class ChordSystem extends NoteSystem {
   readonly noteRegexPattern: string;
   readonly chordLikeRegexPattern: string;
@@ -1523,7 +1528,7 @@ export class ChordProDocument {
     const simple = typeof line === "string";
     // An ABC block owns its contents, including JSON objects and grace notes.
     // Only its closing directive may be interpreted as ChordPro.
-    if (context.pending_abc && !/^[ \t]*\{[ \t]*end_of_abc(?=[ \t:}])[ \t]*:?[ \t]*.*\}[ \t\u23ce]*$/.test(line.toString(true))) {
+    if (context.pending_abc && !rxAbcEndDirective.test(line.toString(true))) {
       context.pending_abc.push(line);
       return null;
     }

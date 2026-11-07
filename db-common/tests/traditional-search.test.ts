@@ -18,7 +18,7 @@ function add(title: string, lyrics = "", metadata = "") {
 }
 
 function search(query: string, settings: Partial<DatabaseSettings> = {}) {
-  return db.filter(query, null, true, true, true, SongOrder.Alphabetical, {
+  return db.filter(query, null, true, true, true, true, SongOrder.Alphabetical, {
     typesenseUrl: "",
     typesenseApiKey: "",
     searchMethod: "traditional",
@@ -154,7 +154,7 @@ test("an accepted song is never rendered without a highlight", async () => {
 test("filter cache keys cannot collide across expression and leader boundaries", async () => {
   add("Isten");
   const settings = { typesenseUrl: "", typesenseApiKey: "", searchMethod: "traditional" as const, useTextSimilarities: false };
-  const withLeader = await db.filter("Isten", new Leader("x", "X"), true, true, true, SongOrder.Alphabetical, settings);
+  const withLeader = await db.filter("Isten", new Leader("x", "X"), true, true, true, true, SongOrder.Alphabetical, settings);
   assert.equal(withLeader.length, 1);
   // Guards the key separators: joined without them, "Isten" + "x" and "Istenx" + "" would
   // produce the same key and this would be served from the cached result above.

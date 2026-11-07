@@ -438,6 +438,7 @@ export class DirectClientApi implements ClientApi {
           true,
           true,
           true,
+          true,
           SongOrder.LessCostMatch,
           { typesenseUrl: "", typesenseApiKey: "", songLanguageFilter: options?.songIds ? null : readSongLanguageSettings().songLanguageFilter },
           allowedIds

@@ -165,7 +165,8 @@
 }
 
 .song-icon img,
-.song-icon i {
+.song-icon i,
+.song-icon svg {
   width: 1rem;
   height: 1rem;
 }

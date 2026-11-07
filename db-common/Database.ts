@@ -1293,6 +1293,7 @@ class Database {
     leader: Leader | null = null,
     includeItemsWithChords = true,
     includeItemsWithoutChords = true,
+    includeScoreOnlyItems = true,
     includeItemsWithNotes = true,
     order: SongOrder = SongOrder.Alphabetical,
     settings?: DatabaseSettings | null,
@@ -1303,6 +1304,7 @@ class Database {
       leader,
       includeItemsWithChords,
       includeItemsWithoutChords,
+      includeScoreOnlyItems,
       includeItemsWithNotes,
       order,
       settings,
@@ -1325,6 +1327,7 @@ class Database {
       leader,
       includeItemsWithChords,
       includeItemsWithoutChords,
+      includeScoreOnlyItems,
       includeItemsWithNotes,
       order,
       settings,
@@ -1351,6 +1354,7 @@ class Database {
     leader: Leader | null,
     includeItemsWithChords: boolean,
     includeItemsWithoutChords: boolean,
+    includeScoreOnlyItems: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
     settings?: DatabaseSettings | null,
@@ -1381,6 +1385,7 @@ class Database {
       leader?.id ?? "",
       includeItemsWithChords ? 1 : 0,
       includeItemsWithoutChords ? 1 : 0,
+      includeScoreOnlyItems ? 1 : 0,
       includeItemsWithNotes ? 1 : 0,
       order,
       this.typesenseEngineEnabled ? 1 : 0,
@@ -1394,6 +1399,7 @@ class Database {
     leader: Leader | null,
     includeItemsWithChords: boolean,
     includeItemsWithoutChords: boolean,
+    includeScoreOnlyItems: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
     settings?: DatabaseSettings | null,
@@ -1406,6 +1412,7 @@ class Database {
           leader,
           includeItemsWithChords,
           includeItemsWithoutChords,
+          includeScoreOnlyItems,
           includeItemsWithNotes,
           order,
           settings,
@@ -1423,6 +1430,7 @@ class Database {
           leader,
           includeItemsWithChords,
           includeItemsWithoutChords,
+          includeScoreOnlyItems,
           includeItemsWithNotes,
           order,
           settings,
@@ -1430,7 +1438,17 @@ class Database {
         );
       }
     }
-    return this.traditionalFilter(expr, leader, includeItemsWithChords, includeItemsWithoutChords, includeItemsWithNotes, order, settings, songIds);
+    return this.traditionalFilter(
+      expr,
+      leader,
+      includeItemsWithChords,
+      includeItemsWithoutChords,
+      includeScoreOnlyItems,
+      includeItemsWithNotes,
+      order,
+      settings,
+      songIds
+    );
   }
 
   private typesenseInitHash = "";
@@ -1453,6 +1471,24 @@ class Database {
     }
   }
 
+  /** Song-tree type filters. Each song has exactly one SongContentKind, so the
+   *  "with chords" and "score only" toggles never overlap: a score-only song is
+   *  not shown by the chord toggle, and a chord/mixed song not by the score one.
+   *  With every content toggle off, the "marked" toggle alone lists the marked
+   *  songs of any content kind. */
+  private static matchesSongTypeFilter(song: Song, withChords: boolean, textOnly: boolean, scoreOnly: boolean, withNotes: boolean): boolean {
+    if (!withChords && !textOnly && !scoreOnly) return withNotes && !!song.Notes;
+    if (song.Notes && !withNotes) return false;
+    switch (song.ContentKind) {
+      case "text":
+        return textOnly;
+      case "score":
+        return scoreOnly;
+      default:
+        return withChords;
+    }
+  }
+
   private static readonly TYPESENSE_TYPE_TO_REASON: Record<string, FoundReason> = {
     TITLE: FoundReason.Title,
     HEAD: FoundReason.Header,
@@ -1465,6 +1501,7 @@ class Database {
     leader: Leader | null,
     includeItemsWithChords: boolean,
     includeItemsWithoutChords: boolean,
+    includeScoreOnlyItems: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
     settings: DatabaseSettings,
@@ -1473,7 +1510,6 @@ class Database {
     const res = new SongFoundList();
     const bestBySongId = new Map<string, SongFound>();
     const maxResults = settings.searchMaxResults ?? 0;
-    const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
     const leaderFilter = leader ? this.leaderFilters.get(leader) : undefined;
     const allowedSongIds = Database.toSongIdSet(songIds);
     if (settings.songLanguageFilter?.length === 0) return res;
@@ -1493,8 +1529,8 @@ class Database {
       if (!song) continue;
       if (!matchesSongLanguage(song.Language, settings.songLanguageFilter ?? null)) continue;
 
-      if (!(markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes)) continue;
-      if (!(song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)) continue;
+      if (!Database.matchesSongTypeFilter(song, includeItemsWithChords, includeItemsWithoutChords, includeScoreOnlyItems, includeItemsWithNotes))
+        continue;
       if (leaderFilter && leaderFilter.has(song)) continue;
 
       const reason = Database.TYPESENSE_TYPE_TO_REASON[hit.found.type] ?? FoundReason.Lyrics;
@@ -1553,6 +1589,7 @@ class Database {
     leader: Leader | null,
     includeItemsWithChords: boolean,
     includeItemsWithoutChords: boolean,
+    includeScoreOnlyItems: boolean,
     includeItemsWithNotes: boolean,
     order: SongOrder,
     settings?: DatabaseSettings | null,
@@ -1565,7 +1602,6 @@ class Database {
       ? Array.from(allowedSongIds, (songId) => this.songs.get(songId)).filter((song): song is Song => !!song)
       : this.songs.values();
     {
-      const markedItemsOnly = includeItemsWithNotes && !includeItemsWithChords && !includeItemsWithoutChords;
       const caseSensitive = settings?.traditionalSearchCaseSensitive ?? false;
       const wholeWords = settings?.traditionalSearchWholeWords ?? false;
       const useTextSimilarities = settings?.useTextSimilarities ?? true;
@@ -1585,10 +1621,7 @@ class Database {
 
         for (const song of candidates) {
           if (!matchesSongLanguage(song.Language, settings?.songLanguageFilter ?? null)) continue;
-          if (
-            (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
-            (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
-          ) {
+          if (Database.matchesSongTypeFilter(song, includeItemsWithChords, includeItemsWithoutChords, includeScoreOnlyItems, includeItemsWithNotes)) {
             const [reason, cost] = this.filterMatch(song, filters, leader, settings);
             const costGate = cost < Math.max(1.5 * minCost, minCost + 2);
             if (reason !== FoundReason.None && costGate) {
@@ -1608,10 +1641,7 @@ class Database {
       } else {
         for (const song of candidates) {
           if (!matchesSongLanguage(song.Language, settings?.songLanguageFilter ?? null)) continue;
-          if (
-            (markedItemsOnly ? !!song.Notes : includeItemsWithNotes || !song.Notes) &&
-            (song.TextOnly ? includeItemsWithoutChords : includeItemsWithChords)
-          ) {
+          if (Database.matchesSongTypeFilter(song, includeItemsWithChords, includeItemsWithoutChords, includeScoreOnlyItems, includeItemsWithNotes)) {
             res.addSong(song, FoundReason.None, 0, leader);
           }
         }
