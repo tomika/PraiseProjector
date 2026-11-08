@@ -707,32 +707,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    // During HMR, the context might temporarily be undefined
-    // Provide a fallback that doesn't break the app during hot reload
-    if (import.meta.hot) {
-      console.warn("Auth", "useAuth called outside of AuthProvider - this may be a HMR issue, retrying...");
-      return {
-        authStatus: "guest",
-        networkUnavailable: false,
-        recheckNetworkAvailability: async () => true,
-        restoreStoredSession: async () => false,
-        isAuthenticated: false,
-        isGuest: true,
-        username: null,
-        user: null,
-        token: null,
-        isLoading: true,
-        login: async () => false,
-        logout: async () => {},
-        changeUser: async () => null,
-        loadInitialCredentials: async () => {},
-        updateToken: () => {},
-        markSessionExpired: () => {},
-        commitSession: () => {},
-        onLoginSuccess: undefined,
-        setOnLoginSuccess: () => {},
-      };
-    }
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;

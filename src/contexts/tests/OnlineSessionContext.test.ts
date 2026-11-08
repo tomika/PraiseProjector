@@ -83,6 +83,15 @@ test("hot reload keeps an existing auth provider connected to reloaded auth hook
   renderToStaticMarkup(React.createElement(before.AuthProvider, null, React.createElement(Probe)));
 });
 
+test("useAuth without a provider fails in development too, as it does in production", () => {
+  const auth = loadAuth({});
+  function Consumer() {
+    auth.useAuth();
+    return null;
+  }
+  assert.throws(() => renderToStaticMarkup(React.createElement(Consumer)), /useAuth must be used within an AuthProvider/);
+});
+
 test("required session hooks reject a missing provider while standalone consumers remain optional", () => {
   const session = fixture().loadSession();
   function Required() {
