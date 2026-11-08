@@ -1,4 +1,5 @@
-import React, { createContext, useContext } from "react";
+import React, { useContext } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 import { useLocalization, Language } from "./LocalizationContext";
 import { useSettings } from "../hooks/useSettings";
 
@@ -20,7 +21,7 @@ interface TooltipContextType {
   tt: (key: TooltipKey) => string | undefined; // Shorter alias
 }
 
-const TooltipContext = createContext<TooltipContextType | undefined>(undefined);
+const TooltipContext = hotStableContext<TooltipContextType | undefined>(import.meta.hot, "tooltipContext", undefined);
 
 export const TooltipProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { language } = useLocalization();

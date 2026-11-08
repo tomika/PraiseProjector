@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 
 // Import language files
 import enStrings from "./strings.en.json";
@@ -77,7 +78,7 @@ interface LocalizationContextType {
   t: (key: StringKey) => string; // Shorter alias
 }
 
-const LocalizationContext = createContext<LocalizationContextType | undefined>(undefined);
+const LocalizationContext = hotStableContext<LocalizationContextType | undefined>(import.meta.hot, "localizationContext", undefined);
 
 export const LocalizationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load language setting from pp-settings or default to 'auto'

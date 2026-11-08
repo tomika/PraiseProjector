@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { useContext, useState, useEffect, useCallback } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 
 interface UpdateInfo {
   version: string;
@@ -17,7 +18,7 @@ interface UpdateContextValue {
   installError: string | null;
 }
 
-const UpdateContext = createContext<UpdateContextValue | null>(null);
+const UpdateContext = hotStableContext<UpdateContextValue | null>(import.meta.hot, "updateContext", null);
 
 export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [updateAvailable, setUpdateAvailable] = useState<UpdateInfo | null>(null);

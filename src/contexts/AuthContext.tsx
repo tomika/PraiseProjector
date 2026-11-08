@@ -1,4 +1,5 @@
 import React, { useState, useRef, useContext, useEffect, ReactNode, useCallback } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 import { SessionResponse } from "../../common/pp-types";
 import { cloudApi, isAccessToken, isCloudApiErrorKind } from "../../common/cloudApi";
 import { cloudApiBaseUrl } from "../config";
@@ -29,16 +30,8 @@ interface AuthContextType {
   setOnLoginSuccess: (callback: (leaderId?: string) => void) => void;
 }
 
-// Preserve context identity across hot reloads: a re-evaluated module would
-// otherwise create a new context that the still-mounted provider does not feed,
-// and every refreshed consumer would get useAuth's HMR fallback (isLoading: true).
-const AuthContext: React.Context<AuthContextType | undefined> =
-  import.meta.hot?.data?.authContext ?? React.createContext<AuthContextType | undefined>(undefined);
+const AuthContext = hotStableContext<AuthContextType | undefined>(import.meta.hot, "authContext", undefined);
 AuthContext.displayName = "AuthContext";
-
-if (import.meta.hot) {
-  import.meta.hot.data.authContext = AuthContext;
-}
 
 const shouldUseBearerHeader = typeof window !== "undefined" && !!window.electronAPI;
 const AUTH_REQUEST_TIMEOUT_MS = 4_000;

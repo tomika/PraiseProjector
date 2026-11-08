@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useCallback, useState, ReactNode } from "react";
+import React, { useContext, useCallback, useState, ReactNode } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 
 interface Toast {
   id: number;
@@ -10,7 +11,7 @@ interface ToastContextType {
   showToast: (message: string, type?: Toast["type"]) => void;
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+const ToastContext = hotStableContext<ToastContextType | undefined>(import.meta.hot, "toastContext", undefined);
 
 export const useToast = () => {
   const context = useContext(ToastContext);

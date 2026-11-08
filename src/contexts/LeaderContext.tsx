@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, { useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 import { Leader } from "../../db-common/Leader";
 import { Database } from "../../db-common/Database";
 import { useSettings } from "../hooks/useSettings";
@@ -10,7 +11,7 @@ interface LeaderContextType {
   allLeaders: Leader[];
 }
 
-const LeaderContext = createContext<LeaderContextType | undefined>(undefined);
+const LeaderContext = hotStableContext<LeaderContextType | undefined>(import.meta.hot, "leaderContext", undefined);
 
 export const useLeader = (): LeaderContextType => {
   const context = useContext(LeaderContext);

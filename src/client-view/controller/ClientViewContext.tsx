@@ -7,13 +7,14 @@
  * store returned by {@link useClientViewStore}.
  */
 
-import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
+import { useContext, useMemo, useSyncExternalStore } from "react";
+import { hotStableContext } from "../../utils/hotStableContext";
 import type { ReactNode } from "react";
 import { ClientViewStore, type ClientViewState } from "./ClientViewStore";
 import { getClientPerformanceSnapshot, subscribeClientPerformance, type ClientPerformanceSnapshot } from "../../shared/clientPerformanceProfile";
 import { normalizePerformancePreferences, type PerformancePreferences } from "../../shared/performanceSettings";
 
-const ClientViewContext = createContext<ClientViewStore | null>(null);
+const ClientViewContext = hotStableContext<ClientViewStore | null>(import.meta.hot, "clientViewContext", null);
 
 export function ClientViewProvider({ store, children }: { store: ClientViewStore; children: ReactNode }) {
   return <ClientViewContext.Provider value={store}>{children}</ClientViewContext.Provider>;

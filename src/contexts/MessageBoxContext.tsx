@@ -1,4 +1,5 @@
-import React, { createContext, useContext, ReactNode, useCallback, useRef } from "react";
+import React, { useContext, ReactNode, useCallback, useRef } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 
 export interface ConfirmOptions {
   confirmText?: string;
@@ -20,7 +21,7 @@ interface MessageBoxContextType {
   showYesNoCancelAsync: (title: string, message: string, options?: ConfirmOptions) => Promise<"yes" | "no" | "cancel">;
 }
 
-const MessageBoxContext = createContext<MessageBoxContextType | undefined>(undefined);
+const MessageBoxContext = hotStableContext<MessageBoxContextType | undefined>(import.meta.hot, "messageBoxContext", undefined);
 
 export const useMessageBox = () => {
   const context = useContext(MessageBoxContext);

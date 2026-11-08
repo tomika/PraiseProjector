@@ -6,6 +6,7 @@ import ts from "typescript";
 import { CloudApiService, isAccessToken, isCloudApiErrorKind } from "../../../common/cloudApi";
 import { installFakeWindow } from "../../../tests/support/browserEnv";
 import type { useAuth } from "../AuthContext";
+import * as hotStableContextModule from "../../utils/hotStableContext";
 
 type Auth = ReturnType<typeof useAuth>;
 const code = ts.transpileModule(readFileSync(new URL("../AuthContext.tsx", import.meta.url), "utf8").replaceAll("import.meta.hot", "false"), {
@@ -85,6 +86,7 @@ function fixture(context: TestContext, { electron = false, stored = true } = {})
     "../../common/cloudApi": { cloudApi: api, isAccessToken, isCloudApiErrorKind },
     "../config": { cloudApiBaseUrl: "" },
     "../../db-common/Database": { Database: database },
+    "../utils/hotStableContext": hotStableContextModule,
   };
   runInNewContext(code, {
     exports,

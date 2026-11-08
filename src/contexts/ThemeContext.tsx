@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { useContext, useState, useEffect } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 import { readThemeSetting, writeThemeSetting } from "../services/settingsStore";
 
 // Type for theme modes
@@ -11,7 +12,7 @@ interface ThemeContextType {
   setThemeSetting: (theme: ThemeSetting) => void;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const ThemeContext = hotStableContext<ThemeContextType | undefined>(import.meta.hot, "themeContext", undefined);
 
 // Settings key - theme is stored inside pp-settings (owned by settingsStore.ts)
 const SETTINGS_KEY = "pp-settings";

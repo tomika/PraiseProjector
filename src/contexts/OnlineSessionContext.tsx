@@ -1,4 +1,5 @@
-import React, { createContext, ReactNode, useCallback, useContext, useRef, useState } from "react";
+import React, { ReactNode, useCallback, useContext, useRef, useState } from "react";
+import { hotStableContext } from "../utils/hotStableContext";
 import type { DisplayUpdateResult } from "../../common/cloudApi";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "./AuthContext";
@@ -24,14 +25,7 @@ interface OnlineSessionContextType {
   setDisabled: () => void;
 }
 
-// Preserve context identity across hot reloads so existing providers and
-// refreshed consumers still share the same session.
-const OnlineSessionContext: React.Context<OnlineSessionContextType | undefined> =
-  import.meta.hot?.data.onlineSessionContext ?? createContext<OnlineSessionContextType | undefined>(undefined);
-
-if (import.meta.hot) {
-  import.meta.hot.data.onlineSessionContext = OnlineSessionContext;
-}
+const OnlineSessionContext = hotStableContext<OnlineSessionContextType | undefined>(import.meta.hot, "onlineSessionContext", undefined);
 
 export function OnlineSessionProvider({ children }: { children: ReactNode }) {
   const { authStatus, user } = useAuth();

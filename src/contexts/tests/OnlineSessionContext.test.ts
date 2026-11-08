@@ -6,6 +6,7 @@ import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import * as hotStableContextModule from "../../utils/hotStableContext";
 
 type AuthModule = typeof import("../AuthContext");
 type OnlineSessionModule = typeof import("../OnlineSessionContext");
@@ -35,7 +36,7 @@ function loadModule<T>(file: string, modules: Record<string, unknown>, globals: 
 function loadAuth(data?: Record<string, unknown>) {
   return loadModule<AuthModule>(
     "../AuthContext.tsx",
-    { "../../common/cloudApi": {}, "../config": {}, "../../db-common/Database": {} },
+    { "../../common/cloudApi": {}, "../config": {}, "../../db-common/Database": {}, "../utils/hotStableContext": hotStableContextModule },
     { hot: data ? { data } : undefined, console: { ...console, warn() {} } }
   );
 }
@@ -45,7 +46,7 @@ function fixture() {
   const loadSession = (data?: Record<string, unknown>) =>
     loadModule<OnlineSessionModule>(
       "../OnlineSessionContext.tsx",
-      { "./AuthContext": auth, uuid: { v4: () => "test-session" } },
+      { "./AuthContext": auth, uuid: { v4: () => "test-session" }, "../utils/hotStableContext": hotStableContextModule },
       { hot: data ? { data } : undefined }
     );
   return { auth, loadSession };
