@@ -26,7 +26,7 @@ const preview = () => {
 
 export const fullViewTutorial: TutorialDefinition = {
   view: "full",
-  version: 3,
+  version: 4,
   cleanup: closeFullTutorialPopovers,
   steps: [
     s(
@@ -68,9 +68,19 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-sync-group",
             tx(
               "Állapotjelvények",
-              "Az ↑ a helyi, feltöltésre váró, a ↓ a letöltendő változatokat jelzi. A piros jelvény ellenőrzendő dalra, a hibajel az online funkciók elérésének hiányára figyelmeztet.",
+              "Az ↑ a helyi, feltöltésre váró, a ↓ a letöltendő változatokat jelzi. A piros szám ellenőrzendő dalokat mutat. A felhőhibajel internetkapcsolati hibát vagy újrabejelentkezést igénylő állapotot is jelenthet.",
               "Status badges",
-              "↑ marks local changes waiting to upload and ↓ marks downloads. A red badge means songs need review; an error badge warns you about a lack of online access."
+              "↑ marks local changes waiting to upload and ↓ marks downloads. A red count means songs need review. A cloud error can indicate either a lost connection or a session that needs a new sign-in."
+            )
+          ),
+          s(
+            "sync-attention-colors",
+            "[data-tutorial-id='full-profile-database']",
+            tx(
+              "Színes teendőjelzések",
+              "A nézetváltó és a kliensnézet színes pontjai a teendő típusát jelzik: zöld a feltöltés, kék a letöltés, türkiz mindkettő, narancs az offline állapot. A piros további teendőt jelez, például dalellenőrzést, frissítést vagy újrabejelentkezést.",
+              "Attention badge colors",
+              "Dots on the view switcher and in client view identify the task: green for upload, blue for download, turquoise for both, and orange for offline. Red indicates another task, such as song review, an app update or signing in again."
             )
           ),
           s(
@@ -170,6 +180,26 @@ export const fullViewTutorial: TutorialDefinition = {
             )
           ),
           s(
+            "song-content-filters",
+            ".song-list-panel",
+            tx(
+              "Tartalmi és nyelvi szűrők",
+              "Alapértelmezésben minden daltípus engedélyezett. A helyi menü Szűrő almenüjében külön kapcsolhatók az akkordos, csak szöveges, csak kottás és megjelölt elemek. Az Általános beállítások dalnyelvi szűrője is szűkít; hiányzó dalnál ezeket és a kedveltségi szűrőt is ellenőrizd.",
+              "Content and language filters",
+              "All song types are enabled by default. The context menu's Filter submenu separately includes songs with chords, text-only, score-only and marked entries. General settings also has a song-language filter; if a song is missing, check these and the preference filter."
+            )
+          ),
+          s(
+            "song-active-filter",
+            [".song-tree-filter-watermark", ".song-list-panel"],
+            tx(
+              "Aktív szűrés jelzése",
+              "A dalkönyvtárban látható tölcsér akkor jelenik meg, ha egy tartalmi, kedveltségi vagy nyelvi szűrő dalokat rejthet el. A keresőmező kiürítése ezeket nem kapcsolja ki; a megfelelő menüben vagy beállításban állíthatók vissza.",
+              "Active filter indicator",
+              "A funnel appears in the library when a content, preference or language filter can hide songs. Clearing the search field does not clear these restrictions; restore them in the corresponding menu or settings page."
+            )
+          ),
+          s(
             "song-items",
             [".song-list-panel .song-item", ".song-list-panel"],
             tx(
@@ -217,7 +247,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".playlist-panel-container",
       tx(
         "Műsortár",
-        "Itt állítható össze az előadás sorrendje. A dalonkénti transzponálás, capo, egyedi cím és instrukciók em módosítják az eredeti dalt.",
+        "Itt állítható össze az előadás sorrendje. A dalonkénti transzponálás, capo, egyedi cím és instrukciók nem módosítják az eredeti dalt.",
         "Playlist",
         "Build the running order here. Per-entry transpose, capo, custom title and instructions do not modify the original song."
       ),
@@ -343,6 +373,16 @@ export const fullViewTutorial: TutorialDefinition = {
             )
           ),
           s(
+            "playlist-score-instructions",
+            ".playlist-items-container",
+            tx(
+              "Instrukciók kottás dalokhoz",
+              "A feldolgozható, dalszöveget tartalmazó ABC-kotta részei és versszakai is használhatók az előadási sorrendben. Az instrukciószerkesztőben az egész kottablokk mellett annak kibontott részei is megjelenhetnek. Ez az előadási nézetet alakítja, az eredeti kottát nem írja át.",
+              "Instructions for songs with notation",
+              "Parts and verses from supported ABC scores with lyrics can be used in the performance order. The instructions editor may show expanded parts as well as the whole score block. This changes the performance view without rewriting the original notation."
+            )
+          ),
+          s(
             "playlist-keyboard",
             ".playlist-items-container",
             tx(
@@ -360,7 +400,7 @@ export const fullViewTutorial: TutorialDefinition = {
       ".btn-toolbar",
       tx(
         "Dalkezelő eszköztár",
-        "Ez az eszköztár az aktuálus dal újratöltésére és mentésére, új dal vagy importálás indítására, nyomtatásra, kliens nézetre váltásra és a beállítások megnyitására szolgál.",
+        "Ez az eszköztár az aktuális dal újratöltésére és mentésére, új dal vagy importálás indítására, nyomtatásra, kliens nézetre váltásra és a beállítások megnyitására szolgál.",
         "Song toolbar",
         "Reload and save songs, create or import a song, print, switch to client view and open settings from here."
       ),
@@ -380,7 +420,7 @@ export const fullViewTutorial: TutorialDefinition = {
           s(
             "toolbar-save",
             ".btn-toolbar button[aria-label='Save Song']",
-            tx("Dal mentése", "Rögzíti az aktuális szerkesztést a dal adatbázisban.", "Save song", "Store the current edit in the song database.")
+            tx("Dal mentése", "Rögzíti az aktuális szerkesztést a daladatbázisban.", "Save song", "Store the current edit in the song database.")
           ),
           s(
             "toolbar-new",
@@ -397,9 +437,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Import from Word']",
             tx(
               "Importálás",
-              "Szöveg-, ChordPro-, Word- vagy PDF-forrásból az importáló varázslót indít.",
+              "Szöveg-, ChordPro-, ABC-kotta-, Word- vagy PDF-forrást dolgoz fel. A .chp és .abc fájl közvetlenül a szerkesztési folyamatba kerül; a beillesztett ABC-szöveg felismerésekor az alkalmazás rákérdez a kottaként importálásra.",
               "Import",
-              "Start the import wizard from text, ChordPro, Word or PDF sources."
+              "Import text, ChordPro, ABC notation, Word or PDF sources. Files ending in .chp or .abc go directly to the editing flow; when pasted text is recognized as ABC, the app asks whether to import it as notation."
             )
           ),
           s(
@@ -423,11 +463,69 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Settings']",
             tx(
               "Beállítások",
-              "A keresés, vetítés, képek, vezetők, szakaszok, ChordPro-stílusok, kliens jogosultság kezelés és hálózati funkciók itt szabhatók személyre.",
+              "A keresés, dalnyelvek, vetítés, kotta, hardveres vezérlés, vezetők, stílusok, kliensjogosultságok és hálózati funkciók itt szabhatók személyre. Az áttekintésnél külön részletek mutatják be az új beállítási lapokat.",
               "Settings",
-              "Customize search, projection, images, leaders, sections, ChordPro styles, client controls and network features."
+              "Customize search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and network features. A separate branch from the overview introduces the new settings pages."
             )
           ),
+        ],
+        branches: [
+          {
+            id: "application-settings",
+            label: tl("Nyelv, hardver és kotta", "Language, hardware and scores"),
+            steps: [
+              s(
+                "settings-song-language",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "Dalnyelv és nyelvi szűrés",
+                  "A Beállítások Általános lapján az alapértelmezett dalnyelv az új dalok kiinduló nyelvét adja meg. A dalnyelvi szűrő a könyvtárat és a kapcsolódó kereséseket szűkíti. Ez a felület nyelvétől külön beállítás; a dal saját nyelve a Metaadatok lapon módosítható.",
+                  "Song language and filtering",
+                  "In Settings → General, default song language supplies the initial language for new songs. The song-language filter restricts the library and related searches. This is separate from the interface language; edit an individual song's language on its Metadata tab."
+                )
+              ),
+              s(
+                "settings-hardware-profiles",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "Hardveres vezérlési profilok",
+                  "A Beállítások Hardveres vezérlés lapján először válaszd ki a teljes vagy a kliensnézetet: mindkettő saját billentyűzet- és MIDI-profilt használ. A gyári profil csak olvasható; saját kiosztáshoz készíts róla másolatot, és azt szerkeszd.",
+                  "Hardware control profiles",
+                  "In Settings → Hardware control, first select full or client view: each has its own keyboard and MIDI profile. The factory profile is read-only; copy it to create and edit your own mapping."
+                )
+              ),
+              s(
+                "settings-hardware-learning",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "Billentyű és MIDI betanítása",
+                  "A Hardveres vezérlés lapon a művelethez billentyűkombináció vagy MIDI-jel tanítható be, illetve kézzel is megadható a hozzárendelés. Az ütközésjelzés segít elkerülni az azonos bemeneteket. A MIDI használatához a környezet támogatása és hozzáférési engedély is szükséges lehet; a lap az állapotát is mutatja.",
+                  "Learn keyboard and MIDI inputs",
+                  "On the Hardware control page, learn a key combination or MIDI signal for an action, or enter the binding manually. Conflict indicators help avoid overlapping inputs. MIDI requires a supported runtime and may require permission; its status is shown on this page."
+                )
+              ),
+              s(
+                "settings-hardware-scope",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "Billentyűk hatóköre",
+                  "A teljes nézetben egy billentyű csak a fókuszban lévő szakaszlistára vagy a teljes nézet minden paneljére is érvényes lehet. A tutorial billentyűleírásai a gyári kiosztást ismertetik; saját profil más műveleteket rendelhet hozzájuk. Nyitott párbeszédablakban annak vezérlői élveznek elsőbbséget.",
+                  "Keyboard scope",
+                  "In full view a key can apply only while the section list has focus, or across all full-view panels. The tutorial's keyboard descriptions refer to factory mappings; a custom profile can assign different actions. An open dialog takes priority over hardware commands."
+                )
+              ),
+              s(
+                "settings-score-defaults",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "Kotta-alapbeállítások",
+                  "A Beállítások Kotta lapján a lejátszás hangszerei, kísérete és a kotta megjelenésének alapértékei állíthatók. A kotta saját beállításai elsőbbséget élveznek az alapértékekkel szemben. A változások a Beállítások mentése után érvényesek.",
+                  "Score defaults",
+                  "Settings → Score sets default playback instruments, accompaniment and notation appearance. A score's own options take priority over these defaults. Changes take effect after saving Settings."
+                )
+              ),
+            ],
+          },
         ],
       }
     ),
@@ -448,14 +546,14 @@ export const fullViewTutorial: TutorialDefinition = {
             ".edit-toggle-button",
             tx(
               "Szerkesztési mód",
-              "A ceruza vált az olvasási és szerkesztési mód között. Kilépéskor az alkalmazás ellenőrzi a változásokat.",
+              "A ceruza vált az olvasási és szerkesztési mód között. Módosítás után kilépéskor választható a Mentés, a Kilépés mentés nélkül vagy a Szerkesztés folytatása; az utóbbi a szerkesztőben tartja a munkát.",
               "Edit mode",
-              "The pencil switches between reading and editing. On exit, the app checks for changes."
+              "The pencil switches between reading and editing. After changes, choose Save, Leave without saving or Continue editing when leaving; the last choice keeps your work in edit mode."
             )
           ),
           s(
             "editor-wysiwyg",
-            ".editor-tabs-header .nav-item:nth-child(1) .nav-link",
+            "[data-tutorial-id='full-editor-tab-wysiwyg']",
             tx(
               "Dal szerkesztő",
               "A vizuális nézetben a dalszöveg és az akkordok a kész megjelenéshez hasonló formában szerkeszthetők.",
@@ -465,27 +563,27 @@ export const fullViewTutorial: TutorialDefinition = {
           ),
           s(
             "editor-title",
-            ".editor-toolbar button:nth-child(1)",
+            "[data-tutorial-id='full-editor-title']",
             tx("Cím", "A kijelölt szöveget a dal címévé alakítja.", "Title", "Turn the selected text into the song title.")
           ),
           s(
             "editor-verse",
-            ".editor-toolbar button:nth-child(2)",
+            "[data-tutorial-id='full-editor-verse']",
             tx("Versszak", "A kijelölt sorokat számozott versszakként jelöli.", "Verse", "Mark the selected lines as a numbered verse.")
           ),
           s(
             "editor-chorus",
-            ".editor-toolbar button:nth-child(3)",
+            "[data-tutorial-id='full-editor-chorus']",
             tx("Refrén", "A kijelölt sorokat refrénként jelöli.", "Chorus", "Mark the selected lines as a chorus.")
           ),
           s(
             "editor-bridge",
-            ".editor-toolbar button:nth-child(4)",
+            "[data-tutorial-id='full-editor-bridge']",
             tx("Híd", "A kijelölt sorokat hídként jelöli.", "Bridge", "Mark the selected lines as a bridge.")
           ),
           s(
             "editor-grid",
-            ".editor-toolbar button:nth-child(5)",
+            "[data-tutorial-id='full-editor-grid']",
             tx(
               "Akkordrács",
               "A kijelölt sorokat csak hangszeres akkordmenetként jelöli.",
@@ -495,7 +593,7 @@ export const fullViewTutorial: TutorialDefinition = {
           ),
           s(
             "editor-comment",
-            ".editor-toolbar button:nth-child(6)",
+            "[data-tutorial-id='full-editor-comment']",
             tx(
               "Megjegyzés",
               "A kijelölt, akkordot nem tartalmazó sorokat megjegyzéssé alakítja, illetve visszaalakítja normál dalszöveggé. Akkordos kijelölésnél a gomb le van tiltva.",
@@ -505,12 +603,22 @@ export const fullViewTutorial: TutorialDefinition = {
           ),
           s(
             "editor-abc",
-            ".editor-toolbar button:nth-child(7)",
+            "[data-tutorial-id='full-editor-abc']",
             tx(
               "ABC-kotta",
-              "A kurzornál új ABC-kottablokkot szúr be. A már meglévő ABC-blokk azon dupla kattintással megnyitva tovább szerkeszthető.",
+              "Szerkesztési módban a kurzornál új ABC-kottablokkot szúr be; meglévő kottára dupla kattintva a kottaszerkesztő nyílik meg. Olvasási módban a dupla kattintás vagy dupla koppintás ehelyett a kotta MIDI-lejátszását indítja vagy állítja le.",
               "ABC notation",
-              "Insert a new ABC notation block at the caret. Existing ABC blocks can be opened for further editing by double-clicking them."
+              "In edit mode, insert a new ABC block at the caret or double-click existing notation to open the score editor. In read mode, double-clicking or double-tapping notation instead starts or stops its MIDI playback."
+            )
+          ),
+          s(
+            "editor-abc-saving",
+            "[data-tutorial-id='full-editor-abc']",
+            tx(
+              "A kottaszerkesztő használata",
+              "A kottaszerkesztő Súgó gombja saját részletes bemutatót nyit. Az Alkalmazás a dal szerkesztési állapotába veszi át a kottát, a Mégse elveti a kottaszerkesztő módosításait. Alkalmazás után a teljes dalt is mentsd el a daladatbázisba.",
+              "Using the score editor",
+              "The score editor's Help button opens its own detailed tutorial. Apply transfers the notation into the song's editing state; Cancel discards the score editor's changes. After applying, also save the song to the song database."
             )
           ),
           s(
@@ -525,17 +633,28 @@ export const fullViewTutorial: TutorialDefinition = {
           ),
           s(
             "editor-meta",
-            ".editor-tabs-header .nav-item:nth-child(2) .nav-link",
+            "[data-tutorial-id='full-editor-tab-meta']",
             tx(
-              "Meta adatok",
-              "Itt kezelhető többek között a cím, előadó, szerző, hangnem, tempó, ütem és capo. Mentéshez a cím kitöltése szükséges.",
+              "Metaadatok",
+              "Itt kezelhető többek között a dal nyelve, címe, előadója, szerzője, hangneme, tempója, üteme és capója. Mentéshez a cím kitöltése szükséges.",
               "Metadata",
-              "Edit title, artist, author, key, tempo, time signature, capo and other metadata here. A title is required before saving."
+              "Edit song language, title, artist, author, key, tempo, time signature, capo and other metadata here. A title is required before saving."
             )
           ),
           s(
+            "editor-song-language",
+            "[data-tutorial-id='full-editor-song-language']",
+            tx(
+              "A dal nyelve",
+              "Szerkesztési módban itt módosítható a dal saját nyelve. A módosítást a dallal együtt kell menteni. Ha az új nyelvet a könyvtár nyelvi szűrője kizárná, az alkalmazás felajánlja a szűrő bővítését.",
+              "Song language",
+              "Change this song's language here in edit mode, then save it with the song. If the library's language filter would exclude the new language, the app offers to add it to the filter."
+            ),
+            { prepare: () => activateEditorTab(1) }
+          ),
+          s(
             "editor-chordpro",
-            ".editor-tabs-header .nav-item:nth-child(3) .nav-link",
+            "[data-tutorial-id='full-editor-tab-chordpro']",
             tx(
               "ChordPro kód",
               "A nyers ChordPro nézet teljes hozzáférést ad a dal direktíváihoz és jelöléseihez, amikor a vizuális nézetnél pontosabb vezérlés szükséges.",
@@ -691,9 +810,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preview-sections-list",
             tx(
               "Billentyűzet",
-              "A nyilak, Page Up/Down, Szóköz, Home és End navigálnak; a számok közvetlenül választanak, az Esc törli a kijelölést.",
+              "A gyári kiosztásban a fókuszban lévő szakaszlistán a nyilak, Page Up/Down, Szóköz, Home és End navigálnak; a számok közvetlenül választanak, az Esc törli a kijelölést. A Hardveres vezérlés lapon saját profil és eltérő billentyűhatókör is választható.",
               "Keyboard",
-              "Arrows, Page Up/Down, Space, Home and End navigate; number keys select directly and Escape clears selection."
+              "With the factory mapping and section-list focus, arrows, Page Up/Down, Space, Home and End navigate; number keys select directly and Escape clears selection. Hardware control settings allow custom profiles and keyboard scope."
             )
           ),
         ],

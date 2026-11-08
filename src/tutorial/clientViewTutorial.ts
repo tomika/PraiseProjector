@@ -32,7 +32,7 @@ const leaderLists = () => {
 
 export const clientViewTutorial: TutorialDefinition = {
   view: "client",
-  version: 4,
+  version: 5,
   cleanup: closeClientTutorialPopovers,
   steps: [
     s(
@@ -40,9 +40,9 @@ export const clientViewTutorial: TutorialDefinition = {
       ["#swipe-handler", "#editor"],
       tx(
         "Dalnézet",
-        "Itt jelenik meg az aktuális dal ChordPro-formázással, akkordokkal és instrukciókkal. A lapozási vezérlővel lehet a dalok között váltani.",
+        "Itt jelenik meg az aktuális dal ChordPro-formázással, akkordokkal, kottával és instrukciókkal. A lapozási vezérlővel lehet a dalok között váltani.",
         "Song view",
-        "The current song appears here with ChordPro formatting, chords and instructions. Use paging controls to change songs."
+        "The current song appears here with ChordPro formatting, chords, notation and instructions. Use paging controls to change songs."
       ),
       {
         prepare: song,
@@ -55,6 +55,16 @@ export const clientViewTutorial: TutorialDefinition = {
               "A megjelenés az akkord-, capo-, transzponálás-, téma- és nagyításbeállításokat követi. Követő módban a vezető aktuális dala látható.",
               "Song content",
               "Appearance follows chord, capo, transpose, theme and zoom settings. In follower mode you see the leader's song."
+            )
+          ),
+          s(
+            "song-score-playback",
+            "#editor",
+            tx(
+              "Kotta és lejátszás",
+              "A látható ABC-kottára dupla kattintva vagy duplán koppintva a MIDI-lejátszás elindul, újabb dupla kattintásra leáll. A Nagyítás panelen a kottanézet dalszöveg és akkordok megjelenítésére váltható; ez az eredeti dalt nem írja át.",
+              "Notation and playback",
+              "Double-click or double-tap visible ABC notation to start MIDI playback, and repeat to stop. The Zoom panel can show lyrics and chords in place of notation without changing the original song."
             )
           ),
           s(
@@ -82,9 +92,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Zoommódok",
-              "A Teljes oldal mindkét irányban illeszt; Automatikus sortörés nélkül a Szélesség kitölti a szélességet és görgethető; a Kézi közvetlen méretet használ. Az Automatikus sortörés a két illesztési módban azonosan, a rendelkezésre álló magasságig növelheti a betűméretet, Kézi módban csak a hosszú sorokat töri. Két ujjas érintés vagy Ctrl+Shift+görgő váltja a zoommódot.",
+              "A Teljes oldal a teljes dalt a rendelkezésre álló területre illeszti. A Szélesség a szélességet tölti ki, és hosszabb dalnál függőlegesen görgethető marad. A Kézi megadott betűméretet használ. Az Automatikus sortörés külön kapcsolható; rövid dalnál az illesztés nagyobb betűméretet is választhat. Kétujjas koppintás vagy Ctrl+Shift+görgő váltja a módot.",
               "Zoom modes",
-              "Fit page fits both dimensions; without Auto wrap, Fit width fills the width and scrolls; Manual uses an explicit size. Auto wrap gives both fit modes the same height-filling font growth, while Manual only wraps over-wide lines. A two-finger tap or Ctrl+Shift+wheel cycles zoom modes."
+              "Fit page fits the entire song into the available area. Fit width fills the width and keeps longer songs vertically scrollable. Manual uses an explicit font size. Auto wrap is a separate option; fitting may choose a larger font for short songs. A two-finger tap or Ctrl+Shift+wheel cycles modes."
             )
           ),
           s(
@@ -92,9 +102,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#swipe-handler",
             tx(
               "Csippentéses nagyítás",
-              "Kézi módban kétujjas összecsippentéssel csökkenthető, széthúzással növelhető a betűméret; egérrel a Ctrl+görgő is használható. Automatikus módban a gesztus nem írja felül az illesztést.",
+              "Kétujjas összecsippentéssel csökkenthető, széthúzással növelhető a betűméret; egérrel Ctrl+görgő használható. Bekapcsolt nagyításnál az automatikus illesztésből a képernyőn látható méretről Kézi módra vált, majd onnan méretez. Kikapcsolt nagyításnál nem állít betűméretet.",
               "Pinch zoom",
-              "In Manual mode, pinch to reduce or spread to increase font size or use CTRL+mouse wheel combination. Automatic modes keep their calculated fit."
+              "Pinch to reduce or spread to increase font size, or use Ctrl+mouse wheel. While zoom is on, an automatic fit switches to Manual at the current on-screen size, then adjusts from there. With zoom off, these gestures do not change the font size."
             )
           ),
           s(
@@ -163,6 +173,16 @@ export const clientViewTutorial: TutorialDefinition = {
             )
           ),
           s(
+            "toolbar-home",
+            "#btnHome",
+            tx(
+              "Visszatérés a saját felületre",
+              "Megosztott vagy rögzített munkamenetből a házikóval térhetsz vissza az alkalmazás saját felületére. Ez a követett tartalom elhagyására szolgál; a teljes szerkesztőre váltás külön művelet a Több menüben, ahol elérhető.",
+              "Return to your own app",
+              "Use Home to leave a shared or locked session and return to the app's own interface. Switching to the full editor is a separate action in More where that option is available."
+            )
+          ),
+          s(
             "toolbar-instructions",
             ["#btnInstructions", "#mainToolbar"],
             tx(
@@ -177,9 +197,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#btnInstructions", "#mainToolbar"],
             tx(
               "Instrukciószerkesztő",
-              "Vezérlési jogosultság esetén a hosszú nyomás vagy a jobb gombos kattintás nyitja meg az instrukciószerkesztőt. A Forrás, Szerkesztő és Előnézet panelek a tartalom összevetésére, módosítására és mentésére szolgálnak.",
+              "Vezérlési jogosultság esetén a hosszú nyomás vagy jobb kattintás nyitja meg a Forrás, Szerkesztő és Előnézet paneleket. Mentéskor a változás azonnal megjelenik. A vetített dal instrukciója a közös kijelzőre is átkerül; egy másik, helyben megnyitott dalé helyi marad. Üres szöveg mentésével az instrukció törölhető.",
               "Instructions editor",
-              "With control permission, hold this same button or right-click it to open the instructions editor. Compare, edit and save the content in its Source, Editor and Preview panes."
+              "With control permission, hold or right-click this button to open the Source, Editor and Preview panes. Saved changes appear immediately. Instructions for the projected song also update the shared display; another locally opened song stays local. Saving empty text clears the instructions."
             )
           ),
           s(
@@ -197,9 +217,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#transpose", "#mainToolbar"],
             tx(
               "Transzponálás",
-              "Koppintás, kattintás vagy vízszintes elhúzás nyitja meg az értékválasztót; itt félhangonként állítható az aktuális műsortétel hangneme. Vezérlő módban a módosítás egyszerre jelenik meg az aktuális vetítésen és a munkamenet valamennyi csatlakozott nézőjénél.",
+              "Koppintás, kattintás vagy vízszintes elhúzás nyitja az értékválasztót, ahol félhangonként állítható a megnyitott dal hangneme. A vetített dal vezérlésekor a módosítás a közös kijelzőre is átkerül. Egy másik, adatbázisból vagy mentett listából helyben megnyitott dal transzponálása helyi marad.",
               "Transpose",
-              "Tap, click or just drag horizontally to open the value picker, then change the current playlist entry by semitones. When you are controlling the display, the change appears simultaneously on the current projection and for every connected session viewer."
+              "Tap, click or drag horizontally to open the picker and transpose the viewed song by semitones. While controlling the projected song, changes also reach the shared display. Transposing a different song opened locally from the database or a saved list stays local."
             )
           ),
           s(
@@ -258,9 +278,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#mainToolbar",
             tx(
               "Billentyűzet és MIDI",
-              "A fontos műveletek billentyűzettel és támogatott környezetben MIDI-vel is vezérelhetők. Saját profil a full-view Kliens nézet beállításában készíthető.",
+              "A fontos műveletek billentyűzettel és támogatott környezetben MIDI-vel is vezérelhetők. Saját kiosztás a teljes nézet Beállítások → Hardveres vezérlés lapján készíthető. A teljes és a kliensnézet külön profilt használ; a gyári profil másolata szerkeszthető és bemenetek taníthatók hozzá.",
               "Keyboard and MIDI",
-              "Important actions can use keyboard and, where supported, MIDI. Create custom profiles in the full view's Client view settings."
+              "Use keyboard controls and, where supported, MIDI. Create custom mappings in full view under Settings → Hardware control. Full and client view have separate profiles; copy the factory profile to edit it and learn inputs."
             )
           ),
         ],
@@ -289,6 +309,16 @@ export const clientViewTutorial: TutorialDefinition = {
       {
         prepare: options,
         details: [
+          s(
+            "search-language-filter",
+            "#filterRow",
+            tx(
+              "Keresés és dalnyelv",
+              "A rendelkezésre álló dalkönyvtárat a gazdaalkalmazás dalnyelvi szűrője is korlátozhatja. A kereső kiürítése ezt nem oldja fel. Saját alkalmazásban az Általános beállítások között ellenőrizhető a dalnyelvi szűrő; követett munkamenetben a házigazda által kínált dalok érhetők el.",
+              "Search and song language",
+              "The host app's song-language filter may restrict the available catalogue. Clearing the search does not remove it. In your own app, check the song-language filter in General settings; a followed session supplies the songs offered by its host."
+            )
+          ),
           s(
             "search-mode",
             "#listModeToggle",
@@ -532,9 +562,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["[data-tutorial-id='client-highlight']", ".cv-options-bar"],
             tx(
               "Kiemelés",
-              "Be- vagy kikapcsolja a kiemelést, és megnyitja az átlátszóság beállítását; jogosultságtól függően vezérlő módot is jelezhet.",
+              "Rövid kattintás vagy koppintás kapcsolja a kiemelést. Hosszú nyomás vagy jobb kattintás nyitja az átlátszóság beállítását. A kéz ikon a kiemelés vezérlését jelzi; a lehetőségek a munkamenet jogosultságaitól függnek.",
               "Highlight",
-              "Toggle highlighting and open its opacity setting; depending on permission it may also indicate control mode."
+              "A short click or tap toggles highlighting. Hold or right-click to open its opacity setting. A hand icon indicates highlight control; available actions depend on session permissions."
             )
           ),
           s(
@@ -562,9 +592,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-zoom']",
             tx(
               "Nagyítás",
-              "Be- vagy kikapcsolja az aktuális méretezést, és megnyitja a részletes nagyítási panelt.",
+              "Rövid kattintás vagy koppintás be- vagy kikapcsolja a nagyítást. Hosszú nyomás vagy jobb kattintás nyitja meg a részletes nagyítási panelt.",
               "Zoom",
-              "Toggle the current sizing and open the detailed zoom panel."
+              "A short click or tap toggles zoom. Hold or right-click to open the detailed zoom panel."
             )
           ),
           s(
@@ -572,9 +602,42 @@ export const clientViewTutorial: TutorialDefinition = {
             [".cv-zoom-panel", "[data-tutorial-id='client-zoom']", ".cv-options-bar"],
             tx(
               "Nagyítási panel",
-              "A cím, metaadat és szakaszcímke külön szabályozható. Illesztési mód választható; Kézi módban csúszka jelenik meg.",
+              "A cím, metaadat, szakaszcímke, kotta és automatikus sortörés külön szabályozható. Illesztési mód választható; Kézi módban betűméretcsúszka jelenik meg. A módosítások azonnal érvényesek ezen az eszközön.",
               "Zoom panel",
-              "Control title, metadata and section labels separately. Select a sizing mode; Manual shows a slider."
+              "Control title, metadata, section labels, notation and auto wrap separately. Choose a sizing mode; Manual shows a font-size slider. Changes apply immediately on this device."
+            ),
+            { prepare: openClientZoomPanel }
+          ),
+          s(
+            "display-score-mode",
+            "[data-tutorial-id='client-zoom-abc']",
+            tx(
+              "Kotta vagy dalszöveg és akkordok",
+              "Bekapcsolt nagyításnál a ♪ gomb vált a teljes kotta és az abból előállított dalszöveg/akkord nézet között. Szöveg nélküli kottából akkordrács készülhet; nem átalakítható kottánál megmarad a kottanézet. Az eredeti dal változatlan marad.",
+              "Notation or lyrics and chords",
+              "With zoom enabled, the ♪ button switches between full notation and lyrics/chords derived from it. Instrumental notation may become a chord grid; unsupported scores retain notation. The original song is unchanged."
+            ),
+            { prepare: openClientZoomPanel }
+          ),
+          s(
+            "display-wrap",
+            "[data-tutorial-id='client-zoom-wrap']",
+            tx(
+              "Automatikus sortörés",
+              "A sortörés ikonja külön kapcsolja a hosszú sorok tördelését; az aktív ikont kék kiemelés jelzi. A Szélesség mód hosszabb tartalomnál görgethető marad, a Kézi mód a választott betűméretet tartja meg.",
+              "Auto wrap",
+              "The wrap icon separately enables wrapping long lines; blue highlighting marks it as active. Fit width remains scrollable for long content, and Manual preserves the selected font size."
+            ),
+            { prepare: openClientZoomPanel }
+          ),
+          s(
+            "display-section-labels",
+            "[data-tutorial-id='client-zoom-sections']",
+            tx(
+              "Szakaszcímkék",
+              "A gomb a teljes szakaszcímke, a rövidítés és az elrejtés között vált. Ez a megjelenítést módosítja ezen az eszközön, a dalban tárolt szakaszneveket nem.",
+              "Section labels",
+              "Cycle between full section labels, abbreviations and hidden labels. This changes this device's display without editing the song's stored section names."
             ),
             { prepare: openClientZoomPanel }
           ),
@@ -619,6 +682,16 @@ export const clientViewTutorial: TutorialDefinition = {
         prepare: options,
         details: [
           s(
+            "more-attention-colors",
+            "[data-tutorial-id='client-more-button']",
+            tx(
+              "Teendők színes jelzése",
+              "A Beállítások, Több és Felületváltás vezérlők pontjai a gazdaalkalmazás teendőit jelzik: zöld feltöltés, kék letöltés, türkiz mindkettő, narancs offline állapot. A piros például ellenőrzendő dalt, frissítést vagy újrabejelentkezést jelezhet. A felhős adatbázis szinkronizálása a teljes nézetben érhető el.",
+              "Attention badge colors",
+              "Dots on Options, More and Switch UI report host-app tasks: green for upload, blue for download, turquoise for both, and orange for offline. Red can indicate song review, an update or a new sign-in. Cloud database synchronization is available in full view."
+            )
+          ),
+          s(
             "more-menu",
             ".cv-more-menu",
             tx(
@@ -631,7 +704,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "more-clear",
-            ["[data-tutorial-id='client-more-clear-list']", ".cv-more-menu"],
+            "[data-tutorial-id='client-more-clear-list']",
             tx(
               "Lista törlése",
               "Megerősítés után az aktuális munkalista elemeit távolítja el, a mentett forráslistát nem írja át.",
@@ -642,7 +715,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "more-sessions",
-            ["[data-tutorial-id='client-more-sessions']", ".cv-more-menu"],
+            "[data-tutorial-id='client-more-sessions']",
             tx(
               "Munkamenetek és kapcsolat",
               "A kapcsolatok keresésére, indítására és követésére szolgáló dialógust nyitja meg. Itt helyi, közeli és felhős munkamenetek kezelhetők, megosztási QR-kód kérhető, követéskor pedig vissza lehet térni a helyi listákhoz. A fő vezérlősáv hálózati jelzője az aktuális kapcsolati állapotot mutatja.",
@@ -653,16 +726,16 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "more-switch",
-            ["[data-tutorial-id='client-more-home']", ".cv-more-menu"],
+            "[data-tutorial-id='client-more-home']",
             tx(
-              "Vissza a full-view-ra",
+              "Vissza a teljes nézetre",
               "Visszavált a teljes szerkesztői felületre, átadja az aktuális dalkijelölést, és a lenti gombbal ott folytatja a bemutatót.",
               "Back to full view",
               "Return to the full editor, carry over the current song selection, and continue the tutorial there with the action below."
             ),
             {
               prepare: openClientMoreMenu,
-              actions: [{ id: "switch-full", label: tl("Visszatérés a full-view-ra", "Return to full view"), command: "switch-full" }],
+              actions: [{ id: "switch-full", label: tl("Visszatérés a teljes nézetre", "Return to full view"), command: "switch-full" }],
             }
           ),
           s(
@@ -678,7 +751,7 @@ export const clientViewTutorial: TutorialDefinition = {
           ),
           s(
             "more-exit",
-            ["[data-tutorial-id='client-more-exit']", ".cv-more-menu"],
+            "[data-tutorial-id='client-more-exit']",
             tx("Kilépés", "Natív alkalmazáskörnyezetben bezárja a programot.", "Exit", "Close the program in a native application runtime."),
             { prepare: openClientMoreMenu }
           ),

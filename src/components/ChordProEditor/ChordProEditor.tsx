@@ -73,6 +73,7 @@ function EditorTabs({
         {EDITOR_TABS.map((tab) => (
           <li className="nav-item" key={tab.id}>
             <a
+              data-tutorial-id={`full-editor-tab-${tab.id}`}
               className={`nav-link${activeTab === tab.id ? " active" : ""}`}
               href="#"
               aria-label={t(tab.labelKey)}
@@ -1328,27 +1329,57 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
               type="button"
               className="btn btn-light btn-wide ms-1"
               title="Title"
+              data-tutorial-id="full-editor-title"
               disabled={!this.isEditable}
               onClick={this.handleMakeTitleClick}
             >
               <Icon type={IconType.TITLE} />
             </button>
-            <button type="button" className="btn btn-light ms-1" title="Verse" disabled={!this.isEditable} onClick={this.handleVerseClick}>
+            <button
+              type="button"
+              data-tutorial-id="full-editor-verse"
+              className="btn btn-light ms-1"
+              title="Verse"
+              disabled={!this.isEditable}
+              onClick={this.handleVerseClick}
+            >
               <Icon type={IconType.VERSE} />
             </button>
-            <button type="button" className="btn btn-light ms-1" title="Chorus" disabled={!this.isEditable} onClick={this.handleChorusClick}>
+            <button
+              type="button"
+              data-tutorial-id="full-editor-chorus"
+              className="btn btn-light ms-1"
+              title="Chorus"
+              disabled={!this.isEditable}
+              onClick={this.handleChorusClick}
+            >
               <Icon type={IconType.CHORUS} />
             </button>
-            <button type="button" className="btn btn-light ms-1" title="Bridge" disabled={!this.isEditable} onClick={this.handleBridgeClick}>
+            <button
+              type="button"
+              data-tutorial-id="full-editor-bridge"
+              className="btn btn-light ms-1"
+              title="Bridge"
+              disabled={!this.isEditable}
+              onClick={this.handleBridgeClick}
+            >
               <Icon type={IconType.BRIDGE} />
             </button>
-            <button type="button" className="btn btn-light ms-1" title="Grid" disabled={!this.isEditable} onClick={this.handleGridClick}>
+            <button
+              type="button"
+              data-tutorial-id="full-editor-grid"
+              className="btn btn-light ms-1"
+              title="Grid"
+              disabled={!this.isEditable}
+              onClick={this.handleGridClick}
+            >
               <Icon type={IconType.GRID} />
             </button>
             <button
               type="button"
               className="btn btn-light"
               title={this.props.tt?.("editor_set_comment")}
+              data-tutorial-id="full-editor-comment"
               disabled={!this.isEditable || this.state.commentBlockedByChords}
               onClick={this.handleCommentClick}
             >
@@ -1358,6 +1389,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
               type="button"
               className="btn btn-light ms-1"
               title={this.props.tt?.("editor_insert_abc")}
+              data-tutorial-id="full-editor-abc"
               disabled={!this.isEditable}
               onClick={this.handleNotationClick}
             >
@@ -1430,7 +1462,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
             </tr>
           </thead>
           <tbody>
-            <tr>
+            <tr data-tutorial-id="full-editor-song-language">
               <td>{t("SongLanguage")}</td>
               <td>
                 <SongLanguageSelect

@@ -46,8 +46,9 @@ export function activatePreviewTab(index: number): void {
 }
 
 export function activateEditorTab(index: number): void {
-  const tabs = Array.from(document.querySelectorAll<HTMLAnchorElement>(".editor-tabs-header .nav-link"));
-  const tab = tabs[index];
+  const id = ["wysiwyg", "meta", "chordpro"][index];
+  if (!id) return;
+  const tab = visibleElement(`[data-tutorial-id='full-editor-tab-${id}']`);
   if (tab && !tab.classList.contains("active")) tab.click();
 }
 

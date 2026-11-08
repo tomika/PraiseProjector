@@ -60,6 +60,7 @@ export function ZoomPanel() {
       <button
         type="button"
         className="cv-zoom-toggle cv-zoom-abc-toggle"
+        data-tutorial-id="client-zoom-abc"
         data-mode={abcMode.value}
         title={abcMode.title}
         aria-label={abcMode.title}
@@ -70,7 +71,7 @@ export function ZoomPanel() {
           {abcMode.value === "CHORDS" && <sup className="cv-zoom-abc-chord">C</sup>}
         </span>
       </button>
-      <label className="cv-zoom-toggle cv-zoom-wrap-toggle" title="Auto wrap">
+      <label className="cv-zoom-toggle cv-zoom-wrap-toggle" data-tutorial-id="client-zoom-wrap" title="Auto wrap">
         <input type="checkbox" checked={s.zoomAutoWrap} onChange={(e) => store.setDisplaySetting("zoomAutoWrap", e.target.checked)} />
         <span className="cv-zoom-label">
           <img className="cv-zoom-wrap-icon" src={icon("wrap.svg")} alt="Auto wrap" />
@@ -81,6 +82,7 @@ export function ZoomPanel() {
         <button
           type="button"
           className="cv-zoom-btn active cv-zoom-cycle-btn"
+          data-tutorial-id="client-zoom-sections"
           title={`Section tag display: ${tagMode.label}`}
           onClick={() => store.setDisplaySetting("zoomTagMode", nextTagMode.value)}
         >
