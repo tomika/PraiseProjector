@@ -59,7 +59,7 @@ import { useWakeLock } from "./hooks/useWakeLock";
 import { useLocalization } from "./localization/LocalizationContext";
 import { cloudApi, type DisplaySessionTarget, type DisplayUpdateResult } from "./../common/cloudApi";
 import { useOnlineSession } from "./contexts/OnlineSessionContext";
-import { matchesSongLanguage, normalizeSongLanguageFilter } from "../common/song-language";
+import { matchesSongLanguage, normalizeSongLanguageFilter, songLanguageCodesOf } from "../common/song-language";
 import { readSongLanguageSettings } from "../common/song-language-settings";
 import { cloudApiHost } from "./config";
 import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryWithData, LeaderDBProfile } from "../common/pp-types";
@@ -1671,7 +1671,8 @@ const AppContent: React.FC = () => {
           // language query may narrow that catalogue; playlist lookups by id
           // remain available even when their language is hidden from browsing.
           const hostLanguages = songIds.length ? null : hostSongLanguageFilter(settingsRef.current);
-          const requestedLanguages = typeof languageQuery === "string" ? normalizeSongLanguageFilter(languageQuery.split(",")) : null;
+          // A request only narrows: unknown codes match nothing instead of meaning "all".
+          const requestedLanguages = typeof languageQuery === "string" ? songLanguageCodesOf(languageQuery.split(",")) : null;
           const songLanguageFilter =
             hostLanguages === null
               ? requestedLanguages

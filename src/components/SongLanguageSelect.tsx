@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SONG_LANGUAGE_CODES, SONG_LANGUAGE_COUNTRIES, songLanguageName } from "../../common/song-language";
+import { SONG_LANGUAGE_CODES, SONG_LANGUAGE_COUNTRIES, songLanguageName, toggleSongLanguageFilter } from "../../common/song-language";
 import { useLocalization } from "../localization/LocalizationContext";
 import flagsUrl from "../assets/song-language-flags.svg";
 import "./SongLanguageSelect.css";
@@ -9,6 +9,10 @@ type Props = { id?: string; label?: string; disabled?: boolean; frequent?: reado
   | { multiple: true; value: readonly string[] | null; onChange: (value: string[] | null) => void }
   | { multiple?: false; value: string; onChange: (value: string) => void }
 );
+
+// Selected languages listed in the closed field, and with remove buttons in the open one.
+const CLOSED_SUMMARY_LIMIT = 3;
+const OPEN_SUMMARY_LIMIT = 20;
 
 export function SongLanguageLabel({ code }: { code: string }) {
   const { language } = useLocalization();
@@ -33,62 +37,93 @@ export default function SongLanguageSelect(props: Props) {
   const { t, language } = useLocalization();
   const generatedId = useId();
   const id = props.id ?? generatedId;
-  const trigger = useRef<HTMLButtonElement>(null);
+  const field = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState({ left: 0, top: 0, width: 280, maxHeight: 320 });
+  const isOpen = open && !props.disabled;
+  // An empty filter is shown as every language, which is what the setting means.
+  const filter = props.multiple && props.value?.length ? props.value : null;
 
-  useEffect(() => {
-    if (!open) return;
+  // Re-enabling must not reopen a list that was open when the control was disabled.
+  if (props.disabled && open) setOpen(false);
+
+  // A layout effect places the popup before it is painted, so it never flashes
+  // at the viewport's corner.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
     const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
+      const rect = field.current?.getBoundingClientRect();
       if (!rect) return;
       const width = Math.min(Math.max(rect.width, 280), window.innerWidth - 16);
       const below = window.innerHeight - rect.bottom - 8;
       const above = rect.top - 8;
       const openBelow = below >= Math.min(260, above);
       const maxHeight = Math.max(80, Math.min(360, openBelow ? below : above));
-      setPosition({
+      const next = {
         left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
         top: openBelow ? rect.bottom + 4 : Math.max(8, rect.top - maxHeight - 4),
         width,
         maxHeight,
-      });
+      };
+      setPosition((current) =>
+        current.left === next.left && current.top === next.top && current.width === next.width && current.maxHeight === next.maxHeight
+          ? current
+          : next
+      );
     };
     const outside = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!trigger.current?.contains(target) && !popup.current?.contains(target)) setOpen(false);
+      if (!field.current?.contains(target) && !popup.current?.contains(target)) setOpen(false);
+    };
+    // Scrolling the popup's own list does not move the field.
+    const scroll = (event: Event) => {
+      if (!popup.current?.contains(event.target as Node)) place();
     };
     place();
     searchInput.current?.focus();
+    // The remove buttons shown while open, and removing languages, change the field's height.
+    const resize = new ResizeObserver(place);
+    if (field.current) resize.observe(field.current);
     document.addEventListener("pointerdown", outside);
     window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
+    window.addEventListener("scroll", scroll, true);
     return () => {
+      resize.disconnect();
       document.removeEventListener("pointerdown", outside);
       window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("scroll", scroll, true);
     };
-  }, [open]);
+  }, [isOpen]);
 
-  const selected = (code: string) => (props.multiple ? props.value === null || props.value.includes(code) : props.value === code);
+  const close = () => {
+    setOpen(false);
+    toggle.current?.focus();
+  };
+  // In the filter, the checked languages are the restriction; every language
+  // (null) checks only "All". Removing the last language selects every language.
+  const selected = (code: string) => (props.multiple ? filter?.includes(code) === true : props.value === code);
   const choose = (code: string) => {
     if (props.multiple) {
-      const current = props.value ?? SONG_LANGUAGE_CODES;
-      const next = selected(code) ? current.filter((value) => value !== code) : [...current, code];
-      props.onChange(next.length === SONG_LANGUAGE_CODES.length ? null : next);
+      props.onChange(toggleSongLanguageFilter(filter, code));
     } else {
       props.onChange(code);
-      setOpen(false);
-      trigger.current?.focus();
+      close();
     }
   };
   const query = search.trim().toLocaleLowerCase(language);
-  const visible = SONG_LANGUAGE_CODES.filter(
-    (code) => !query || `${code} ${songLanguageName(code, language)}`.toLocaleLowerCase(language).includes(query)
-  ).sort((a, b) => songLanguageName(a, language).localeCompare(songLanguageName(b, language), language));
+  const visible = useMemo(
+    () =>
+      isOpen
+        ? SONG_LANGUAGE_CODES.filter(
+            (code) => !query || `${code} ${songLanguageName(code, language)}`.toLocaleLowerCase(language).includes(query)
+          ).sort((a, b) => songLanguageName(a, language).localeCompare(songLanguageName(b, language), language))
+        : [],
+    [isOpen, query, language]
+  );
   const frequent = visible.filter((code) => props.frequent?.includes(code));
   const remaining = visible.filter((code) => !frequent.includes(code));
   const renderCodes = (codes: string[]) =>
@@ -109,17 +144,42 @@ export default function SongLanguageSelect(props: Props) {
         </button>
       )
     );
+  const renderSummaryItem = (code: string) => {
+    const removeLabel = t("SongLanguageRemove").replace("{0}", songLanguageName(code, language));
+    return (
+      <span
+        className="song-language-summary-item"
+        key={code}
+        // A near miss of the remove button must not close the list.
+        onClick={isOpen ? (event) => event.stopPropagation() : undefined}
+      >
+        <SongLanguageLabel code={code} />
+        {isOpen && (
+          <button
+            type="button"
+            className="song-language-remove"
+            tabIndex={-1}
+            title={removeLabel}
+            aria-label={removeLabel}
+            // Keep the focus in the popup's search field.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => choose(code)}
+          >
+            ×
+          </button>
+        )}
+      </span>
+    );
+  };
+  const shownCodes = filter?.slice(0, isOpen ? OPEN_SUMMARY_LIMIT : CLOSED_SUMMARY_LIMIT) ?? [];
   const summary = props.multiple ? (
-    props.value === null ? (
+    filter === null ? (
       t("SongLanguagesAll")
-    ) : props.value.length === 0 ? (
-      t("SongLanguagesNone")
     ) : (
-      props.value.slice(0, 3).map((code) => (
-        <span className="song-language-summary-item" key={code}>
-          <SongLanguageLabel code={code} />
-        </span>
-      ))
+      <>
+        {shownCodes.map(renderSummaryItem)}
+        {filter.length > shownCodes.length && ` +${filter.length - shownCodes.length}`}
+      </>
     )
   ) : (
     <SongLanguageLabel code={props.value} />
@@ -127,29 +187,39 @@ export default function SongLanguageSelect(props: Props) {
 
   return (
     <>
-      <button
-        ref={trigger}
-        id={id}
-        type="button"
-        className="form-control song-language-trigger"
-        disabled={props.disabled}
-        aria-label={props.label ?? t(props.multiple ? "SongLanguageFilter" : "SongLanguage")}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls={open ? `${id}-popup` : undefined}
+      {/* The whole field opens the list; the toggle button is its keyboard and label target. */}
+      <div
+        ref={field}
+        className={`form-control song-language-trigger${isOpen ? " open" : ""}${props.disabled ? " disabled" : ""}`}
         onClick={() => {
-          setSearch("");
-          setOpen(!open);
+          if (props.disabled) return;
+          if (isOpen) {
+            close();
+          } else {
+            setSearch("");
+            setOpen(true);
+          }
         }}
       >
-        <span className="song-language-summary">
+        <span className="song-language-summary" id={`${id}-summary`}>
           {summary}
-          {props.multiple && props.value && props.value.length > 3 && ` +${props.value.length - 3}`}
         </span>
-        <span aria-hidden="true">▾</span>
-      </button>
-      {open &&
-        !props.disabled &&
+        <button
+          ref={toggle}
+          id={id}
+          type="button"
+          className="song-language-toggle"
+          disabled={props.disabled}
+          aria-label={props.label ?? t(props.multiple ? "SongLanguageFilter" : "SongLanguage")}
+          aria-describedby={`${id}-summary`}
+          aria-expanded={isOpen}
+          aria-haspopup="dialog"
+          aria-controls={isOpen ? `${id}-popup` : undefined}
+        >
+          <span aria-hidden="true">▾</span>
+        </button>
+      </div>
+      {isOpen &&
         createPortal(
           <div
             ref={popup}
@@ -161,8 +231,7 @@ export default function SongLanguageSelect(props: Props) {
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
-                setOpen(false);
-                trigger.current?.focus();
+                close();
               }
             }}
           >
@@ -177,7 +246,8 @@ export default function SongLanguageSelect(props: Props) {
             />
             {props.multiple && (
               <label className="song-language-option">
-                <input type="checkbox" checked={props.value === null} onChange={(event) => props.onChange(event.target.checked ? null : [])} />
+                {/* "All" is left by checking a language; unchecking it would select nothing. */}
+                <input type="checkbox" checked={filter === null} disabled={filter === null} onChange={() => props.onChange(null)} />
                 {t("SongLanguagesAll")}
               </label>
             )}

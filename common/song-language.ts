@@ -23,12 +23,12 @@ export function normalizeSongLanguage(value: unknown): string {
   return isSongLanguage(code) ? code : DEFAULT_SONG_LANGUAGE;
 }
 
-// null selects every language; an empty selection shows no songs.
+// The song-language filter setting: null selects every language.
 export const DEFAULT_SONG_LANGUAGE_FILTER = null;
 
-// An unset or malformed filter falls back to the default (every language).
-export function normalizeSongLanguageFilter(value: unknown): string[] | null {
-  if (!Array.isArray(value)) return DEFAULT_SONG_LANGUAGE_FILTER;
+// The distinct valid codes of a requested language list. An empty result
+// matches no song (see matchesSongLanguage).
+export function songLanguageCodesOf(value: readonly unknown[]): string[] {
   return Array.from(
     new Set(
       value
@@ -37,6 +37,21 @@ export function normalizeSongLanguageFilter(value: unknown): string[] | null {
         .filter(isSongLanguage)
     )
   );
+}
+
+// The filter SETTING never hides every song: an unset or malformed value, an
+// empty selection and a complete selection all mean every language (null).
+export function normalizeSongLanguageFilter(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return DEFAULT_SONG_LANGUAGE_FILTER;
+  const filter = songLanguageCodesOf(value);
+  return filter.length === 0 || filter.length === SONG_LANGUAGE_CODES.length ? DEFAULT_SONG_LANGUAGE_FILTER : filter;
+}
+
+// Adds or removes one language of the filter setting. Removing the last one, or
+// adding the last missing one, selects every language.
+export function toggleSongLanguageFilter(filter: readonly string[] | null, code: string): string[] | null {
+  const current = filter ?? [];
+  return normalizeSongLanguageFilter(current.includes(code) ? current.filter((value) => value !== code) : [...current, code]);
 }
 
 // Languages the pickers list first: the filter's selection or, while every

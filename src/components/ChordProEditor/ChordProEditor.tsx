@@ -17,7 +17,13 @@ import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../.
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import type { PerformanceFeatureMode } from "../../types";
 import SongLanguageSelect from "../SongLanguageSelect";
-import { frequentSongLanguagesOf, matchesSongLanguage, normalizeSongLanguageFilter, songLanguageName } from "../../../common/song-language";
+import {
+  frequentSongLanguagesOf,
+  matchesSongLanguage,
+  normalizeSongLanguageFilter,
+  songLanguageName,
+  toggleSongLanguageFilter,
+} from "../../../common/song-language";
 import { readSongLanguageSettings } from "../../../common/song-language-settings";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -1582,7 +1588,8 @@ const ChordProEditorWithLocalization = React.forwardRef<ChordProEditor, Omit<Cho
                     t("AddSongLanguageToFilterMessage").replace("{0}", songLanguageName(code, language)),
                     () => {
                       const current = readSongLanguageSettings().songLanguageFilter;
-                      if (current !== null && !current.includes(code)) updateSettingWithAutoSave("songLanguageFilter", [...current, code]);
+                      if (current !== null && !current.includes(code))
+                        updateSettingWithAutoSave("songLanguageFilter", toggleSongLanguageFilter(current, code));
                     },
                     undefined,
                     { confirmText: t("Add"), cancelText: t("No") }

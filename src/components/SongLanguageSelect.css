@@ -10,13 +10,65 @@
   flex-wrap: nowrap;
   justify-content: space-between;
   text-align: left;
+  cursor: pointer;
 }
-.song-language-trigger > [aria-hidden="true"] {
+/* The field mirrors Bootstrap's .form-control:focus and :disabled looks (and index.css's dark overrides). */
+.song-language-trigger.form-control:focus-within {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 var(--bs-focus-ring-width, 0.25rem) var(--bs-focus-ring-color, rgb(13 110 253 / 25%));
+}
+[data-theme="dark"] .song-language-trigger.form-control:focus-within {
+  border-color: #0d6efd;
+}
+.song-language-trigger.form-control.disabled {
+  background-color: var(--pp-bg-tertiary, #e9ecef);
+  cursor: default;
+}
+[data-theme="dark"] .song-language-trigger.form-control.disabled {
+  color: var(--pp-text-muted);
+}
+.song-language-toggle {
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+/* The field shows the focus ring instead. */
+.song-language-toggle:focus {
+  outline: none;
 }
 .song-language-summary {
   flex-wrap: wrap;
   min-width: 0;
+}
+.song-language-trigger.open .song-language-summary-item {
+  gap: 0.25rem;
+  padding-left: 0.3rem;
+  border-radius: 0.25rem;
+  background: var(--pp-bg-tertiary, #e9ecef);
+}
+.song-language-remove {
+  display: inline-flex;
+  width: 1.5em;
+  height: 1.5em;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
+  opacity: 0.65;
+  cursor: pointer;
+}
+.song-language-remove:hover {
+  opacity: 1;
+  background: rgb(0 0 0 / 12%);
+}
+[data-theme="dark"] .song-language-remove:hover {
+  background: rgb(255 255 255 / 15%);
 }
 .song-language-flag {
   display: inline-flex;
@@ -61,6 +113,12 @@
 .song-language-option:hover,
 .song-language-option:focus-visible {
   background: var(--pp-dropdown-hover, #eee);
+}
+.song-language-option:has(> input:disabled) {
+  cursor: default;
+}
+.song-language-option:has(> input:disabled):hover {
+  background: transparent;
 }
 .song-language-option[aria-pressed="true"] {
   font-weight: 600;

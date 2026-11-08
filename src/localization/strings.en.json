@@ -1255,7 +1255,7 @@
   "DefaultSongLanguage": "Default language for new songs",
   "SongLanguageFilter": "Song languages to show",
   "SongLanguagesAll": "All languages",
-  "SongLanguagesNone": "No languages selected",
+  "SongLanguageRemove": "Remove {0}",
   "SongLanguageSearch": "Find a language",
   "SongLanguagesFrequent": "Frequently used",
   "SongLanguagesOther": "Other languages",

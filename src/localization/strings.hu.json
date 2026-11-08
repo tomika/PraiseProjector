@@ -1256,7 +1256,7 @@
   "DefaultSongLanguage": "Új dalok alapértelmezett nyelve",
   "SongLanguageFilter": "Megjelenített dalok nyelvei",
   "SongLanguagesAll": "Minden nyelv",
-  "SongLanguagesNone": "Nincs kiválasztott nyelv",
+  "SongLanguageRemove": "{0} eltávolítása",
   "SongLanguageSearch": "Nyelv keresése",
   "SongLanguagesFrequent": "Leggyakrabban használt",
   "SongLanguagesOther": "További nyelvek",

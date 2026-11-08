@@ -4,7 +4,14 @@ import { Database } from "../Database";
 import { Song } from "../Song";
 import { decode } from "../../common/io-utils";
 import { songUpdateCodec } from "../../common/pp-codecs";
-import { matchesSongLanguage, normalizeSongLanguageFilter, SONG_LANGUAGE_CODES, SONG_LANGUAGE_COUNTRIES } from "../../common/song-language";
+import {
+  matchesSongLanguage,
+  normalizeSongLanguageFilter,
+  SONG_LANGUAGE_CODES,
+  SONG_LANGUAGE_COUNTRIES,
+  songLanguageCodesOf,
+  toggleSongLanguageFilter,
+} from "../../common/song-language";
 
 const db = Database.getInstance();
 db.autoSave = false;
@@ -139,12 +146,21 @@ for (const conflictMode of ["overwrite", "select"] as const) {
   });
 }
 
-test("language selection distinguishes all, none, malformed settings and outside-filter choices", () => {
+test("language selection normalizes all, empty, malformed settings and outside-filter choices", () => {
   assert.equal(normalizeSongLanguageFilter(undefined), null);
   assert.equal(normalizeSongLanguageFilter("hu"), null);
   assert.deepEqual(normalizeSongLanguageFilter(["HU", "en", "hu", "invalid"]), ["hu", "en"]);
   assert.equal(normalizeSongLanguageFilter(null), null);
-  assert.deepEqual(normalizeSongLanguageFilter([]), []);
+  assert.equal(normalizeSongLanguageFilter([]), null);
+  assert.equal(normalizeSongLanguageFilter(["invalid"]), null);
+  assert.equal(normalizeSongLanguageFilter([...SONG_LANGUAGE_CODES].reverse()), null);
+  assert.deepEqual(songLanguageCodesOf(["HU", "xx", "hu"]), ["hu"]);
+  assert.deepEqual(songLanguageCodesOf(["xx", ""]), []);
+  assert.deepEqual(toggleSongLanguageFilter(null, "hu"), ["hu"]);
+  assert.deepEqual(toggleSongLanguageFilter(["hu"], "en"), ["hu", "en"]);
+  assert.deepEqual(toggleSongLanguageFilter(["hu", "en"], "hu"), ["en"]);
+  assert.equal(toggleSongLanguageFilter(["hu"], "hu"), null);
+  assert.equal(toggleSongLanguageFilter(SONG_LANGUAGE_CODES.slice(1), SONG_LANGUAGE_CODES[0]), null);
   assert.equal(matchesSongLanguage("en", ["hu"]), false);
   assert.equal(matchesSongLanguage("en", null), true);
   assert.equal(new Set(SONG_LANGUAGE_CODES).size, SONG_LANGUAGE_CODES.length);
