@@ -8,6 +8,9 @@ yarn-error.log*
 dist/
 build/
 
+# Exported offline build cache (npm run cache:export)
+pp-build-cache-*/
+
 # OS generated files
 .DS_Store
 .DS_Store?

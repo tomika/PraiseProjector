@@ -4,6 +4,7 @@ import { execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { BUILD_IMAGE, CACHE_MOUNT, CACHE_VOLUME, detectContainerRuntime } from "./container-runtime.mjs";
 
 const TARGETS = {
   linux: {
@@ -30,9 +31,14 @@ const requestedTarget = process.argv[2];
 const targetConfig = TARGETS[requestedTarget];
 
 if (!targetConfig) {
-  console.error("Invalid target. Use one of: linux, mac");
+  console.error("Invalid target. Use one of: linux, mac [--offline]");
   process.exit(1);
 }
+
+// Offline mode: build only from the persistent download cache (the CACHE_VOLUME volume, which survives
+// `--rm`). `npm run dist:linux` does not forward arguments, so PP_BUILD_OFFLINE=1 is accepted as well.
+// The first successful ONLINE build seeds the cache; `npm run cache:export` / `cache:import` archive it.
+const offline = process.argv.includes("--offline") || process.env.PP_BUILD_OFFLINE === "1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,26 +52,10 @@ const targetOutputDir = `${baseOutputDir}/${targetConfig.outputSubDir}`;
 console.log(`Building target: ${requestedTarget}`);
 console.log(`Using output directory: ${targetOutputDir}`);
 
-function detectContainerRuntime() {
-  const runtimes = ["podman", "docker"];
-
-  for (const runtime of runtimes) {
-    try {
-      execSync(`${runtime} --version`, { stdio: "pipe" });
-      console.log(`Found container runtime: ${runtime}`);
-      return runtime;
-    } catch {
-      // Runtime not found, try next.
-    }
-  }
-
-  throw new Error("Neither podman nor docker found. Please install one of them.");
-}
-
 const projectPath = path.resolve(__dirname, "..");
 const containerRuntime = detectContainerRuntime();
 
-const customImage = "praiseprojector-electron-builder:latest";
+const customImage = BUILD_IMAGE;
 const dockerfilePath = path.join(__dirname, "..", "docker", "Dockerfile.electron-builder");
 
 function imageExists(runtime, imageName) {
@@ -103,7 +93,15 @@ function buildImage(runtime, imageName) {
 
 function shouldRebuildImage(runtime, imageName) {
   if (!imageExists(runtime, imageName)) {
+    if (offline) {
+      throw new Error(`Offline build needs the existing image '${imageName}' (apt/base image cannot be fetched). Run one online build first.`);
+    }
     return { rebuild: true, reason: "image missing" };
+  }
+
+  if (offline) {
+    // A Dockerfile mtime bump (e.g. after a checkout) must not trigger an apt-get run without network.
+    return { rebuild: false, reason: "offline mode, keeping the existing image" };
   }
 
   const imageCreatedAt = getImageCreatedAt(runtime, imageName);
@@ -130,19 +128,33 @@ if (rebuildDecision.rebuild) {
   console.log(`Using existing image: ${customImage} (${rebuildDecision.reason})`);
 }
 
+// Everything cache-like lives under CACHE_MOUNT. HOME is redirected there too because some tools
+// hard-code "~/<dir>" (@electron/rebuild: ~/.electron-gyp, node-gyp: ~/.cache/node-gyp).
 const runContainerEnv = [
-  "-e ELECTRON_CACHE=/root/.cache/electron",
-  "-e ELECTRON_BUILDER_CACHE=/root/.cache/electron-builder",
+  `-e HOME=${CACHE_MOUNT}/home`,
+  `-e npm_config_cache=${CACHE_MOUNT}/npm`,
+  `-e ELECTRON_CACHE=${CACHE_MOUNT}/electron`,
+  `-e ELECTRON_BUILDER_CACHE=${CACHE_MOUNT}/electron-builder`,
+  // Cache hits first in every mode; in offline mode npm must never touch the network.
+  "-e npm_config_prefer_offline=true",
+  ...(offline ? ["-e npm_config_offline=true"] : []),
   ...targetConfig.extraContainerEnv,
 ].join(" ");
 
+const cacheVolumeArg = `-v ${CACHE_VOLUME}:${CACHE_MOUNT}`;
+
 const buildCmd = [
+  `mkdir -p ${CACHE_MOUNT}/home`,
   "mkdir -p /tmp/project",
   "cd /project",
-  "tar --exclude=www --exclude=node_modules --exclude=dist -cf - . | tar -xf - -C /tmp/project",
+  "tar --exclude=www --exclude=node_modules --exclude=dist --exclude='pp-build-cache-*' -cf - . | tar -xf - -C /tmp/project",
   "cd /tmp/project",
   "npm install",
-  "npm audit fix || echo 'npm audit fix left unresolved vulnerabilities (see report above); continuing build'",
+  // `npm audit fix` needs the registry and may bump versions that are not in the cache; the
+  // lockfile versions installed above are what the cache holds, so skip it when offline.
+  ...(offline
+    ? []
+    : ["npm audit fix || echo 'npm audit fix left unresolved vulnerabilities (see report above); continuing build'"]),
   ...(targetConfig.preBuildCommands || []),
   "npm run generate-icons",
   "npm run build:web",
@@ -158,6 +170,7 @@ const containerCmd = [
   "--rm",
   "-it",
   runContainerEnv,
+  cacheVolumeArg,
   `-v "${projectPath}:/project"`,
   "-w /project",
   customImage,
@@ -165,7 +178,7 @@ const containerCmd = [
   `"${buildCmd}"`,
 ].join(" ");
 
-console.log(`Building ${targetConfig.label} using container...`);
+console.log(`Building ${targetConfig.label} using container${offline ? " (OFFLINE, caches only)" : ""}...`);
 console.log(`Command: ${containerCmd}\n`);
 
 try {
