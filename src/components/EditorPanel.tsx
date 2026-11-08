@@ -1,5 +1,6 @@
 import React from "react";
 import { Song } from "../../db-common/Song";
+import type { AbcRange } from "../../common/pp-types";
 import "./EditorPanel.css";
 import { subscribeEditedSong } from "../state/CurrentSongStore";
 import { Settings } from "../types";
@@ -72,8 +73,8 @@ class EditorPanel extends React.Component<EditorPanelProps, EditorPanelState> {
     }
   };
 
-  public highlightSectionInEditor(from: number, to: number) {
-    this.chordProEditorRef?.highlightSectionInEditor(from, to);
+  public highlightSectionInEditor(from: number, to: number, abcRange?: AbcRange) {
+    this.chordProEditorRef?.highlightSectionInEditor(from, to, abcRange);
   }
 
   public getCurrentLyrics() {

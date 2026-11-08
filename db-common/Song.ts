@@ -5,7 +5,9 @@ import { ChordSystemCode, SongDBEntryWithData, SongUpdate } from "../common/pp-t
 import { decode } from "../common/io-utils";
 import * as t from "io-ts";
 import { chordSystemCodec, songDataCodec, uniType } from "../common/pp-codecs";
-import { ChordProDocument, getChordSystem, rxAbcEndDirective } from "../chordpro/chordpro_base";
+import { ChordProAbc, ChordProDocument, getChordSystem, rxAbcEndDirective } from "../chordpro/chordpro_base";
+import { projectDisplaySequence } from "../chordpro/render/display-plan";
+import type { AbcRange } from "../common/pp-types";
 import { Instructions } from "../chordpro/chordpro_instructions";
 import { normalizeSongLanguage, DEFAULT_SONG_LANGUAGE } from "../common/song-language";
 
@@ -63,7 +65,11 @@ export class Song {
      */
     public instructedIndex?: number;
     public instructedMultiplier?: number;
+    /** Zero-based pass through a repeat already expanded into projection rows. */
+    public projectionRepeat?: { index: number; total: number };
     public sourceSignature?: string;
+    public abcRange?: AbcRange;
+    public sourceRows?: { from: number; to: number; abcRange?: AbcRange }[];
     constructor(
       public text: string,
       public from: number,
@@ -570,5 +576,88 @@ export class Song {
       }
     }
     return sections;
+  }
+
+  /** Project the same readonly ABC expansion and instruction indices as clients.
+   * Stored lyrics/search sections and the saved ABC text stay source based. */
+  public ProjectionSections(instructions?: string): InstanceType<typeof Song.Section>[] {
+    if (!this.doc.lines.some((line) => line instanceof ChordProAbc))
+      return instructions === undefined ? this.Sections : this.InstructedSections(instructions);
+    const list = instructions?.trim() ? new Instructions() : null;
+    if (list) list.parse(instructions!, this.doc);
+    const sequence = projectDisplaySequence({
+      document: this.doc,
+      readOnly: true,
+      abcMode: "CHORDS",
+      instructionsMode: instructions === undefined ? "" : "FULL",
+      instructions: list,
+    });
+    const sections: InstanceType<typeof Song.Section>[] = [];
+    const aggregateRepeats = new Map<number, number>();
+    let previousKey: string | undefined;
+    let block = 0;
+    for (const { line, instructionIndex, item } of sequence.lines) {
+      if (instructionIndex != null && item?.info?.name === "start_of_abc" && item.multiplier != null && item.multiplier > 1)
+        aggregateRepeats.set(instructionIndex, item.multiplier);
+      const info = line.getSectionInfo();
+      const authoredSection = line.abcSource
+        ? undefined
+        : this._sections.find((s) => s.from <= line.sourceLineNumber && line.sourceLineNumber < s.to);
+      const key = line.abcSource
+        ? `${info.key}|${instructionIndex ?? ""}|abc:${line.abcSource.sourceLineNumber}`
+        : `authored:${authoredSection?.block ?? info.key}|${instructionIndex ?? ""}`;
+      // Grid/ABC blocks have explicit section boundaries. Comments, blank rows
+      // and chord-only rows inside a verse do not split its projected lyrics.
+      if (line.isInstrumental) {
+        previousKey = undefined;
+        continue;
+      }
+      if (line.isComment || !line.lyrics.trim()) continue;
+      const abcRange =
+        line.abcSource && line.abcRow != null ? { source: line.abcSource.sourceLineNumber, from: line.abcRow, to: line.abcRow + 1 } : undefined;
+      const from = line.sourceLineNumber;
+      const to = from + 1;
+      let section = sections[sections.length - 1];
+      if (!section || previousKey !== key) {
+        const type =
+          authoredSection?.type ??
+          (info.name === "start_of_chorus"
+            ? Song.SectionType.chorus
+            : info.name === "start_of_bridge"
+              ? Song.SectionType.bridge
+              : info.name === "start_of_verse"
+                ? Song.SectionType.verse
+                : Song.SectionType.unknown);
+        section = new Song.Section("", from, to, block++, type, authoredSection?.tag ?? info.instructionName());
+        section.instructedIndex = instructionIndex;
+        section.instructedMultiplier = item?.multiplier;
+        section.abcRange = abcRange && { ...abcRange };
+        section.sourceRows = [];
+        sections.push(section);
+      }
+      section.text += line.lyrics.trim() + "\r\n";
+      section.from = Math.min(section.from, from);
+      section.to = Math.max(section.to, to);
+      section.sourceRows!.push({ from, to, abcRange });
+      if (section.abcRange && abcRange) section.abcRange.to = abcRange.to;
+      previousKey = key;
+    }
+    for (const section of sections) {
+      section.sourceSignature = JSON.stringify([section.tag, section.text, section.abcRange]);
+    }
+    const result: InstanceType<typeof Song.Section>[] = [];
+    for (let i = 0; i < sections.length; ++i) {
+      const section = sections[i];
+      const multiplier = section.instructedIndex == null ? 1 : (aggregateRepeats.get(section.instructedIndex) ?? 1);
+      let end = i + 1;
+      while (end < sections.length && sections[end].instructedIndex === section.instructedIndex) ++end;
+      if (multiplier > 1 && end - i > 1 && multiplier * (end - i) <= 1000) {
+        for (let repeat = 0; repeat < multiplier; ++repeat)
+          for (const part of sections.slice(i, end))
+            result.push({ ...part, instructedMultiplier: 1, projectionRepeat: { index: repeat, total: multiplier } });
+        i = end - 1;
+      } else result.push(section);
+    }
+    return result;
   }
 }

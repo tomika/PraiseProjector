@@ -692,14 +692,15 @@ export function computeHighlightDecoration(
   index: SongGeometryIndex,
   highlight: DisplayHighlight | null,
   groups: readonly number[] | undefined,
-  highlightOpacity: number
+  highlightOpacity: number,
+  rangeForOccurrence?: (entry: OccurrenceGeometry) => { top: number; bottom: number } | null
 ): HighlightDecoration | null {
   const opacity = Math.max(0, Math.min(1, highlightOpacity));
   if (!highlight || opacity <= 0) return null;
 
   const ranges = index.occurrences
     .filter((entry) => isHighlightedOccurrence(entry.occurrence, highlight, groups))
-    .map((entry) => ({ top: entry.top, bottom: entry.bottom }));
+    .map((entry) => rangeForOccurrence?.(entry) ?? { top: entry.top, bottom: entry.bottom });
   if (ranges.length === 0) return null;
 
   const right = Math.max(index.highlightLeft + 1, Math.min(index.width, index.songMaxRight + index.highlightPadding));

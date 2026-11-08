@@ -69,6 +69,7 @@ ipcRenderer.on(
       from: number;
       to: number;
       section?: number;
+      abcRange?: Display["abcRange"];
       sectionRepeatCounts?: Display["sectionRepeatCounts"];
       sectionRepeatNonce?: number;
       transpose?: number;
@@ -111,8 +112,8 @@ ipcRenderer.on("highlight-access-request", (_event, data: { clientId: string }) 
   emitWebServerEvent({ kind: "highlightAccessRequest", clientId: data?.clientId || "" });
 });
 
-ipcRenderer.on("highlight-changed", (_event, data: { line: number; section?: number }) => {
-  emitWebServerEvent({ kind: "highlightChanged", line: data?.line ?? -1, section: data?.section });
+ipcRenderer.on("highlight-changed", (_event, data: { line: number; section?: number; abcRange?: Display["abcRange"] }) => {
+  emitWebServerEvent({ kind: "highlightChanged", line: data?.line ?? -1, section: data?.section, abcRange: data?.abcRange });
 });
 
 ipcRenderer.on("remote-highlight-controller-changed", (_event, data: { clientId: string }) => {
@@ -290,8 +291,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     };
   },
 
-  onHighlightChanged: (callback: (data: { line: number; section?: number }) => void) => {
-    const subscription = (_event: IpcRendererEvent, data: { line: number; section?: number }) => callback(data);
+  onHighlightChanged: (callback: (data: { line: number; section?: number; abcRange?: Display["abcRange"] }) => void) => {
+    const subscription = (_event: IpcRendererEvent, data: { line: number; section?: number; abcRange?: Display["abcRange"] }) => callback(data);
     ipcRenderer.on("highlight-changed", subscription);
     return () => {
       ipcRenderer.removeListener("highlight-changed", subscription);
@@ -306,6 +307,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       from: number;
       to: number;
       section?: number;
+      abcRange?: Display["abcRange"];
       sectionRepeatCounts?: Display["sectionRepeatCounts"];
       sectionRepeatNonce?: number;
       transpose: number;
@@ -323,6 +325,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
         from: number;
         to: number;
         section?: number;
+        abcRange?: Display["abcRange"];
         sectionRepeatCounts?: Display["sectionRepeatCounts"];
         sectionRepeatNonce?: number;
         transpose: number;

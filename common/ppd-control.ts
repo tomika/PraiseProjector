@@ -1,4 +1,5 @@
 import type { Display, DisplayUpdateRequest, SongData } from "./pp-types";
+import { parseAbcRange } from "./abc-range";
 
 export const PPD_PROTOCOL_VERSION = 2 as const;
 /** Normal heartbeat cadence. Aggressive follower timeouts use a shorter derived cadence. */
@@ -42,6 +43,7 @@ export type PpdHighlightUpdate = {
   from: number;
   to: number;
   section?: number;
+  abcRange?: Display["abcRange"];
 };
 
 /**
@@ -326,7 +328,9 @@ export class PpdControlHost {
         this.highlightControllerKey = peerKey;
         this.callbacks.onHighlightControllerChanged?.(peer.deviceId);
       }
-      await this.callbacks.applyHighlight(peer, message.highlight);
+      // Optional extensions cannot invalidate an otherwise usable legacy
+      // source-line highlight. Normalize JSON strings as the HTTP paths do.
+      await this.callbacks.applyHighlight(peer, { ...message.highlight, abcRange: parseAbcRange(message.highlight.abcRange) });
       return this.result(message.requestId!, "ok");
     }
     if (message.command !== "display_update" && message.command !== "song_update") {

@@ -7,6 +7,7 @@ export type WebServerRemoteDisplayUpdate = {
   from: number;
   to: number;
   section?: number;
+  abcRange?: Display["abcRange"];
   sectionRepeatCounts?: Display["sectionRepeatCounts"];
   sectionRepeatNonce?: number;
   transpose?: number;
@@ -105,6 +106,7 @@ export type WebServerEvent =
       kind: "highlightChanged";
       line: number;
       section?: number;
+      abcRange?: Display["abcRange"];
     }
   | {
       kind: "highlightControllerChanged";

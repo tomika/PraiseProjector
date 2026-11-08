@@ -1296,6 +1296,7 @@ export class ClientViewStore {
         from: 0,
         to: 0,
         section: -1,
+        abcRange: undefined,
         transpose,
         capo,
         instructions: entry.instructions,
@@ -1536,8 +1537,8 @@ export class ClientViewStore {
   }
 
   /** Push a highlight range to the display/followers (the tapped lyrics section). */
-  async pushHighlight(from: number, to: number, section?: number): Promise<void> {
-    await this.api.display.highlight(from, to, section);
+  async pushHighlight(from: number, to: number, section?: number, abcRange?: Display["abcRange"]): Promise<void> {
+    await this.api.display.highlight(from, to, section, abcRange);
   }
 
   /** Clear the current highlight. */

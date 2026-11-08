@@ -141,6 +141,8 @@ export function getCurrentDisplay() {
 }
 
 export function updateCurrentDisplay(display: Partial<Display>, options?: { forceEmit?: boolean }) {
+  if (!("abcRange" in display) && ("from" in display || "to" in display || (display.songId != null && display.songId !== currentDisplay.songId)))
+    display = { ...display, abcRange: undefined };
   currentDisplay = { ...currentDisplay, ...display };
   if (options?.forceEmit) {
     for (const listener of displayListeners.keys()) {

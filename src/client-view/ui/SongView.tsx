@@ -1198,7 +1198,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       // Passive rendering must be idempotent. Legacy/mixed-version displays may
       // omit the nonce, while ChordProEditor deliberately interprets an omitted
       // nonce on the same multiplied section as "advance to the next repeat".
-      api.highlight(currentDisplay.from ?? 0, currentDisplay.to ?? 0, currentDisplay.section, currentDisplay.sectionRepeatNonce ?? 0, false);
+      api.highlight(
+        currentDisplay.from ?? 0,
+        currentDisplay.to ?? 0,
+        currentDisplay.section,
+        currentDisplay.sectionRepeatNonce ?? 0,
+        false,
+        currentDisplay.abcRange
+      );
     } else {
       api.highlight(0, 0, undefined, undefined, false);
     }
@@ -1252,16 +1259,16 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   useEffect(() => {
     const api = apiRef.current;
     if (!api) return;
-    if (highlightOn) api.highlight(display.from ?? 0, display.to ?? 0, display.section, display.sectionRepeatNonce ?? 0);
+    if (highlightOn) api.highlight(display.from ?? 0, display.to ?? 0, display.section, display.sectionRepeatNonce ?? 0, true, display.abcRange);
     else api.highlight(0, 0, undefined, undefined);
-  }, [display.from, display.section, display.sectionRepeatNonce, display.song, display.songId, display.to, highlightOn]);
+  }, [display.from, display.section, display.sectionRepeatNonce, display.song, display.songId, display.to, display.abcRange, highlightOn]);
 
   // The hit handler is interaction state, not layout state. Re-install it after
   // a document load without coupling ordinary control changes to auto-wrap.
   useEffect(() => {
     const api = apiRef.current;
     if (!api) return;
-    api.setLyricsHitHandler(display.song && highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section) : null);
+    api.setLyricsHitHandler(display.song && highlightControl ? (hit) => void store.pushHighlight(hit.from, hit.to, hit.section, hit.abcRange) : null);
   }, [display.song, highlightControl, store]);
 
   // ── neighbour pages: preload prev/next for the flip reveal ────────────────────

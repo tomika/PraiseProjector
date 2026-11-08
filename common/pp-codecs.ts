@@ -198,12 +198,19 @@ export const leaderDBProfileCodec = t.intersection([leaderProfileCodec, t.type({
 
 export const leadersResponseCodec = t.array(leaderDBProfileCodec);
 
-export const sectionRepeatCountCodec = t.type({
-  section: t.number,
-  from: t.number,
-  to: t.number,
-  multiplier: t.number,
-});
+/** Half-open row range in one score's canonical ChordPro expansion. `source`
+ * is the original ChordPro source line, never an expanded-document offset. */
+export const abcRangeCodec = t.type({ source: t.number, from: t.number, to: t.number });
+
+export const sectionRepeatCountCodec = uniType(
+  {
+    section: t.number,
+    from: t.number,
+    to: t.number,
+    multiplier: t.number,
+  },
+  { abcRange: abcRangeCodec }
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Display
@@ -220,6 +227,7 @@ export const displayCodec = uniType(
   },
   {
     section: t.number,
+    abcRange: abcRangeCodec,
     sectionRepeatNonce: t.number,
     capo: t.number,
     playlist: t.array(playlistEntryCodec),

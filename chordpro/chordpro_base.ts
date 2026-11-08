@@ -397,6 +397,9 @@ export class ChordProLine {
   transposeOverride?: number;
   /** Present only on a readonly ABC expansion, never on the stored document. */
   abcSource?: ChordProAbc;
+  /** Row identity within the full expansion of abcSource, independent of views. */
+  abcRow?: number;
+  abcMusicRanges?: readonly { start: number; end: number }[];
   /**
    * For lines synthesized by `ChordProEditor.getInstructedLines()`, the
    * 0-based index of the `Instructions.items[]` entry that produced this
@@ -422,6 +425,8 @@ export class ChordProLine {
     targetLine.transposeOverride = this.transposeOverride;
     targetLine.instructedSectionIndex = this.instructedSectionIndex;
     targetLine.abcSource = this.abcSource;
+    targetLine.abcRow = this.abcRow;
+    targetLine.abcMusicRanges = this.abcMusicRanges;
     if (!dataOnly) {
       targetLine.sectionChordDuplicate = this.sectionChordDuplicate;
       targetLine.marked = this.marked;
@@ -950,6 +955,7 @@ export class ChordProAbc extends ChordProLine {
               for (const chord of [...row.chords].reverse())
                 lyrics = lyrics.slice(0, chord.pos) + chordName(chord.name) + lyrics.slice(chord.pos + chord.name.length);
             line.setLyrics(lyrics);
+            line.abcMusicRanges = row.musicRanges;
             if (!section.grid) for (const chord of row.chords) line.chords.push(new ChordProChord(line, chordName(chord.name), chord.pos));
             line.genText();
             partial.lines.push(line);
@@ -1309,6 +1315,7 @@ export class ChordProDocument {
         line.doc = expanded;
         line.sourceLineNumber = origin.sourceLineNumber;
         line.abcSource = origin;
+        line.abcRow = i;
         const info = converted[i].getSectionInfo();
         const label = labels.get(origin)?.get(info.key);
         if (label != null) line.styles.set(info.name, label);

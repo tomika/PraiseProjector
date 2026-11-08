@@ -17,6 +17,9 @@ import type { AbcWysiwygEditor } from "./abc_editor";
 import type { NoteTimingEvent, SynthOptions, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { trackAbcPlayback } from "./abc-playback-registry";
+import { lineAbcRange, matchesAbcRange } from "./abc-range";
+import { sameAbcRange } from "../common/abc-range";
+import type { AbcRange, SectionRepeatCount as SharedSectionRepeatCount } from "../common/pp-types";
 import { abcHeaderDefaults, resolveAbcOptions, scoreOptionValues } from "./abc-options";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
@@ -491,8 +494,8 @@ export type { InstructionItem } from "./chordpro_instructions";
 import { clampTranspose, InstructionItem, Instructions } from "./chordpro_instructions";
 
 export type InstructionsRenderMode = "" | "COMMENT" | "FIRST_LINE" | "FULL";
-export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number };
-export type SectionRepeatCount = { section: number; from: number; to: number; multiplier: number };
+export type HighlightingParams = { lyrics: string; from: number; to: number; section?: number; abcRange?: AbcRange };
+export type SectionRepeatCount = SharedSectionRepeatCount;
 export type ChordProSelectionState = { commentBlockedByChords: boolean };
 
 export interface ChordProEditorEventHandlers {
@@ -825,7 +828,17 @@ export class ChordProEditor extends ChordDrawer {
   private currentlyMarked?: Set<ChordProLine | ChordProChord>;
   private chordBoxType: ChordBoxType = "";
   private chordVariantRevision = 0;
-  private highlighted: { from: number; to: number; section?: number; repeatIndex?: number; repeatTotal?: number; repeatNonce?: number } | null = null;
+  private highlighted: {
+    from: number;
+    to: number;
+    section?: number;
+    abcRange?: AbcRange;
+    repeatIndex?: number;
+    repeatTotal?: number;
+    repeatNonce?: number;
+  } | null = null;
+  private highlightScrollPending = false;
+  private highlightScrollRenderer: DomSongRenderer | null = null;
   private sectionRepeatCounts?: SectionRepeatCount[];
   private lastMouseDown: { x: number; y: number } | null = null;
   private prevClickTime = 0;
@@ -1399,6 +1412,8 @@ export class ChordProEditor extends ChordDrawer {
     this.clearDomCaretScrollSpacer();
     this.domRenderer?.dispose();
     this.domRenderer = null;
+    this.highlightScrollPending = false;
+    this.highlightScrollRenderer = null;
     this.canvasLayout.dispose();
 
     this.parent_div.removeEventListener("mouseup", this.handleMouseUp);
@@ -2105,6 +2120,7 @@ export class ChordProEditor extends ChordDrawer {
       });
     }
     this.syncPrimarySurfaceVisibility();
+    if (this.highlightScrollPending) this.requestHighlightScroll();
   }
 
   private requestDomCaretScroll() {
@@ -2691,24 +2707,36 @@ export class ChordProEditor extends ChordDrawer {
             if (this.isTagColumnHit(mp)) {
               let lineIndex = this.displayedLines.indexOf(line_obj);
               const tag = line_obj.getTagInfo().tag;
+              const sameSection = (line: ChordProLine) =>
+                line.getTagInfo().tag === tag &&
+                line.abcSource === line_obj.abcSource &&
+                line.instructedSectionIndex === line_obj.instructedSectionIndex;
               let from = lineIndex;
               let to = lineIndex;
-              while (from > 0 && this.displayedLines[from - 1].getTagInfo().tag === tag) --from;
-              while (to < this.displayedLines.length - 1 && this.displayedLines[to + 1].getTagInfo().tag === tag) ++to;
+              while (from > 0 && sameSection(this.displayedLines[from - 1])) --from;
+              while (to < this.displayedLines.length - 1 && sameSection(this.displayedLines[to + 1])) ++to;
               const lines: string[] = [];
               for (lineIndex = from; lineIndex <= to; ++lineIndex) lines.push(this.displayedLines[lineIndex].lyrics.trim());
               this.onLyricsHit({
                 lyrics: lines.join("\n"),
-                from: this.displayedLines[from].sourceLineNumber,
-                to: this.displayedLines[to].sourceLineNumber + 1,
+                from: this.displayedLines[from].abcSource?.sourceLineNumber ?? this.displayedLines[from].sourceLineNumber,
+                to: (this.displayedLines[to].abcSource?.sourceLineNumber ?? this.displayedLines[to].sourceLineNumber) + 1,
                 section: line_obj.instructedSectionIndex,
+                abcRange: line_obj.abcSource
+                  ? {
+                      source: line_obj.abcSource.sourceLineNumber,
+                      from: this.displayedLines[from].abcRow ?? line_obj.abcRow ?? 0,
+                      to: (this.displayedLines[to].abcRow ?? line_obj.abcRow ?? 0) + 1,
+                    }
+                  : undefined,
               });
             } else
               this.onLyricsHit({
                 lyrics: line_obj.lyrics.trim(),
-                from: line_obj.sourceLineNumber,
-                to: line_obj.sourceLineNumber + 1,
+                from: line_obj.abcSource?.sourceLineNumber ?? line_obj.sourceLineNumber,
+                to: (line_obj.abcSource?.sourceLineNumber ?? line_obj.sourceLineNumber) + 1,
                 section: line_obj.instructedSectionIndex,
+                abcRange: lineAbcRange(line_obj),
               });
             e.preventDefault();
             rv = false;
@@ -4758,12 +4786,13 @@ export class ChordProEditor extends ChordDrawer {
     if (draw) this.draw();
   }
 
-  private resolveRepeatCount(from: number, to: number, section: number | undefined) {
+  private resolveRepeatCount(from: number, to: number, section: number | undefined, abcRange?: AbcRange) {
     if (!this.sectionRepeatCounts?.length || section == null) return undefined;
     let byRange: SectionRepeatCount | undefined;
     let bySection: SectionRepeatCount | undefined;
     for (const item of this.sectionRepeatCounts) {
       if (item.section !== section) continue;
+      if (!sameAbcRange(item.abcRange, abcRange)) continue;
       if (!bySection) bySection = item;
       if (item.from === from && item.to === to) {
         byRange = item;
@@ -4777,14 +4806,8 @@ export class ChordProEditor extends ChordDrawer {
 
   highlight(from: number, to: number, draw?: boolean): void;
   highlight(from: number, to: number, section: number | undefined, draw?: boolean): void;
-  highlight(from: number, to: number, section: number | undefined, repeatNonce: number | undefined, draw?: boolean): void;
-  highlight(
-    from: number,
-    to: number,
-    sectionOrDraw: number | boolean | undefined = true,
-    repeatNonceOrDraw: number | boolean | undefined = true,
-    draw = true
-  ) {
+  highlight(from: number, to: number, section: number | undefined, repeatNonce: number | undefined, draw?: boolean, abcRange?: AbcRange): void;
+  highlight(from: number, to: number, sectionOrDraw?: number | boolean, repeatNonceOrDraw?: number | boolean, draw = true, abcRange?: AbcRange) {
     let section: number | undefined;
     let repeatNonce: number | undefined;
     if (typeof sectionOrDraw === "boolean") {
@@ -4801,9 +4824,14 @@ export class ChordProEditor extends ChordDrawer {
       from = to = 0;
       section = undefined;
       repeatNonce = undefined;
+      abcRange = undefined;
     }
-    const repeatTotal = this.resolveRepeatCount(from, to, section);
-    const sameSelection = (this.highlighted?.from || 0) === from && (this.highlighted?.to || 0) === to && this.highlighted?.section === section;
+    const repeatTotal = this.resolveRepeatCount(from, to, section, abcRange);
+    const sameSelection =
+      (this.highlighted?.from || 0) === from &&
+      (this.highlighted?.to || 0) === to &&
+      this.highlighted?.section === section &&
+      sameAbcRange(this.highlighted?.abcRange, abcRange);
     if (sameSelection && repeatTotal && repeatTotal > 1) {
       let repeatIndex: number;
       if (repeatNonce != null) {
@@ -4821,9 +4849,10 @@ export class ChordProEditor extends ChordDrawer {
         repeatIndex,
         repeatTotal,
         repeatNonce,
+        abcRange,
       };
       if (draw && !this.disposed && !this.drawingSuppressed) this.reconcileRenderBackend("decoration");
-      this.requestHighlightScroll();
+      this.requestHighlightScroll(draw);
       return;
     }
 
@@ -4834,33 +4863,43 @@ export class ChordProEditor extends ChordDrawer {
       (this.highlighted?.from || 0) !== from ||
       (this.highlighted?.to || 0) !== to ||
       prevSection !== section ||
+      !sameAbcRange(this.highlighted?.abcRange, abcRange) ||
       (this.highlighted?.repeatTotal || 0) !== (repeatTotal || 0) ||
       (this.highlighted?.repeatNonce ?? -1) !== (repeatNonce ?? -1)
     ) {
-      this.highlighted = { from, to, section, repeatIndex, repeatTotal, repeatNonce };
+      this.highlighted = { from, to, section, repeatIndex, repeatTotal, repeatNonce, abcRange };
       if (draw && !this.disposed && !this.drawingSuppressed) this.reconcileRenderBackend("decoration");
-      this.requestHighlightScroll();
+      this.requestHighlightScroll(draw);
     }
   }
 
   /**
-   * Schedules highlight scroll-follow. The canvas has painted by the time
-   * `draw()` returns, but the DOM backend commits on a scheduled frame, so its
-   * geometry only exists once the layout settles. Waiting on the layout instead
-   * of a timer keeps the same-section and visibility guards operating on real
-   * geometry. A superseded or disposed layout simply cancels the follow.
+   * Keep deferred highlights pending until their render commits. Following on
+   * the next frame also lets the host finish applying its fit/zoom transform
+   * after layout settlement, before scroll coordinates are measured.
    */
-  private requestHighlightScroll() {
+  private requestHighlightScroll(draw = true) {
+    this.highlightScrollPending = true;
     const domRenderer = this.domRenderer;
-    if (!domRenderer) {
-      this.scrollHighlightedIntoView();
-      return;
-    }
+    if (!draw || this.drawingSuppressed || !domRenderer || this.highlightScrollRenderer === domRenderer) return;
+    this.highlightScrollRenderer = domRenderer;
     void domRenderer.whenLayoutSettled().then(
       () => {
-        if (!this.disposed && this.domRenderer === domRenderer) this.scrollHighlightedIntoView();
+        requestAnimationFrame(() => {
+          if (this.highlightScrollRenderer !== domRenderer) return;
+          this.highlightScrollRenderer = null;
+          if (this.disposed || this.domRenderer !== domRenderer || !this.highlightScrollPending) return;
+          if (!domRenderer.getLayoutSnapshot().settled) {
+            this.requestHighlightScroll();
+            return;
+          }
+          this.highlightScrollPending = false;
+          this.scrollHighlightedIntoView();
+        });
       },
-      () => undefined
+      () => {
+        if (this.highlightScrollRenderer === domRenderer) this.highlightScrollRenderer = null;
+      }
     );
   }
 
@@ -4895,7 +4934,11 @@ export class ChordProEditor extends ChordDrawer {
       const hlGroup = groups?.[hlSection] ?? hlSection;
       if (lineGroup !== hlGroup) return false;
     }
-    return line.sourceLineNumber >= this.highlighted.from && line.sourceLineNumber < this.highlighted.to;
+    return (
+      line.sourceLineNumber >= this.highlighted.from &&
+      line.sourceLineNumber < this.highlighted.to &&
+      matchesAbcRange(line, this.highlighted.abcRange)
+    );
   }
 
   /** State of the in-flight smooth-scroll animation, if any. */
@@ -4968,6 +5011,10 @@ export class ChordProEditor extends ChordDrawer {
    * model.
    */
   private displayedLineRange(line: ChordProLine): { top: number; bottom: number } | null {
+    if (line instanceof ChordProAbc && this.highlighted?.abcRange) {
+      const range = this.domRenderer?.getAbcHighlightRange(line, this.highlighted.abcRange);
+      if (range) return range;
+    }
     const geometry = this.domRenderer?.getGeometryIndex();
     if (!geometry) return null;
     const entry = geometry.occurrences.find((candidate) => candidate.occurrence.source === line);

@@ -1,5 +1,6 @@
 import React from "react";
 import { Song } from "../../../db-common/Song";
+import type { AbcRange } from "../../../common/pp-types";
 import { Icon, IconType } from "../../services/IconService";
 import { ensureChordProAssets } from "../../utils/loadChordProAssets";
 import { Settings } from "../../types";
@@ -169,7 +170,7 @@ type ChordProAPIBound = {
   toggleCommentType: () => void;
   insertAbcAtCursor: () => boolean;
   makeSelectionTitle: () => void;
-  highlight: (from: number, to: number) => void;
+  highlight: ReturnType<typeof chordProAPI.bind>["highlight"];
   updateDocument: (chp: string) => void;
   getAllKnownChordModifier: () => string;
   getChordFindAndSplitPattern: () => string;
@@ -272,7 +273,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
   private isEditable = false;
   private initializingChordPro = false;
   private skipNextWysiwygSync = false;
-  private pendingHighlight: { from: number; to: number } | null = null;
+  private pendingHighlight: { from: number; to: number; abcRange?: AbcRange } | null = null;
   private themeObserver: MutationObserver | null = null;
   private fontSizeObserver: MutationObserver | null = null;
   private lastObservedFontSize: string | null = null;
@@ -955,9 +956,9 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
 
           // Apply any pending highlight
           if (this.pendingHighlight && !this.isEditable) {
-            const { from, to } = this.pendingHighlight;
+            const { from, to, abcRange } = this.pendingHighlight;
             this.pendingHighlight = null;
-            this.callWysiwygAPI("highlight", from, to);
+            this.highlightSectionInEditor(from, to, abcRange);
           }
 
           // Apply dark mode after loading
@@ -993,7 +994,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     }
   }
 
-  callWysiwygAPI(method: string, ...args: unknown[]) {
+  callWysiwygAPI<K extends keyof ChordProAPIBound>(method: K, ...args: Parameters<ChordProAPIBound[K]>) {
     if (!this.wysiwygLoaded) return;
 
     try {
@@ -1212,15 +1213,15 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     }
   }
 
-  public highlightSectionInEditor(from: number, to: number) {
+  public highlightSectionInEditor(from: number, to: number, abcRange?: AbcRange) {
     // Only highlight if the WYSIWYG editor is loaded and initialized
     if (!this.wysiwygLoaded || !this.wysiwygInitialized) {
       // Store the highlight request to apply after initialization
-      this.pendingHighlight = { from, to };
+      this.pendingHighlight = { from, to, abcRange };
       return;
     }
     // Call the highlight method exposed by the ChordPro editor bridge if not in edit mode
-    this.callWysiwygAPI("highlight", from, to);
+    this.callWysiwygAPI("highlight", from, to, undefined, 0, true, abcRange);
   }
 
   public getCurrentLyrics() {

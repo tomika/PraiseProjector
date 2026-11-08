@@ -2897,6 +2897,7 @@ export class App extends AppBase {
         from: hit.from,
         to: hit.to,
         section: hit.section,
+        abcRange: hit.abcRange,
         leader: this.leaderId,
         deviceId: this.ppdDeviceId,
         message: hit.lyrics,
@@ -3402,7 +3403,8 @@ export class App extends AppBase {
         this.currentDisplay.to,
         this.currentDisplay.section,
         this.currentDisplay.sectionRepeatNonce,
-        draw
+        draw,
+        this.currentDisplay.abcRange
       );
     else this.editor.highlight(0, 0, undefined, draw);
   }
@@ -3960,12 +3962,14 @@ export class App extends AppBase {
         this.currentDisplay.from != display.from ||
         this.currentDisplay.to != display.to ||
         this.currentDisplay.section !== display.section ||
+        JSON.stringify(this.currentDisplay.abcRange) !== JSON.stringify(display.abcRange) ||
         (this.currentDisplay.sectionRepeatNonce || 0) !== (display.sectionRepeatNonce || 0) ||
         JSON.stringify(this.currentDisplay.sectionRepeatCounts || []) !== JSON.stringify(display.sectionRepeatCounts || []);
 
       this.currentDisplay.from = display.from;
       this.currentDisplay.to = display.to;
       this.currentDisplay.section = display.section;
+      this.currentDisplay.abcRange = display.abcRange;
       this.currentDisplay.sectionRepeatNonce = display.sectionRepeatNonce;
       this.currentDisplay.sectionRepeatCounts = display.sectionRepeatCounts;
       this.currentDisplay.message = display.message;
@@ -4329,6 +4333,7 @@ export class App extends AppBase {
       system: "G", // bw comp
       playlist: [],
       section: this.currentDisplay.section,
+      abcRange: this.currentDisplay.abcRange,
       sectionRepeatNonce: this.currentDisplay.sectionRepeatNonce,
       sectionRepeatCounts: this.currentDisplay.sectionRepeatCounts,
       message: this.currentDisplay.message,

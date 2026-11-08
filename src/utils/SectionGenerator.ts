@@ -1,5 +1,6 @@
 import { TextMeasurer, TextSplitter } from "./TextMeasurer";
 import { Song } from "../../db-common/Song";
+import type { AbcRange } from "../../common/pp-types";
 
 /**
  * Section item for display list (port of C# SectionListBox.Item)
@@ -11,8 +12,10 @@ export interface SectionItem {
   block: number;
   type: number; // Song.Section.Type
   label: string | null; // Original label before modification
+  abcRange?: AbcRange;
+  projectionRepeat?: InstanceType<typeof Song.Section>["projectionRepeat"];
   /**
-   * For section items derived from `Song.InstructedSections()`, the 0-based
+   * For instructed items derived from `Song.ProjectionSections()`, the 0-based
    * index of the originating `Instructions.items[]` entry. Multiple
    * pagination items produced from the same instructed section share the
    * same `instructedIndex`. Used as the canonical "section" number when
@@ -278,10 +281,7 @@ export class SectionGenerator {
     // Get sections (normal or instructed). When useInstructions is enabled but
     // no explicit instruction string is supplied, Song.InstructedSections falls
     // back to the song's built-in defaults (authored multipliers on section tags).
-    let sections = song.Sections;
-    if (useInstructions) {
-      sections = song.InstructedSections(instructions);
-    }
+    const sections = song.ProjectionSections(useInstructions ? instructions : undefined);
 
     for (const s of sections) {
       const size = this.measurer.measureText(s.text, settings.fontFamily, settings.fontSize, settings.bold, settings.italic);
@@ -292,14 +292,23 @@ export class SectionGenerator {
       }
 
       if (split) {
-        const generated = this.generateSections(s.text, s.block, settings, s.from, s.type, minimalFontSize);
+        const generated = this.generateSections(s.text, s.block, settings, s.sourceRows ? 0 : s.from, s.type, minimalFontSize);
 
         // Keep split ranges inside the source section range.
         for (const section of generated) {
+          if (s.sourceRows) {
+            const rows = s.sourceRows.slice(section.from, section.to);
+            section.from = Math.min(...rows.map((row) => row.from));
+            section.to = Math.max(...rows.map((row) => row.to));
+            const first = rows[0]?.abcRange;
+            const last = rows[rows.length - 1]?.abcRange;
+            section.abcRange = first && last ? { ...first, to: last.to } : undefined;
+          }
           section.from = Math.max(s.from, Math.min(section.from, s.to));
           section.to = Math.max(section.from + 1, Math.min(section.to, s.to));
           section.instructedIndex = s.instructedIndex;
           section.instructedMultiplier = s.instructedMultiplier;
+          section.projectionRepeat = s.projectionRepeat;
           section.instructedSignature = s.sourceSignature;
         }
 
@@ -316,6 +325,7 @@ export class SectionGenerator {
             items.push({
               ...section,
               instructedMultiplier: repeatCount > 1 ? 1 : section.instructedMultiplier,
+              projectionRepeat: repeatCount > 1 ? { index: repeatIndex, total: repeatCount } : section.projectionRepeat,
             });
           }
         }
@@ -330,6 +340,8 @@ export class SectionGenerator {
           instructedIndex: s.instructedIndex,
           instructedMultiplier: s.instructedMultiplier,
           instructedSignature: s.sourceSignature,
+          abcRange: s.abcRange,
+          projectionRepeat: s.projectionRepeat,
         });
       }
     }

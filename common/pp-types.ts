@@ -121,6 +121,7 @@ export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type Display = t.TypeOf<typeof displayCodec>;
+export type AbcRange = NonNullable<Display["abcRange"]>;
 export type SectionRepeatCount = t.TypeOf<typeof sectionRepeatCountCodec>;
 export type DisplayStylesQueryResponse = t.TypeOf<typeof displayStylesQueryResponseCodec>;
 
@@ -132,6 +133,7 @@ export type DisplayUpdateRequest = {
   from: number;
   to: number;
   section?: number;
+  abcRange?: AbcRange;
   sectionRepeatCounts?: Display["sectionRepeatCounts"];
   sectionRepeatNonce?: number;
   transpose?: number;

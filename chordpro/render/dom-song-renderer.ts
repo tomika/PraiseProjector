@@ -1,6 +1,7 @@
 import "./chordpro-dom.css";
 
 import type { TuneObject } from "abcjs";
+import type { AbcRange } from "../../common/pp-types";
 import { isAbcjsLoaded, loadAbcjs } from "../abcjs-lazy";
 import { abcVisualOptions, scoreOptionValues } from "../abc-options";
 import { CHORDFORMAT_SUBSCRIPT } from "./chord-visual";
@@ -568,7 +569,7 @@ export function highlightDecorationKey(input: DomSongRendererInput) {
   const range = highlight
     ? `${highlight.from}:${highlight.to}:${highlight.section ?? ""}:${highlight.repeatIndex ?? ""}:${highlight.repeatTotal ?? ""}`
     : "none";
-  return `${range}:${input.highlightOpacity}`;
+  return `${range}:${JSON.stringify(highlight?.abcRange ?? null)}:${input.highlightOpacity}`;
 }
 
 /** Decorations the highlight-only fast path cannot patch. */
@@ -1144,6 +1145,35 @@ export class DomSongRenderer {
     return undefined;
   }
 
+  /** Resolve canonical lyric rows against the tune actually on screen. abcjs's
+   * selectable staff boxes are SVG-local, so host zoom never enters this map.
+   * Convert the rendered (possibly transposed) source to keep character offsets
+   * aligned after chord names change length. */
+  getAbcHighlightRange(abc: ChordProAbc, range: AbcRange, geometry = this.geometry): { top: number; bottom: number } | null {
+    if (abc.sourceLineNumber !== range.source || !geometry) return null;
+    const occurrence = geometry.occurrences.find((entry) => entry.occurrence.source === abc);
+    if (!occurrence) return null;
+    const visual = this.getAbcVisualObject(abc);
+    if (!visual?.getSelectableArray) return null;
+    const spans = abc
+      .toChordPro()
+      .slice(range.from, range.to)
+      .flatMap((line) => line.abcMusicRanges ?? []);
+    const boxes = visual
+      .getSelectableArray()
+      .filter(({ absEl }) => {
+        const event = absEl.abcelem;
+        return event?.el_type === "note" && spans.some((span) => event.startChar < span.end && event.endChar > span.start);
+      })
+      .map(({ staffPos }) => staffPos)
+      .filter((box) => box && Number.isFinite(box.top) && box.height > 0);
+    if (!boxes.length) return null;
+    return {
+      top: Math.max(occurrence.top, occurrence.top + ABC_SCALE * Math.min(...boxes.map((box) => box.top))),
+      bottom: Math.min(occurrence.bottom, occurrence.top + ABC_SCALE * Math.max(...boxes.map((box) => box.top + box.height))),
+    };
+  }
+
   /**
    * Identifies the rendered score `abc` for a MIDI playback that must keep
    * marking it after re-projection (fresh clones) and re-rendering (a fresh tune
@@ -1669,7 +1699,11 @@ export class DomSongRenderer {
   private buildHighlightRoot(plan: DisplayPlan, geometry: SongGeometryIndex, layout: SongLayoutResult, bodyLeft: number) {
     const root = this.doc.createElement("div");
     root.className = "chp-dom-highlight-root";
-    const decoration = computeHighlightDecoration(geometry, this.input.highlight, plan.sectionGroups, this.input.highlightOpacity);
+    const decoration = computeHighlightDecoration(geometry, this.input.highlight, plan.sectionGroups, this.input.highlightOpacity, (entry) =>
+      entry.occurrence.source instanceof ChordProAbc && this.input.highlight?.abcRange
+        ? this.getAbcHighlightRange(entry.occurrence.source, this.input.highlight.abcRange, geometry)
+        : null
+    );
     if (!decoration) return root;
 
     const metaHeight = layout.meta.reduce((total, entry) => total + entry.height, 0);

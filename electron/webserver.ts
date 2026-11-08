@@ -1,4 +1,5 @@
 import express from "express";
+import { parseAbcRange } from "../common/abc-range";
 import cors from "cors";
 import { Display, NetDisplayData } from "../common/pp-types";
 import { compareDisplays, deserializePlaylist } from "../common/pp-utils";
@@ -672,6 +673,7 @@ export class WebServer {
           capo: (req.query.capo ?? "") !== "" ? parseInt(req.query.capo as string, 10) : currentDisplay.capo,
           instructions: (req.query.instructions ?? "") !== "" ? (req.query.instructions as string) : currentDisplay.instructions,
           section: (req.query.section ?? "") !== "" ? parseInt((req.query.section as string) || "-1", 10) : currentDisplay.section,
+          abcRange: req.query.abcRange === undefined ? currentDisplay.abcRange : parseAbcRange(req.query.abcRange),
           sectionRepeatCounts: queriedRepeatCounts ?? currentDisplay.sectionRepeatCounts,
           sectionRepeatNonce: (() => {
             if ((req.query.sectionRepeatNonce ?? "") === "") return currentDisplay.sectionRepeatNonce;
@@ -809,7 +811,7 @@ export class WebServer {
           // Notify frontend about highlight line change
           const mainWindow = getMainWindow();
           if (mainWindow) {
-            mainWindow.webContents.send("highlight-changed", { line: lineNumber, section });
+            mainWindow.webContents.send("highlight-changed", { line: lineNumber, section, abcRange: parseAbcRange(req.query.abcRange) });
           }
         }
       }
@@ -826,6 +828,7 @@ export class WebServer {
 
       const command = req.path.includes("/display_update") ? "display_update" : "song_update";
       const params = (req.body ?? {}) as Record<string, unknown>;
+      const abcRange = parseAbcRange(params.abcRange);
       const id = (params.id as string) || "";
       const from = parseInt((params.from as string) || "0", 10);
       const to = parseInt((params.to as string) || "0", 10);
@@ -875,6 +878,7 @@ export class WebServer {
       if (mainWindow) {
         mainWindow.webContents.send("remote-display-update", {
           command,
+          abcRange,
           id,
           from,
           to,

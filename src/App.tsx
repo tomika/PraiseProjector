@@ -966,6 +966,7 @@ const AppContent: React.FC = () => {
         from: display.from,
         to: display.to,
         section: display.section,
+        abcRange: display.abcRange,
         sectionRepeatNonce: display.sectionRepeatNonce,
         sectionRepeatCounts: display.sectionRepeatCounts,
         transpose: display.transpose,
@@ -1455,6 +1456,7 @@ const AppContent: React.FC = () => {
               from: data.from ?? 0,
               to: data.to ?? 0,
               section: -1,
+              abcRange: data.abcRange,
               sectionRepeatNonce: data.sectionRepeatNonce,
               sectionRepeatCounts: data.sectionRepeatCounts,
               transpose: data.transpose ?? selection.item.transpose ?? 0,
@@ -1474,7 +1476,7 @@ const AppContent: React.FC = () => {
         updateLeaderPreferenceFromPlaylist(data.id);
         // 2. Select the section matching the requested line range - this drives
         //    PreviewPanel's updateDisplayState → updateCurrentDisplay → backend sync
-        if (data.section != null) previewPanelRef.current?.selectSectionByLine(data.from ?? 0, data.section);
+        if (data.section != null || data.abcRange) previewPanelRef.current?.selectSectionByLine(data.from ?? 0, data.section, data.abcRange);
         else if (data.from) previewPanelRef.current?.selectSectionByLine(data.from);
         // from=0, to=0 means "clear highlight" — deselect section to clear the projector,
         // mirroring the Escape key path (selectSectionIndex(-1)).
@@ -1782,11 +1784,12 @@ const AppContent: React.FC = () => {
         // disabled, but only apply the requested section when the persisted host
         // switch allows it.
         if (settingsRef.current?.remoteHighlightControlEnabled !== false) {
-          previewPanelRef.current?.selectSectionByLine(event.line, event.section);
+          previewPanelRef.current?.selectSectionByLine(event.line, event.section, event.abcRange);
         } else {
           console.info("App", "Ignored remote highlight section change while remote control is disabled", {
             line: event.line,
             section: event.section,
+            abcRange: event.abcRange,
           });
         }
         return;
@@ -1819,12 +1822,12 @@ const AppContent: React.FC = () => {
       );
     };
     const onHighlightChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ from: number; to: number; section?: number }>).detail;
+      const detail = (event as CustomEvent<{ from: number; to: number; section?: number; abcRange?: Display["abcRange"] }>).detail;
       if (!detail || typeof detail.from !== "number" || typeof detail.to !== "number") return;
       markRemoteHighlightActivity();
       if (settingsRef.current?.remoteHighlightControlEnabled === false) return;
       if (detail.from === 0 && detail.to === 0) previewPanelRef.current?.setSelectedSectionIndex(-1);
-      else previewPanelRef.current?.selectSectionByLine(detail.from, detail.section);
+      else previewPanelRef.current?.selectSectionByLine(detail.from, detail.section, detail.abcRange);
     };
     const onControllerChanged = (event: Event) => {
       setRemoteHighlightController((event as CustomEvent<string>).detail || "");
@@ -2559,6 +2562,7 @@ const AppContent: React.FC = () => {
         playlist: display.playlist ?? currentDisplay.playlist,
         playlist_id: display.playlist_id ?? emtyDisplay.playlist_id,
         section: display.section ?? emtyDisplay.section,
+        abcRange: display.abcRange,
         sectionRepeatNonce: display.sectionRepeatNonce ?? emtyDisplay.sectionRepeatNonce,
         sectionRepeatCounts: display.sectionRepeatCounts,
         instructions: display.instructions ?? emtyDisplay.instructions,

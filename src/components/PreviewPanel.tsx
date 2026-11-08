@@ -34,7 +34,9 @@ import { imageStorageService } from "../services/ImageStorage";
 import { projectedImageCacheService } from "../services/ProjectedImageCacheService";
 import { getClientPerformanceSnapshot, recordProjectionRenderDuration, subscribeClientPerformance } from "../shared/clientPerformanceProfile";
 import { projectedImageCacheBudget, resolveProjectionRenderDimensions } from "../shared/performanceSettings";
-import { Display } from "../../common/pp-types";
+import { Display, type AbcRange } from "../../common/pp-types";
+import { findSectionByLine, getSectionRepeatNonce } from "./preview/sectionSelection";
+import { isAbcjsLoaded, loadAbcjs } from "../../chordpro/abcjs-lazy";
 import { getWebServerInterface } from "../services/webServerBridge";
 import { getProjectionClientPresenceSnapshot, subscribeProjectionClientPresence } from "../services/projectionClientPresence";
 
@@ -53,7 +55,7 @@ function normalizePreviewPanelCollapseMode(mode: unknown): PreviewPanelCollapseM
 
 interface PreviewPanelProps {
   selectedPlaylistItem: PlaylistEntry | null;
-  editorRef?: React.RefObject<{ highlightSectionInEditor: (from: number, to: number) => void } | null>;
+  editorRef?: React.RefObject<{ highlightSectionInEditor: (from: number, to: number, abcRange?: AbcRange) => void } | null>;
   enableHighlight?: boolean;
   currentSongText?: string;
   // True while a controller is granted or direct remote highlight activity is recent.
@@ -74,7 +76,7 @@ interface PreviewPanelProps {
 
 // Define ref methods that can be called from parent
 export interface PreviewPanelMethods {
-  selectSectionByLine: (lineNumber: number, section?: number) => boolean;
+  selectSectionByLine: (lineNumber: number, section?: number, abcRange?: AbcRange) => boolean;
   getSelectedSectionIndex: () => number;
   setSelectedSectionIndex: (index: number) => void;
   setSectionListFocused: () => void;
@@ -198,6 +200,22 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     const isTabContentCollapsed = previewPanelCollapseMode === "tabsCollapsed" || previewPanelCollapseMode === "tabsAndPreviewCollapsed";
     const isProjectedPreviewCollapsed = previewPanelCollapseMode === "tabsAndPreviewCollapsed" || previewPanelCollapseMode === "previewCollapsed";
     const [sections, setSections] = useState<ExtendedSectionItem[]>([]);
+    const projectionSourceRef = useRef<{ songId: string; text: string } | null>(null);
+    const [abcReady, setAbcReady] = useState(isAbcjsLoaded);
+    useEffect(() => {
+      const source = enableHighlight && currentSongText ? currentSongText : projectedSong?.Text || "";
+      if (abcReady || !/\{\s*start_of_abc\b/.test(source)) return;
+      let cancelled = false;
+      void loadAbcjs().then(
+        () => {
+          if (!cancelled) setAbcReady(true);
+        },
+        (error) => console.error("Preview", "ABC load failed", error)
+      );
+      return () => {
+        cancelled = true;
+      };
+    }, [abcReady, currentSongText, projectedSong, enableHighlight]);
     const [nextSectionIndex, setNextSectionIndex] = useState(-1);
     // Auto-compute nextSectionIndex when selection or sections change.
     // Keyboard navigation (arrow keys, Home/End, Page) overrides this until the next selection change.
@@ -1008,7 +1026,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       async (
         sectionIndex: number,
         section: SectionItem,
-        options?: { forceEmit?: boolean; bumpRepeatNonce?: boolean; preserveRepeatNonce?: boolean }
+        options?: {
+          forceEmit?: boolean;
+          bumpRepeatNonce?: boolean;
+          preserveRepeatNonce?: boolean;
+          sectionRepeatCounts?: Display["sectionRepeatCounts"];
+        }
       ) => {
         const song = getProjectedSong();
         if (!song) return;
@@ -1023,13 +1046,10 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           from: section.from,
           to: section.to,
           section: section.instructedIndex,
-          sectionRepeatNonce: options?.bumpRepeatNonce
-            ? (getCurrentDisplay().sectionRepeatNonce ?? 0) + 1
-            : options?.preserveRepeatNonce
-              ? (getCurrentDisplay().sectionRepeatNonce ?? 0)
-              : 0,
-          sectionRepeatCounts,
-          song: song.Text,
+          abcRange: section.abcRange,
+          sectionRepeatNonce: getSectionRepeatNonce(section, getCurrentDisplay().sectionRepeatNonce ?? 0, options),
+          sectionRepeatCounts: options && "sectionRepeatCounts" in options ? options.sectionRepeatCounts : sectionRepeatCounts,
+          song: projectionSourceRef.current?.songId === song.Id ? projectionSourceRef.current.text : song.Text,
           system: song.System,
         };
         if (selectedPlaylistItem?.transpose) updateData.transpose = selectedPlaylistItem.transpose;
@@ -1055,7 +1075,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           repeatProgressRef.current = { sectionIndex: -1, repeatIndex: 1 };
           setSelectedRepeatIndex(1);
           onSelectedSectionIndexChange?.(-1);
-          updateCurrentDisplay({ from: 0, to: 0, section: -1, sectionRepeatNonce: 0, sectionRepeatCounts });
+          updateCurrentDisplay({ from: 0, to: 0, section: -1, abcRange: undefined, sectionRepeatNonce: 0, sectionRepeatCounts });
           return false;
         }
 
@@ -1126,31 +1146,9 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
     useImperativeHandle(
       ref,
       () => ({
-        selectSectionByLine: (lineNumber: number, section?: number): boolean => {
-          // Prefer the canonical instruction-item section index when provided
-          // — this disambiguates repeated sections / transposed clones that
-          // share the same source line range.
-          if (section != null) {
-            for (let i = 0; i < sections.length; i++) {
-              if (sections[i].instructedIndex === section && sections[i].from <= lineNumber && lineNumber < sections[i].to) {
-                return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
-              }
-            }
-            for (let i = 0; i < sections.length; i++) {
-              if (sections[i].instructedIndex === section) {
-                return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
-              }
-            }
-          }
-          // Find section that contains the given line number
-          // Matching C# ChangeHighlightByLine logic
-          for (let i = 0; i < sections.length; i++) {
-            const section = sections[i];
-            if (section.from <= lineNumber && lineNumber < section.to) {
-              return selectSectionIndex(i, { advanceRepeat: selectedSectionIndex === i });
-            }
-          }
-          return selectSectionIndex(-1);
+        selectSectionByLine: (lineNumber: number, section?: number, abcRange?: AbcRange): boolean => {
+          const index = findSectionByLine(sections, selectedSectionIndex, lineNumber, section, abcRange);
+          return selectSectionIndex(index, { advanceRepeat: selectedSectionIndex === index });
         },
         getSelectedSectionIndex: (): number => {
           return selectedSectionIndex;
@@ -1333,6 +1331,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       };
 
       const instructions = projectInstructions && selectedPlaylistItem?.instructions ? selectedPlaylistItem.instructions : "";
+      projectionSourceRef.current = { songId: projectedSong?.Id || song.Id, text: song.Text };
       const baseSections = generatorRef.current.updateSectionList(song, displaySettings, projectInstructions, instructions);
 
       // Convert to extended sections with checkbox and display mode
@@ -1370,13 +1369,13 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       if (selectedSectionIndex >= 0 && selectedSectionIndex < newSections.length) {
         newSelectedIndex = selectedSectionIndex;
         if (newSections[newSelectedIndex]) {
-          updateDisplayState(newSelectedIndex, newSections[newSelectedIndex]);
+          updateDisplayState(newSelectedIndex, newSections[newSelectedIndex], { sectionRepeatCounts: buildSectionRepeatCounts(newSections) });
         }
         // Highlight in editor
         if (enableHighlight && settings?.sectionHighlightInEditor && editorRef?.current && newSections[newSelectedIndex]) {
           const section = newSections[newSelectedIndex];
           requestAnimationFrame(() => {
-            editorRef.current?.highlightSectionInEditor(section.from, section.to);
+            editorRef.current?.highlightSectionInEditor(section.from, section.to, section.abcRange);
           });
         }
       } else {
@@ -1396,6 +1395,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       renderWidth,
       renderHeight,
       selectedSectionIndex,
+      abcReady,
     ]);
 
     // Highlight section in editor when selection changes (matching C# SectionHighlightInEditor)
@@ -1409,7 +1409,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
       ) {
         const section = sections[selectedSectionIndex];
         // Call editor's highlight method with from/to line numbers
-        editorRef.current.highlightSectionInEditor(section.from, section.to);
+        editorRef.current.highlightSectionInEditor(section.from, section.to, section.abcRange);
       } else if (enableHighlight && editorRef?.current && selectedSectionIndex < 0) {
         // Clear highlight when no section is selected
         editorRef.current.highlightSectionInEditor(0, 0);
@@ -2570,8 +2570,12 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
                     sections.map((section, index) => {
                       const isSelected = selectedSectionIndex === index;
                       const isNext = nextSectionIndex === index;
-                      const repeatTotal = getSectionRepeatTotal(section);
-                      const repeatIndex = isSelected ? Math.max(1, Math.min(selectedRepeatIndex, repeatTotal)) : 1;
+                      const repeatTotal = section.projectionRepeat?.total ?? getSectionRepeatTotal(section);
+                      const repeatIndex = section.projectionRepeat
+                        ? section.projectionRepeat.index + 1
+                        : isSelected
+                          ? Math.max(1, Math.min(selectedRepeatIndex, repeatTotal))
+                          : 1;
                       const bgColor = isSelected ? undefined : isNext ? "rgb(0, 255, 255)" : getSectionBgColor(section.displayMode);
                       const typeColor = getSectionTypeColor(section.type);
 

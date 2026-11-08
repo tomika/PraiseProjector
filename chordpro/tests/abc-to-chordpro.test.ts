@@ -226,6 +226,93 @@ test("Hungarian long digraphs are abbreviated except at compound boundaries and 
   assert.equal(abc.toChordPro()[0].lyrics, "Össze vissza asszony könnyű eggyé dísszel díszszemle jegygyűrű húszszor rosszal");
 });
 
+test("inline part changes choose instrumental voices per part across parallel staves", () => {
+  const { abc } = score(
+    'X:1\n%%score {1|2}\nK:C\n[V:1] "C"c4 "G"d4 [P:Interlude] c4 d4 |\n[V:2] C,4 G,,4 [P:Interlude] "Am"A,,4 "F"F,,4 |\nP:Verse\n[V:1] CDEF |\nw: Sing this song now',
+    "S"
+  );
+  assert.deepEqual(
+    abc.toChordPro().map((line) => [line.getTagInfo().tag, line.lyrics]),
+    [
+      ["Score", "C G"],
+      ["Interlude", "Am F"],
+      ["Verse", "Sing this song now"],
+    ]
+  );
+});
+
+test("duplicate instrumental progressions retain the richer repeat and ending structure in either voice order", () => {
+  for (const [first, second] of [
+    ['"C"c4 "G"d4 :|', '"C"C,4 "G"G,,4 |'],
+    ['"C"c4 "G"d4 |', '"C"C,4 "G"G,,4 :|'],
+  ]) {
+    const { abc } = score(`X:1\n%%score {1|2}\nK:C\nP:Intro\n[V:1] ${first}\n[V:2] ${second}\nP:Verse\n[V:1] CDEF |\nw: Sing this song now`, "S");
+    assert.deepEqual(
+      abc
+        .toChordPro()
+        .filter((line) => line.isGrid)
+        .map((line) => line.lyrics),
+      ["C G :|"]
+    );
+  }
+});
+
+test("one voice's inline part marker also splits the simultaneous unmarked accompaniment", () => {
+  const { abc } = score(
+    'X:1\n%%score {1|2}\nK:C\n[V:1] "C"c4 "G"d4 [P:Interlude] c4 d4 |\n[V:2] C,4 G,,4 "Am"A,,4 "F"F,,4 |\nP:Verse\n[V:1] CDEF |\nw: Sing this song now',
+    "S"
+  );
+  assert.deepEqual(
+    abc
+      .toChordPro()
+      .filter((line) => line.isGrid)
+      .map((line) => [line.getTagInfo().tag, line.lyrics]),
+    [
+      ["Score", "C G"],
+      ["Interlude", "Am F"],
+    ]
+  );
+});
+
+test("parallel part markers align through tuplets and closing repeats stay before the next part", () => {
+  const { abc } = score(
+    'X:1\n%%score {1|2}\nL:1/8\nK:C\n[V:1] "C"(3cde :| [P:Interlude] fg |\n[V:2] C,2 :| [P:Interlude] "Am"A,,2 |\nP:Verse\n[V:1] CDEF |\nw: Sing this song now',
+    "S"
+  );
+  assert.deepEqual(
+    abc
+      .toChordPro()
+      .filter((line) => line.isGrid)
+      .map((line) => [line.getTagInfo().tag, line.lyrics]),
+    [
+      ["Score", "C :|"],
+      ["Interlude", "Am"],
+    ]
+  );
+});
+
+test("alternate endings are retained when a duplicate staff only contains plain bars", () => {
+  const { abc } = score(
+    'X:1\n%%score {1|2}\nK:C\nP:Intro\n[V:1] |:"C"c4 |[1 "G"d4 :|[2 "F"e4 |]\n[V:2] "C"C,4 | "G"G,,4 | "F"F,,4 |\nP:Verse\n[V:1] CDEF |\nw: Sing this song now',
+    "S"
+  );
+  assert.deepEqual(
+    abc
+      .toChordPro()
+      .filter((line) => line.isGrid)
+      .map((line) => line.lyrics),
+    ["|: C 1( G ) :| 2( F )"]
+  );
+});
+
+test("conflicting simultaneous part names preserve the original score", () => {
+  const { abc } = score(
+    'X:1\n%%score {1|2}\nK:C\n[V:1] "C"c4 [P:Melody] d4 |\n[V:2] C,4 [P:Bass] "G"G,,4 |\nP:Verse\n[V:1] CDEF |\nw: Sing this song now',
+    "S"
+  );
+  assert.ok(abc.toChordPro()[0] instanceof ChordProAbc);
+});
+
 test("trailing punctuation does not hide an assimilated suffix", () => {
   const { abc } = score("X:1\nK:C\nCDEF GA|\nw: nagy-gyá! dísz-szel, jegy-gyel.");
   assert.equal(abc.toChordPro()[0].lyrics, "naggyá! dísszel, jeggyel.");

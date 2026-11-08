@@ -1,3 +1,4 @@
+import { sameAbcRange } from "./abc-range";
 import {
   Display,
   ErrorResponse,
@@ -66,8 +67,11 @@ export function getEmptyDisplay(): Display {
 export function cloneDisplay(display: Display): Display {
   return {
     ...display,
+    abcRange: display.abcRange ? { ...display.abcRange } : undefined,
     playlist: display.playlist ? [...display.playlist] : undefined,
-    sectionRepeatCounts: display.sectionRepeatCounts ? display.sectionRepeatCounts.map((x) => ({ ...x })) : undefined,
+    sectionRepeatCounts: display.sectionRepeatCounts
+      ? display.sectionRepeatCounts.map((x) => ({ ...x, ...(x.abcRange ? { abcRange: { ...x.abcRange } } : {}) }))
+      : undefined,
   };
 }
 
@@ -80,6 +84,7 @@ function sameSectionRepeatCounts(display1: Display, display2: Display) {
     if (a[i].from !== b[i].from) return false;
     if (a[i].to !== b[i].to) return false;
     if (a[i].multiplier !== b[i].multiplier) return false;
+    if (!sameAbcRange(a[i].abcRange, b[i].abcRange)) return false;
   }
   return true;
 }
@@ -92,6 +97,7 @@ export function compareDisplays(display1: Display, display2: Display): boolean {
     (display1.system ?? "") === (display2.system ?? "") &&
     (display1.from ?? 0) === (display2.from ?? 0) &&
     (display1.to ?? 0) === (display2.to ?? 0) &&
+    sameAbcRange(display1.abcRange, display2.abcRange) &&
     (display1.transpose ?? 0) === (display2.transpose ?? 0) &&
     (display1.capo ?? -1) === (display2.capo ?? -1) &&
     (display1.instructions ?? "") === (display2.instructions ?? "") &&

@@ -1,4 +1,6 @@
 import { UnicodeSymbol } from "../../common/symbols";
+import type { AbcRange } from "../../common/pp-types";
+import { matchesAbcRange } from "../abc-range";
 import { DifferentialText } from "../../common/utils";
 import {
   ChordProAbc,
@@ -298,6 +300,7 @@ export interface DisplayHighlight {
   readonly from: number;
   readonly to: number;
   readonly section?: number;
+  readonly abcRange?: AbcRange;
   readonly repeatIndex?: number;
   readonly repeatTotal?: number;
 }
@@ -331,7 +334,7 @@ export function isHighlightedOccurrence(
     const hlGroup = groups?.[hlSection] ?? hlSection;
     if (lineGroup !== hlGroup) return false;
   }
-  return line.sourceLineNumber >= highlight.from && line.sourceLineNumber < highlight.to;
+  return line.sourceLineNumber >= highlight.from && line.sourceLineNumber < highlight.to && matchesAbcRange(line, highlight.abcRange);
 }
 
 /** One row of the resolved display sequence, before any measurement exists. */
@@ -506,6 +509,15 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
   const abcMode = options.abcMode ?? "AUTO";
 
   let instructions = options.instructionsMode ? (options.instructions ?? null) : null;
+  // Instruction indices are wire identities. Defaults must be bound against
+  // the authored document before a view chooses notation or expanded lyrics.
+  if (options.instructionsMode && !instructions) {
+    const defaults = document.getDefaultInstructions();
+    if (defaults) {
+      instructions = new Instructions();
+      instructions.parse(defaults, document);
+    }
+  }
   const expanded = instructions ? document.expandAbc() : null;
   // Deliberately rebinds the CALLER's instruction items in place: names that
   // only exist once abcjs has loaded become sections, while the editor keeps the

@@ -14,6 +14,7 @@
  */
 import type { SectionControlCommand } from "../../../common/hardware-input";
 import type { Display } from "../../../common/pp-types";
+import { containsAbcRange, sameAbcRange } from "../../../common/abc-range";
 
 /** The eight base commands plus the two list-local ones (Escape / Space). */
 export type SectionListCommand = SectionControlCommand | "clear-projected-selection" | "toggle-current-projectability";
@@ -51,6 +52,7 @@ export interface ControlSection {
   instructedIndex?: number;
   instructedMultiplier?: number;
   instructedSignature?: string;
+  abcRange?: Display["abcRange"];
 }
 
 /** The fields the repeat-group computations read (a SectionItem also qualifies). */
@@ -89,7 +91,10 @@ export interface SectionControlDecision {
 
 /** Repeat groups of instructed sections; a group joins only when every fragment shares one row. */
 export function buildSectionRepeatCounts(sectionList: readonly RepeatSection[]): SectionRepeatCounts {
-  const grouped = new Map<string, { section: number; from: number; to: number; multiplier: number; uniqueRanges: Set<string> }>();
+  const grouped = new Map<
+    string,
+    { section: number; from: number; to: number; multiplier: number; abcRange?: Display["abcRange"]; uniqueRanges: Set<string> }
+  >();
   for (const section of sectionList) {
     const multiplier = section.instructedMultiplier ?? 1;
     if (section.instructedIndex == null || multiplier <= 1) continue;
@@ -102,19 +107,20 @@ export function buildSectionRepeatCounts(sectionList: readonly RepeatSection[]):
         from: section.from,
         to: section.to,
         multiplier,
-        uniqueRanges: new Set<string>([`${section.from}:${section.to}`]),
+        abcRange: section.abcRange,
+        uniqueRanges: new Set<string>([`${section.from}:${section.to}:${JSON.stringify(section.abcRange)}`]),
       });
       continue;
     }
     existing.from = Math.min(existing.from, section.from);
     existing.to = Math.max(existing.to, section.to);
-    existing.uniqueRanges.add(`${section.from}:${section.to}`);
+    existing.uniqueRanges.add(`${section.from}:${section.to}:${JSON.stringify(section.abcRange)}`);
   }
 
   const result = Array.from(grouped.values())
     // Join repeats only when whole repeated section fits one projected row.
     .filter((x) => x.uniqueRanges.size === 1)
-    .map(({ section, from, to, multiplier }) => ({ section, from, to, multiplier }))
+    .map(({ section, from, to, multiplier, abcRange }) => ({ section, from, to, multiplier, ...(abcRange ? { abcRange } : {}) }))
     .sort((a, b) => a.section - b.section || a.from - b.from || a.to - b.to);
   return result.length > 0 ? result : undefined;
 }
@@ -122,9 +128,13 @@ export function buildSectionRepeatCounts(sectionList: readonly RepeatSection[]):
 export function sectionRepeatTotal(section: RepeatSection, sectionRepeatCounts: SectionRepeatCounts): number {
   if (section.instructedIndex == null) return 1;
   const containing = sectionRepeatCounts?.find(
-    (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
+    (item) =>
+      item.section === section.instructedIndex &&
+      item.from <= section.from &&
+      section.to <= item.to &&
+      containsAbcRange(item.abcRange, section.abcRange)
   );
-  const fallback = sectionRepeatCounts?.find((item) => item.section === section.instructedIndex);
+  const fallback = sectionRepeatCounts?.find((item) => item.section === section.instructedIndex && sameAbcRange(item.abcRange, section.abcRange));
   const multiplier = containing?.multiplier ?? fallback?.multiplier ?? 1;
   if (!Number.isFinite(multiplier) || multiplier <= 1) return 1;
   return Math.max(2, Math.floor(multiplier));
@@ -136,7 +146,11 @@ export function repeatGroupBounds(sections: readonly RepeatSection[], sectionRep
   if (section.instructedIndex == null) return { start: index, end: index, repeatTotal: 1 };
 
   const repeatEntry = sectionRepeatCounts?.find(
-    (item) => item.section === section.instructedIndex && item.from <= section.from && section.to <= item.to
+    (item) =>
+      item.section === section.instructedIndex &&
+      item.from <= section.from &&
+      section.to <= item.to &&
+      containsAbcRange(item.abcRange, section.abcRange)
   );
 
   const repeatTotal =
@@ -149,6 +163,7 @@ export function repeatGroupBounds(sections: readonly RepeatSection[], sectionRep
     const prev = sections[start - 1];
     if (prev.instructedIndex !== section.instructedIndex) break;
     if (prev.from < repeatEntry.from || prev.to > repeatEntry.to) break;
+    if (!sameAbcRange(prev.abcRange, section.abcRange)) break;
     start--;
   }
 
@@ -157,6 +172,7 @@ export function repeatGroupBounds(sections: readonly RepeatSection[], sectionRep
     const next = sections[end + 1];
     if (next.instructedIndex !== section.instructedIndex) break;
     if (next.from < repeatEntry.from || next.to > repeatEntry.to) break;
+    if (!sameAbcRange(next.abcRange, section.abcRange)) break;
     end++;
   }
 

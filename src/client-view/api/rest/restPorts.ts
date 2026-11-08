@@ -95,6 +95,7 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
       from: display.from,
       to: display.to,
       section: display.section,
+      abcRange: display.abcRange,
       sectionRepeatCounts: display.sectionRepeatCounts,
       sectionRepeatNonce: display.sectionRepeatNonce,
       transpose: display.transpose,
@@ -110,6 +111,7 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
       from: display.from,
       to: display.to,
       section: display.section,
+      abcRange: display.abcRange,
       sectionRepeatCounts: display.sectionRepeatCounts,
       sectionRepeatNonce: display.sectionRepeatNonce,
       transpose: display.transpose,
@@ -158,6 +160,7 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<
       from: display.from,
       to: display.to,
       section: display.section,
+      abcRange: display.abcRange,
       transpose: display.transpose,
       playlist,
     });
@@ -170,6 +173,7 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<
       from: display.from,
       to: display.to,
       section: display.section,
+      abcRange: display.abcRange,
       transpose: display.transpose,
       playlist,
       song: "",
@@ -259,17 +263,18 @@ export function createDisplayApi(core: RestCore): DisplayApi {
         from: request.from ?? 0,
         to: request.to ?? 0,
         section: request.section,
+        abcRange: request.abcRange,
         transpose: request.transpose ?? 0,
         capo: request.capo,
         instructions: request.instructions,
       });
       await pushCurrent();
     },
-    highlight: async (from, to, section) => {
+    highlight: async (from, to, section, abcRange) => {
       // Reflect the highlight locally so this client's own song view updates.
-      core.patchDisplay({ from, to, section });
+      core.patchDisplay({ from, to, section, abcRange });
       if (core.isFollowingPpd()) {
-        await core.sendPpdHighlight(from, to, section);
+        await core.sendPpdHighlight(from, to, section, abcRange);
         return;
       }
       // Push it through the legacy line-selection channel (`/highlight`), NOT a
@@ -285,6 +290,7 @@ export function createDisplayApi(core: RestCore): DisplayApi {
         from,
         to,
         section,
+        abcRange,
         leader: core.leader?.id ?? core.config.leaderId ?? "",
         deviceId: core.clientId,
       });

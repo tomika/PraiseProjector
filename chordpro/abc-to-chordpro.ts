@@ -7,6 +7,8 @@ export interface AbcChordProRow {
   readonly lyrics: string;
   readonly chords: readonly { name: string; pos: number }[];
   readonly continuesWord?: boolean;
+  /** Music-source character spans, retained across lyric joining and verses. */
+  readonly musicRanges?: readonly { start: number; end: number }[];
 }
 
 export interface AbcChordProSection {
@@ -78,14 +80,67 @@ function lyricLanes(source: string, label: string, fields: readonly { start: num
   return { parts, lines, lanes };
 }
 
-function partFields(tunes: TuneObjectArray) {
+/** Source offsets alone do not order simultaneous voices: a bass voice's intro
+ * can be written after the melody's inline part change. Bind events to parts
+ * on the parsed music line's time axis, then retain canonical source identities
+ * for lyric-lane metadata. Repeated part markers on parallel staves are one part. */
+function partLayout(source: string, tunes: TuneObjectArray) {
   const fields = new Map<number, string>();
-  for (const tune of tunes)
-    for (const line of tune.lines)
-      for (const staff of line.staff ?? [])
-        for (const voice of staff.voices ?? [])
-          for (const event of voice) if (event.el_type === "part" && event.startChar >= 0) fields.set(event.startChar, event.title);
-  return [...fields].sort(([left], [right]) => left - right).map(([start, label]) => ({ start, label: label.trim() }));
+  const eventParts = new Map<number, number>();
+  const tuneStarts = [...source.matchAll(/^[\t ]*X:/gm)].map((match) => match.index);
+  for (let tuneIndex = 0; tuneIndex < tunes.length; ++tuneIndex) {
+    let previousPart = tuneStarts[tuneIndex] ?? 0;
+    const triplets = new Map<number, number>();
+    for (const line of tunes[tuneIndex].lines) {
+      const voices = (line.staff ?? []).flatMap((staff) => staff.voices ?? []);
+      const positions: { event: AbcEvent; voice: number; time: number }[] = [];
+      const markers = new Map<number, Map<number, { start: number; label: string }>>();
+      for (let voice = 0; voice < voices.length; ++voice) {
+        let time = 0;
+        let triplet = triplets.get(voice) ?? 1;
+        for (const event of voices[voice]) {
+          if (event.el_type === "part" && event.startChar >= 0) {
+            const key = Math.round(time * 1e9);
+            const parallel = markers.get(key) ?? new Map<number, { start: number; label: string }>();
+            parallel.set(voice, { start: event.startChar, label: event.title.trim() });
+            markers.set(key, parallel);
+          }
+          if (event.el_type === "note" || event.el_type === "bar") positions.push({ event, voice, time });
+          if (event.el_type === "note") {
+            if (event.startTriplet) triplet = event.tripletMultiplier ?? 1;
+            time += event.duration * triplet;
+            if (event.endTriplet) triplet = 1;
+          }
+        }
+        triplets.set(voice, triplet);
+      }
+      let lastPart = previousPart;
+      const parts = [...markers]
+        .sort(([left], [right]) => left - right)
+        .map(([time, parallel]) => {
+          const values = [...parallel.values()];
+          if (new Set(values.map((value) => value.label)).size > 1) throw new Error("Conflicting simultaneous ABC parts");
+          const start = Math.min(...values.map((value) => value.start));
+          if (!fields.has(start) && start < lastPart) throw new Error("ABC part order requires separate voice alignment");
+          fields.set(start, values[0].label);
+          lastPart = start;
+          return { time: time / 1e9, start, parallel };
+        });
+      for (const { event, voice, time } of positions) {
+        if (event.el_type !== "note" && event.el_type !== "bar") continue;
+        let part = previousPart;
+        for (const marker of parts) {
+          if (time < marker.time - 1e-9) break;
+          // A closing repeat before the next P: stays in the preceding part.
+          if (time > marker.time + 1e-9 || event.el_type === "note" || (marker.parallel.get(voice)?.start ?? Infinity) < event.startChar)
+            part = marker.start;
+        }
+        eventParts.set(event.startChar, part);
+      }
+      if (parts.length) previousPart = parts[parts.length - 1].start;
+    }
+  }
+  return { fields: [...fields].sort(([left], [right]) => left - right).map(([start, label]) => ({ start, label })), eventParts };
 }
 
 /** Hungarian consonants written with two letters. Hyphenated lyrics repeat a long
@@ -138,20 +193,18 @@ function chordSymbols(event: AbcEvent): NonNullable<AbcElem["chord"]> {
 const hasChord = (event: AbcEvent) => chordSymbols(event).length > 0;
 const hasSyllable = (event: AbcEvent) => !!event.lyric?.some((lyric) => lyric.syllable);
 
-/** The voices an instrumental line converts: one per distinct grid row, or its
+/** The voices an instrumental part converts: one per distinct progression, or its
  * top voice for the bars alone. */
 function instrumentalVoices(voices: readonly AbcEvent[][]): AbcEvent[][] {
-  const progressions = new Set<string>();
-  const chorded = voices.filter((voice) => {
-    if (!voice.some(hasChord)) return false;
-    // Keyed by the grid row it renders (chords, repeats, endings): a voice whose
-    // row would only repeat an earlier one adds nothing.
-    const progression = voice.flatMap(gridToken).join(" ");
-    if (progressions.has(progression)) return false;
-    progressions.add(progression);
-    return true;
-  });
-  return chorded.length ? chorded : voices.slice(0, 1);
+  const progressions = new Map<string, { voice: AbcEvent[]; structure: number }>();
+  for (const voice of voices) {
+    if (!voice.some(hasChord)) continue;
+    const progression = JSON.stringify(voice.flatMap(chordSymbols).map((chord) => chord.name));
+    const structure = voice.filter((event) => event.el_type === "bar").flatMap(gridToken).length;
+    const previous = progressions.get(progression);
+    if (!previous || structure > previous.structure) progressions.set(progression, { voice, structure });
+  }
+  return progressions.size ? [...progressions.values()].map(({ voice }) => voice) : voices.slice(0, 1);
 }
 
 function gridToken(event: AbcEvent): string[] {
@@ -203,7 +256,14 @@ function lyricRow(events: readonly AbcEvent[]): AbcChordProRow {
       space = lyric?.divider !== "-";
     }
   }
-  return { lyrics, chords, continuesWord: !!lyrics && !space };
+  return {
+    lyrics,
+    chords,
+    continuesWord: !!lyrics && !space,
+    musicRanges: events.flatMap((event) =>
+      event.el_type === "note" && event.startChar >= 0 ? [{ start: event.startChar, end: event.endChar }] : []
+    ),
+  };
 }
 
 /** A music-system break is not a word boundary. Merge only explicitly continued
@@ -224,6 +284,7 @@ function appendLyricRow(rows: AbcChordProRow[], row: AbcChordProRow) {
       ...row.chords.map((chord) => ({ ...chord, pos: chord.pos + offset })),
     ],
     continuesWord: row.lyrics ? row.continuesWord : previous.continuesWord,
+    musicRanges: [...(previous.musicRanges ?? []), ...(row.musicRanges ?? [])],
   };
 }
 
@@ -234,7 +295,8 @@ export function abcToChordPro(source: string, label: string, parse: (abc: string
   if (!/^[\t ]*w:/m.test(source)) return null;
   const original = parse(source);
   if (original.some((tune) => tune.warnings?.length)) throw new Error("ABC lyrics could not be aligned without parser warnings");
-  const { parts, lines, lanes } = lyricLanes(source, label, partFields(original));
+  const layout = partLayout(source, original);
+  const { parts, lines, lanes } = lyricLanes(source, label, layout.fields);
   const count = Math.max(...parts.map((part) => part.verses));
   if (!count) return null;
   const sections: AbcChordProSection[] = [];
@@ -245,30 +307,39 @@ export function abcToChordPro(source: string, label: string, parse: (abc: string
       if (tune.warnings?.length) throw new Error("ABC lyrics could not be aligned without parser warnings");
       for (const line of tune.lines) {
         const allVoices = (line.staff ?? []).flatMap((staff) => (staff.voices ?? []) as AbcEvent[][]);
-        const vocalVoices = allVoices.filter((voice) => voice.some(hasSyllable));
-        if (vocalVoices.length > 1) throw new Error("Simultaneous vocal voices require separate lyric parts");
-        // Another voice or staff is simultaneous too: appending its chords after
-        // the sung voice would change their musical position instead of aligning
-        // them to the lyrics. Keep the score until time-based alignment exists.
-        if (vocalVoices.length && allVoices.some((voice) => voice !== vocalVoices[0] && voice.some(hasChord)))
-          throw new Error("Accompaniment chord voices require musical-time alignment");
-        // Simultaneous voices play the same bars, so an unchorded one never adds
-        // a row. An instrumental line converts its chorded voice wherever it is
-        // (a piano intro's chords may sit on the bass staff), or its top voice
-        // for the bars alone. Chords written on several voices stay one row per
-        // distinct progression until time-based alignment can merge them.
-        for (const voice of vocalVoices.length ? vocalVoices : instrumentalVoices(allVoices)) {
-          const byPart = new Map<number, AbcEvent[]>();
+        const byPart = new Map<number, AbcEvent[][]>();
+        for (const voice of allVoices) {
+          const slices = new Map<number, AbcEvent[]>();
           for (const event of voice) {
             if (event.el_type !== "note" && event.el_type !== "bar") continue;
+            const start = layout.eventParts.get(event.startChar) ?? event.startChar;
             let part = parts.length - 1;
-            while (part > 0 && parts[part].start > event.startChar) --part;
-            const events = byPart.get(part) ?? [];
+            while (part > 0 && parts[part].start > start) --part;
+            const events = slices.get(part) ?? [];
             events.push(event);
-            byPart.set(part, events);
+            slices.set(part, events);
           }
-          for (const [part, events] of byPart) {
-            rows[part][lane].push(events);
+          for (const [part, events] of slices) {
+            const voices = byPart.get(part) ?? [];
+            voices.push(events);
+            byPart.set(part, voices);
+          }
+        }
+        for (const [part, voices] of byPart) {
+          const vocalVoices = voices.filter((voice) => voice.some(hasSyllable));
+          if (vocalVoices.length > 1) throw new Error("Simultaneous vocal voices require separate lyric parts");
+          // Another voice or staff is simultaneous too: appending its chords after
+          // the sung voice would change their musical position instead of aligning
+          // them to the lyrics. Keep the score until time-based alignment exists.
+          if (vocalVoices.length && voices.some((voice) => voice !== vocalVoices[0] && voice.some(hasChord)))
+            throw new Error("Accompaniment chord voices require musical-time alignment");
+          // Simultaneous voices play the same bars, so an unchorded one never adds
+          // a row. An instrumental line converts its chorded voice wherever it is
+          // (a piano intro's chords may sit on the bass staff), or its top voice
+          // for the bars alone. Chords written on several voices stay one row per
+          // distinct progression until time-based alignment can merge them.
+          for (const voice of vocalVoices.length ? vocalVoices : instrumentalVoices(voices)) {
+            rows[part][lane].push(voice);
           }
         }
       }

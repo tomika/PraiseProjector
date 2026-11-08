@@ -396,6 +396,7 @@ export interface ProjectRequest {
   from?: number;
   to?: number;
   section?: number;
+  abcRange?: Display["abcRange"];
   transpose?: number;
   capo?: number;
   instructions?: string;
@@ -413,7 +414,7 @@ export interface DisplayApi {
   /** Project a song at a position. The canonical "show this" operation. */
   project(request: ProjectRequest, options?: ProjectOptions): Promise<void>;
   /** Highlight a lyric range / section within the current song. */
-  highlight(from: number, to: number, section?: number): Promise<void>;
+  highlight(from: number, to: number, section?: number, abcRange?: Display["abcRange"]): Promise<void>;
   /** Apply a transpose value. `commit` false = local visual preview only (per
    *  WheelPicker detent); `commit` true = finalize and push the value to the
    *  backend (a minimal id+transpose /display_update, controllers only). */

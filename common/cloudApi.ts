@@ -941,6 +941,7 @@ export class CloudApiService {
       "&playlist_id=" +
       encodeURIComponent(display.playlist_id || "");
     if (display.section != null) command += "&section=" + encodeURIComponent(display.section);
+    command += "&abcRange=" + encodeURIComponent(JSON.stringify(display.abcRange ?? null));
     if (display.sectionRepeatCounts?.length) command += "&sectionRepeatCounts=" + encodeURIComponent(JSON.stringify(display.sectionRepeatCounts));
     if (display.sectionRepeatNonce != null) command += "&sectionRepeatNonce=" + encodeURIComponent(display.sectionRepeatNonce.toString());
     if (display.instructions != null) command += "&instructions=" + encodeURIComponent(display.instructions);
@@ -1010,6 +1011,7 @@ export class CloudApiService {
       from: number;
       to: number;
       section?: number;
+      abcRange?: Display["abcRange"];
       sectionRepeatCounts?: Display["sectionRepeatCounts"];
       sectionRepeatNonce?: number;
       transpose?: number;
@@ -1027,6 +1029,7 @@ export class CloudApiService {
       from: data.from.toString(),
       to: data.to.toString(),
       song: data.song,
+      abcRange: JSON.stringify(data.abcRange ?? null),
     };
 
     if (data.transpose !== undefined && data.transpose !== 0) {
@@ -1202,6 +1205,7 @@ export class CloudApiService {
     from?: number;
     to?: number;
     section?: number;
+    abcRange?: Display["abcRange"];
     leader: string;
     deviceId?: string;
     message?: string;
@@ -1211,6 +1215,7 @@ export class CloudApiService {
     if (params.from !== undefined) endpoint += `from=${params.from}&`;
     if (params.to !== undefined) endpoint += `to=${params.to}&`;
     if (params.section !== undefined) endpoint += `section=${params.section}&`;
+    endpoint += `abcRange=${encodeURIComponent(JSON.stringify(params.abcRange ?? null))}&`;
     endpoint += `leader=${encodeURIComponent(params.leader)}`;
     if (params.deviceId) endpoint += `&deviceId=${encodeURIComponent(params.deviceId)}`;
     if (params.message) endpoint += `&message=${encodeURIComponent(params.message)}`;

@@ -336,6 +336,7 @@ export class DirectClientApi implements ClientApi {
           from: request.from ?? 0,
           to: request.to ?? 0,
           section: request.section,
+          abcRange: request.abcRange,
           transpose: request.transpose,
           capo: request.capo,
           instructions: request.instructions,
@@ -343,16 +344,16 @@ export class DirectClientApi implements ClientApi {
         if (this.isFollowingPpd()) await sendHostDevicePpdDisplayUpdate(update);
         else dispatch(update, options?.isCurrent);
       },
-      highlight: async (from, to, section) => {
+      highlight: async (from, to, section, abcRange) => {
         if (this.isFollowingPpd()) {
-          await sendHostDevicePpdHighlight({ from, to, section });
+          await sendHostDevicePpdHighlight({ from, to, section, abcRange });
           return;
         }
         // When clearing the highlight (from=0, to=0), update CurrentDisplay directly.
         // App.tsx remoteDisplayUpdateHandler skips from/to when from=0 (falsy check),
         // so without this the display.from/to would remain stale after an unhighlight.
-        if (from === 0 && to === 0) updateCurrentDisplay({ from: 0, to: 0 });
-        dispatch({ command: "display_update", id: songId(), from, to, section });
+        if (from === 0 && to === 0) updateCurrentDisplay({ from: 0, to: 0, abcRange: undefined });
+        dispatch({ command: "display_update", id: songId(), from, to, section, abcRange });
       },
       // App/embed applies to the in-process host live on every detent; there is
       // no separate server round-trip here, so the finalize (commit) call would

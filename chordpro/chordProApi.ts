@@ -20,6 +20,7 @@ import { ChordBoxType } from "./chord_drawer";
 import { NoteHitBox } from "./ui_base";
 import type { ChordProStylesSettings } from "./chordpro_styles";
 import type { AbcDisplayMode } from "./render/display-plan";
+import type { AbcRange } from "../common/pp-types";
 
 const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
 
@@ -325,11 +326,10 @@ function bindEditor(editorDiv: HTMLDivElement) {
       if (!instance) return;
       instance.setSectionRepeatCounts(sectionRepeatCounts, draw);
     },
-    highlight: (from: number, to: number, section?: number, repeatNonce?: number, draw = true) => {
+    highlight: (from: number, to: number, section?: number, repeatNonce?: number, draw = true, abcRange?: AbcRange) => {
       const instance = getBoundEditor();
       if (!instance) return;
-      if (section === undefined) instance.highlight(from, to, draw);
-      else instance.highlight(from, to, section, repeatNonce, draw);
+      instance.highlight(from, to, section, repeatNonce, draw, abcRange);
     },
     /** Set the song's display-instructions TEXT on the editor (legacy
      *  applyInstructions). Whether/how it is drawn is controlled separately by
@@ -487,8 +487,8 @@ export const chordProAPI = {
   makeSelectionTitle() {
     getRequiredEditor().makeSelectionTitle();
   },
-  highlight(from: number, to: number) {
-    getRequiredEditor().highlight(from, to);
+  highlight(from: number, to: number, abcRange?: AbcRange) {
+    getRequiredEditor().highlight(from, to, undefined, 0, true, abcRange);
   },
   updateDocument(chp: string) {
     getRequiredEditor().externalUpdate(chp);

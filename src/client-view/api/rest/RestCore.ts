@@ -410,8 +410,8 @@ export class RestCore {
     return sendHostDevicePpdDisplayUpdate(update);
   }
 
-  sendPpdHighlight(from: number, to: number, section?: number): Promise<void> {
-    return sendHostDevicePpdHighlight({ from, to, section });
+  sendPpdHighlight(from: number, to: number, section?: number, abcRange?: Display["abcRange"]): Promise<void> {
+    return sendHostDevicePpdHighlight({ from, to, section, abcRange });
   }
 
   requestPpdHighlightPermission(verifyOnly = false): Promise<boolean> {
