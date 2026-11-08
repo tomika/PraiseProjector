@@ -210,6 +210,13 @@ test("the same progression written on both piano staves is one grid row; differe
       .map((line) => line.lyrics),
     ["C G", "Am F"]
   );
+  // A row that renders the same chords (bar lines are not shown) is not repeated.
+  assert.deepEqual(
+    intro('C,4 "C"C,4 | "G"G,,4')
+      .filter((line) => line.isGrid)
+      .map((line) => line.lyrics),
+    ["C G"]
+  );
 });
 
 test("Hungarian long digraphs are abbreviated except at compound boundaries and before -szor", () => {

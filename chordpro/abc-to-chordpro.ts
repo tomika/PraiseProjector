@@ -138,13 +138,15 @@ function chordSymbols(event: AbcEvent): NonNullable<AbcElem["chord"]> {
 const hasChord = (event: AbcEvent) => chordSymbols(event).length > 0;
 const hasSyllable = (event: AbcEvent) => !!event.lyric?.some((lyric) => lyric.syllable);
 
-/** The voices an instrumental line converts: one per distinct chord progression,
- * or its top voice for the bars alone. */
+/** The voices an instrumental line converts: one per distinct grid row, or its
+ * top voice for the bars alone. */
 function instrumentalVoices(voices: readonly AbcEvent[][]): AbcEvent[][] {
   const progressions = new Set<string>();
   const chorded = voices.filter((voice) => {
     if (!voice.some(hasChord)) return false;
-    const progression = voice.flatMap((event) => chordSymbols(event).map((chord) => chord.name)).join(" ");
+    // Keyed by the grid row it renders (chords, repeats, endings): a voice whose
+    // row would only repeat an earlier one adds nothing.
+    const progression = voice.flatMap(gridToken).join(" ");
     if (progressions.has(progression)) return false;
     progressions.add(progression);
     return true;
