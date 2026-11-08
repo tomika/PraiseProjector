@@ -17,11 +17,23 @@ import { LocalizationProvider, useLocalization } from "../../localization/Locali
 import "../ui/client-view.css";
 
 export function ClientViewApp({ config, onHome }: { config?: ClientConfig; onHome?: () => void }) {
+  const { isLoading } = useAuth();
+  // The host resolves the account's local database before it first clears
+  // isLoading; starting earlier can restore a saved song from the empty guest
+  // database. Only that startup load gates the view: login, logout or a sign-out
+  // in another tab raise isLoading again, and must not tear down the live store
+  // with its dialogs, follow state and feedback.
+  const [startupLoaded, setStartupLoaded] = useState(!isLoading);
+  if (!isLoading && !startupLoaded) setStartupLoaded(true);
+
   return (
-    <LocalizationProvider>
-      <ClientViewAppContent config={config} onHome={onHome} />
-    </LocalizationProvider>
+    <LocalizationProvider>{startupLoaded ? <ClientViewAppContent config={config} onHome={onHome} /> : <ClientViewLoading />}</LocalizationProvider>
   );
+}
+
+function ClientViewLoading() {
+  const { t } = useLocalization();
+  return <div className="cv-loading">{t("Loading")}</div>;
 }
 
 function ClientViewAppContent({ config, onHome }: { config?: ClientConfig; onHome?: () => void }) {
@@ -76,7 +88,7 @@ function ClientViewAppContent({ config, onHome }: { config?: ClientConfig; onHom
   }, [store, config]);
 
   if (!ready) {
-    return <div className="cv-loading">{t("Loading")}</div>;
+    return <ClientViewLoading />;
   }
 
   return (

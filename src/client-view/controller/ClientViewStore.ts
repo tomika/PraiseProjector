@@ -537,6 +537,15 @@ export class ClientViewStore {
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPersistedJson = "";
   private persistenceReady = false;
+  /** False until init has applied its startup selection (saved or explicit).
+   *  Only then may a playlist notification fall back to projecting the first
+   *  row of a list with nothing displayed. */
+  private startupSelectionSettled = false;
+  /** After an embedded reload the host restores its own selection, possibly a
+   *  while later (and a restored row reaches the display only with a section).
+   *  While no selection was made since this revision and the display has shown
+   *  no song, the view never fills an empty display with a row of its own. */
+  private followHostRestoreRevision: number | null = null;
   /** Saved local song waiting for the served-client capability response. */
   private pendingLocalRestore: NavEntry | null = null;
   private restoringPendingLocalSong: NavEntry | null = null;
@@ -577,6 +586,8 @@ export class ClientViewStore {
     const token = ++this.lifecycleToken;
     this.disposed = false;
     this.persistenceReady = false;
+    this.startupSelectionSettled = false;
+    this.followHostRestoreRevision = null;
     this.lastPersistedJson = "";
     this.pendingLocalRestore = null;
     if (config.fullEditorUrl) this.fullEditorUrl = config.fullEditorUrl;
@@ -634,33 +645,50 @@ export class ClientViewStore {
     this.api.setLeaderMode(this.state.leaderMode);
 
     const hasInitialTarget = !!config.initialPlaylistId || !!config.initialSongId;
-    if (config.entryMode === "embedded" && !config.restorePersistedViewOnEntry && !hasInitialTarget) {
-      const restoredHostSelection = await this.applyEmbeddedHostSelection();
-      if (!restoredHostSelection) this.setListMode("playlist");
-    } else if (!hasInitialTarget) {
-      await this.restorePersistedLocalSong(persisted, config);
-      // Preserve the established fresh-Client startup fallback without
-      // overwriting a mode that was actually saved before a page reload.
-      if (
-        shouldUseClientPlaylistFallback({
-          apiMode: this.api.mode,
-          hasInitialTarget,
-          embedded: config.entryMode === "embedded" && !config.restorePersistedViewOnEntry,
-          hasPersistedNavigation: hasPersistedViewMode(persisted?.navigationMode, persisted?.listMode),
-        })
-      ) {
-        this.setNavigationMode("playlist");
+    // After a renderer reload the host restores its own selection, and in
+    // playlist mode the view shows the host's projection: it never projects a
+    // saved or fallback row over that restore (see followHostRestoreRevision).
+    const embeddedReload = config.entryMode === "embedded" && !!config.restorePersistedViewOnEntry && !hasInitialTarget;
+    try {
+      let restoredSelection = false;
+      if (config.entryMode === "embedded" && !config.restorePersistedViewOnEntry && !hasInitialTarget) {
+        restoredSelection = await this.applyEmbeddedHostSelection();
+        if (!restoredSelection) this.setListMode("playlist");
+      } else if (!hasInitialTarget) {
+        restoredSelection = await this.restorePersistedLocalSong(persisted, config);
+        // Preserve the established fresh-Client startup fallback without
+        // overwriting a mode that was actually saved before a page reload.
+        if (
+          shouldUseClientPlaylistFallback({
+            apiMode: this.api.mode,
+            hasInitialTarget,
+            embedded: config.entryMode === "embedded" && !config.restorePersistedViewOnEntry,
+            hasPersistedNavigation: hasPersistedViewMode(persisted?.navigationMode, persisted?.listMode),
+          })
+        ) {
+          this.setNavigationMode("playlist");
+        }
       }
-    }
 
-    if (config.initialPlaylistId) {
-      await this.openInitialPlaylist(config).catch(() => undefined);
-    } else if (config.initialSongId) {
-      await this.selectDatabaseSong(config.initialSongId).catch(() => undefined);
+      // A superseded init (disposed or re-initialized meanwhile) selects nothing.
+      if (!this.isLifecycleActive(token)) return;
+      if (config.initialPlaylistId) {
+        await this.openInitialPlaylist(config).catch(() => undefined);
+      } else if (config.initialSongId) {
+        await this.selectDatabaseSong(config.initialSongId).catch(() => undefined);
+      }
+      if (!this.isLifecycleActive(token)) return;
+      if (embeddedReload && !restoredSelection && !this.state.display.songId) {
+        this.followHostRestoreRevision = this.songSelectionRevision;
+      } else if (!hasInitialTarget && !config.follow && !restoredSelection && !embeddedReload) {
+        await this.selectFirstPlaylistEntryIfNothingDisplayed();
+      }
+    } finally {
+      // Also after a failed startup selection: later playlists still get their fallback.
+      if (this.isLifecycleActive(token)) this.startupSelectionSettled = true;
     }
-    if (!hasInitialTarget && !config.follow) {
-      await this.selectFirstPlaylistEntryIfNothingDisplayed();
-    }
+    // Everything below registers listeners: a store disposed meanwhile must not.
+    if (!this.isLifecycleActive(token)) return;
 
     void this.loadSongs();
     // A restored leaderlists mode needs its profiles fetched (applyPersisted sets
@@ -991,6 +1019,7 @@ export class ClientViewStore {
   private wire(): void {
     this.unsubscribes.push(
       this.api.display.subscribeDisplay((display) => {
+        if (display.songId) this.followHostRestoreRevision = null;
         if (!this.shouldAcceptDisplayUpdate(display)) return;
         // Capo is a per-client local preference: keep the user's chosen capo
         // across leader / display_query updates so a follower can hold its own
@@ -1018,7 +1047,12 @@ export class ClientViewStore {
       this.api.playlist.subscribePlaylist((playlist) => {
         this.set({ playlist });
         if (this.state.playlistFilterText.trim()) this.schedulePlaylistSearch(this.state.playlistFilterText, playlist);
-        if (this.state.navigationMode === "playlist") void this.selectFirstPlaylistEntryIfNothingDisplayed(playlist);
+        // Init chooses a fallback only after applying the saved selection. A
+        // startup playlist notification must not project its first row earlier.
+        const followingHostRestore = this.followHostRestoreRevision === this.songSelectionRevision;
+        if (this.startupSelectionSettled && !followingHostRestore && this.state.navigationMode === "playlist") {
+          void this.selectFirstPlaylistEntryIfNothingDisplayed(playlist);
+        }
       }),
       this.api.song.subscribeSongList((songs) => this.set({ songs }))
     );

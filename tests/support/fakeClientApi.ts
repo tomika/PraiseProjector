@@ -29,6 +29,10 @@ export interface FakeClientApiOptions {
   /** Whether the device adapter reports full screen after a toggle. */
   fullScreenResult?: boolean;
   preferences?: Record<string, string>;
+  /** Model the in-process host's event order (DirectClientApi): a projection
+   *  reaches the display subscribers asynchronously, from the host's update
+   *  queue, and every display change also notifies the playlist subscribers. */
+  hostEcho?: boolean;
 }
 
 class Channel<T> {
@@ -86,6 +90,11 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
   // Like the real adapters, a written playlist comes back through the subscription.
   const playlistChannel = new Channel<PlaylistEntry[]>();
   let fullScreen = false;
+  const emitHostDisplay = (display: Display) => {
+    fake.projected = display;
+    displayChannel.emit(display);
+    if (options.hostEcho) playlistChannel.emit(playlist);
+  };
 
   const api: ClientApi = {
     mode: options.mode ?? "App",
@@ -120,11 +129,20 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
     },
     display: {
       getCurrent: () => fake.projected,
-      project: async (request, options) => {
+      project: async (request, projectOptions) => {
         // Like the adapters: a superseded projection changes nothing.
-        if (options?.isCurrent?.() === false) return;
+        if (projectOptions?.isCurrent?.() === false) return;
         record("display.project", request);
-        fake.projected = { ...fake.projected, songId: request.songId, transpose: request.transpose ?? 0, capo: request.capo };
+        const apply = () => ({ ...fake.projected, songId: request.songId, transpose: request.transpose ?? 0, capo: request.capo });
+        if (options.hostEcho) {
+          // The host applies it from its update queue, re-checking the sender's
+          // condition, against its display as it is by then.
+          await Promise.resolve();
+          if (projectOptions?.isCurrent?.() === false) return;
+          emitHostDisplay(apply());
+          return;
+        }
+        fake.projected = apply();
       },
       highlight: async (from, to, section) => record("display.highlight", from, to, section),
       setTranspose: async (value, commit) => {
@@ -194,10 +212,7 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
     set projected(display: Display) {
       fake.projected = display;
     },
-    emitDisplay: (display) => {
-      fake.projected = display;
-      displayChannel.emit(display);
-    },
+    emitDisplay: emitHostDisplay,
     emitCapabilities: (next) => {
       capabilities = { ...capabilities, ...next };
       capabilityChannel.emit(capabilities);
