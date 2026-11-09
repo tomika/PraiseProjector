@@ -3,10 +3,12 @@ import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { allChordInfo, ChordInfo, chordMap, findOrCreateChordVariant, rxChordExtension } from "./allchords";
 import { ChordDetails, Key, NoteSystem, NoteSystemCode } from "./note_system";
 import { ItemToPosition } from "./placer";
+import { diffChars } from "diff";
 import { UnicodeSymbol } from "../common/symbols";
 import { DifferentialText } from "../common/utils";
 import { parseAbcSource, resolveAbcOptions } from "./abc-options";
 import { abcToChordPro } from "./abc-to-chordpro";
+import { differentialCoordinateToSource, differentialTextUnits } from "./render/differential";
 
 export type ChordSystemCode = NoteSystemCode;
 
@@ -20,6 +22,51 @@ export function getChordSystem(systeCode: ChordSystemCode) {
 
 export function fixChordProText(text: string) {
   return text.replace(/\r/g, "");
+}
+
+/**
+ * Decides whether a chord offset in the previous lyrics and one in the current
+ * lyrics denote the same place. Raw offsets of the two sides are not
+ * comparable: any lyric insertion or deletion before a chord shifts its offset
+ * although the chord stays on the same syllable. A char-level diff is used so
+ * a chord stays matched to the very character it was attached to.
+ */
+export function createChordAnchorMatcher(previousLyrics: string, currentLyrics: string) {
+  type Segment = { before: number; beforeLength: number; after: number; afterLength: number; equal: boolean };
+  // Zero-length equal sentinels make the line start and end unchanged anchors
+  // too (e.g. a line-final chord whose preceding tail was deleted).
+  const segments: Segment[] = [{ before: 0, beforeLength: 0, after: 0, afterLength: 0, equal: true }];
+  let before = 0;
+  let after = 0;
+  let group: Segment | null = null;
+  for (const change of diffChars(previousLyrics, currentLyrics)) {
+    const length = change.value.length;
+    if (!change.added && !change.removed) {
+      group = null;
+      segments.push({ before, beforeLength: length, after, afterLength: length, equal: true });
+      before += length;
+      after += length;
+      continue;
+    }
+    if (!group) segments.push((group = { before, beforeLength: 0, after, afterLength: 0, equal: false }));
+    if (change.added) {
+      group.afterLength += length;
+      after += length;
+    } else {
+      group.beforeLength += length;
+      before += length;
+    }
+  }
+  segments.push({ before, beforeLength: 0, after, afterLength: 0, equal: true });
+
+  return (previousPos: number, currentPos: number) =>
+    segments.some((segment) => {
+      const offset = previousPos - segment.before;
+      if (segment.equal) return offset >= 0 && offset <= segment.beforeLength && currentPos === segment.after + offset;
+      // Strictly inside replaced or deleted text: the same relative offset into
+      // the replacement (clamped) still counts as the original place.
+      return offset > 0 && offset < segment.beforeLength && currentPos === segment.after + Math.min(offset, segment.afterLength);
+    });
 }
 
 /** The only line that closes an ABC block: a whole-line `{end_of_abc}` directive
@@ -1649,15 +1696,17 @@ export class ChordProDocument {
 
       const oldUsed = previous.chords.map(() => false);
       const newUsed = currentLine.chords.map(() => false);
+      // Old and new chord offsets live in different lyric coordinate spaces.
+      const sameAnchor = createChordAnchorMatcher(previous.lyrics, currentLine.lyrics);
 
-      // First keep exact matches (same chord text at same lyric index) unchanged.
+      // First keep exact matches (same chord text at the same lyric place) unchanged.
       for (let j = 0; j < currentLine.chords.length; ++j) {
         const nextChord = currentLine.chords[j];
         let match = -1;
         for (let i = 0; i < previous.chords.length; ++i) {
           if (oldUsed[i]) continue;
           const prevChord = previous.chords[i];
-          if (prevChord.text === nextChord.text && prevChord.pos === nextChord.pos) {
+          if (prevChord.text === nextChord.text && sameAnchor(prevChord.pos, nextChord.pos)) {
             match = i;
             break;
           }
@@ -1685,7 +1734,7 @@ export class ChordProDocument {
         if (match >= 0) {
           oldUsed[match] = true;
           const prevPos = previous.chords[match].pos;
-          line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos, prevPos === nextChord.pos ? undefined : prevPos));
+          line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos, sameAnchor(prevPos, nextChord.pos) ? undefined : prevPos));
         } else {
           line_obj.chords.push(new ChordProChord(line_obj, nextChord.text, nextChord.pos, true));
         }
@@ -1698,8 +1747,15 @@ export class ChordProDocument {
           line_obj.chords.push(new ChordProChord(line_obj, prevChord.text, prevChord.pos, false));
         }
 
+      // A removed chord's `pos` is an old-lyrics offset, every other chord's a
+      // new-lyrics one; order them in the rendered (before + after) stream, the
+      // same anchor the display plan lays them out by.
+      const lyricUnits = differentialTextUnits(line_obj.lyricsData);
+      const renderedPos = (chord: ChordProChord) => differentialCoordinateToSource(lyricUnits, chord.added === false ? "before" : "after", chord.pos);
       line_obj.chords.sort((a, b) => {
-        if (a.pos !== b.pos) return a.pos - b.pos;
+        const aPos = renderedPos(a);
+        const bPos = renderedPos(b);
+        if (aPos !== bPos) return aPos - bPos;
         const aRank = a.added === false ? -1 : a.added === true ? 1 : 0;
         const bRank = b.added === false ? -1 : b.added === true ? 1 : 0;
         return aRank - bRank;
