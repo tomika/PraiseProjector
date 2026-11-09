@@ -136,7 +136,7 @@ export const pendingSongStateCodec = t.union([t.literal("PENDING"), t.literal("R
 
 export const songDBPendingEntryCodec = t.intersection([
   songDBEntryWithDataCodec,
-  t.partial({ currentLanguage: songLanguageCodec }),
+  t.partial({ currentLanguage: songLanguageCodec, canRevoke: t.boolean }),
   t.type({
     current: t.string,
     state: pendingSongStateCodec,

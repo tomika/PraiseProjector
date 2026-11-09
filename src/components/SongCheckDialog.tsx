@@ -94,7 +94,6 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
   const determineOperation = (entry: SongDBPendingEntry, decision: SongCheckDecision): PendingSongOperation => {
     if (entry.state === "UPSTREAM") return decision === "approve" ? "TAKE_UPSTREAM" : "KEEP_MINE";
     if (decision === "revoke") return "REVOKE";
-    if (username === entry.uploader && decision === "reject") return "REVOKE";
     if (entry.state === "REJECTED") {
       return decision === "approve" ? "KEEP" : "REVOKE";
     }
@@ -249,7 +248,7 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
             initialLeftCollapsed={!selectedEntryHasPreviousVersion}
             rightLabel={t("SongCheckProposedVersion")}
             onSongCheckDecision={handleSongCheckDecision}
-            songCheckIsOwnUpload={isOwnUpload(selectedEntry)}
+            songCheckCanRevoke={selectedEntry.canRevoke ?? (isOwnUpload(selectedEntry) && selectedEntry.state !== "PENDING")}
             songCheckState={selectedEntry.state}
             requesterName={selectedEntry.uploader}
             onNavigatePrev={handleNavigatePrev}

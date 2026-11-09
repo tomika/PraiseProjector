@@ -33,7 +33,7 @@ interface CompareDialogProps {
   /** SongCheck mode: callback when user approves/rejects/revokes */
   onSongCheckDecision?: (decision: SongCheckDecision) => void;
   /** SongCheck mode: if true, reject button shows "Revoke" instead */
-  songCheckIsOwnUpload?: boolean;
+  songCheckCanRevoke?: boolean;
   /** SongCheck mode: the current state of the pending song */
   songCheckState?: PendingSongState;
   /** SongCheck mode: username of the person who submitted the song */
@@ -72,7 +72,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
   rightButtonLabel,
   initialLeftCollapsed = false,
   onSongCheckDecision,
-  songCheckIsOwnUpload,
+  songCheckCanRevoke,
   songCheckState,
   requesterName,
   onNavigatePrev,
@@ -494,8 +494,8 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   <button type="button" className="btn btn-success" onClick={() => onSongCheckDecision("approve")}>
                     {t("SongCheckApprove")}
                   </button>
-                  <button type="button" className="btn btn-danger" onClick={() => onSongCheckDecision(songCheckIsOwnUpload ? "revoke" : "reject")}>
-                    {songCheckIsOwnUpload ? t("SongCheckWithdraw") : t("SongCheckReject")}
+                  <button type="button" className="btn btn-danger" onClick={() => onSongCheckDecision(songCheckCanRevoke ? "revoke" : "reject")}>
+                    {songCheckCanRevoke ? t("SongCheckWithdraw") : t("SongCheckReject")}
                   </button>
                 </>
               )}
