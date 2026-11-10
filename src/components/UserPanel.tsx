@@ -11,6 +11,7 @@ import { Database } from "../../db-common/Database";
 import AuthDialog from "./AuthDialog";
 import { suppressCloudNetworkToast } from "../utils/cloudNetworkToastSuppression";
 import { setSyncStatus } from "../state/syncStatusStore";
+import { HELD_SONGS_CHANGED_EVENT, HeldSongRef, pruneHeldSongAcknowledgements, unacknowledgedHeldSongs } from "../state/heldSongsStore";
 import { useUpdate } from "../contexts/UpdateContext";
 import { requestTutorialContinueWhenUnblocked } from "../tutorial/tutorialEvents";
 import { deriveFullViewPpdFollowUi } from "../services/ppdFollowUi";
@@ -72,6 +73,11 @@ const UserPanel: React.FC<UserPanelProps> = ({
   const [authDialogInitialUsername, setAuthDialogInitialUsername] = useState("");
   const [showSyncMenu, setShowSyncMenu] = useState(false);
   const [pendingSongCount, setPendingSongCount] = useState(0);
+  // The user's own versions held back on the way to the public list (only with
+  // the setting on); informational, so shown apart from pendingSongCount.
+  const [heldSongs, setHeldSongs] = useState<HeldSongRef[]>([]);
+  // Bumped when an acknowledgement (kept outside React) changes the count.
+  const [, setHeldAcknowledgements] = useState(0);
   const [cloudDbVersion, setCloudDbVersion] = useState<number | null>(null);
   const [localDbVersion, setLocalDbVersion] = useState(0);
   const [updatedSongCount, setUpdatedSongCount] = useState(0);
@@ -107,6 +113,7 @@ const UserPanel: React.FC<UserPanelProps> = ({
     setTimeout(() => action?.(), 0);
   }, [isAuthLoading, isAuthenticated]);
 
+  const showHeldSongs = !!settings?.showHeldSongs;
   const peekIntervalSeconds = Math.max(MIN_PEEK_INTERVAL_SECONDS, (settings?.serverPeekIntervalMinutes ?? 60) * 60);
   const peekIntervalMs = peekIntervalSeconds * 1000;
 
@@ -125,9 +132,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
       }
 
       try {
-        const peek = await cloudApi.fetchPeek(true);
+        const peek = await cloudApi.fetchPeek(true, showHeldSongs);
         if (requestId !== peekRequestRef.current) return;
         setPendingSongCount(peek.pendingSongCount ?? 0);
+        // An older server leaves the field out: then nothing is known, prune nothing.
+        if (showHeldSongs && peek.heldSongs) pruneHeldSongAcknowledgements(peek.heldSongs);
+        setHeldSongs(showHeldSongs ? (peek.heldSongs ?? []) : []);
         setCloudDbVersion(peek.dbVersion ?? null);
         setCloudAuthFailed(false);
         lastPeekedLocalDbVersionRef.current = localDbVersion;
@@ -140,11 +150,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
           setCloudAuthFailed(false);
         }
         setPendingSongCount(0);
+        setHeldSongs([]);
         setCloudDbVersion(null);
       }
       lastPeekCheckRef.current = Date.now();
     },
-    [isAuthenticated, isAuthLoading, localDbVersion]
+    [isAuthenticated, isAuthLoading, localDbVersion, showHeldSongs]
   );
 
   // Keep a stable ref so the polling effect doesn't need fetchPeek in its deps.
@@ -218,6 +229,22 @@ const UserPanel: React.FC<UserPanelProps> = ({
     window.addEventListener("pp-pending-songs-changed", handleRefresh);
     return () => window.removeEventListener("pp-pending-songs-changed", handleRefresh);
   }, []);
+
+  // Turning the held-songs setting on or off changes what peek asks for.
+  const showHeldSongsRef = useRef(showHeldSongs);
+  useEffect(() => {
+    if (showHeldSongsRef.current === showHeldSongs) return;
+    showHeldSongsRef.current = showHeldSongs;
+    fetchPeekRef.current({ force: true });
+  }, [showHeldSongs]);
+
+  // An acknowledgement only hides a held song locally: recount, no network.
+  useEffect(() => {
+    const handleAcknowledged = () => setHeldAcknowledgements((n) => n + 1);
+    window.addEventListener(HELD_SONGS_CHANGED_EVENT, handleAcknowledged);
+    return () => window.removeEventListener(HELD_SONGS_CHANGED_EVENT, handleAcknowledged);
+  }, []);
+  const heldSongCount = unacknowledgedHeldSongs(heldSongs).length;
 
   useEffect(() => {
     if (lastPeekedLocalDbVersionRef.current !== localDbVersion) {
@@ -430,6 +457,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
               </span>
             ) : pendingSongCount > 0 ? (
               <span className="badge bg-danger rounded-pill pending-badge-abs">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
+            ) : heldSongCount > 0 ? (
+              <span className="badge bg-info rounded-pill pending-badge-abs" title={t("SongCheckHeldTitle")}>
+                {heldSongCount > 99 ? "99+" : heldSongCount}
+              </span>
             ) : null}
             {showSyncMenu && (
               <div className="dropdown-menu show sync-dropdown-menu">
@@ -457,8 +488,17 @@ const UserPanel: React.FC<UserPanelProps> = ({
                     }}
                   >
                     {t("SongCheckTitle")}
-                    {pendingSongCount > 0 && (
-                      <span className="badge bg-danger rounded-pill ms-2">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
+                    {(pendingSongCount > 0 || heldSongCount > 0) && (
+                      <span>
+                        {pendingSongCount > 0 && (
+                          <span className="badge bg-danger rounded-pill ms-2">{pendingSongCount > 99 ? "99+" : pendingSongCount}</span>
+                        )}
+                        {heldSongCount > 0 && (
+                          <span className="badge bg-info rounded-pill ms-2" title={t("SongCheckHeldTitle")}>
+                            {heldSongCount > 99 ? "99+" : heldSongCount}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </button>
                 )}

@@ -132,11 +132,20 @@ export const songDBEntryWithDataCodec = t.intersection([songDBEntryCodec, t.type
 
 export const songsResponseCodec = t.array(songDBEntryWithDataCodec);
 
-export const pendingSongStateCodec = t.union([t.literal("PENDING"), t.literal("REJECTED"), t.literal("KEPT"), t.literal("UPSTREAM")]);
+/** HELD: the user's own version held back on the way to the public list (sent
+ *  only for pending_songs?non_public=1; old clients never receive it). */
+export const pendingSongStateCodec = t.union([
+  t.literal("PENDING"),
+  t.literal("REJECTED"),
+  t.literal("KEPT"),
+  t.literal("UPSTREAM"),
+  t.literal("HELD"),
+]);
 
 export const songDBPendingEntryCodec = t.intersection([
   songDBEntryWithDataCodec,
-  t.partial({ currentLanguage: songLanguageCodec, canRevoke: t.boolean }),
+  // heldIn/heldBy: for HELD only, the group the version stays in and the moderator who stopped it.
+  t.partial({ currentLanguage: songLanguageCodec, canRevoke: t.boolean, heldIn: t.string, heldBy: t.string }),
   t.type({
     current: t.string,
     state: pendingSongStateCodec,
@@ -290,10 +299,15 @@ export const errorResponseCodec = t.type({
  */
 export const sessionResponseCodec = uniType({ token: t.string, login: t.string }, { leaderId: t.string });
 
-export const peekResponseCodec = t.type({
-  dbVersion: t.number,
-  pendingSongCount: t.number,
-});
+export const peekResponseCodec = t.intersection([
+  t.type({
+    dbVersion: t.number,
+    pendingSongCount: t.number,
+  }),
+  // Only for peek?non_public=1: the user's held versions (see pendingSongStateCodec),
+  // by `created`, which a version renumbering keeps and a new upload changes.
+  t.partial({ heldSongs: t.array(t.type({ songId: t.string, created: t.string })) }),
+]);
 
 export const editSongResponseCodec = uniType({ version: t.number, song: t.string, system: chordSystemCodec }, { language: songLanguageCodec });
 

@@ -344,6 +344,19 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, updateSetti
             />
             <small className="form-text text-muted">{t("SettingsPeekIntervalMinutesDescription")}</small>
           </div>
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="showHeldSongs"
+              checked={settings.showHeldSongs}
+              onChange={(e) => updateSetting("showHeldSongs", e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="showHeldSongs">
+              {t("SettingsShowHeldSongs")}
+            </label>
+            <small className="form-text text-muted d-block">{t("SettingsShowHeldSongsDescription")}</small>
+          </div>
           <div className="form-group">
             <label htmlFor="syncDeclineTimeoutMinutes">{t("SettingsSyncDeclineTimeoutMinutes")}</label>
             <input

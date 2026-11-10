@@ -85,6 +85,13 @@ type ProxyRequestOptions = {
   omitCookies?: boolean;
 };
 
+/** `/peek` or `/pending_songs` with its options: version=2 adds UPSTREAM
+ *  offers, non_public=1 the user's HELD versions. Old servers ignore both. */
+function pendingEndpoint(path: string, includeUpstream: boolean, includeHeld: boolean): string {
+  const params = [includeUpstream ? "version=2" : "", includeHeld ? "non_public=1" : ""].filter(Boolean);
+  return params.length ? `${path}?${params.join("&")}` : path;
+}
+
 function isRetryableStatus(status: number) {
   return status === 429 || status === 503;
 }
@@ -225,14 +232,15 @@ export class CloudApiService {
   // Default TTL (10 s) matches MIN_PEEK_INTERVAL_SECONDS in UserPanel.
   // Callers that want a guaranteed fresh result call invalidatePeekCache() first.
   static readonly DEFAULT_PEEK_CACHE_TTL_MS = 10_000;
+  // Keyed by the endpoint, which encodes the requested options.
   private peekCache: {
     result: PeekResponse;
     expiresAt: number;
-    includeUpstream: boolean;
+    endpoint: string;
   } | null = null;
   private peekInFlight: {
     request: Promise<PeekResponse>;
-    includeUpstream: boolean;
+    endpoint: string;
   } | null = null;
   private peekCacheTtlMs = CloudApiService.DEFAULT_PEEK_CACHE_TTL_MS;
   private peekGeneration = 0;
@@ -864,42 +872,42 @@ export class CloudApiService {
    * succession share a single network round-trip.  In-flight deduplication
    * ensures only one request is outstanding at a time.
    */
-  async fetchPeek(includeUpstream = false): Promise<PeekResponse> {
+  async fetchPeek(includeUpstream = false, includeHeld = false): Promise<PeekResponse> {
+    const endpoint = pendingEndpoint("/peek", includeUpstream, includeHeld);
     const now = Date.now();
-    if (this.peekCache && this.peekCache.includeUpstream === includeUpstream && now < this.peekCache.expiresAt) {
+    if (this.peekCache && this.peekCache.endpoint === endpoint && now < this.peekCache.expiresAt) {
       return this.peekCache.result;
     }
-    if (this.peekInFlight && this.peekInFlight.includeUpstream === includeUpstream) {
+    if (this.peekInFlight && this.peekInFlight.endpoint === endpoint) {
       return this.peekInFlight.request;
     }
     const generation = this.peekGeneration;
     const request = (async () => {
       try {
-        const endpoint = includeUpstream ? "/peek?version=2" : "/peek";
         const response = await this.apiCall<unknown>(endpoint);
         const result = this.parseResponse(peekResponseCodec, response);
         if (generation === this.peekGeneration) {
           this.peekCache = {
             result,
             expiresAt: Date.now() + this.peekCacheTtlMs,
-            includeUpstream,
+            endpoint,
           };
         }
         return result;
       } finally {
-        if (generation === this.peekGeneration && this.peekInFlight?.includeUpstream === includeUpstream) this.peekInFlight = null;
+        if (generation === this.peekGeneration && this.peekInFlight?.endpoint === endpoint) this.peekInFlight = null;
       }
     })();
-    this.peekInFlight = { request, includeUpstream };
+    this.peekInFlight = { request, endpoint };
     return request;
   }
 
   /**
-   * Fetch list of pending songs awaiting review
+   * Fetch list of pending songs awaiting review. `includeHeld` also lists the
+   * user's own versions held back on the way to the public list (state HELD).
    */
-  async fetchPendingSongs(includeUpstream = false): Promise<SongDBPendingEntry[]> {
-    const endpoint = includeUpstream ? "/pending_songs?version=2" : "/pending_songs";
-    const response = await this.apiCall<unknown>(endpoint);
+  async fetchPendingSongs(includeUpstream = false, includeHeld = false): Promise<SongDBPendingEntry[]> {
+    const response = await this.apiCall<unknown>(pendingEndpoint("/pending_songs", includeUpstream, includeHeld));
     return this.parseResponse(pendingSongsResponseCodec, response);
   }
 

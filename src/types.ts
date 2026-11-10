@@ -165,6 +165,9 @@ export interface Settings {
   // Interval of automatic /peek calls (minutes)
   serverPeekIntervalMinutes: number;
 
+  // Show the user's own changes held back on their way to the public list
+  showHeldSongs: boolean;
+
   // Show toast notifications when cloud network calls fail
   showCloudNetworkErrorToasts: boolean;
 
