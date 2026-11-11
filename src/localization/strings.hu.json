@@ -1079,7 +1079,6 @@
   "SongCheckHeldTitle": "Nem nyilvános módosításaim",
   "SongCheckHeldDescription": "Ezek a módosításaid a csoportodban érvényesek, de egy moderátor nem engedte őket tovább a nyilvános listába. Teendőd nincs vele; a „Tudomásul vettem” ezen az eszközön elrejti.",
   "SongCheckHeldIn": "Csoport",
-  "SongCheckHeldBy": "Leállította",
   "SongCheckAcknowledge": "Tudomásul vettem",
   "SongCheckPublicVersion": "Nyilvános verzió",
   "SongCheckNoPublicVersion": "Nincs nyilvános verzió",

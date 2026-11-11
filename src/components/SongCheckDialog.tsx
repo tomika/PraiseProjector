@@ -258,7 +258,6 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
                         <tr>
                           <th>{t("SongCheckSongTitle")}</th>
                           <th>{t("SongCheckHeldIn")}</th>
-                          <th>{t("SongCheckHeldBy")}</th>
                           <th>{t("SongCheckDate")}</th>
                           <th></th>
                         </tr>
@@ -273,7 +272,6 @@ const SongCheckDialog: React.FC<SongCheckDialogProps> = ({ onClose }) => {
                           >
                             <td>{entry.title}</td>
                             <td>{entry.heldIn}</td>
-                            <td>{entry.heldBy}</td>
                             <td>{formatDate(entry.created)}</td>
                             <td className="text-end">
                               <button

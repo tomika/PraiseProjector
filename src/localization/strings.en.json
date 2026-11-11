@@ -1078,7 +1078,6 @@
   "SongCheckHeldTitle": "My changes not made public",
   "SongCheckHeldDescription": "These changes of yours are valid in your group, but a moderator did not let them further up to the public list. Nothing to do; \"Acknowledge\" hides one on this device.",
   "SongCheckHeldIn": "Group",
-  "SongCheckHeldBy": "Stopped by",
   "SongCheckAcknowledge": "Acknowledge",
   "SongCheckPublicVersion": "Public version",
   "SongCheckNoPublicVersion": "No public version",

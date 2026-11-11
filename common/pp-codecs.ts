@@ -144,8 +144,8 @@ export const pendingSongStateCodec = t.union([
 
 export const songDBPendingEntryCodec = t.intersection([
   songDBEntryWithDataCodec,
-  // heldIn/heldBy: for HELD only, the group the version stays in and the moderator who stopped it.
-  t.partial({ currentLanguage: songLanguageCodec, canRevoke: t.boolean, heldIn: t.string, heldBy: t.string }),
+  // heldIn: for HELD only, the group the version stays in. The moderator is never named (login name).
+  t.partial({ currentLanguage: songLanguageCodec, canRevoke: t.boolean, heldIn: t.string }),
   t.type({
     current: t.string,
     state: pendingSongStateCodec,
