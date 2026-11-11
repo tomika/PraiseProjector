@@ -11,6 +11,18 @@ export type AboutRuntimeMode = "frontend-only" | "full-electron";
 
 const electronFrontendWebApp: ThirdPartyEntry[] = [
   {
+    name: "xml2abc-js 122 (Willem G. Vree and contributors; PraiseProjector adaptation)",
+    url: "https://wim.vree.org/js/xml2abc-js_index.html",
+    licence: "GNU Lesser General Public License",
+    licenceUrl: "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+  },
+  {
+    name: "@xmldom/xmldom",
+    url: "https://github.com/xmldom/xmldom",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/xmldom/xmldom/blob/master/LICENSE",
+  },
+  {
     name: "Twemoji flag graphics (Twitter, Inc. and contributors)",
     url: "https://github.com/twitter/twemoji/tree/v14.0.2",
     licence: "CC-BY 4.0",

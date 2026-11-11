@@ -73,6 +73,23 @@ export default defineConfig(({ command, mode }) => {
       react(),
       tsconfigPaths(),
       {
+        name: "musicxml-library-source",
+        generateBundle() {
+          // Distribute readable LGPL source, local adapters and notices with
+          // Electron, web and Android builds.
+          const sourceRoot = path.join(__dirname, "musicxml");
+          const emitDirectory = (directory: string, prefix: string) => {
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+              const sourcePath = path.join(directory, entry.name),
+                name = `${prefix}${entry.name}`;
+              if (entry.isDirectory()) emitDirectory(sourcePath, `${name}/`);
+              else this.emitFile({ type: "asset", fileName: `third-party/musicxml/${name}`, source: fs.readFileSync(sourcePath) });
+            }
+          };
+          emitDirectory(sourceRoot, "");
+        },
+      },
+      {
         name: "root-soundfont-assets",
         configureServer(server) {
           server.middlewares.use("/webapp", (req, res, next) => {

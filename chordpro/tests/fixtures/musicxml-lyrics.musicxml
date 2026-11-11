@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Test score: 2 parts, 2/4, G major, 4 measures.
+  - P1 has two lyric verses (Hungarian, non-ASCII), verse 2 only in measures 1-2.
+  - Measure 2 is volta 1 with a backward repeat, measure 3 starts volta 2.
+  - Only P1 carries <print new-system="yes"/> (measure 3): both voices must still break there.
+  - P2 uses 16th notes, which makes xml2abc pick L:1/16 for that voice unless a shared L: is forced.
+  - No work-title: the fallback title must replace xml2abc's "T:Title" placeholder.
+-->
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Voice</part-name></score-part>
+    <score-part id="P2"><part-name>Bass</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>1</fifths></key>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type>
+        <lyric number="1"><syllabic>begin</syllabic><text>Ál</text></lyric>
+        <lyric number="2"><syllabic>single</syllabic><text>Szent</text></lyric>
+      </note>
+      <note>
+        <pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type>
+        <lyric number="1"><syllabic>end</syllabic><text>djad</text></lyric>
+        <lyric number="2"><syllabic>single</syllabic><text>a</text></lyric>
+      </note>
+    </measure>
+    <measure number="2">
+      <barline location="left"><ending number="1" type="start"/></barline>
+      <note>
+        <pitch><step>B</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice><type>half</type>
+        <lyric number="1"><syllabic>single</syllabic><text>lelkem</text></lyric>
+        <lyric number="2"><syllabic>single</syllabic><text>név</text></lyric>
+      </note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="1" type="stop"/>
+        <repeat direction="backward"/>
+      </barline>
+    </measure>
+    <measure number="3">
+      <print new-system="yes"/>
+      <barline location="left"><ending number="2" type="start"/></barline>
+      <note>
+        <pitch><step>C</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type>
+        <lyric number="1"><syllabic>single</syllabic><text>Úrnak</text></lyric>
+      </note>
+      <barline location="right"><ending number="2" type="discontinue"/></barline>
+    </measure>
+    <measure number="4">
+      <note>
+        <pitch><step>D</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type>
+        <lyric number="1"><syllabic>single</syllabic><text>őt</text></lyric>
+      </note>
+      <barline location="right"><bar-style>light-heavy</bar-style></barline>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>1</fifths></key>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type></note>
+      <note><pitch><step>B</step><octave>2</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type></note>
+      <note><pitch><step>B</step><octave>2</octave></pitch><duration>1</duration><voice>1</voice><type>16th</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <barline location="left"><ending number="1" type="start"/></barline>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="1" type="stop"/>
+        <repeat direction="backward"/>
+      </barline>
+    </measure>
+    <measure number="3">
+      <barline location="left"><ending number="2" type="start"/></barline>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+      <barline location="right"><ending number="2" type="discontinue"/></barline>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+      <barline location="right"><bar-style>light-heavy</bar-style></barline>
+    </measure>
+  </part>
+</score-partwise>

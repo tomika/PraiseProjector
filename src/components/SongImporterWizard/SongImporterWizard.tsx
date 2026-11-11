@@ -7,6 +7,7 @@ import { ChordMap, ChordDetectionMode, ChordNormalizer } from "../../../db-commo
 import { Song } from "../../../db-common/Song";
 import { ChordProDocument, getChordSystem } from "../../../chordpro/chordpro_base";
 import { abcToChordProSong, looksLikeAbc, mapOutsideAbcBlocks } from "../../../chordpro/abc-import";
+import { importMusicXml } from "../../services/musicXmlImport";
 import { ChordSelector } from "../../../chordpro/chord_selector";
 import { ChordDetails } from "../../../chordpro/note_system";
 import { Database } from "../../../db-common/Database";
@@ -45,7 +46,7 @@ const IMPORT_CHORD_SELECTOR_IDS = {
 const IMPORT_CHORD_SYSTEM = "G";
 
 /** Files loaded straight into the ChordPro editor without line classification. */
-const DIRECT_EXTENSIONS = [".chp", ".abc"];
+const DIRECT_EXTENSIONS = [".chp", ".abc", ".musicxml", ".xml", ".mxl"];
 
 function fileExtension(name: string) {
   return name.substring(name.lastIndexOf(".")).toLowerCase();
@@ -102,6 +103,9 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   // File selection state (Tab 0)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isReadingScore, setIsReadingScore] = useState(false);
+  const directImportIdRef = useRef(0);
+  const scoreImportControllerRef = useRef<AbortController | null>(null);
   const [importedFiles, setImportedFiles] = useState<File[]>([]);
 
   // Line classification state (Tab 1)
@@ -162,6 +166,16 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   const chordDrawerRef = useRef<ChordDrawer | null>(null);
   const activeChordSelectorTargetRef = useRef<string | null>(null);
   const processedInitialFilesKeyRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      directImportIdRef.current++;
+      scoreImportControllerRef.current?.abort();
+      // React StrictMode replays mount effects; let that replay restart the
+      // initial batch after cancelling the first worker.
+      processedInitialFilesKeyRef.current = null;
+    },
+    []
+  );
 
   // Services
   const documentImporter = useRef(new DocumentImporter());
@@ -276,17 +290,57 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     [startChordProNormalizationFlow]
   );
 
-  /** Loads a .chp or .abc file straight into the editor; false for other files. */
+  /** Score/ChordPro files use the notation path for selection, drop and batches. */
   const startDirectFlow = useCallback(
     async (file: File) => {
+      const request = ++directImportIdRef.current;
+      scoreImportControllerRef.current?.abort();
+      scoreImportControllerRef.current = null;
       const ext = fileExtension(file.name);
-      if (!DIRECT_EXTENSIONS.includes(ext)) return false;
-      const text = await file.text();
-      if (ext === ".abc") startAbcImportFlow(text);
-      else startChordProNormalizationFlow(text);
+      if (!DIRECT_EXTENSIONS.includes(ext)) {
+        setIsReadingScore(false);
+        return false;
+      }
+      // A failed import must not leave a previous file's editor reachable.
+      setCurrentTab(0);
+      setIsChordProDirectFlow(false);
+      setGeneratedChordPro("");
+      setEditorSong(null);
+      setIsReadingScore(true);
+      try {
+        if ([".musicxml", ".xml", ".mxl"].includes(ext)) {
+          const controller = new AbortController();
+          scoreImportControllerRef.current = controller;
+          const result = await importMusicXml(file, controller.signal);
+          if (request !== directImportIdRef.current) return true;
+          startAbcImportFlow(result.abc);
+          if (result.warnings.length)
+            setMessageBox({
+              title: t("SongImportMusicXmlWarningsTitle"),
+              message: format("SongImportMusicXmlWarningsMessage", String(result.warnings.length)) + "\n\n" + result.warnings.slice(0, 8).join("\n"),
+              onConfirm: () => setMessageBox(null),
+              onCancel: () => setMessageBox(null),
+            });
+        } else {
+          const text = await file.text();
+          if (request !== directImportIdRef.current) return true;
+          if (ext === ".abc") startAbcImportFlow(text);
+          else startChordProNormalizationFlow(text);
+        }
+      } catch (error) {
+        if (request === directImportIdRef.current)
+          setMessageBox({
+            title: t("SongImportErrorTitle"),
+            message: format("SongImportParseErrorWithDetails", error instanceof Error ? error.message : String(error)),
+            onConfirm: () => setMessageBox(null),
+            onCancel: () => setMessageBox(null),
+          });
+      } finally {
+        if (request === directImportIdRef.current) setIsReadingScore(false);
+      }
       return true;
     },
-    [startAbcImportFlow, startChordProNormalizationFlow]
+    [format, startAbcImportFlow, startChordProNormalizationFlow, t]
   );
 
   const minTabIndex = isChordProDirectFlow ? 2 : 0;
@@ -471,7 +525,6 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       const firstName = initialFiles[0]?.name || "";
       // Surfacing a message box in response to processing the incoming file
       // batch (external prop); the ref-key guard above prevents effect re-runs.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessageBox({
         title: t("SongImportUnsupportedFormatTitle"),
         message: format("SongImportUnsupportedFormatMessage", firstName),
@@ -885,6 +938,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   }, [currentTab, minTabIndex]);
 
   const handleNext = useCallback(() => {
+    if (isReadingScore) return;
     switch (currentTab) {
       case 0:
         handleNextFromFileSelection();
@@ -899,7 +953,14 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         handleSaveAndRestart();
         break;
     }
-  }, [currentTab, handleNextFromFileSelection, handleNextFromLineClassification, handleNextFromChordNormalization, handleSaveAndRestart]);
+  }, [
+    currentTab,
+    isReadingScore,
+    handleNextFromFileSelection,
+    handleNextFromLineClassification,
+    handleNextFromChordNormalization,
+    handleSaveAndRestart,
+  ]);
 
   // === Render ===
 
@@ -921,12 +982,14 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
         )}
       </div>
       <div className="supported-formats">
+        {isReadingScore && <p role="status">{t("SongImportConvertingScore")}</p>}
         <p>
           <strong>{t("SongImportSupportedFormatsTitle")}</strong>
         </p>
         <ul>
           <li>{t("SongImportFormatChp")}</li>
           <li>{t("SongImportFormatAbc")}</li>
+          <li>{t("SongImportFormatMusicXml")}</li>
           <li>{t("SongImportFormatTxt")}</li>
           <li>{t("SongImportFormatDocx")}</li>
           <li>{t("SongImportFormatPdf")}</li>
@@ -1213,7 +1276,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
           <button onClick={handlePrevious} disabled={currentTab <= minTabIndex} className="prev-button">
             {t("SongImportPrevious")}
           </button>
-          <button onClick={handleNext} className="next-button" disabled={currentTab === 2 && !chordModesResolved}>
+          <button onClick={handleNext} className="next-button" disabled={isReadingScore || (currentTab === 2 && !chordModesResolved)}>
             {currentTab === 3 ? t("SongImportSaveClose") : t("SongImportNext")}
           </button>
         </div>

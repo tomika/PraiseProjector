@@ -204,6 +204,6 @@ export class DocumentImporter {
    * Get list of supported file extensions
    */
   static getSupportedExtensions(): string[] {
-    return [".chp", ".abc", ".txt", ".pdf", ".docx", ".htm", ".html"];
+    return [".chp", ".abc", ".musicxml", ".xml", ".mxl", ".txt", ".pdf", ".docx", ".htm", ".html"];
   }
 }
