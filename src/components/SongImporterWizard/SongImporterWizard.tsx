@@ -104,8 +104,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   // File selection state (Tab 0)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isReadingScore, setIsReadingScore] = useState(false);
-  const directImportIdRef = useRef(0);
-  const scoreImportControllerRef = useRef<AbortController | null>(null);
+  const importControllerRef = useRef<AbortController | null>(null);
   const [importedFiles, setImportedFiles] = useState<File[]>([]);
 
   // Line classification state (Tab 1)
@@ -166,10 +165,17 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
   const chordDrawerRef = useRef<ChordDrawer | null>(null);
   const activeChordSelectorTargetRef = useRef<string | null>(null);
   const processedInitialFilesKeyRef = useRef<string | null>(null);
+  const beginImport = useCallback(() => {
+    importControllerRef.current?.abort();
+    const controller = new AbortController();
+    importControllerRef.current = controller;
+    setIsReadingScore(false);
+    setMessageBox(null);
+    return controller.signal;
+  }, []);
   useEffect(
     () => () => {
-      directImportIdRef.current++;
-      scoreImportControllerRef.current?.abort();
+      importControllerRef.current?.abort();
       // React StrictMode replays mount effects; let that replay restart the
       // initial batch after cancelling the first worker.
       processedInitialFilesKeyRef.current = null;
@@ -292,10 +298,8 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   /** Score/ChordPro files use the notation path for selection, drop and batches. */
   const startDirectFlow = useCallback(
-    async (file: File) => {
-      const request = ++directImportIdRef.current;
-      scoreImportControllerRef.current?.abort();
-      scoreImportControllerRef.current = null;
+    async (file: File, signal: AbortSignal) => {
+      if (signal.aborted) return true;
       const ext = fileExtension(file.name);
       if (!DIRECT_EXTENSIONS.includes(ext)) {
         setIsReadingScore(false);
@@ -309,10 +313,8 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       setIsReadingScore(true);
       try {
         if ([".musicxml", ".xml", ".mxl"].includes(ext)) {
-          const controller = new AbortController();
-          scoreImportControllerRef.current = controller;
-          const result = await importMusicXml(file, controller.signal);
-          if (request !== directImportIdRef.current) return true;
+          const result = await importMusicXml(file, signal);
+          if (signal.aborted) return true;
           startAbcImportFlow(result.abc);
           if (result.warnings.length)
             setMessageBox({
@@ -323,12 +325,12 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
             });
         } else {
           const text = await file.text();
-          if (request !== directImportIdRef.current) return true;
+          if (signal.aborted) return true;
           if (ext === ".abc") startAbcImportFlow(text);
           else startChordProNormalizationFlow(text);
         }
       } catch (error) {
-        if (request === directImportIdRef.current)
+        if (!signal.aborted)
           setMessageBox({
             title: t("SongImportErrorTitle"),
             message: format("SongImportParseErrorWithDetails", error instanceof Error ? error.message : String(error)),
@@ -336,7 +338,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
             onCancel: () => setMessageBox(null),
           });
       } finally {
-        if (request === directImportIdRef.current) setIsReadingScore(false);
+        if (!signal.aborted) setIsReadingScore(false);
       }
       return true;
     },
@@ -370,6 +372,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
   const handleFileSelect = useCallback(
     async (file: File) => {
+      const signal = beginImport();
       if (!DocumentImporter.isSupportedFile(file.name)) {
         setMessageBox({
           title: t("SongImportUnsupportedFormatTitle"),
@@ -385,106 +388,102 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
       setIsChordProDirectFlow(false);
 
       // Auto-load ChordPro and ABC files
-      await startDirectFlow(file);
+      await startDirectFlow(file, signal);
     },
-    [format, startDirectFlow, t]
+    [beginImport, format, startDirectFlow, t]
   );
 
   const parseFileAndAdvance = useCallback(
     async (file: File) => {
+      const signal = beginImport();
+      const reportError = (error: unknown) => {
+        if (signal.aborted) return;
+        console.error("Import", "Failed to parse document", error);
+        let errorMessage = t("SongImportParseUnknownError");
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          if (message.includes("pdf") || message.includes("worker")) errorMessage = t("SongImportParsePdfError");
+          else if (message.includes("unsupported file format")) errorMessage = t("SongImportParseUnsupportedError");
+          else if (message.includes("network") || message.includes("fetch")) errorMessage = t("SongImportParseNetworkError");
+          else if (message.includes("encoding") || message.includes("charset")) errorMessage = t("SongImportParseEncodingError");
+          else errorMessage = format("SongImportParseErrorWithDetails", error.message);
+        }
+        setMessageBox({
+          title: t("SongImportErrorTitle"),
+          message: errorMessage,
+          onConfirm: () => {
+            if (!signal.aborted) setMessageBox(null);
+          },
+          onCancel: () => {
+            if (!signal.aborted) setMessageBox(null);
+          },
+        });
+      };
       const proceedToTab1 = async () => {
+        if (signal.aborted) return;
         try {
           setIsChordProDirectFlow(false);
-          const lines = await documentImporter.current.parseDocument(file);
-          setAllLines(lines);
-
+          const lines = await documentImporter.current.parseDocument(file, signal);
+          if (signal.aborted) return;
           ChordProConverter.autoDetectLineTypes(lines);
-
-          const allIndices = new Set<number>();
-          for (let i = 0; i < lines.count; i++) {
-            allIndices.add(i);
-          }
-          setSelectedLines(allIndices);
-
+          setAllLines(lines);
+          setSelectedLines(new Set(Array.from({ length: lines.count }, (_, i) => i)));
           setCurrentTab(1);
         } catch (error) {
-          console.error("Import", "Failed to parse document", error);
-
-          let errorMessage = t("SongImportParseUnknownError");
-
-          if (error instanceof Error) {
-            const message = error.message.toLowerCase();
-
-            if (message.includes("pdf") || message.includes("worker")) {
-              errorMessage = t("SongImportParsePdfError");
-            } else if (message.includes("unsupported file format")) {
-              errorMessage = t("SongImportParseUnsupportedError");
-            } else if (message.includes("network") || message.includes("fetch")) {
-              errorMessage = t("SongImportParseNetworkError");
-            } else if (message.includes("encoding") || message.includes("charset")) {
-              errorMessage = t("SongImportParseEncodingError");
-            } else {
-              errorMessage = format("SongImportParseErrorWithDetails", error.message);
-            }
-          }
-
-          setMessageBox({
-            title: t("SongImportErrorTitle"),
-            message: errorMessage,
-            onConfirm: () => setMessageBox(null),
-            onCancel: () => setMessageBox(null),
-          });
+          reportError(error);
         }
       };
 
-      // The single entry point for every route into the wizard (Next on the file
-      // tab, the next file of a batch, returning to the file tab, dropped files):
-      // ChordPro and ABC files always load directly, never as plain lines.
-      if (await startDirectFlow(file)) return;
-
-      const ext = fileExtension(file.name);
-      if ([".txt", ".html", ".htm"].includes(ext)) {
-        const rawText = await file.text();
-        // Pasted or dropped notation: ask before importing it as a score. Checked
-        // first, because ABC's bracketed note chords also look like ChordPro.
-        const plainText = ext === ".txt" ? rawText : await documentImporter.current.readPlainText(file);
-        if (looksLikeAbc(plainText)) {
-          setMessageBox({
-            title: t("SongImportDetectedAbcTitle"),
-            message: t("SongImportDetectedAbcMessage"),
-            onConfirm: () => {
-              setMessageBox(null);
-              startAbcImportFlow(plainText);
-            },
-            onCancel: () => {
-              setMessageBox(null);
-              setIsChordProDirectFlow(false);
-              void proceedToTab1();
-            },
-          });
-          return;
+      try {
+        // The same request covers direct scores, document extraction, format
+        // detection and any later answer to a format-detection prompt.
+        if ((await startDirectFlow(file, signal)) || signal.aborted) return;
+        const ext = fileExtension(file.name);
+        if ([".txt", ".html", ".htm"].includes(ext)) {
+          const plainText = await documentImporter.current.readPlainText(file, signal);
+          if (signal.aborted) return;
+          // ABC goes first because its note chords also look like ChordPro.
+          if (looksLikeAbc(plainText)) {
+            setMessageBox({
+              title: t("SongImportDetectedAbcTitle"),
+              message: t("SongImportDetectedAbcMessage"),
+              onConfirm: () => {
+                if (signal.aborted) return;
+                setMessageBox(null);
+                startAbcImportFlow(plainText);
+              },
+              onCancel: () => {
+                if (signal.aborted) return;
+                setMessageBox(null);
+                void proceedToTab1();
+              },
+            });
+            return;
+          }
+          if (looksLikeChordPro(plainText)) {
+            setMessageBox({
+              title: t("SongImportDetectedChordProTitle"),
+              message: t("SongImportDetectedChordProMessage"),
+              onConfirm: () => {
+                if (signal.aborted) return;
+                setMessageBox(null);
+                startChordProNormalizationFlow(plainText);
+              },
+              onCancel: () => {
+                if (signal.aborted) return;
+                setMessageBox(null);
+                void proceedToTab1();
+              },
+            });
+            return;
+          }
         }
-        if (looksLikeChordPro(rawText)) {
-          setMessageBox({
-            title: t("SongImportDetectedChordProTitle"),
-            message: t("SongImportDetectedChordProMessage"),
-            onConfirm: () => {
-              setMessageBox(null);
-              startChordProNormalizationFlow(rawText);
-            },
-            onCancel: () => {
-              setMessageBox(null);
-              setIsChordProDirectFlow(false);
-              void proceedToTab1();
-            },
-          });
-          return;
-        }
+        await proceedToTab1();
+      } catch (error) {
+        reportError(error);
       }
-
-      await proceedToTab1();
     },
-    [format, startAbcImportFlow, startChordProNormalizationFlow, startDirectFlow, t]
+    [beginImport, format, startAbcImportFlow, startChordProNormalizationFlow, startDirectFlow, t]
   );
 
   const handleFileUpload = useCallback(
@@ -522,6 +521,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
 
     const supportedFiles = initialFiles.filter((file) => DocumentImporter.isSupportedFile(file.name));
     if (supportedFiles.length === 0) {
+      beginImport();
       const firstName = initialFiles[0]?.name || "";
       // Surfacing a message box in response to processing the incoming file
       // batch (external prop); the ref-key guard above prevents effect re-runs.
@@ -539,7 +539,7 @@ export const SongImporterWizard: React.FC<SongImporterWizardProps> = ({ database
     setSelectedFile(firstFile);
     setIsChordProDirectFlow(false);
     void parseFileAndAdvance(firstFile);
-  }, [format, initialFiles, parseFileAndAdvance, t]);
+  }, [beginImport, format, initialFiles, parseFileAndAdvance, t]);
 
   // === Tab 1: Line Classification ===
 

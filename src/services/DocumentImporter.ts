@@ -1,9 +1,10 @@
 import mammoth from "mammoth";
-import * as pdfjsLib from "pdfjs-dist";
 import { ImportLine, ImportLines } from "../../db-common/ImportLine";
+import { extractDocumentText } from "./documentText";
 
-// Configure PDF.js worker - use local worker instead of CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+function checkCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException("Import cancelled", "AbortError");
+}
 
 /**
  * Service for importing documents and extracting text
@@ -14,95 +15,123 @@ export class DocumentImporter {
    * Parse a document file and extract lines of text
    * Supports: .docx, .pdf, .html, .txt, .chp, .abc
    */
-  async parseDocument(file: File): Promise<ImportLines> {
+  async parseDocument(file: File, signal?: AbortSignal): Promise<ImportLines> {
+    checkCancelled(signal);
     const extension = this.getFileExtension(file.name).toLowerCase();
-
+    let lines: ImportLines;
     switch (extension) {
       case ".docx":
-        return await this.parseDocx(file);
+        lines = await this.parseDocx(file, signal);
+        break;
       case ".pdf":
-        return await this.parsePdf(file);
+        lines = await this.parsePdf(file, signal);
+        break;
       case ".html":
       case ".htm":
-        return await this.parseHtml(file);
+        lines = await this.parseHtml(file);
+        break;
       case ".txt":
       case ".chp":
       case ".abc":
-        return await this.parseText(file);
+        lines = await this.parseText(file);
+        break;
       default:
         throw new Error(`Unsupported file format: ${extension}`);
     }
+    checkCancelled(signal);
+    return lines;
   }
 
   /**
    * Parse .docx file using mammoth.js
    */
-  private async parseDocx(file: File): Promise<ImportLines> {
+  private async parseDocx(file: File, signal?: AbortSignal): Promise<ImportLines> {
     const arrayBuffer = await file.arrayBuffer();
+    checkCancelled(signal);
     const result = await mammoth.extractRawText({ arrayBuffer });
+    checkCancelled(signal);
     return this.textToLines(result.value);
   }
 
   /**
    * Parse .pdf file using pdf.js
    */
-  private async parsePdf(file: File): Promise<ImportLines> {
+  private async parsePdf(file: File, signal?: AbortSignal): Promise<ImportLines> {
     const arrayBuffer = await file.arrayBuffer();
+    checkCancelled(signal);
+    const pdfjsLib = await import("pdfjs-dist");
+    checkCancelled(signal);
+    // Load PDF.js and its local worker only when this request needs them.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
+    let destruction: Promise<void> | undefined;
+    const destroy = () => (destruction ??= loadingTask.destroy());
+    const onAbort = () => {
+      void destroy().catch(() => undefined);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      const pdf = await loadingTask.promise;
+      checkCancelled(signal);
 
-    let fullText = "";
+      let fullText = "";
 
-    // Extract text from all pages
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
+      // Extract text from all pages
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        checkCancelled(signal);
+        const textContent = await page.getTextContent();
+        checkCancelled(signal);
 
-      // Sort items by Y position to maintain line order
-      const items = textContent.items as Array<{ str: string; transform: number[] }>;
-      items.sort((a, b) => {
-        // Sort by Y first (top to bottom), then X (left to right)
-        if (Math.abs(a.transform[5] - b.transform[5]) > 2) {
-          return b.transform[5] - a.transform[5]; // Descending Y (top to bottom)
-        }
-        return a.transform[4] - b.transform[4]; // Ascending X (left to right)
-      });
-
-      // Group items by Y position to form lines
-      let currentY = items[0]?.transform[5];
-      let currentLine = "";
-
-      for (const item of items) {
-        const y = item.transform[5];
-
-        // If Y position changed significantly, start new line
-        if (Math.abs(currentY - y) > 2) {
-          if (currentLine.trim()) {
-            fullText += currentLine.trim() + "\n";
+        // Sort items by Y position to maintain line order
+        const items = textContent.items as Array<{ str: string; transform: number[] }>;
+        items.sort((a, b) => {
+          // Sort by Y first (top to bottom), then X (left to right)
+          if (Math.abs(a.transform[5] - b.transform[5]) > 2) {
+            return b.transform[5] - a.transform[5]; // Descending Y (top to bottom)
           }
-          currentLine = item.str;
-          currentY = y;
-        } else {
-          // Same line, add space if needed
-          if (currentLine && !currentLine.endsWith(" ") && !item.str.startsWith(" ")) {
-            currentLine += " ";
+          return a.transform[4] - b.transform[4]; // Ascending X (left to right)
+        });
+
+        // Group items by Y position to form lines
+        let currentY = items[0]?.transform[5];
+        let currentLine = "";
+
+        for (const item of items) {
+          const y = item.transform[5];
+
+          // If Y position changed significantly, start new line
+          if (Math.abs(currentY - y) > 2) {
+            if (currentLine.trim()) {
+              fullText += currentLine.trim() + "\n";
+            }
+            currentLine = item.str;
+            currentY = y;
+          } else {
+            // Same line, add space if needed
+            if (currentLine && !currentLine.endsWith(" ") && !item.str.startsWith(" ")) {
+              currentLine += " ";
+            }
+            currentLine += item.str;
           }
-          currentLine += item.str;
+        }
+
+        // Add last line of page
+        if (currentLine.trim()) {
+          fullText += currentLine.trim() + "\n";
+        }
+
+        // Add page separator
+        if (pageNum < pdf.numPages) {
+          fullText += "\n";
         }
       }
 
-      // Add last line of page
-      if (currentLine.trim()) {
-        fullText += currentLine.trim() + "\n";
-      }
-
-      // Add page separator
-      if (pageNum < pdf.numPages) {
-        fullText += "\n";
-      }
+      return this.textToLines(fullText);
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+      await destroy();
     }
-
-    return this.textToLines(fullText);
   }
 
   /**
@@ -115,7 +144,7 @@ export class DocumentImporter {
 
     // Extract text from body, preserving line breaks
     const body = doc.body;
-    const extractedText = this.extractTextFromElement(body);
+    const extractedText = extractDocumentText(body);
 
     return this.textToLines(extractedText);
   }
@@ -124,12 +153,14 @@ export class DocumentImporter {
    * The text of a plain-text or HTML file as it reads, keeping its line breaks
    * and blank lines (format detection, e.g. ABC notation copied from a page).
    */
-  async readPlainText(file: File): Promise<string> {
+  async readPlainText(file: File, signal?: AbortSignal): Promise<string> {
+    checkCancelled(signal);
     const text = await file.text();
+    checkCancelled(signal);
     const extension = this.getFileExtension(file.name).toLowerCase();
     if (extension !== ".html" && extension !== ".htm") return text;
     const doc = new DOMParser().parseFromString(text, "text/html");
-    return this.extractTextFromElement(doc.body);
+    return extractDocumentText(doc.body);
   }
 
   /**
@@ -138,31 +169,6 @@ export class DocumentImporter {
   private async parseText(file: File): Promise<ImportLines> {
     const text = await file.text();
     return this.textToLines(text);
-  }
-
-  /**
-   * Extract text from HTML element, preserving structure
-   */
-  private extractTextFromElement(element: Element): string {
-    let text = "";
-
-    for (const node of Array.from(element.childNodes)) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        text += node.textContent;
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as Element;
-        const tagName = el.tagName.toLowerCase();
-
-        // Block elements create new lines
-        if (["p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6", "li"].includes(tagName)) {
-          text += this.extractTextFromElement(el) + "\n";
-        } else {
-          text += this.extractTextFromElement(el);
-        }
-      }
-    }
-
-    return text;
   }
 
   /**
