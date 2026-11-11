@@ -53,10 +53,12 @@ const getVersionLabel = (
   actualChangeOverride?: SongChange
 ): string => {
   const change = isActual ? actualChangeOverride : song.Change;
+  // The server leaves the uploader empty when the caller may not see that login.
+  const changeLabel = change ? (change.uploader ? `${change.uploader} @ ` : "") + change.created.toLocaleString() : "";
   if (isActual && song.Text === actualSongText) {
-    return change ? `${change.uploader} @ ${change.created.toLocaleString()} (${t("ActualSong")})` : t("ActualSong");
+    return change ? `${changeLabel} (${t("ActualSong")})` : t("ActualSong");
   }
-  return change ? `${change.uploader} @ ${change.created.toLocaleString()}` : t("UnknownVersion");
+  return change ? changeLabel : t("UnknownVersion");
 };
 
 const CompareDialog: React.FC<CompareDialogProps> = ({
