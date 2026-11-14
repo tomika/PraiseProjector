@@ -3,7 +3,7 @@ import { hotStableContext } from "../utils/hotStableContext";
 import { SessionResponse } from "../../common/pp-types";
 import { cloudApi, isAccessToken, isCloudApiErrorKind } from "../../common/cloudApi";
 import { cloudApiBaseUrl } from "../config";
-import { Database } from "../../db-common/Database";
+import { Database, DatabaseSwitchSupersededError } from "../../db-common/Database";
 
 type AuthStatus = "guest" | "authenticated" | "offline";
 
@@ -35,6 +35,21 @@ AuthContext.displayName = "AuthContext";
 
 const shouldUseBearerHeader = typeof window !== "undefined" && !!window.electronAPI;
 const AUTH_REQUEST_TIMEOUT_MS = 4_000;
+
+/** The cloud credentials were accepted, but this device could not switch its
+ * active database to the account (its stored database is unreadable, or the
+ * current account's unsaved changes could not be stored), so the sign-in was
+ * not applied. */
+export class LocalDatabaseSwitchError extends Error {
+  constructor(username: string) {
+    super(`The local database could not be switched to "${username}"`);
+    this.name = "LocalDatabaseSwitchError";
+  }
+}
+
+export function isLocalDatabaseSwitchError(error: unknown): boolean {
+  return error instanceof Error && error.name === "LocalDatabaseSwitchError";
+}
 
 async function getDeviceClientId(): Promise<string> {
   const key = "pp-client-id";
@@ -122,9 +137,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       cloudApi.setFixedHeader("X-PP-Expected-User", "");
       setIsLoading(true);
       const epoch = authEpochRef.current;
-      void Database.switchUser("").finally(() => {
-        if (authEpochRef.current === epoch) setIsLoading(false);
-      });
+      // A guest identity over the previous account's database is safe: no cloud
+      // session is active. A failed switch only leaves that database open.
+      void Database.switchUser("")
+        .catch((error) => console.error("Auth", "Could not switch to the guest database after a sign-out in another window", error))
+        .finally(() => {
+          if (authEpochRef.current === epoch) setIsLoading(false);
+        });
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
@@ -235,7 +254,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (storedUsername) {
         setUsername(storedUsername);
-        await Database.switchUser(storedUsername);
+        try {
+          // Superseded (e.g. a sign-out in another window meanwhile): never
+          // publish this account's database after the identity has changed.
+          await Database.switchUser(storedUsername, { isCurrent: () => authEpochRef.current === myEpoch });
+        } catch (error) {
+          if (error instanceof DatabaseSwitchSupersededError || authEpochRef.current !== myEpoch) return;
+          // The stored account's database could not be opened (the database
+          // reports this to the user). Its cloud session must never be restored
+          // over another account's database: run as a guest instead. The stored
+          // credentials are kept, so a later start opens the account again.
+          console.error("Auth", `The local database of "${storedUsername}" could not be opened; continuing as a guest`, error);
+          setUsername(null);
+          setUser(null);
+          setToken(null);
+          setNetworkUnavailable(false);
+          cloudApi.setToken(null);
+          cloudApi.setFixedHeader("X-PP-Expected-User", "");
+          cloudApi.setSessionEnabled(false);
+          setAuthStatus("guest");
+          try {
+            await Database.switchUser("");
+          } catch (guestError) {
+            console.error("Auth", "The guest database could not be opened either", guestError);
+          }
+          return;
+        }
         if (authEpochRef.current !== myEpoch) return;
         // The user's local database is now ready. Unblock the UI immediately so
         // offline startup (state restore + playlist song switching) is never
@@ -433,15 +477,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const session = await verifySession(username, authToken, { signal: controller.signal, epoch: myEpoch });
       if (authEpochRef.current !== myEpoch) return false;
       if (session && session.token) {
+        // Switch the local database BEFORE applying the identity. A failed
+        // switch publishes nothing, so the previous identity stays over its
+        // still-active database; the new cloud session must never be applied
+        // over another account's data (a sync would upload it there). A newer
+        // sign-in/out supersedes this one: the switch is then abandoned inside
+        // the switch queue, right before publishing, so this account's
+        // database never becomes active under another identity.
+        try {
+          await Database.switchUser(username, { isCurrent: () => authEpochRef.current === myEpoch });
+        } catch (error) {
+          // Superseded: the newer attempt owns the session and its cookies.
+          if (error instanceof DatabaseSwitchSupersededError || authEpochRef.current !== myEpoch) return false;
+          console.error("Auth", `The local database could not be switched to "${username}"; sign-in cancelled`, error);
+          try {
+            // Revoke the session just created for the rejected sign-in.
+            await cloudApi.logoutSession(clientId, {
+              signal: controller.signal,
+              timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+              clearCookiesAfterSnapshot: true,
+            });
+          } catch {
+            // Best effort: the session was never applied locally.
+          }
+          throw new LocalDatabaseSwitchError(username);
+        }
+        if (authEpochRef.current !== myEpoch) return false;
+
         // Don't persist session token yet — wait for "Remember Me" decision.
         // In non-Electron mode, always persist (browser cookies handle refresh).
         const isElectron = typeof window !== "undefined" && !!window.electronAPI;
         applySession(session, !isElectron, true);
         setUsername(username);
         localStorage.setItem("auth_username", username);
-
-        await Database.switchUser(username);
-        if (authEpochRef.current !== myEpoch) return false;
 
         if (onLoginSuccess) {
           onLoginSuccess(session.leaderId);
@@ -454,6 +522,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     } catch (error) {
       if (authEpochRef.current !== myEpoch) return false;
+      if (isLocalDatabaseSwitchError(error)) {
+        setNetworkUnavailable(false);
+        setAuthStatus(usernameRef.current ? "offline" : "guest");
+        throw error;
+      }
       if (isCloudApiErrorKind(error, "network")) {
         setNetworkUnavailable(true);
         setAuthStatus(usernameRef.current ? "offline" : "guest");
@@ -535,7 +608,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.removeItem("auth_token");
         localStorage.removeItem("pp_session_token");
 
-        await Database.switchUser("");
+        // The identity is cleared first: a guest identity over the previous
+        // account's database is safe (no cloud session). A failed switch, e.g.
+        // unsaved changes that cannot be stored, keeps that database open and
+        // must not make logout() reject or leave the UI loading.
+        try {
+          await Database.switchUser("");
+        } catch (error) {
+          console.error("Auth", "Could not switch to the guest database after sign-out", error);
+        }
 
         if (authEpochRef.current === myEpoch) setIsLoading(false);
       }

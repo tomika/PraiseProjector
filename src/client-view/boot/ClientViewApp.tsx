@@ -12,7 +12,7 @@ import { ClientViewStore } from "../controller/ClientViewStore";
 import { ClientViewProvider } from "../controller/ClientViewContext";
 import { ClientView } from "../ui/ClientView";
 import type { ClientConfig } from "../api/ClientApi";
-import { useAuth } from "../../contexts/AuthContext";
+import { isLocalDatabaseSwitchError, useAuth } from "../../contexts/AuthContext";
 import { LocalizationProvider, useLocalization } from "../../localization/LocalizationContext";
 import "../ui/client-view.css";
 
@@ -49,7 +49,13 @@ function ClientViewAppContent({ config, onHome }: { config?: ClientConfig; onHom
     const bridge: DirectAuthBridge = {
       isAuthed: () => isAuthenticated,
       login: async (user, password, keepLoggedIn) => {
-        const success = await login(user, password);
+        let success: boolean;
+        try {
+          success = await login(user, password);
+        } catch (error) {
+          if (isLocalDatabaseSwitchError(error)) throw new Error(t("LoginLocalDatabaseError"));
+          throw error;
+        }
         if (!success) throw new Error(t("LoginFailed"));
         if (keepLoggedIn) {
           commitSession();

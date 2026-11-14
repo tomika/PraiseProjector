@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Icon, IconType } from "../services/IconService";
 import { useLeader } from "../contexts/LeaderContext";
-import { useAuth } from "../contexts/AuthContext";
+import { isLocalDatabaseSwitchError, useAuth } from "../contexts/AuthContext";
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useTooltips } from "../localization/TooltipContext";
@@ -350,6 +350,10 @@ const UserPanel: React.FC<UserPanelProps> = ({
       if (isCloudApiErrorKind(error, "network")) {
         suppressCloudNetworkToast();
         showMessage(t("LoginFailed"), t("CloudNetworkErrorMessage"));
+        return;
+      }
+      if (isLocalDatabaseSwitchError(error)) {
+        showMessage(t("LoginFailed"), t("LoginLocalDatabaseError"));
         return;
       }
       showMessage(t("LoginFailed"), t("LoginFailedCheckCredentials"));

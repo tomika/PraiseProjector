@@ -23,6 +23,12 @@ function deferred<T>() {
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 const session = (login = "alice") => ({ login, token: `token-${login}`, leaderId: "leader" });
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+class DatabaseSwitchSupersededError extends Error {
+  constructor(username: string) {
+    super(`The switch to "${username}" was superseded`);
+    this.name = "DatabaseSwitchSupersededError";
+  }
+}
 
 // Run the production provider with a deterministic hook scheduler. Only React's
 // scheduling and the local DB/native environment are replaced; all auth and HTTP
@@ -33,7 +39,21 @@ function fixture(context: TestContext, { electron = false, stored = true } = {})
   const api = new CloudApiService();
   const database = {
     current: "",
-    switchUser: async (name: string) => {
+    // Accounts whose local database cannot be switched to (unreadable, or the
+    // current account's pending changes cannot be stored).
+    failing: new Set<string>(),
+    // Accounts whose load waits for the given promise.
+    slow: new Map<string, Promise<void>>(),
+    loading: [] as string[],
+    // Mirrors Database.switchUser: `isCurrent` is checked before loading and
+    // right before publishing.
+    switchUser: async (name: string, options: { isCurrent?: () => boolean } = {}) => {
+      if (database.current === name) return;
+      if (options.isCurrent && !options.isCurrent()) throw new DatabaseSwitchSupersededError(name);
+      database.loading.push(name);
+      await database.slow.get(name);
+      if (database.failing.has(name)) throw new Error(`Database of "${name}" cannot be opened`);
+      if (options.isCurrent && !options.isCurrent()) throw new DatabaseSwitchSupersededError(name);
       database.current = name;
     },
     getCurrentUsername: () => database.current,
@@ -85,7 +105,7 @@ function fixture(context: TestContext, { electron = false, stored = true } = {})
     react,
     "../../common/cloudApi": { cloudApi: api, isAccessToken, isCloudApiErrorKind },
     "../config": { cloudApiBaseUrl: "" },
-    "../../db-common/Database": { Database: database },
+    "../../db-common/Database": { Database: database, DatabaseSwitchSupersededError },
     "../utils/hotStableContext": hotStableContextModule,
   };
   runInNewContext(code, {
@@ -240,6 +260,96 @@ test("Electron refresh respects Remember Me and ignores refresh events after log
   refresh("stale");
   assert.equal(env.render().token, null);
   assert.equal(env.storage.getItem("pp_session_token"), null);
+});
+
+test("a sign-in whose local database cannot be switched keeps the previous identity and revokes the new session", async (context) => {
+  const env = fixture(context);
+  let login = "alice";
+  let logouts = 0;
+  context.mock.method(globalThis, "fetch", async (_input: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    if (body.logout) {
+      logouts++;
+      return json({ login: "", token: "" });
+    }
+    return json(session(login));
+  });
+  await env.render().loadInitialCredentials();
+  assert.equal(env.render().isAuthenticated, true);
+  login = "bob";
+  env.database.failing.add("bob");
+  await assert.rejects(env.render().login("bob", "password"), (error: Error) => error.name === "LocalDatabaseSwitchError");
+  assert.equal(logouts, 2, "the previous session before sign-in, then the rejected new one");
+  assert.equal(env.database.current, "alice", "the previous database stays active");
+  assert.equal(env.render().username, "alice", "the identity still matches the active database");
+  assert.equal(env.render().token, null);
+  assert.equal(env.render().isAuthenticated, false);
+  assert.equal(env.render().authStatus, "offline");
+  assert.equal(env.render().isLoading, false);
+  assert.equal(env.api.isSessionEnabled(), false);
+  assert.equal(env.storage.getItem("auth_username"), "alice");
+});
+
+test("a sign-in superseded while its database loads never activates that database under another identity", async (context) => {
+  const env = fixture(context);
+  context.mock.method(globalThis, "fetch", async (_input: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    if (body.logout) return json({ login: "", token: "" });
+    const authorization = new Headers(init?.headers).get("Authorization") ?? "";
+    if (authorization === `Basic ${btoa("bob:password")}`) return json(session("bob"));
+    if (authorization.startsWith("Basic ")) return json({ error: "Invalid credentials" }, 401);
+    return json(session());
+  });
+  await env.render().loadInitialCredentials();
+  assert.equal(env.database.current, "alice");
+  const bobLoaded = deferred<void>();
+  env.database.slow.set("bob", bobLoaded.promise);
+  const bob = env.render().login("bob", "password");
+  for (let i = 0; i < 50 && !env.database.loading.includes("bob"); i++) await tick();
+  assert.ok(env.database.loading.includes("bob"), "bob's database is loading");
+  // A newer sign-in attempt fails while bob's database is still loading.
+  assert.equal(await env.render().login("carol", "wrong"), false);
+  bobLoaded.resolve();
+  assert.equal(await bob, false);
+  assert.equal(env.database.current, "alice", "the superseded sign-in's database was never published");
+  assert.equal(env.render().username, "alice", "the identity still matches the active database");
+  assert.equal(env.render().isAuthenticated, false);
+  assert.equal(env.render().isLoading, false);
+});
+
+test("a sign-out whose guest switch fails still resolves and clears the identity", async (context) => {
+  const env = fixture(context);
+  context.mock.method(globalThis, "fetch", async (_input: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    return json(body.logout ? { login: "", token: "" } : session());
+  });
+  await env.render().loadInitialCredentials();
+  env.database.failing.add("");
+  await env.render().logout();
+  assert.equal(env.database.current, "alice", "the unsaved database stays open under a guest identity");
+  assert.equal(env.render().username, null);
+  assert.equal(env.render().isAuthenticated, false);
+  assert.equal(env.render().isLoading, false);
+  assert.equal(env.storage.getItem("auth_username"), null);
+});
+
+test("an unopenable stored account starts as a guest without restoring its session", async (context) => {
+  const env = fixture(context);
+  let calls = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return json(session());
+  });
+  env.database.failing.add("alice");
+  await env.render().loadInitialCredentials();
+  assert.equal(calls, 0, "the stored session is not verified over the guest database");
+  assert.equal(env.database.current, "");
+  assert.equal(env.render().username, null);
+  assert.equal(env.render().authStatus, "guest");
+  assert.equal(env.render().isLoading, false);
+  assert.equal(env.api.isSessionEnabled(), false);
+  assert.equal(env.storage.getItem("auth_username"), "alice", "a later start retries the account");
+  assert.equal(env.storage.getItem("pp_session_token"), "saved");
 });
 
 test("a logout in another tab clears the visible identity without another logout request", async (context) => {
