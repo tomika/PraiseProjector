@@ -123,6 +123,30 @@ export class PartitionedDatabaseStore {
   async choice(): Promise<StorageMode | null> {
     return storageMode(await this.value(MODE_KEY));
   }
+  /** Stores `mode` only when the store holds nothing at all (a fresh installation);
+   * atomic, so a database another window writes meanwhile is never decided
+   * without the user. Returns the format stored afterwards: `mode`, one another
+   * window or startup consumer stored meanwhile, or null (data but no format). */
+  async chooseIfEmpty(mode: StorageMode): Promise<StorageMode | null> {
+    if (mode !== "legacy" && mode !== "partitioned") throw new Error("Invalid storage choice");
+    return this.transaction<StorageMode | null>("readwrite", (store, done, fail) => {
+      const existing = store.get(MODE_KEY);
+      const count = store.count();
+      count.onsuccess = () => {
+        try {
+          const stored = storageMode(existing.result);
+          if (stored || count.result !== 0) {
+            done(stored);
+            return;
+          }
+          store.put(mode, MODE_KEY);
+          done(mode);
+        } catch (error) {
+          fail(error);
+        }
+      };
+    });
+  }
   async hasLegacyDecision(appVersion: string): Promise<boolean> {
     const value = await this.value([...LEGACY_VERSION_KEY, appVersion]);
     if (value === undefined) return false;

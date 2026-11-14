@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { databaseStorage, type StorageMode } from "../../db-common/DatabaseStorage";
+import { databaseStorage, type StorageMode, type StoragePolicy } from "../../db-common/DatabaseStorage";
 import { useLocalization } from "../localization/LocalizationContext";
-import { reportPageLoadedSuccessfully } from "../services/webAppLaunchReport";
-import { isAutomaticStorageRuntime, prepareStorageForThisRuntime } from "../services/storageRuntime";
+import { prepareStorageForThisRuntime, storageRuntimePolicy } from "../services/storageRuntime";
 import "./StorageChoiceGate.css";
 
 /** Saves every stored database row unchanged, for when the app cannot start. */
@@ -55,12 +54,14 @@ function RecoveryExport() {
   );
 }
 
-/** Keep all database consumers unmounted until native consent or automatic PWA
- * conversion completes, including resumable cleanup. */
+/** Keep all database consumers unmounted until the storage format is settled as
+ * the runtime's policy says (Electron consent, automatic conversion or the old
+ * format kept without asking), including resumable cleanup. */
 export function StorageChoiceGate({ children }: { children: ReactNode }) {
   const { t } = useLocalization();
   const hasHostDevice = !!window.hostDevice;
-  const [automaticMigration, setAutomaticMigration] = useState(!hasHostDevice);
+  // Null until a native host's policy is known (it reads the stored format first).
+  const [policy, setPolicy] = useState<StoragePolicy | null>(hasHostDevice ? null : "automatic");
   const [status, setStatus] = useState<"checking" | "choose" | "saving" | "ready" | "failed">("checking");
   const [attempt, setAttempt] = useState(0);
   const [backup, setBackup] = useState(false);
@@ -82,11 +83,11 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    let automatic = !hasHostDevice;
+    let current: StoragePolicy | null = null;
     const prepare = async () => {
-      automatic = await isAutomaticStorageRuntime();
-      if (active) setAutomaticMigration(automatic);
-      return prepareStorageForThisRuntime(automatic);
+      current = await storageRuntimePolicy();
+      if (active) setPolicy(current);
+      return prepareStorageForThisRuntime(current);
     };
     prepare()
       .then((choice) => {
@@ -96,7 +97,8 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
         console.error("Storage choice", reason);
         if (active) {
           setError(true);
-          setStatus(automatic ? "failed" : "choose");
+          // Only the explicit-choice runtime may offer the formats.
+          setStatus(current === "choice" ? "choose" : "failed");
         }
       });
     return () => {
@@ -104,12 +106,9 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
     };
   }, [hasHostDevice, attempt]);
   useEffect(() => {
-    if (status === "choose") {
-      heading.current?.focus();
-      // Waiting for this mandatory decision is a healthy Android bundle launch,
-      // not a failed trial that should revert to the factory/previous bundle.
-      reportPageLoadedSuccessfully();
-    }
+    // Only Electron reaches the dialog: Android never asks, so an Android trial
+    // bundle is promoted by the application's own successful start.
+    if (status === "choose") heading.current?.focus();
   }, [status]);
 
   const choose = async (mode: StorageMode) => {
@@ -133,7 +132,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
   if (status === "failed") {
     return (
       <div className="storage-choice-loading">
-        <p role="alert">{t("StorageAutoMigrationError")}</p>
+        <p role="alert">{t(policy === "automatic" ? "StorageAutoMigrationError" : "StorageSetupError")}</p>
         <button
           type="button"
           className="btn btn-primary"
@@ -143,7 +142,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
             setAttempt((value) => value + 1);
           }}
         >
-          {t("StorageAutoMigrationRetry")}
+          {t(policy === "automatic" ? "StorageAutoMigrationRetry" : "StorageSetupRetry")}
         </button>
         <RecoveryExport />
       </div>
@@ -152,7 +151,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
   if (status === "checking")
     return (
       <div className="storage-choice-loading" role="status">
-        {t(automaticMigration ? "StorageAutoMigrationProgress" : "StorageChoiceChecking")}
+        {t(policy === "automatic" ? "StorageAutoMigrationProgress" : "StorageChoiceChecking")}
       </div>
     );
   const saving = status === "saving";

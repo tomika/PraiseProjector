@@ -63,39 +63,56 @@ export async function chooseStorage(mode: StorageMode, appVersion = currentAppVe
   await partitioned.finishCleanup(localStorage);
 }
 
-let automaticSetup: Promise<StorageMode> | null = null;
+/**
+ * How a runtime reaches its storage format (`src/services/storageRuntime.ts`
+ * decides which applies):
+ * - `choice`: the explicit startup choice; a legacy refusal holds for the app
+ *   version it was made in (Electron). A fresh installation (an empty store and
+ *   no localStorage copy) gets the new format without a question.
+ * - `automatic`: the new format without asking, including upgrading a stored
+ *   legacy format (browser/PWA, an Android whose factory frontend reads it).
+ * - `legacy`: the old format without asking (an Android that can still fall
+ *   back to a frontend predating the new format). This is not a user decision,
+ *   so no refusal is recorded and the first `automatic` start converts it. A
+ *   store already in the new format stays in it: it is never downgraded.
+ */
+export type StoragePolicy = "choice" | "automatic" | "legacy";
 
-/** Native hosts retain the explicit choice. Browser/PWA startup always uses
- * the new format, including upgrading a previously saved legacy preference;
- * with `respectLegacyDecision` (an eligible Android release) not one that
- * was chosen explicitly in this app version. */
-export async function prepareStorageForRuntime(
-  hasHostDevice: boolean,
-  appVersion = currentAppVersion(),
-  options: { respectLegacyDecision?: boolean } = {}
-): Promise<StorageMode | null> {
-  if (hasHostDevice) {
-    const choice = await getStorageChoice();
+const runtimeSetups = new Map<StoragePolicy, Promise<StorageMode>>();
+
+export async function prepareStorageForRuntime(policy: StoragePolicy, appVersion = currentAppVersion()): Promise<StorageMode | null> {
+  if (policy === "choice") {
+    let choice = await getStorageChoice();
+    // A fresh installation has nothing to convert or keep compatible: no question.
+    // (Another consumer may have decided since the read above: use its format.)
+    if (choice === null && !localCopies().length) choice = await partitioned.chooseIfEmpty("partitioned");
     if (choice === "legacy" && !(await partitioned.hasLegacyDecision(appVersion))) return null;
     return choice;
   }
-  // React StrictMode and simultaneous consumers must share one conversion.
-  if (!automaticSetup) {
-    automaticSetup = (async () => {
-      // Already converted: a single key read instead of reading every record.
+  // React StrictMode and simultaneous consumers must share one setup.
+  let setup = runtimeSetups.get(policy);
+  if (!setup) {
+    setup = (async () => {
+      // Already decided: a single key read instead of reading every record.
       const choice = await getStorageChoice();
       if (choice === "partitioned") return "partitioned" as const;
-      if (choice === "legacy" && options.respectLegacyDecision && (await partitioned.hasLegacyDecision(appVersion))) return "legacy" as const;
+      if (policy === "legacy") {
+        if (choice !== "legacy") {
+          await partitioned.choose("legacy", localCopies());
+          await partitioned.finishCleanup(localStorage);
+        }
+        return "legacy" as const;
+      }
       await partitioned.choose("partitioned", localCopies(), { upgradeLegacy: true });
       await partitioned.finishCleanup(localStorage);
       return "partitioned" as const;
     })();
+    runtimeSetups.set(policy, setup);
   }
-  const setup: Promise<StorageMode> = automaticSetup;
   try {
     return await setup;
   } finally {
-    if (automaticSetup === setup) automaticSetup = null;
+    if (runtimeSetups.get(policy) === setup) runtimeSetups.delete(policy);
   }
 }
 

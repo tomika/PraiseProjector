@@ -1,33 +1,45 @@
 import type { ElectronHostDevice } from "../types/hostDevice";
 
-function newerThanStorageBoundary(value: unknown): boolean {
-  if (typeof value !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) return false;
-  const parts = value.split(".").map(Number);
+/** The first release whose frontend reads and writes the partitioned format. */
+const PARTITIONED_STORAGE_VERSION = [2, 0, 94];
+
+/** `x.y.z`, optionally followed by a build label: `2.0.94-pp-debug` (the debug
+ * APK's version name) counts as 2.0.94. The label names a build flavour of that
+ * release, never an earlier pre-release. */
+export function includesPartitionedStorage(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$/.exec(value);
+  if (!match) return false;
+  const parts = match.slice(1).map(Number);
   if (!parts.every(Number.isSafeInteger)) return false;
-  const boundary = [2, 0, 94];
   for (let index = 0; index < parts.length; index++) {
-    if (parts[index] !== boundary[index]) return parts[index] > boundary[index];
+    if (parts[index] !== PARTITIONED_STORAGE_VERSION[index]) return parts[index] > PARTITIONED_STORAGE_VERSION[index];
   }
-  return false;
+  return true;
 }
 
-/** Android release APKs reject ordinary in-place downgrades. Also verify the
- * native updater's factory floor: an OTA trial can fall back without replacing
- * the APK or clearing IndexedDB. Unknown/debug hosts always retain consent. */
-export async function canAutomaticallyUpgradeAndroidStorage(host: ElectronHostDevice, isElectron: boolean): Promise<boolean> {
-  if (isElectron || !host.version || !host.isDebugBuild || !host.getWebAppBundleStatus) return false;
+/** True when every frontend this Android host can start reads the partitioned
+ * format. Above all the embedded factory bundle: a failed or bad bundle falls
+ * back to it without replacing the APK or clearing IndexedDB, and the native
+ * updater never installs a bundle older than it. The APK, running, active and
+ * pending versions must include the format too. Debug builds qualify the same
+ * way (they take the public/package.json version). A missing or invalid bridge
+ * answer does not qualify, nor does an asynchronous one slower than 1.5 s;
+ * Android's JavaScript interface answers synchronously, so it is waited for. */
+export async function canAutomaticallyUpgradeAndroidStorage(host: ElectronHostDevice): Promise<boolean> {
+  if (!host.version || !host.getWebAppBundleStatus) return false;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       (async () => {
-        const [version, debug, raw] = await Promise.all([host.version!(), host.isDebugBuild!(), host.getWebAppBundleStatus!()]);
-        if (debug !== false || !newerThanStorageBoundary(version) || typeof raw !== "string") return false;
+        const [version, raw] = await Promise.all([host.version!(), host.getWebAppBundleStatus!()]);
+        if (!includesPartitionedStorage(version) || typeof raw !== "string") return false;
         const status: unknown = JSON.parse(raw);
         if (!status || typeof status !== "object" || Array.isArray(status)) return false;
         const bundle = status as Record<string, unknown>;
-        if (!newerThanStorageBoundary(bundle.factoryVersion) || !newerThanStorageBoundary(bundle.runningVersion)) return false;
+        if (!includesPartitionedStorage(bundle.factoryVersion) || !includesPartitionedStorage(bundle.runningVersion)) return false;
         for (const kind of ["active", "pending"]) {
-          if (bundle[`${kind}ReleaseId`] != null && !newerThanStorageBoundary(bundle[`${kind}Version`])) return false;
+          if (bundle[`${kind}ReleaseId`] != null && !includesPartitionedStorage(bundle[`${kind}Version`])) return false;
         }
         return true;
       })(),

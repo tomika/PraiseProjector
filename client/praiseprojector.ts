@@ -58,7 +58,7 @@ import { notPhraseFoundAdditionalCost, isErrorResponse } from "../common/pp-util
 import { setLogFunction } from "../common/pp-log";
 import Calendar from "color-calendar";
 import { Database, FormatFoundReason } from "../db-common/Database";
-import { isAutomaticStorageRuntime, prepareStorageForThisRuntime } from "../src/services/storageRuntime";
+import { prepareStorageForThisRuntime, storageRuntimePolicy } from "../src/services/storageRuntime";
 import { UnicodeSymbol } from "./symbols";
 import { preventDisplayFromSleep } from "./awake";
 import { getAboutBoxHtml } from "./about";
@@ -1660,9 +1660,9 @@ export class App extends AppBase {
   private async updateDatabase(mode: "LOAD" | "RELOAD" | "UPDATE" = "UPDATE") {
     if (!this.database) {
       // The local database needs a storage format first, decided exactly as
-      // the full app's start decides it (a native host without an automatic
-      // upgrade keeps the explicit choice made in the app; never asked here).
-      if (!(await prepareStorageForThisRuntime(await isAutomaticStorageRuntime()))) {
+      // the full app's start decides it (the explicit Electron choice is made
+      // in the app; never asked here).
+      if (!(await prepareStorageForThisRuntime(await storageRuntimePolicy()))) {
         throw new Error("Choose a storage format in the PraiseProjector app first");
       }
     }

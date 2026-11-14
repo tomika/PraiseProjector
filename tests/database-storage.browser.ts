@@ -9,7 +9,8 @@ import React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { StorageChoiceGate } from "../src/components/StorageChoiceGate";
 import { LocalizationProvider } from "../src/localization/LocalizationContext";
-import { canAutomaticallyUpgradeAndroidStorage } from "../src/services/androidStorageUpgrade";
+import { canAutomaticallyUpgradeAndroidStorage, includesPartitionedStorage } from "../src/services/androidStorageUpgrade";
+import strings from "../src/localization/strings.en.json";
 import { keepDatabaseCopies, readMigrationPackContents } from "../src/services/migrationPack";
 import { COPY_INBOX, keptCopyEntryKey, parseDatabaseCopyKey } from "../db-common/databaseCopies";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -18,7 +19,7 @@ const results: { name: string; error?: string }[] = [];
 function assert(condition: unknown, message = "Assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
 }
-function equal(actual: unknown, expected: unknown): void {
+function equal(actual: unknown, expected: unknown, label?: string): void {
   // Compare JSON semantics, independent of object property insertion order.
   const normalize = (value: unknown): unknown =>
     Array.isArray(value)
@@ -32,7 +33,7 @@ function equal(actual: unknown, expected: unknown): void {
         : value;
   assert(
     JSON.stringify(normalize(actual)) === JSON.stringify(normalize(expected)),
-    `Mismatch: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`
+    `${label ? `${label}: ` : ""}Mismatch: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`
   );
 }
 async function rejects(action: () => Promise<unknown>): Promise<void> {
@@ -201,12 +202,18 @@ async function resetApp() {
 }
 let root: Root | null = null;
 let host: HTMLDivElement | null = null;
-function renderGate(hasHostDevice: boolean | NonNullable<Window["hostDevice"]> = true, strictMode = false) {
+/** `true`: Electron (hostDevice and electronAPI); a bridge object: Android
+ * (hostDevice only); `false`: browser/PWA. */
+function setRuntime(hasHostDevice: boolean | NonNullable<Window["hostDevice"]>) {
   Object.defineProperty(window, "hostDevice", {
     configurable: true,
     writable: true,
     value: hasHostDevice === true ? {} : hasHostDevice || undefined,
   });
+  Object.defineProperty(window, "electronAPI", { configurable: true, writable: true, value: hasHostDevice === true ? {} : undefined });
+}
+function renderGate(hasHostDevice: boolean | NonNullable<Window["hostDevice"]> = true, strictMode = false) {
+  setRuntime(hasHostDevice);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -226,6 +233,7 @@ function unmountGate() {
   host?.remove();
   root = null;
   host = null;
+  setRuntime(false);
 }
 function checkBox(index: number) {
   const inputs = host!.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -835,6 +843,7 @@ async function run() {
   });
   await test("startup dialog cannot be dismissed; new choice needs backup and downgrade acknowledgments", async () => {
     await resetApp();
+    await appLegacy.setItem(account, JSON.stringify(state()));
     localStorage.setItem("pp-settings", JSON.stringify({ language: "hu" }));
     await fetch("/viewport?width=320&height=568");
     await mountGate();
@@ -866,6 +875,7 @@ async function run() {
   });
   await test("old choice requires its two separate consents and the shared backup acknowledgment", async () => {
     await resetApp();
+    await appLegacy.setItem(account, JSON.stringify(state()));
     localStorage.setItem("pp-settings", JSON.stringify({ language: "hu" }));
     await fetch("/viewport?width=1024&height=900");
     await mountGate();
@@ -920,14 +930,62 @@ async function run() {
     await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
     unmountGate();
   });
+  await test("a fresh installation (nothing stored) gets the new format without a question, also on Electron", async () => {
+    const openApp = () =>
+      new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("PraiseProjector");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    for (const runtime of [true, false] as const) {
+      await resetApp();
+      let displayedChoice = false;
+      const observer = new MutationObserver(() => {
+        displayedChoice ||= !!document.querySelector('[role="dialog"]');
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      try {
+        await mountGate(false, runtime, true);
+        assert(!displayedChoice, `dialog shown (${runtime ? "Electron" : "PWA"})`);
+        equal(await databaseStorage.getChoice(), "partitioned");
+        equal((await dump(openApp)).length, 1);
+      } finally {
+        observer.disconnect();
+        unmountGate();
+      }
+    }
+    // Two windows starting at once: the one that finds the store already decided uses that format.
+    await resetApp();
+    equal(await Promise.all([databaseStorage.prepareForRuntime("choice"), databaseStorage.prepareForRuntime("choice")]), [
+      "partitioned",
+      "partitioned",
+    ]);
+    // Any stored database, even only a localStorage copy, still asks on Electron.
+    for (const seed of [
+      () => appLegacy.setItem(account, JSON.stringify(state())),
+      async () => localStorage.setItem(account, JSON.stringify(state())),
+    ]) {
+      await resetApp();
+      await seed();
+      await mountGate(true, true);
+      equal(await databaseStorage.getChoice(), null);
+      unmountGate();
+    }
+    // Only an empty store is decided, atomically: nothing else is written.
+    await resetApp();
+    await appLegacy.setItem(account, JSON.stringify(state()));
+    const before = await dump(openApp);
+    equal(await new PartitionedDatabaseStore(openApp).chooseIfEmpty("partitioned"), null);
+    equal(await dump(openApp), before);
+  });
 
   await test("a legacy refusal is remembered per frontend version and every unseen version asks again", async () => {
     await resetApp();
     const json = JSON.stringify(state());
     await appLegacy.setItem(account, json);
     await databaseStorage.choose("legacy", "2.0.94");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.94"), "legacy");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.95"), null);
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.94"), "legacy");
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.95"), null);
     equal(await appLegacy.getItem(account), json);
     const restore = injectFailure(1, "throw");
     try {
@@ -935,14 +993,14 @@ async function run() {
     } finally {
       restore();
     }
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.95"), null);
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.95"), null);
     await databaseStorage.choose("legacy", "2.0.95");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.95"), "legacy");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.94"), "legacy");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.96"), null);
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.95"), "legacy");
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.94"), "legacy");
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.96"), null);
     equal(await appLegacy.getItem(account), json);
     await databaseStorage.choose("partitioned", "2.0.96");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.97"), "partitioned");
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.97"), "partitioned");
     equal(JSON.parse((await databaseStorage.getRaw("user"))!), state());
     equal(await appLegacy.getItem(account), null);
   });
@@ -958,9 +1016,9 @@ async function run() {
         })
     );
     await appStore.choose("legacy");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.95"), null);
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.95"), null);
     await databaseStorage.choose("legacy", "2.0.95");
-    equal(await databaseStorage.prepareForRuntime(true, "2.0.95"), "legacy");
+    equal(await databaseStorage.prepareForRuntime("choice", "2.0.95"), "legacy");
   });
   const androidStatus = () => ({ factoryVersion: "2.0.95", runningVersion: "2.0.95", activeReleaseId: null, pendingReleaseId: null });
   const androidHost = (version = "2.0.95", status: unknown = androidStatus(), debug = false): NonNullable<Window["hostDevice"]> => ({
@@ -968,70 +1026,171 @@ async function run() {
     isDebugBuild: () => debug,
     getWebAppBundleStatus: () => JSON.stringify(status),
   });
-  await test("Android automatic upgrade requires a release APK and compatible factory, running and fallback versions", async () => {
-    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost(), false), true);
-    for (const version of ["2.0.94", "2.0.93", "2.0.9", "2.0.95-pp-debug", "", "not-a-version"])
-      equal(await canAutomaticallyUpgradeAndroidStorage(androidHost(version), false), false);
-    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.100"), false), true);
-    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost(undefined, undefined, true), false), false);
-    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost(), true), false);
-    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), isDebugBuild: undefined }, false), false);
+  await test("storage versions compare their x.y.z part from 2.0.94 on, also with a build label", async () => {
+    for (const version of ["2.0.94", "2.0.94-pp-debug", "2.0.95-pp-debug", "2.0.94+build.7", "2.0.100", "2.1.0", "3.0.0"])
+      equal(includesPartitionedStorage(version), true, version);
+    for (const version of [
+      "2.0.93",
+      "2.0.93-pp-debug",
+      "2.0.9",
+      "1.9.99",
+      "2.0.0-pp-debug",
+      "2.0.94-",
+      "2.0.94pp",
+      "02.0.94",
+      "2.0",
+      "",
+      "not-a-version",
+      null,
+      2094,
+    ])
+      equal(includesPartitionedStorage(version), false, String(version));
+  });
+  await test("Android upgrades automatically only when its factory and every other frontend include the new storage", async () => {
+    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost()), true);
     equal(
-      await canAutomaticallyUpgradeAndroidStorage(
-        {
-          ...androidHost(),
-          version: () => {
-            throw new Error("bridge failure");
-          },
+      await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.94", { ...androidStatus(), factoryVersion: "2.0.94", runningVersion: "2.0.94" })),
+      true
+    );
+    // Debug builds qualify like releases once the debug install sets their version.
+    equal(await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.95-pp-debug", undefined, true)), true);
+    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), isDebugBuild: undefined }), true);
+    for (const version of ["2.0.93", "2.0.0-pp-debug", "", "not-a-version"])
+      equal(await canAutomaticallyUpgradeAndroidStorage(androidHost(version)), false, version);
+    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), version: undefined }), false);
+    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), getWebAppBundleStatus: undefined }), false);
+    equal(
+      await canAutomaticallyUpgradeAndroidStorage({
+        ...androidHost(),
+        version: () => {
+          throw new Error("bridge failure");
         },
-        false
-      ),
+      }),
       false
     );
-    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), getWebAppBundleStatus: () => "{" }, false), false);
-    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), version: () => new Promise<string>(() => {}) }, false), false);
+    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), getWebAppBundleStatus: () => "{" }), false);
+    equal(await canAutomaticallyUpgradeAndroidStorage({ ...androidHost(), version: () => new Promise<string>(() => {}) }), false);
     for (const status of [
-      { ...androidStatus(), factoryVersion: "2.0.94" },
-      { ...androidStatus(), runningVersion: "2.0.94" },
-      { ...androidStatus(), activeReleaseId: "old", activeVersion: "2.0.94" },
+      { ...androidStatus(), factoryVersion: "2.0.93" },
+      { ...androidStatus(), factoryVersion: undefined },
+      { ...androidStatus(), runningVersion: "2.0.93" },
+      { ...androidStatus(), activeReleaseId: "old", activeVersion: "2.0.93" },
       { ...androidStatus(), pendingReleaseId: "unknown" },
       null,
     ])
-      equal(await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.95", status), false), false);
+      equal(await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.95", status)), false, JSON.stringify(status));
+    equal(
+      await canAutomaticallyUpgradeAndroidStorage(androidHost("2.0.95", { ...androidStatus(), activeReleaseId: "new", activeVersion: "2.0.96" })),
+      true
+    );
   });
-  await test("an eligible Android release upgrades automatically even after a legacy refusal in an earlier version", async () => {
+  await test("an eligible Android upgrades automatically from every stored legacy format", async () => {
+    const legacyFormats: [string, () => Promise<unknown>][] = [
+      ["refused in an earlier version", () => databaseStorage.choose("legacy", "2.0.1")],
+      ["refused in this version", () => databaseStorage.choose("legacy")],
+      ["kept without asking (unversioned)", () => databaseStorage.prepareForRuntime("legacy")],
+    ];
+    for (const [label, storeLegacy] of legacyFormats) {
+      await resetApp();
+      await appLegacy.setItem(account, JSON.stringify(state()));
+      await storeLegacy();
+      equal(await databaseStorage.getChoice(), "legacy", label);
+      await mountGate(false, androidHost(), true);
+      equal(await databaseStorage.getChoice(), "partitioned");
+      equal(await appLegacy.getItem(account), null);
+      equal(await databaseStorage.load("user"), state());
+      assert(!host!.querySelector('[role="dialog"]'));
+      unmountGate();
+    }
+  });
+  await test("Android with data already in the new format starts without asking the bridge", async () => {
     await resetApp();
     await appLegacy.setItem(account, JSON.stringify(state()));
-    await databaseStorage.choose("legacy", "2.0.1");
-    await mountGate(false, androidHost(), true);
+    await databaseStorage.choose("partitioned");
+    let bridgeCalls = 0;
+    const counted =
+      <T>(value: T) =>
+      () => {
+        bridgeCalls++;
+        return value;
+      };
+    await mountGate(false, {
+      version: counted("2.0.95"),
+      isDebugBuild: counted(false),
+      getWebAppBundleStatus: counted(JSON.stringify(androidStatus())),
+    });
+    equal(bridgeCalls, 0);
     equal(await databaseStorage.getChoice(), "partitioned");
-    equal(await appLegacy.getItem(account), null);
-    assert(!host!.querySelector('[role="dialog"]'));
+    equal(await databaseStorage.load("user"), state());
     unmountGate();
   });
-  await test("an eligible Android release respects a legacy choice made in this very version", async () => {
-    // E.g. the dialog appeared because the bridge answered too slowly at one start.
+  await test("Android that can still fall back to an older frontend keeps the old format without asking", async () => {
+    const json = JSON.stringify(state());
+    for (const bridge of [
+      androidHost("2.0.93"),
+      androidHost("2.0.95", { ...androidStatus(), factoryVersion: "2.0.93" }),
+      androidHost("2.0.93-pp-debug", { ...androidStatus(), factoryVersion: "2.0.93" }, true),
+      // An APK predating the bundle status bridge.
+      { version: () => "2.0.90" },
+    ]) {
+      await resetApp();
+      await appLegacy.setItem(account, json);
+      localStorage.setItem("pp-database", json);
+      let displayedChoice = false;
+      const observer = new MutationObserver(() => {
+        displayedChoice ||= !!document.querySelector('[role="dialog"]');
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      try {
+        await mountGate(false, bridge, true);
+        assert(!displayedChoice && !host!.querySelector('[role="dialog"]'));
+        equal(await databaseStorage.getChoice(), "legacy");
+        // The exact keys and texts every earlier frontend reads.
+        equal(await appLegacy.getItem(account), json);
+        equal(await appLegacy.getItem("pp-database"), json);
+        equal(localStorage.getItem("pp-database"), null);
+        equal(await databaseStorage.load("user"), state());
+      } finally {
+        observer.disconnect();
+        unmountGate();
+      }
+      // Not a user decision: no version-scoped refusal is recorded.
+      equal(await databaseStorage.prepareForRuntime("choice"), null);
+    }
+    // The next start whose factory frontend includes the new storage converts it.
+    await mountGate(false, androidHost());
+    equal(await databaseStorage.getChoice(), "partitioned");
+    equal(await databaseStorage.load("user"), state());
+    unmountGate();
+    // A store already in the new format is never downgraded.
+    await mountGate(false, androidHost("2.0.93"));
+    equal(await databaseStorage.getChoice(), "partitioned");
+    equal(await databaseStorage.load("user"), state());
+    unmountGate();
+  });
+  await test("a failed Android setup without the upgrade offers retry and a recovery file, never the choice", async () => {
     await resetApp();
     const json = JSON.stringify(state());
     await appLegacy.setItem(account, json);
-    await databaseStorage.choose("legacy");
-    await mountGate(false, androidHost(), true);
-    equal(await databaseStorage.getChoice(), "legacy");
-    equal(await appLegacy.getItem(account), json);
-    unmountGate();
-  });
-  await test("Android at the boundary or with an old fallback keeps the explicit dialog", async () => {
-    for (const bridge of [
-      androidHost("2.0.94"),
-      androidHost("2.0.95", { ...androidStatus(), factoryVersion: "2.0.94" }),
-      androidHost("2.0.95", undefined, true),
-    ]) {
-      await resetApp();
-      await mountGate(true, bridge);
-      assert(host!.querySelector('[role="dialog"]'));
+    localStorage.setItem("pp-database", json);
+    localStorage.setItem("pp-settings", JSON.stringify({ language: "en" }));
+    const restore = injectFailure(1, "abort");
+    try {
+      renderGate(androidHost("2.0.93"));
+      await waitFor(() => !!host?.querySelector('[role="alert"]'));
+      assert(!host!.querySelector('[role="dialog"]') && !host!.querySelector("[data-app-mounted]"));
+      assert(host!.textContent!.includes(strings.StorageSetupError) && host!.textContent!.includes(strings.StorageRecoveryExport));
       equal(await databaseStorage.getChoice(), null);
-      unmountGate();
+      equal(await appLegacy.getItem(account), json);
+      equal(localStorage.getItem("pp-database"), json);
+    } finally {
+      restore();
     }
+    host!.querySelector<HTMLButtonElement>("button")!.click();
+    await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
+    equal(await databaseStorage.getChoice(), "legacy");
+    equal(localStorage.getItem("pp-database"), null);
+    unmountGate();
   });
   await test("eligible Android migration errors offer retry without silently accepting legacy storage", async () => {
     await resetApp();
@@ -1146,8 +1305,9 @@ async function run() {
     await databaseStorage.choose("partitioned");
     localStorage.setItem(account, json);
     equal(await databaseStorage.getChoice(), "partitioned");
-    equal(await databaseStorage.prepareForRuntime(false), "partitioned");
-    equal(await databaseStorage.prepareForRuntime(true), "partitioned");
+    equal(await databaseStorage.prepareForRuntime("automatic"), "partitioned");
+    equal(await databaseStorage.prepareForRuntime("choice"), "partitioned");
+    equal(await databaseStorage.prepareForRuntime("legacy"), "partitioned");
     await rejects(() => databaseStorage.load("user"));
     await rejects(() => databaseStorage.getStoredRaw("user"));
     equal(JSON.parse((await databaseStorage.getRaw("other"))!), state());

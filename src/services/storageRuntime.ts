@@ -1,4 +1,4 @@
-import { databaseStorage, type StorageMode } from "../../db-common/DatabaseStorage";
+import { databaseStorage, type StorageMode, type StoragePolicy } from "../../db-common/DatabaseStorage";
 import type { ElectronHostDevice } from "../types/hostDevice";
 import { canAutomaticallyUpgradeAndroidStorage } from "./androidStorageUpgrade";
 
@@ -10,19 +10,22 @@ function hostDevice(): ElectronHostDevice | undefined {
   return (window as unknown as { hostDevice?: ElectronHostDevice }).hostDevice;
 }
 
-/** A browser/PWA always converts without asking; a native host only as an
- * eligible Android release (see androidStorageUpgrade). */
-export async function isAutomaticStorageRuntime(): Promise<boolean> {
+/** A browser/PWA converts without asking; Electron keeps the explicit startup
+ * choice. Android never asks: it converts like the PWA once its factory
+ * frontend reads the new format (see androidStorageUpgrade), and until then
+ * keeps the old format, which every frontend it can fall back to reads. */
+export async function storageRuntimePolicy(): Promise<StoragePolicy> {
   const host = hostDevice();
-  return !host || (await canAutomaticallyUpgradeAndroidStorage(host, !!(window as unknown as { electronAPI?: unknown }).electronAPI));
+  if (!host) return "automatic";
+  if ((window as unknown as { electronAPI?: unknown }).electronAPI) return "choice";
+  // Data already in the new format stays in it under either Android policy, so the
+  // bridge (synchronous native file reads that block the page) is not asked.
+  if ((await databaseStorage.getChoice()) === "partitioned") return "automatic";
+  return (await canAutomaticallyUpgradeAndroidStorage(host)) ? "automatic" : "legacy";
 }
 
-/**
- * Prepares storage as decided by isAutomaticStorageRuntime. Null: the explicit
- * choice is still needed. An eligible Android release respects a "keep the old
- * storage" choice made in this very app version (the dialog can appear when the
- * bridge answers too slowly); a later version upgrades it.
- */
-export function prepareStorageForThisRuntime(automatic: boolean): Promise<StorageMode | null> {
-  return databaseStorage.prepareForRuntime(!automatic, undefined, { respectLegacyDecision: automatic && !!hostDevice() });
+/** Prepares storage as decided by storageRuntimePolicy. Null: the explicit
+ * choice is still needed. */
+export function prepareStorageForThisRuntime(policy: StoragePolicy): Promise<StorageMode | null> {
+  return databaseStorage.prepareForRuntime(policy);
 }
