@@ -40,7 +40,7 @@ export async function sharePublicLink(url: string, title: string, copiedMessage?
 
   if (hostDevice?.share) {
     try {
-      await hostDevice.share(url, title, url);
+      await hostDevice.share(url, title, title);
       return "shared";
     } catch (error) {
       console.warn("shareService", "host share failed", error);
@@ -49,7 +49,7 @@ export async function sharePublicLink(url: string, title: string, copiedMessage?
 
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
-      await navigator.share({ url, title });
+      await navigator.share({ url, title, text: title });
       return "shared";
     } catch (error) {
       // The user dismissing the share sheet is not a failure — don't fall back.
