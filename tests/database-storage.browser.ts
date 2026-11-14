@@ -237,8 +237,17 @@ function unmountGate() {
   setRuntime(false);
 }
 function checkBox(index: number) {
-  const inputs = host!.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  const inputs = host!.querySelectorAll<HTMLInputElement>('.storage-choice-confirm input[type="checkbox"]');
   inputs[index].click();
+}
+function choiceButton(mode: "partitioned" | "legacy") {
+  return host!.querySelector<HTMLButtonElement>(`.storage-choice-action[data-mode="${mode}"]`)!;
+}
+/** Opens the confirmation dialog of one format and returns its confirm button. */
+async function openConfirmation(mode: "partitioned" | "legacy") {
+  choiceButton(mode).click();
+  await waitFor(() => !!host?.querySelector(".storage-choice-confirm"));
+  return host!.querySelector<HTMLButtonElement>(".storage-choice-confirm-action")!;
 }
 async function run() {
   await test("no database consumer can bypass the mandatory storage choice", async () => {
@@ -842,7 +851,7 @@ async function run() {
     await rejects(() => store.choose("partitioned"));
     equal(await dump(), before);
   });
-  await test("startup dialog cannot be dismissed; new choice needs backup and downgrade acknowledgments", async () => {
+  await test("startup dialog cannot be dismissed; new choice is confirmed with backup and downgrade acknowledgments", async () => {
     await resetApp();
     await appLegacy.setItem(account, JSON.stringify(state()));
     localStorage.setItem("pp-settings", JSON.stringify({ language: "hu" }));
@@ -851,9 +860,11 @@ async function run() {
     const dialog = host!.querySelector<HTMLElement>('[role="dialog"]')!;
     equal(window.innerWidth, 320);
     await fetch("/capture?name=storage-choice-phone-top");
+    // The main panel has no acknowledgments: only the two format options.
+    equal(host!.querySelectorAll('input[type="checkbox"]').length, 0);
     const buttons = host!.querySelectorAll<HTMLButtonElement>("button");
     equal(buttons.length, 2);
-    assert(buttons[0].disabled && buttons[1].disabled);
+    assert(!buttons[0].disabled && !buttons[1].disabled);
     assert(!host!.querySelector("[data-app-mounted]"));
     dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     host!.querySelector<HTMLElement>(".modal-backdrop")!.click();
@@ -863,43 +874,64 @@ async function run() {
     last.scrollIntoView({ block: "end" });
     assert(last.getBoundingClientRect().bottom <= window.innerHeight + 1);
     await fetch("/capture?name=storage-choice-phone");
+    let confirm = await openConfirmation("partitioned");
+    equal(host!.querySelectorAll('.storage-choice-confirm input[type="checkbox"]').length, 2);
+    assert(confirm.disabled);
+    await waitFor(() => dialog.inert);
+    await fetch("/capture?name=storage-choice-confirm-phone");
+    // Escape only steps back to the options; nothing is decided.
     checkBox(0);
-    await waitFor(() => !host!.querySelector<HTMLInputElement>("input")?.disabled);
-    assert(buttons[0].disabled && buttons[1].disabled);
+    host!.querySelector<HTMLElement>(".storage-choice-confirm")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await waitFor(() => !host!.querySelector(".storage-choice-confirm") && !dialog.inert);
+    equal(await databaseStorage.getChoice(), null);
+    // Reopening starts with nothing ticked.
+    confirm = await openConfirmation("partitioned");
+    assert(confirm.disabled);
+    checkBox(0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert(confirm.disabled);
     checkBox(1);
-    await waitFor(() => !buttons[0].disabled);
-    assert(buttons[1].disabled);
-    buttons[0].click();
+    await waitFor(() => !confirm.disabled);
+    confirm.click();
     await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
     equal(await databaseStorage.getChoice(), "partitioned");
     unmountGate();
   });
-  await test("old choice requires its two separate consents and the shared backup acknowledgment", async () => {
+  await test("old choice is confirmed with its two separate consents and the shared backup acknowledgment", async () => {
     await resetApp();
     await appLegacy.setItem(account, JSON.stringify(state()));
     localStorage.setItem("pp-settings", JSON.stringify({ language: "hu" }));
     await fetch("/viewport?width=1024&height=900");
     await mountGate();
-    const buttons = host!.querySelectorAll<HTMLButtonElement>("button");
     await fetch("/capture?name=storage-choice-desktop");
+    const confirm = await openConfirmation("legacy");
+    equal(host!.querySelectorAll('.storage-choice-confirm input[type="checkbox"]').length, 3);
+    checkBox(1);
     checkBox(2);
-    checkBox(3);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    assert(buttons[1].disabled);
+    assert(confirm.disabled);
     checkBox(0);
-    await waitFor(() => !buttons[1].disabled);
-    assert(buttons[0].disabled);
+    await waitFor(() => !confirm.disabled);
+    await fetch("/capture?name=storage-choice-confirm-desktop");
     document.documentElement.setAttribute("data-theme", "dark");
     document.body.setAttribute("data-bs-theme", "dark");
-    buttons[1].scrollIntoView({ block: "end" });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await fetch("/capture?name=storage-choice-confirm-desktop-dark");
+    host!.querySelector<HTMLElement>(".storage-choice-confirm")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await waitFor(() => !host!.querySelector(".storage-choice-confirm"));
     await new Promise((resolve) => setTimeout(resolve, 200));
     await fetch("/capture?name=storage-choice-desktop-dark");
     await fetch("/viewport?width=320&height=568");
-    buttons[1].scrollIntoView({ block: "end" });
+    choiceButton("legacy").scrollIntoView({ block: "end" });
     await fetch("/capture?name=storage-choice-phone-dark");
     document.documentElement.removeAttribute("data-theme");
     document.body.removeAttribute("data-bs-theme");
-    buttons[1].click();
+    const again = await openConfirmation("legacy");
+    checkBox(0);
+    checkBox(1);
+    checkBox(2);
+    await waitFor(() => !again.disabled);
+    again.click();
     await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
     equal(await databaseStorage.getChoice(), "legacy");
     unmountGate();
@@ -914,9 +946,9 @@ async function run() {
     await resetApp();
     await appLegacy.setItem(account, JSON.stringify(state()));
     await mountGate();
+    const button = await openConfirmation("partitioned");
     checkBox(0);
     checkBox(1);
-    const button = host!.querySelector<HTMLButtonElement>("button")!;
     await waitFor(() => !button.disabled);
     const restore = injectFailure(3, "throw");
     try {

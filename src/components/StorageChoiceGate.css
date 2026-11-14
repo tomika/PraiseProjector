@@ -1,5 +1,5 @@
 .storage-choice-backdrop.modal-backdrop.show {
-  background-color: rgba(0, 0, 0, 0.7) !important;
+  background-color: rgba(15, 23, 42, 0.6) !important;
   opacity: 1 !important;
   z-index: 12000;
 }
@@ -9,116 +9,234 @@
   overscroll-behavior: contain;
   padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
 }
+.storage-choice-backdrop .modal.storage-choice-confirm {
+  z-index: 12002;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+/* ---- Main panel ------------------------------------------------------- */
 .storage-choice-panel {
-  max-width: 850px;
-  margin: 3vh auto;
-  padding: clamp(16px, 3vw, 28px);
-  border-radius: 16px;
+  --sc-accent: #2563eb;
+  --sc-accent-2: #0d9488;
+  --sc-muted: #5b6575;
+  --sc-border: #d9dee7;
+  --sc-new-bg: rgba(37, 99, 235, 0.05);
+  --sc-new-border: rgba(37, 99, 235, 0.45);
+  --sc-note-bg: #fff8e6;
+  --sc-note-border: #f0b429;
+  --sc-note-text: #6b4a00;
+  --sc-eyebrow-bg: #fff1d6;
+  --sc-eyebrow-text: #8a5300;
+  --sc-badge-bg: #dcfce7;
+  --sc-badge-text: #166534;
+  position: relative;
+  max-width: 880px;
+  margin: 4vh auto;
+  padding: clamp(18px, 3vw, 32px);
+  border-radius: 18px;
   background: var(--bs-body-bg, #fff);
   color: var(--bs-body-color, #212529);
-  box-shadow: 0 16px 60px #0005;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.35);
   font-size: 1rem;
   line-height: 1.5;
+  overflow: hidden;
+}
+.storage-choice-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  background: linear-gradient(90deg, var(--sc-accent), var(--sc-accent-2));
+}
+[data-bs-theme="dark"] .storage-choice-panel {
+  --sc-accent: #60a5fa;
+  --sc-accent-2: #2dd4bf;
+  --sc-muted: #a3adbd;
+  --sc-border: #3a4556;
+  --sc-new-bg: rgba(96, 165, 250, 0.08);
+  --sc-new-border: rgba(96, 165, 250, 0.55);
+  --sc-note-bg: rgba(240, 180, 41, 0.12);
+  --sc-note-border: #d99a1e;
+  --sc-note-text: #f5d58a;
+  --sc-eyebrow-bg: rgba(240, 180, 41, 0.18);
+  --sc-eyebrow-text: #f5d58a;
+  --sc-badge-bg: rgba(34, 197, 94, 0.18);
+  --sc-badge-text: #86efac;
 }
 .storage-choice-panel header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 14px;
 }
-.storage-choice-warning {
-  width: 76px;
+.storage-choice-icon {
+  width: 68px;
+  height: 68px;
   flex-shrink: 0;
+  filter: drop-shadow(0 6px 14px rgba(37, 99, 235, 0.28));
+}
+.storage-choice-eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--sc-eyebrow-bg);
+  color: var(--sc-eyebrow-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .storage-choice-panel h1 {
-  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 700;
   margin: 0;
 }
 .storage-choice-panel h1:focus {
   outline: none;
 }
-.storage-choice-explanation p {
-  margin: 0 0 12px;
+.storage-choice-intro {
+  margin: 0 0 20px;
+  color: var(--sc-muted);
+  font-size: 1.05rem;
 }
-.storage-choice-acknowledgments {
-  margin: 20px 0;
-}
-.storage-choice-panel label {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 8px 0;
-  cursor: pointer;
-}
-.storage-choice-panel input {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  margin-top: 3px;
-  accent-color: #0d6efd;
-}
-.storage-choice-actions {
+
+/* ---- Option cards ----------------------------------------------------- */
+.storage-choice-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+.storage-choice-option {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--sc-border);
+  border-radius: 14px;
+}
+.storage-choice-option p {
+  margin: 0;
+}
+.storage-choice-option h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.storage-choice-option-new {
+  border: 2px solid var(--sc-new-border);
+  background: var(--sc-new-bg);
+}
+.storage-choice-option-old p {
+  color: var(--sc-muted);
+}
+.storage-choice-badge {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--sc-badge-bg);
+  color: var(--sc-badge-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.storage-choice-note {
+  padding: 10px 12px;
+  border-left: 4px solid var(--sc-note-border);
+  border-radius: 6px;
+  background: var(--sc-note-bg);
+  color: var(--sc-note-text);
+  font-size: 0.95rem;
 }
 .storage-choice-panel .storage-choice-action {
-  background: #185abe;
-  color: #fff;
-  border: 2px solid #12458f;
-  border-radius: 8px;
-  box-shadow: 0 3px 0 #0e376f;
-  white-space: normal;
-  min-height: 56px;
+  margin-top: auto;
+  min-height: 48px;
   width: 100%;
-  text-align: left;
-  padding: 14px 16px;
+  white-space: normal;
   font-weight: 600;
-  line-height: 1.5;
+  border-radius: 10px;
 }
-.storage-choice-panel .storage-choice-action:not(:disabled):hover {
-  background: #124da6;
-  border-color: #0b367d;
-  color: #fff;
-}
-.storage-choice-panel .storage-choice-action:not(:disabled):active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 #0e376f;
-}
-.storage-choice-panel .storage-choice-action:focus-visible {
+.storage-choice-panel .btn:focus-visible {
   outline: 3px solid #6ea8fe;
   outline-offset: 3px;
 }
-.storage-choice-panel .storage-choice-action:disabled {
-  opacity: 1;
-  background: #dce5f1;
-  color: #52647d;
-  border-color: #a9bad0;
-  box-shadow: 0 3px 0 #9aaec7;
+
+/* ---- Confirmation dialog ---------------------------------------------- */
+.storage-choice-confirm-panel {
+  max-width: 580px;
+  margin-top: 10vh;
 }
-[data-bs-theme="dark"] .storage-choice-panel .storage-choice-action {
-  background: #2964c7;
-  border-color: #83adf2;
-  box-shadow: 0 3px 0 #102b55;
+.storage-choice-confirm-legacy::before {
+  background: linear-gradient(90deg, #64748b, #94a3b8);
 }
-[data-bs-theme="dark"] .storage-choice-panel .storage-choice-action:not(:disabled):hover {
-  background: #2057b5;
+.storage-choice-confirm-panel h1 {
+  font-size: clamp(1.25rem, 2.6vw, 1.5rem);
+  margin-bottom: 8px;
 }
-[data-bs-theme="dark"] .storage-choice-panel .storage-choice-action:disabled {
-  background: #29384d;
-  color: #a5b5cc;
-  border-color: #526680;
-  box-shadow: 0 3px 0 #172230;
+.storage-choice-confirm-panel > p {
+  margin: 0 0 14px;
+  color: var(--sc-muted);
 }
+.storage-choice-acknowledgments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.storage-choice-acknowledgments label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--sc-border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+.storage-choice-acknowledgments label:hover {
+  border-color: var(--sc-new-border);
+}
+.storage-choice-acknowledgments label:has(input:checked) {
+  border-color: var(--sc-new-border);
+  background: var(--sc-new-bg);
+}
+.storage-choice-acknowledgments input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: var(--sc-accent);
+}
+.storage-choice-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.storage-choice-confirm-actions .btn {
+  min-height: 44px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* ---- Status / errors -------------------------------------------------- */
 .storage-choice-error {
   color: var(--bs-danger, #b91c1c);
   margin: 16px 0 0;
 }
+.storage-choice-confirm-panel .storage-choice-error {
+  margin: 0 0 12px;
+}
 .storage-choice-status {
-  margin: 16px 0 0;
+  margin: 0 0 12px;
 }
 .storage-choice-recovery {
-  margin: 16px 0 0;
+  margin: 12px 0 16px;
 }
 .storage-choice-recovery p {
   margin: 8px 0 0;
@@ -132,17 +250,28 @@
   max-height: 100dvh;
   overflow-y: auto;
 }
-@media (max-width: 600px) {
-  .storage-choice-actions {
+
+@media (max-width: 680px) {
+  .storage-choice-options {
     grid-template-columns: 1fr;
   }
   .storage-choice-panel {
     margin: 0 auto;
   }
-  .storage-choice-warning {
-    width: 56px;
+  .storage-choice-confirm-panel {
+    margin-top: 4vh;
+  }
+  .storage-choice-icon {
+    width: 52px;
+    height: 52px;
   }
   .storage-choice-panel header {
     gap: 12px;
+  }
+  .storage-choice-confirm-actions {
+    flex-direction: column-reverse;
+  }
+  .storage-choice-confirm-actions .btn {
+    width: 100%;
   }
 }
