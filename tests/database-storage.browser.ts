@@ -11,6 +11,7 @@ import { StorageChoiceGate } from "../src/components/StorageChoiceGate";
 import { LocalizationProvider } from "../src/localization/LocalizationContext";
 import { canAutomaticallyUpgradeAndroidStorage, includesPartitionedStorage } from "../src/services/androidStorageUpgrade";
 import strings from "../src/localization/strings.en.json";
+import { FileSaveUnsupportedError, saveGeneratedFile } from "../src/services/fileSave";
 import { keepDatabaseCopies, readMigrationPackContents } from "../src/services/migrationPack";
 import { COPY_INBOX, keptCopyEntryKey, parseDatabaseCopyKey } from "../db-common/databaseCopies";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -1264,6 +1265,56 @@ async function run() {
       IDBObjectStore.prototype.put = original;
       unmountGate();
     }
+  });
+  await test("Android saves generated files through the bridge and never reports a save that did not happen", async () => {
+    const bytes = new Uint8Array(2 * 768 * 1024 + 123).map((_, i) => (i * 31 + (i >> 8)) % 256);
+    let calls: string[] = [];
+    let received: number[] = [];
+    const bridge = (outcome: "saved" | "cancelled" | "failed", options: { appendResult?: boolean; id?: string } = {}) => ({
+      beginFileSave: (name: string, type: string) => {
+        calls.push(`begin ${name} ${type}`);
+        return options.id ?? "save-1";
+      },
+      appendFileSave: (_id: string, chunk: string) => {
+        calls.push("append");
+        const binary = atob(chunk);
+        for (let i = 0; i < binary.length; i++) received.push(binary.charCodeAt(i));
+        return options.appendResult ?? true;
+      },
+      commitFileSave: (id: string) => {
+        calls.push("commit");
+        setTimeout(() => {
+          // Another save's outcome is ignored.
+          window.dispatchEvent(new CustomEvent("pp-file-save-result", { detail: { id: "other", result: "failed" } }));
+          window.dispatchEvent(
+            new CustomEvent("pp-file-save-result", { detail: { id, result: outcome, message: outcome === "failed" ? "disk full" : null } })
+          );
+        }, 10);
+        return true;
+      },
+      abortFileSave: () => {
+        calls.push("abort");
+      },
+    });
+    const run = async (host: NonNullable<Window["hostDevice"]>) => {
+      calls = [];
+      received = [];
+      setRuntime(host);
+      return saveGeneratedFile(new Blob([bytes], { type: "application/zip" }), "backup.ppdb");
+    };
+    equal(await run(bridge("saved")), "saved");
+    equal(calls, ["begin backup.ppdb application/zip", "append", "append", "append", "commit"]);
+    assert(received.length === bytes.length && received.every((value, i) => value === bytes[i]), "bytes differ");
+    equal(await run(bridge("cancelled")), "cancelled");
+    await rejects(() => run(bridge("failed")));
+    await rejects(() => run(bridge("saved", { appendResult: false })));
+    equal(calls, ["begin backup.ppdb application/zip", "append", "abort"]);
+    // Another save's picker is open.
+    await rejects(() => run(bridge("saved", { id: "" })));
+    equal(calls, ["begin backup.ppdb application/zip"]);
+    // An APK predating the bridge cannot save: reported as a failure, not as a download.
+    const unsupported = await run({ version: () => "2.0.90" }).catch((error: unknown) => error);
+    assert(unsupported instanceof FileSaveUnsupportedError, `unexpected result: ${String(unsupported)}`);
   });
   await test("a failed PWA conversion leaves every source untouched; the retry page offers a recovery file instead of a choice dialog", async () => {
     await resetApp();

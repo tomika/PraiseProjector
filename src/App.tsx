@@ -70,6 +70,7 @@ import { Database, FormatFoundReason, SongOrder } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
+import { FileSaveUnsupportedError, saveGeneratedFile } from "./services/fileSave";
 import {
   isMigrationPackFile,
   keepDatabaseCopies,
@@ -2878,30 +2879,10 @@ const AppContent: React.FC = () => {
       const exportJson = JSON.stringify(exportEnvelope);
       const fileName = `ppdb_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.ppdb`;
       const blob = compressDatabaseToZip(exportJson);
-
-      if (window.electronAPI?.saveDatabaseFile) {
-        const data = await blob.arrayBuffer();
-        const result = await window.electronAPI.saveDatabaseFile(data, fileName);
-        if (result.success) {
-          showMessage(t("ExportDatabaseTitle"), t("ExportSuccess"));
-        } else if (result.error !== "Cancelled") {
-          showMessage(t("Error"), t("ExportFailed"));
-        }
-        return;
-      }
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      showMessage(t("ExportDatabaseTitle"), t("ExportSuccess"));
+      if ((await saveGeneratedFile(blob, fileName)) === "saved") showMessage(t("ExportDatabaseTitle"), t("ExportSuccess"));
     } catch (error) {
       console.error("App", "Failed to export database", error);
-      showMessage(t("Error"), t("ExportFailed"));
+      showMessage(t("Error"), t(error instanceof FileSaveUnsupportedError ? "FileSaveUnsupported" : "ExportFailed"));
     }
   }, [showMessage, t]);
 

@@ -73,6 +73,16 @@ export interface ElectronHostDevice {
   getWebAppUpdateActivity?: () => string | Promise<string>;
   /** Trial-launches an already downloaded release immediately (reloads the WebView). */
   applyPendingWebAppUpdate?: () => void | Promise<void>;
+  /**
+   * Android file save (a WebView ignores `<a download>`): begin returns a save id ("" when
+   * another save's picker is open), append streams base64 chunks, commit opens the system
+   * document picker and the outcome arrives as a `pp-file-save-result` event
+   * (`{ id, result: "saved" | "cancelled" | "failed", message? }`). See services/fileSave.
+   */
+  beginFileSave?: (fileName: string, mimeType: string) => string | Promise<string>;
+  appendFileSave?: (id: string, base64Chunk: string) => boolean | Promise<boolean>;
+  commitFileSave?: (id: string) => boolean | Promise<boolean>;
+  abortFileSave?: (id: string) => void | Promise<void>;
 }
 
 /** Transient Android webapp update activity. */

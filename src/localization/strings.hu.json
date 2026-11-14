@@ -1302,6 +1302,7 @@
   "StorageAutoMigrationRetry": "Újrapróbálom az automatikus átállást",
   "StorageSetupError": "Nem sikerült biztonságosan előkészíteni a tárolt adatokat. Az alkalmazás az adatok védelmében még nem indul el. Ellenőrizd a szabad tárhelyet, zárd be a többi ablakot, majd próbáld újra. Ha továbbra is hibát kapsz, mentsd fájlba a tárolt adatokat, és kérj segítséget.",
   "StorageSetupRetry": "Újrapróbálom",
+  "FileSaveUnsupported": "Az Android alkalmazás ezen verziója nem tud fájlt menteni. Az alkalmazás a Google Playből frissíthető.",
   "StorageRecoveryExport": "Tárolt adatok mentése fájlba",
   "StorageRecoveryExportDone": "A tárolt adatok mentése elkészült. Őrizd meg a fájlt, amíg a hiba meg nem oldódik.",
   "StorageRecoveryExportFailed": "A tárolt adatokat nem sikerült fájlba menteni."

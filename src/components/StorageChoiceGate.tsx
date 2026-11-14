@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { databaseStorage, type StorageMode, type StoragePolicy } from "../../db-common/DatabaseStorage";
 import { useLocalization } from "../localization/LocalizationContext";
+import { FileSaveUnsupportedError, saveGeneratedFile } from "../services/fileSave";
 import { prepareStorageForThisRuntime, storageRuntimePolicy } from "../services/storageRuntime";
 import "./StorageChoiceGate.css";
 
@@ -8,28 +9,14 @@ import "./StorageChoiceGate.css";
 async function saveRecoveryFile(): Promise<boolean> {
   const fileName = `pp-storage-recovery-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.json`;
   const text = await databaseStorage.exportRecoveryData();
-  if (window.electronAPI?.saveDatabaseFile) {
-    const bytes = new TextEncoder().encode(text);
-    const result = await window.electronAPI.saveDatabaseFile(bytes.buffer as ArrayBuffer, fileName);
-    if (!result.success && result.error !== "Cancelled") throw new Error(result.error ?? "Save failed");
-    return result.success;
-  }
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
+  return (await saveGeneratedFile(new Blob([text], { type: "application/json" }), fileName)) === "saved";
 }
 
 /** Offered whenever the gate reports an error: the user can keep their data
  * even if neither a retry nor a choice succeeds. */
 function RecoveryExport() {
   const { t } = useLocalization();
-  const [state, setState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "failed" | "unsupported">("idle");
   return (
     <div className="storage-choice-recovery">
       <button
@@ -42,7 +29,7 @@ function RecoveryExport() {
             .then((saved) => setState(saved ? "saved" : "idle"))
             .catch((reason) => {
               console.error("Storage recovery export", reason);
-              setState("failed");
+              setState(reason instanceof FileSaveUnsupportedError ? "unsupported" : "failed");
             });
         }}
       >
@@ -50,6 +37,7 @@ function RecoveryExport() {
       </button>
       {state === "saved" && <p role="status">{t("StorageRecoveryExportDone")}</p>}
       {state === "failed" && <p role="alert">{t("StorageRecoveryExportFailed")}</p>}
+      {state === "unsupported" && <p role="alert">{t("FileSaveUnsupported")}</p>}
     </div>
   );
 }

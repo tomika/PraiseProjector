@@ -27,6 +27,7 @@ import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
 import { cloudApi } from "../../common/cloudApi";
 import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
+import { FileSaveUnsupportedError, saveGeneratedFile } from "../services/fileSave";
 import { readPersistedSettings } from "../services/settingsStore";
 import { createPlaylistOrigin, findScheduledPlaylist, parsePlaylistOrigin, PlaylistOrigin, resolvePlaylistOrigin } from "../services/playlistOrigin";
 
@@ -1812,14 +1813,15 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         }
       }
     } else {
-      // Web mode - download as file
-      const blob = new Blob([playlistStr], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "playlist.ppl";
-      a.click();
-      URL.revokeObjectURL(url);
+      // Web/Android: a download, or the Android document picker
+      try {
+        await saveGeneratedFile(new Blob([playlistStr], { type: "text/plain" }), "playlist.ppl");
+      } catch (error) {
+        console.error("Playlist", "Failed to save playlist", error);
+        const details =
+          error instanceof FileSaveUnsupportedError ? this.props.t("FileSaveUnsupported") : error instanceof Error ? error.message : String(error);
+        this.props.onError?.("SaveFailed", details);
+      }
     }
   }
 

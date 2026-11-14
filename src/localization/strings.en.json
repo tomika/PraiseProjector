@@ -1301,6 +1301,7 @@
   "StorageAutoMigrationRetry": "Retry the automatic storage upgrade",
   "StorageSetupError": "The stored data could not be prepared safely. To protect your data, the app has not started yet. Check free disk space, close other windows and try again. If the problem persists, save the stored data to a file and ask for help.",
   "StorageSetupRetry": "Try again",
+  "FileSaveUnsupported": "This version of the Android app cannot save files. Update the app from Google Play.",
   "StorageRecoveryExport": "Save the stored data to a file",
   "StorageRecoveryExportDone": "The stored data has been saved. Keep this file until the problem is solved.",
   "StorageRecoveryExportFailed": "The stored data could not be saved to a file."
