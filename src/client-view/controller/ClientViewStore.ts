@@ -14,6 +14,7 @@
  */
 
 import { getEmptyDisplay } from "../../../common/pp-utils";
+import { hasFavoriteLabel, isFavoritePlaylist } from "../../../common/favorite-playlists";
 import { validateCommand } from "../../../common/hardware-action-catalog";
 import type { PreselectionCommand } from "../../../common/hardware-input";
 import { chordSettings, directCommandChange, type DirectClientCommand } from "./hardwareCommandChanges";
@@ -1787,11 +1788,18 @@ export class ClientViewStore {
     this.set({ selectedLeaderId: leaderId, selectedPlaylistLabel: label });
   }
 
-  /** The dated playlists offered by the currently selected leader, newest first
-   *  (labels are `YYYY.MM.DD` date strings, so a reverse string sort is by date). */
-  leaderPlaylistOptions(): { label: string }[] {
+  /** The playlists offered by the currently selected leader: the dated ones
+   *  newest first (labels are `YYYY.MM.DD` date strings, so a reverse string sort
+   *  is by date), then the named favorites (see common/favorite-playlists) by
+   *  name. `text` is what the option shows. */
+  leaderPlaylistOptions(): { label: string; text: string; favorite: boolean }[] {
     const playlists = this.state.leaderProfiles.find((p) => p.leaderId === this.state.selectedLeaderId)?.playlists ?? [];
-    return [...playlists].sort((a, b) => -a.label.localeCompare(b.label)).map((pl) => ({ label: pl.label }));
+    const dated = playlists.filter((pl) => !isFavoritePlaylist(pl)).sort((a, b) => -a.label.localeCompare(b.label));
+    const favorites = playlists
+      .filter((pl) => isFavoritePlaylist(pl))
+      .map((pl) => ({ label: pl.label, text: hasFavoriteLabel(pl.label) ? pl.label : `★ ${pl.label}` }))
+      .sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: "base" }));
+    return [...dated.map((pl) => ({ label: pl.label, text: pl.label, favorite: false })), ...favorites.map((pl) => ({ ...pl, favorite: true }))];
   }
 
   /** The songs of the currently selected leader + dated playlist (the rows the

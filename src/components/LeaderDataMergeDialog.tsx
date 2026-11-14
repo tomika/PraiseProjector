@@ -5,6 +5,8 @@ import { SongPreference } from "../../db-common/SongPreference";
 import { Playlist } from "../../db-common/Playlist";
 import { PlaylistEntry } from "../../db-common/PlaylistEntry";
 import { Database } from "../../db-common/Database";
+import { formatLocalDateLabel } from "../../common/date-only";
+import { favoriteNameFromLabel, isFavoriteScheduleDate } from "../../common/favorite-playlists";
 import { Icon, IconType } from "../services/IconService";
 import { useLocalization } from "../localization/LocalizationContext";
 import { useDialogResize } from "../hooks/useDialogResize";
@@ -226,9 +228,10 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
         const matchingRemoteDate = remoteDateMap.get(date.getTime());
         const remotePlaylist = matchingRemoteDate ? remoteLeader.getPlaylist(matchingRemoteDate) : null;
 
-        // Check if playlists differ
-        const localStr = localPlaylist?.toString() || "";
-        const remoteStr = remotePlaylist?.toString() || "";
+        // Check if playlists differ (a favorite's name counts too: a rename is a change)
+        const nameOf = (playlist: typeof localPlaylist) => (playlist && isFavoriteScheduleDate(date) ? `${playlist.name}\n` : "");
+        const localStr = localPlaylist ? nameOf(localPlaylist) + localPlaylist.toString() : "";
+        const remoteStr = remotePlaylist ? nameOf(remotePlaylist) + remotePlaylist.toString() : "";
 
         if (localStr !== remoteStr) {
           schedConflicts.push({
@@ -240,15 +243,21 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
         }
       }
 
-      // Check remote dates not in local
+      // Check remote dates not in local. A playlist the profile had before the
+      // local edits and the remote side left unchanged was deleted locally: keep
+      // the deletion by default instead of restoring it.
+      const backupLeader = Database.getInstance().getBackupLeader(localLeader.id)?.leader;
       for (const date of remoteDates) {
         if (!processedDates.has(date.getTime())) {
           const remotePlaylist = remoteLeader.getPlaylist(date);
+          const backupPlaylist = backupLeader?.getPlaylist(date);
+          const deletedLocally =
+            !!remotePlaylist && !!backupPlaylist && backupPlaylist.name === remotePlaylist.name && backupPlaylist.equals(remotePlaylist);
           schedConflicts.push({
             date,
             localPlaylist: null,
             remotePlaylist: remotePlaylist?.clone() || null,
-            useRemote: true,
+            useRemote: !deletedLocally,
           });
         }
       }
@@ -874,7 +883,11 @@ const LeaderDataMergeDialog: React.FC<LeaderDataMergeDialogProps> = ({
                                     {isExpanded ? "▼" : "▶"}
                                   </button>
                                 </td>
-                                <td className="col-date">{conflict.date.toLocaleDateString()}</td>
+                                <td className="col-date">
+                                  {isFavoriteScheduleDate(conflict.date)
+                                    ? `★ ${favoriteNameFromLabel((conflict.remotePlaylist ?? conflict.localPlaylist)?.name) || formatLocalDateLabel(conflict.date)}`
+                                    : conflict.date.toLocaleDateString()}
+                                </td>
                                 <td className="col-source">
                                   <button
                                     type="button"

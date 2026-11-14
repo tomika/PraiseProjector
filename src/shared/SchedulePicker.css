@@ -282,6 +282,95 @@
   font-weight: bold;
 }
 
+/* Dates / favorites tabs */
+.schedule-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.schedule-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  margin-bottom: -1px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.schedule-tab:hover {
+  background-color: #f8f9fa;
+}
+
+.schedule-tab.active {
+  border-color: #dee2e6;
+  background-color: white;
+  font-weight: bold;
+}
+
+/* Favorites tab */
+.favorite-name-field {
+  margin-bottom: 0.5rem;
+}
+
+.favorite-name-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.favorite-error {
+  margin-top: 0.25rem;
+  color: #dc3545;
+  font-size: 0.85rem;
+}
+
+.favorite-hint {
+  margin-top: 0.25rem;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.favorite-existing-heading {
+  margin-top: 0.75rem;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.favorite-filter {
+  margin-bottom: 0.5rem;
+}
+
+.favorite-item.renaming {
+  cursor: default;
+}
+
+.favorite-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.favorite-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.favorite-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.date-item.selected .schedule-rename-btn {
+  color: white;
+}
+
 /* Desktop dark mode (driven by the app's documentElement data-theme) */
 [data-theme="dark"] .schedule-dialog {
   background: var(--pp-modal-bg);
@@ -326,6 +415,28 @@
 
 [data-theme="dark"] .schedule-share-btn img {
   filter: invert(1);
+}
+
+[data-theme="dark"] .schedule-tabs {
+  border-bottom-color: var(--pp-border-color);
+}
+
+[data-theme="dark"] .schedule-tab:hover {
+  background-color: var(--pp-bg-tertiary);
+}
+
+[data-theme="dark"] .schedule-tab.active {
+  border-color: var(--pp-border-color);
+  background-color: var(--pp-modal-bg);
+}
+
+[data-theme="dark"] .favorite-hint,
+[data-theme="dark"] .favorite-existing-heading {
+  color: var(--pp-text-muted);
+}
+
+[data-theme="dark"] .favorite-error {
+  color: #ff6b6b;
 }
 
 [data-theme="dark"] .no-schedules {

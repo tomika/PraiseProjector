@@ -10,6 +10,7 @@ import { TypesenseClient } from "../common/typesense-client";
 import { PlaylistEntry } from "./PlaylistEntry";
 import { cloudApi } from "../common/cloudApi";
 import { formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
+import { favoriteLabel, hasFavoriteLabel, isFavoriteScheduleDate } from "../common/favorite-playlists";
 import { LeaderDBProfile, SongDBEntryWithData, SongFoundType } from "../common/pp-types";
 import { leaderDBProfileCodec, leadersResponseCodec, uniType } from "../common/pp-codecs";
 import { decode, parseAndDecode } from "../common/io-utils";
@@ -2381,13 +2382,44 @@ class Database {
   }
 
   // Schedule a playlist for a leader on a specific date - matching C# Database.Schedule
-  public schedule(leader: Leader, date: Date, playlist: Playlist): void {
+  /**
+   * Stores a playlist for a leader. A dated playlist is named after its date
+   * (YYYY.MM.DD). A favorite (see common/favorite-playlists) gets the label of
+   * `favoriteName` when given; otherwise it keeps the name it already has.
+   */
+  public schedule(leader: Leader, date: Date, playlist: Playlist, favoriteName?: string): void {
     if (leader) {
       const playlistToStore = playlist.clone();
-      playlistToStore.name = formatLocalDateLabel(date); // YYYY.MM.DD format
+      if (isFavoriteScheduleDate(date)) {
+        const existingName = leader.getPlaylist(date)?.name;
+        playlistToStore.name =
+          favoriteName !== undefined
+            ? favoriteLabel(favoriteName)
+            : existingName || (hasFavoriteLabel(playlist.name) ? playlist.name : formatLocalDateLabel(date));
+      } else {
+        playlistToStore.name = formatLocalDateLabel(date); // YYYY.MM.DD format
+      }
       leader.addPlaylist(date, playlistToStore, true, this);
       this.save();
     }
+  }
+
+  /** Renames a favorite playlist; its date and songs stay the same. */
+  public renameFavorite(leader: Leader, date: Date, favoriteName: string): boolean {
+    const existing = leader.getPlaylist(date);
+    if (!existing || !isFavoriteScheduleDate(date)) return false;
+    const renamed = existing.clone();
+    renamed.name = favoriteLabel(favoriteName);
+    leader.addPlaylist(date, renamed, false, this);
+    this.save();
+    return true;
+  }
+
+  /** Deletes the playlist stored for this exact date. */
+  public removeScheduledPlaylist(leader: Leader, date: Date): boolean {
+    if (!leader.removePlaylist(date, this)) return false;
+    this.save();
+    return true;
   }
 }
 

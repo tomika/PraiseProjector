@@ -14,6 +14,7 @@ import { Song } from "./Song";
 import { leaderDBProfileCodec } from "../common/pp-codecs";
 import { LeaderDBProfile, PlayList, PreferenceType } from "../common/pp-types";
 import { decode } from "../common/io-utils";
+import { isFavoriteScheduleDate } from "../common/favorite-playlists";
 import { parseScheduleDate } from "../common/date-only";
 
 export interface UpdatePreferenceOptions {
@@ -242,6 +243,20 @@ export class Leader {
     }
   }
 
+  /** Removes the playlist stored for this exact date. Returns false when there was none. */
+  removePlaylist(dt: Date, database: Database): boolean {
+    const timestamp = dt.getTime();
+    for (const key of this.schedule.keys()) {
+      if (key.getTime() !== timestamp) continue;
+      // Backup the profile before first local modification
+      if (this.version !== 0) database.ensureProfileBackup(this._id);
+      this.version = 0;
+      this.schedule.delete(key);
+      return true;
+    }
+    return false;
+  }
+
   // Store preference from sync API
   storeSyncedPreference(sp: SongPreferenceEntry, database?: Database): SongPreference {
     const pref = new SongPreference(sp.songId);
@@ -278,6 +293,9 @@ export class Leader {
     for (const [key, value] of this.schedule) {
       const o = other.getScheduleEntryByTimestamp(key.getTime());
       if (!o || !value.equals(o)) return false;
+      // A favorite's name is user data (a rename alone is a change); dated
+      // playlists are named after their date, so only their songs count.
+      if (isFavoriteScheduleDate(key) && value.name !== o.name) return false;
     }
 
     const empty = new SongPreference();

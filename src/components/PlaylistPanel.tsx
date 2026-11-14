@@ -1726,7 +1726,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   // Handle schedule dialog date selection. `leader` is the leader chosen inside
   // the dialog (load mode can switch to any own/public leader; save mode always
   // returns the own selected leader).
-  async handleScheduleDateSelected(date: Date, leader: Leader, shareAfterSave = false) {
+  async handleScheduleDateSelected(date: Date, leader: Leader, shareAfterSave = false, favoriteName?: string) {
     const { scheduleDialogMode, currentPlaylist } = this.state;
 
     this.setState({
@@ -1738,7 +1738,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
     if (scheduleDialogMode === "save") {
       // Save playlist to leader's schedule
-      db.schedule(leader, date, currentPlaylist);
+      db.schedule(leader, date, currentPlaylist, favoriteName);
       const scheduled = findScheduledPlaylist(leader, date);
       if (scheduled) {
         const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
@@ -1764,6 +1764,33 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.setState((state) => ({ publicLeadersRevision: state.publicLeadersRevision + 1 }));
   }
 
+  private isPlaylistOriginOf(leaderId: string, date: Date): boolean {
+    const origin = this.state.playlistOrigin;
+    return !!origin && origin.leaderId === leaderId && origin.scheduledAt === date.getTime();
+  }
+
+  private handleDeleteScheduledPlaylist = (date: Date, leader: Leader): void => {
+    if (!Database.getInstance().removeScheduledPlaylist(leader, date)) return;
+    // The working list no longer has a saved source to update or share.
+    if (this.isPlaylistOriginOf(leader.id, date)) {
+      this.setState({ playlistOrigin: null });
+      this.persistPlaylistOrigin(null);
+    }
+  };
+
+  private handleRenameFavorite = (date: Date, leader: Leader, name: string): void => {
+    if (!Database.getInstance().renameFavorite(leader, date, name)) return;
+    // Keep the working list linked to the renamed favorite.
+    if (this.isPlaylistOriginOf(leader.id, date)) {
+      const scheduled = findScheduledPlaylist(leader, date);
+      if (scheduled) {
+        const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
+        this.setState({ playlistOrigin: origin });
+        this.persistPlaylistOrigin(origin);
+      }
+    }
+  };
+
   handleScheduleDialogCancel() {
     this.setState({
       showScheduleDialog: false,
@@ -1787,6 +1814,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         publicLeaders={mode === "load" ? publicLeaders : undefined}
         onRefreshPublic={mode === "load" ? this.handleRefreshPublicLeaders : undefined}
         onConfirm={this.handleScheduleDateSelected}
+        onDeletePlaylist={this.handleDeleteScheduledPlaylist}
+        onRenameFavorite={this.handleRenameFavorite}
         onShare={this.handleShareScheduledPlaylist}
         onCancel={this.handleScheduleDialogCancel}
         initialDate={this.getScheduleDate() ?? this.legacyScheduleDate}

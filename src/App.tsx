@@ -59,6 +59,7 @@ import { cloudApi, type DisplaySessionTarget, type DisplayUpdateResult } from ".
 import { useOnlineSession } from "./contexts/OnlineSessionContext";
 import { matchesSongLanguage, normalizeSongLanguageFilter, songLanguageCodesOf } from "../common/song-language";
 import { readSongLanguageSettings } from "../common/song-language-settings";
+import { favoriteNameFromLabel, isFavoriteScheduleDate } from "../common/favorite-playlists";
 import { cloudApiHost } from "./config";
 import { Display, PlaylistEntry as DisplayPlaylistEntry, SongFound, SongDBEntryWithData, LeaderDBProfile } from "../common/pp-types";
 import * as t from "io-ts";
@@ -2367,12 +2368,17 @@ const AppContent: React.FC = () => {
     const savedPlaylist = sourceLeader.getPlaylist(scheduleDate);
     if (savedPlaylist && currentPlaylist.equals(savedPlaylist)) return true; // No changes
 
-    const dateStr = formatLocalDateLabel(scheduleDate);
-    const result = await showYesNoCancelAsync(t("UpdateScheduledPlaylist"), t("AskUpdateScheduledPlaylist").replace("{0}", dateStr), {
+    const question = isFavoriteScheduleDate(scheduleDate)
+      ? t("AskUpdateFavoritePlaylist").replace("{0}", favoriteNameFromLabel(savedPlaylist?.name ?? origin.label) || origin.label)
+      : t("AskUpdateScheduledPlaylist").replace("{0}", formatLocalDateLabel(scheduleDate));
+    const result = await showYesNoCancelAsync(t("UpdateScheduledPlaylist"), question, {
       confirmText: t("UpdatePlaylistConfirm"),
     });
     if (result === "yes") {
-      Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist);
+      // A favorite deleted meanwhile (e.g. on another device) is recreated with
+      // the name it was loaded with; an existing one keeps its current name.
+      const favoriteName = isFavoriteScheduleDate(scheduleDate) && !savedPlaylist ? favoriteNameFromLabel(origin.label) || undefined : undefined;
+      Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist, favoriteName);
     }
     return result !== "cancel";
   }, [showYesNoCancelAsync, t]);

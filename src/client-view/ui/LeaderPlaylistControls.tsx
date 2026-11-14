@@ -5,9 +5,11 @@
  * render below in LeaderPlaylistPicker.
  *
  * The leader select groups the user's own synced leaders and other leaders'
- * public (read-only) lists. The filter input searches the selected leader's ALL
- * dated playlists; while it is non-empty the date select is hidden (matches
- * span every date) and the picker below shows the matches with their date. The
+ * public (read-only) lists. The playlist select lists the dated playlists and,
+ * in a separate group, the leader's named favorites. The filter input searches
+ * ALL of the selected leader's playlists; while it is non-empty the date select
+ * is hidden (matches span every list) and the picker below shows the matches
+ * with their list label. The
  * `:=` button always replaces the LOCAL working playlist with the selected
  * leader playlist — never the other way around — so it stays active while
  * filtering (tapping a match first selects that match's dated list).
@@ -30,6 +32,13 @@ export function LeaderPlaylistControls() {
     list.map((profile) => (
       <option key={profile.leaderId} value={profile.leaderId}>
         {profile.leaderName}
+      </option>
+    ));
+
+  const playlistOptions = (list: typeof dates) =>
+    list.map((d) => (
+      <option key={d.label} value={d.label}>
+        {d.text}
       </option>
     ));
 
@@ -59,11 +68,14 @@ export function LeaderPlaylistControls() {
             onChange={(e) => store.selectLeaderDate(e.target.value)}
           >
             {dates.length === 0 && <option value="">—</option>}
-            {dates.map((d) => (
-              <option key={d.label} value={d.label}>
-                {d.label}
-              </option>
-            ))}
+            {dates.some((d) => d.favorite) ? (
+              <>
+                <optgroup label="Dates">{playlistOptions(dates.filter((d) => !d.favorite))}</optgroup>
+                <optgroup label="★ Favorites">{playlistOptions(dates.filter((d) => d.favorite))}</optgroup>
+              </>
+            ) : (
+              playlistOptions(dates)
+            )}
           </select>
         )}
 
