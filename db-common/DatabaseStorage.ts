@@ -1,241 +1,184 @@
 import localforage from "localforage";
+import { PartitionedDatabaseStore, type StorageMode } from "./PartitionedDatabaseStore";
+import { isAccountKey } from "./partitionedFormat";
+export type { StorageMode } from "./PartitionedDatabaseStore";
 
-/**
- * DatabaseStorage service - wraps localForage for persistent database storage.
- * Uses IndexedDB as the primary storage backend, which has much larger storage limits
- * than localStorage (typically 50% of disk space vs 5-10MB).
- *
- * Storage keys:
- * - "pp-database" for guest mode
- * - "pp-database-<username>" for logged-in users
- */
+declare const __APP_VERSION__: string;
+function currentAppVersion(): string {
+  return typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "development";
+}
 
-// Configure localForage to use IndexedDB with a descriptive name
+// Keep the original database/store and legacy string keys. Array keys used by
+// the new format cannot collide with any username supported by old versions.
 const dbStorage = localforage.createInstance({
   name: "PraiseProjector",
   storeName: "database",
   description: "PraiseProjector song database storage",
 });
 
-/**
- * Get the storage key for the current user
- */
 export function getStorageKey(username?: string): string {
   return username ? `pp-database-${username}` : "pp-database";
 }
 
-/**
- * Load database JSON from storage
- * @param username - The username (empty string or undefined for guest)
- * @returns The parsed database state object, or null if not found
- */
-export async function loadDatabase<T>(username?: string): Promise<T | null> {
-  const key = getStorageKey(username);
-  try {
-    // console.debug("DatabaseStorage", `Loading from key: ${key}`);
-    const data = await dbStorage.getItem<string>(key);
-    if (data) {
-      return JSON.parse(data) as T;
+const partitioned = new PartitionedDatabaseStore(async () => {
+  await dbStorage.ready();
+  if (dbStorage.driver() !== localforage.INDEXEDDB) {
+    throw new Error("IndexedDB is required for safe database persistence");
+  }
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("PraiseProjector");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
+});
+
+function localCopies(): { key: string; value: string }[] {
+  const copies: { key: string; value: string }[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (isAccountKey(key)) {
+      const value = localStorage.getItem(key);
+      if (value !== null) copies.push({ key, value });
     }
-    return null;
-  } catch (error) {
-    console.error("DatabaseStorage", `Failed to load from key: ${key}`, error);
-    return null;
+  }
+  return copies;
+}
+
+/** After the choice every localStorage source has been converted and removed.
+ * A copy found later was written by a pre-IndexedDB app version: only that
+ * account is refused (never read over or overwritten) until an import replaces it. */
+function refuseLocalCopy(key: string): void {
+  if (localStorage.getItem(key) !== null) {
+    throw new Error("An older app version wrote this account's database to localStorage; import a backup to replace it");
   }
 }
 
-/**
- * Save database state to storage
- * @param data - The database state object to save
- * @param username - The username (empty string or undefined for guest)
- */
-export async function saveDatabase<T>(data: T, username?: string): Promise<void> {
-  const key = getStorageKey(username);
+export async function getStorageChoice(): Promise<StorageMode | null> {
+  await partitioned.finishCleanup(localStorage);
+  return partitioned.choice();
+}
+
+export async function chooseStorage(mode: StorageMode, appVersion = currentAppVersion()): Promise<void> {
+  await partitioned.choose(mode, localCopies(), { upgradeLegacy: true, legacyVersion: mode === "legacy" ? appVersion : undefined });
+  await partitioned.finishCleanup(localStorage);
+}
+
+let automaticSetup: Promise<StorageMode> | null = null;
+
+/** Native hosts retain the explicit choice. Browser/PWA startup always uses
+ * the new format, including upgrading a previously saved legacy preference;
+ * with `respectLegacyDecision` (an eligible Android release) not one that
+ * was chosen explicitly in this app version. */
+export async function prepareStorageForRuntime(
+  hasHostDevice: boolean,
+  appVersion = currentAppVersion(),
+  options: { respectLegacyDecision?: boolean } = {}
+): Promise<StorageMode | null> {
+  if (hasHostDevice) {
+    const choice = await getStorageChoice();
+    if (choice === "legacy" && !(await partitioned.hasLegacyDecision(appVersion))) return null;
+    return choice;
+  }
+  // React StrictMode and simultaneous consumers must share one conversion.
+  if (!automaticSetup) {
+    automaticSetup = (async () => {
+      // Already converted: a single key read instead of reading every record.
+      const choice = await getStorageChoice();
+      if (choice === "partitioned") return "partitioned" as const;
+      if (choice === "legacy" && options.respectLegacyDecision && (await partitioned.hasLegacyDecision(appVersion))) return "legacy" as const;
+      await partitioned.choose("partitioned", localCopies(), { upgradeLegacy: true });
+      await partitioned.finishCleanup(localStorage);
+      return "partitioned" as const;
+    })();
+  }
+  const setup: Promise<StorageMode> = automaticSetup;
   try {
-    const json = JSON.stringify(data);
-    await dbStorage.setItem(key, json);
-    // console.debug("DatabaseStorage", `Saved to key: ${key} (${json.length} bytes)`);
-  } catch (error) {
-    console.error("DatabaseStorage", `Failed to save to key: ${key}`, error);
-    throw error;
+    return await setup;
+  } finally {
+    if (automaticSetup === setup) automaticSetup = null;
   }
 }
 
-/**
- * Get raw JSON string from storage (for export)
- * @param username - The username (empty string or undefined for guest)
- * @returns The raw JSON string, or null if not found
- */
+async function requireChoice(): Promise<void> {
+  if (!(await getStorageChoice())) throw new Error("Choose a storage format before opening the application");
+}
+
+/** `owner`: the instance the write baseline belongs to (see PartitionedDatabaseStore). */
+export async function loadDatabase<T>(username?: string, owner?: object): Promise<T | null> {
+  const key = getStorageKey(username);
+  await requireChoice();
+  refuseLocalCopy(key);
+  const raw = await partitioned.load(key, owner);
+  return raw === null ? null : (JSON.parse(raw) as T);
+}
+
+export async function saveDatabase<T>(data: T, username?: string, owner?: object): Promise<void> {
+  // Freeze this request before any I/O lets callers mutate the model.
+  const json = JSON.stringify(data);
+  const key = getStorageKey(username);
+  refuseLocalCopy(key);
+  // The format and cleanup state are verified inside the save transaction.
+  await partitioned.save(key, json, owner);
+}
+
 export async function getRawDatabase(username?: string): Promise<string | null> {
-  const key = getStorageKey(username);
-  try {
-    return await dbStorage.getItem<string>(key);
-  } catch (error) {
-    console.error("DatabaseStorage", `Failed to get raw data from key: ${key}`, error);
-    return null;
-  }
+  return getStoredRawDatabase(username);
 }
 
-/**
- * Set raw JSON string to storage (for import)
- * @param json - The raw JSON string to save
- * @param username - The username (empty string or undefined for guest)
- */
-export async function setRawDatabase(json: string, username?: string): Promise<void> {
-  const key = getStorageKey(username);
-  try {
-    // Validate JSON first
-    JSON.parse(json);
-    await dbStorage.setItem(key, json);
-    // console.debug("DatabaseStorage", `Set raw data for key: ${key} (${json.length} bytes)`);
-  } catch (error) {
-    console.error("DatabaseStorage", `Failed to set raw data for key: ${key}`, error);
-    throw error;
-  }
-}
-
-/**
- * Get the raw JSON string an account's database would be loaded from: the
- * IndexedDB copy, or the legacy localStorage copy that migrateFromLocalStorage
- * has not moved yet (it runs only when that account becomes active). Unlike
- * getRawDatabase a read error is thrown, so a failure is never mistaken for
- * "this account has no database".
- * @param username - The username (empty string or undefined for guest)
- * @returns The raw JSON string, or null if the account has no database at all
- */
 export async function getStoredRawDatabase(username?: string): Promise<string | null> {
   const key = getStorageKey(username);
-  return (await dbStorage.getItem<string>(key)) ?? localStorage.getItem(key);
+  await requireChoice();
+  refuseLocalCopy(key);
+  return partitioned.read(key);
 }
 
-/**
- * Set several raw JSON databases all-or-nothing (for a multi-account import):
- * either every one of them is stored or none is changed.
- * @param entries - The raw JSON strings with the username each belongs to
- */
+export async function setRawDatabase(json: string, username?: string): Promise<void> {
+  await setRawDatabases([{ json, username }]);
+}
+
 export async function setRawDatabases(entries: { json: string; username?: string }[]): Promise<void> {
-  const writes = entries.map((entry) => {
-    // Validate JSON first
-    JSON.parse(entry.json);
-    return { key: getStorageKey(entry.username), json: entry.json };
-  });
-  await dbStorage.ready();
-
-  if (dbStorage.driver() === localforage.INDEXEDDB) {
-    // One IndexedDB transaction: a failing put (e.g. quota) aborts all of them.
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("PraiseProjector");
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction("database", "readwrite");
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted"));
-        const store = transaction.objectStore("database");
-        for (const write of writes) store.put(write.json, write.key);
-      });
-    } finally {
-      database.close();
-    }
-    return;
-  }
-
-  // Other localForage drivers have no multi-key transaction: put back what was there on failure.
-  const previous = new Map<string, string | null>();
-  try {
-    for (const write of writes) {
-      previous.set(write.key, await dbStorage.getItem<string>(write.key));
-      await dbStorage.setItem(write.key, write.json);
-    }
-  } catch (error) {
-    // Undo in reverse order: each step then returns to a state that fitted
-    // before, whereas the original order can run out of quota while a later
-    // import still occupies the space an earlier, larger original needs. One
-    // failing restore must not keep the remaining ones from being put back.
-    for (const [key, value] of [...previous].reverse()) {
-      try {
-        if (value === null) await dbStorage.removeItem(key);
-        else await dbStorage.setItem(key, value);
-      } catch (restoreError) {
-        console.error("DatabaseStorage", `Failed to restore key after a failed import: ${key}`, restoreError);
-      }
-    }
-    throw error;
-  }
+  await requireChoice();
+  const keys = entries.map(({ username }) => getStorageKey(username));
+  await partitioned.replace(entries.map(({ json }, index) => ({ key: keys[index], json })));
+  // The import replaces the account as a whole, including a refused copy an
+  // older version wrote to localStorage.
+  for (const key of keys) localStorage.removeItem(key);
 }
 
-/**
- * Remove database from storage
- * @param username - The username (empty string or undefined for guest)
- */
 export async function removeDatabase(username?: string): Promise<void> {
   const key = getStorageKey(username);
-  try {
-    await dbStorage.removeItem(key);
-    // console.debug("DatabaseStorage", `Removed key: ${key}`);
-  } catch (error) {
-    console.error("DatabaseStorage", `Failed to remove key: ${key}`, error);
-    throw error;
-  }
+  await partitioned.remove(key);
+  // Keep a localStorage-only source intact if the IndexedDB operation fails.
+  localStorage.removeItem(key);
 }
 
-/**
- * List all stored database keys
- * @returns Array of storage keys
- */
 export async function listDatabaseKeys(): Promise<string[]> {
-  try {
-    return await dbStorage.keys();
-  } catch (error) {
-    console.error("DatabaseStorage", "Failed to list keys", error);
-    return [];
-  }
+  return partitioned.keys();
 }
 
-/**
- * Migrate data from localStorage to IndexedDB (one-time migration)
- * This checks if there's data in localStorage that hasn't been migrated yet.
- * @param username - The username (empty string or undefined for guest)
- * @returns true if migration was performed, false otherwise
- */
+/** Everything the databases occupy, unchanged and unvalidated, so the user can
+ * keep their data when the app cannot start. Not an import format. */
+export async function exportRecoveryData(): Promise<string> {
+  return JSON.stringify({
+    format: "pp-storage-recovery-v1",
+    exportedAt: new Date().toISOString(),
+    appVersion: currentAppVersion(),
+    indexedDb: await partitioned.dump(),
+    localStorage: localCopies(),
+  });
+}
+
 export async function migrateFromLocalStorage(username?: string): Promise<boolean> {
-  const key = getStorageKey(username);
-
-  try {
-    // Check if data already exists in IndexedDB
-    const existingData = await dbStorage.getItem<string>(key);
-    if (existingData) {
-      // console.debug("DatabaseStorage", `Data already exists in IndexedDB for key: ${key}, skipping migration`);
-      return false;
-    }
-
-    // Check if data exists in localStorage
-    const localStorageData = localStorage.getItem(key);
-    if (!localStorageData) {
-      // console.debug("DatabaseStorage", `No localStorage data found for key: ${key}`);
-      return false;
-    }
-
-    // Migrate data to IndexedDB
-    console.info("DatabaseStorage", `Migrating data from localStorage to IndexedDB for key: ${key}`);
-    await dbStorage.setItem(key, localStorageData);
-
-    // Remove from localStorage after successful migration to free up the limited quota
-    localStorage.removeItem(key);
-    console.info("DatabaseStorage", `Removed localStorage data for key: ${key}`);
-
-    console.info("DatabaseStorage", `Migration complete for key: ${key} (${localStorageData.length} bytes)`);
-    return true;
-  } catch (error) {
-    console.error("DatabaseStorage", `Migration failed for key: ${key}`, error);
-    return false;
-  }
+  // All accounts are migrated by the explicit startup choice, before mounting
+  // any database consumer. Retain the old entry point for compatibility.
+  void username;
+  return false;
 }
 
 export const databaseStorage = {
+  prepareForRuntime: prepareStorageForRuntime,
+  getChoice: getStorageChoice,
+  choose: chooseStorage,
   load: loadDatabase,
   save: saveDatabase,
   getRaw: getRawDatabase,
@@ -246,6 +189,8 @@ export const databaseStorage = {
   listKeys: listDatabaseKeys,
   migrateFromLocalStorage,
   getStorageKey,
+  release: (username?: string, owner?: object) => partitioned.release(getStorageKey(username), owner),
+  exportRecoveryData,
 };
 
 export default databaseStorage;

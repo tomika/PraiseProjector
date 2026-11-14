@@ -31,10 +31,8 @@ import { Leader } from "../db-common/Leader";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { LeaderProvider, useLeader } from "./contexts/LeaderContext";
 import { useAuth } from "./contexts/AuthContext";
-import { ThemeProvider } from "./contexts/ThemeContext";
 import { MessageBoxProvider, MessageBoxConfig, useMessageBox } from "./contexts/MessageBoxContext";
 import { UpdateProvider } from "./contexts/UpdateContext";
-import { LocalizationProvider } from "./localization/LocalizationContext";
 import { TooltipProvider } from "./localization/TooltipContext";
 import { ToastProvider, useToast } from "./contexts/ToastContext";
 import { ResponsiveFontSizeManager } from "./components/ResponsiveFontSizeManager";
@@ -72,7 +70,13 @@ import { Database, FormatFoundReason, SongOrder } from "../db-common/Database";
 import type { ImportDecision } from "./components/CompareDialog";
 import { databaseStorage } from "../db-common/DatabaseStorage";
 import { normalizeImportedDatabase, compressDatabaseToZip, DatabaseExportEnvelope } from "./services/DatabaseImportNormalizer";
-import { isMigrationPackFile, readMigrationPack, summarizeDatabaseJson } from "./services/migrationPack";
+import {
+  isMigrationPackFile,
+  keepDatabaseCopies,
+  readMigrationPackContents,
+  summarizeDatabaseJson,
+  type MigrationPackCopy,
+} from "./services/migrationPack";
 import type { MigrationPackImportItem } from "./components/MigrationPackImportDialog";
 import { findScheduledPlaylist, ScheduledPlaylist } from "./services/playlistOrigin";
 import { formatLocalDateKey, formatLocalDateLabel, parseScheduleDate } from "../common/date-only";
@@ -525,6 +529,8 @@ const AppContent: React.FC = () => {
   const [showSongCheck, setShowSongCheck] = useState(false);
   const [isImporting, setIsImporting] = useState(false); // Loading state for database import
   const [migrationImportItems, setMigrationImportItems] = useState<MigrationPackImportItem[] | null>(null);
+  // Further stored copies of the pack being imported; kept when the import is confirmed.
+  const migrationImportCopiesRef = useRef<MigrationPackCopy[]>([]);
   const [eulaAccepted, setEulaAccepted] = useState(() => localStorage.getItem("pp-eula-accepted") === EULA_DATE);
   const [showEulaView, setShowEulaView] = useState(false);
   const [playlistSelection, setPlaylistSelection] = useState<PlaylistSelectionEvent | null>(null);
@@ -813,6 +819,22 @@ const AppContent: React.FC = () => {
     window.addEventListener("pp-db-save-error", handleSaveError);
     return () => {
       window.removeEventListener("pp-db-save-error", handleSaveError);
+    };
+  }, [showMessage, t]);
+
+  // A database that fails to load is not opened (another account's database may
+  // stay active instead), so tell the user once per account.
+  const loadErrorNotifiedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const handleLoadError = (event: Event) => {
+      const username = (event as CustomEvent<{ username?: string }>).detail?.username ?? "";
+      if (loadErrorNotifiedRef.current.has(username)) return;
+      loadErrorNotifiedRef.current.add(username);
+      showMessage(t("DatabaseLoadErrorTitle"), t("DatabaseLoadErrorMessage").replace("{0}", username || t("Guest")));
+    };
+    window.addEventListener("pp-db-load-error", handleLoadError);
+    return () => {
+      window.removeEventListener("pp-db-load-error", handleLoadError);
     };
   }, [showMessage, t]);
 
@@ -2844,13 +2866,8 @@ const AppContent: React.FC = () => {
   const handleExportDatabase = useCallback(async () => {
     saveErrorNotifiedRef.current = false;
     try {
-      // Get raw database content from IndexedDB
-      const dbContent = await databaseStorage.getRaw(Database.getCurrentUsername());
-      if (!dbContent) {
-        showMessage(t("Error"), t("ExportFailed"));
-        return;
-      }
-
+      // Include pending edits even when IndexedDB is full or a save failed.
+      const dbContent = Database.getInstance().exportForBackup();
       const username = Database.getCurrentUsername();
       const exportEnvelope: DatabaseExportEnvelope = {
         format: "ppdb-export-v2.1",
@@ -2901,24 +2918,31 @@ const AppContent: React.FC = () => {
       try {
         if (isMigrationPackFile(file.name)) {
           // A migration pack holds one database per account; the user picks which to take.
-          const databases = await readMigrationPack(await file.text());
+          const contents = await readMigrationPackContents(await file.text());
+          const databases = contents?.databases;
+          // Further stored copies are not imported but kept, so later backups carry them.
+          const copies = contents?.copies ?? [];
+          migrationImportCopiesRef.current = copies;
           if (!databases?.length) {
+            if (databases && copies.length) {
+              await keepDatabaseCopies(copies);
+              showMessage(t("ImportDatabaseTitle"), t("MigrationImportCopiesKept").replace("{0}", String(copies.length)));
+              return;
+            }
             showMessage(t("Error"), t("ImportInvalidData"));
             return;
           }
           const items: MigrationPackImportItem[] = [];
           for (const database of databases) {
-            // Includes a database still in legacy localStorage; a read error fails the
-            // import rather than presenting the account as having no database.
-            const localJson = await databaseStorage.getStoredRaw(database.username);
+            // A database that cannot be read is listed as unreadable, never as
+            // missing: replacing it is how such an account is recovered.
             let local: MigrationPackImportItem["local"] = null;
-            if (localJson !== null) {
-              try {
-                local = summarizeDatabaseJson(localJson);
-              } catch (error) {
-                console.warn("App", `Could not summarize the local database of "${database.username}"`, error);
-                local = "unreadable";
-              }
+            try {
+              const localJson = await databaseStorage.getStoredRaw(database.username);
+              if (localJson !== null) local = summarizeDatabaseJson(localJson);
+            } catch (error) {
+              console.warn("App", `Could not read the local database of "${database.username}"`, error);
+              local = "unreadable";
             }
             items.push({ ...database, local });
           }
@@ -2962,6 +2986,8 @@ const AppContent: React.FC = () => {
 
               // Import to IndexedDB storage
               await databaseStorage.setRaw(normalizedDatabaseJson, currentUsername);
+              // The open instance must not save over the import before the reload.
+              Database.supersedeByImport([currentUsername]);
 
               setIsImporting(false);
               showMessage(t("ImportDatabaseTitle"), t("ImportSuccess"), () => {
@@ -2991,8 +3017,13 @@ const AppContent: React.FC = () => {
       setMigrationImportItems(null);
       setIsImporting(true);
       try {
+        // The pack's further stored copies are kept first (never imported into
+        // the databases); keeping them again later changes nothing.
+        await keepDatabaseCopies(migrationImportCopiesRef.current);
         // All-or-nothing: a failure part-way must not leave some accounts replaced.
         await databaseStorage.setRawMany(selected);
+        // The open instance must not save over the import before the reload.
+        Database.supersedeByImport(selected.map((item) => item.username));
         setIsImporting(false);
         showMessage(t("ImportDatabaseTitle"), t("ImportSuccess"), () => {
           // Reload the page to load the new database
@@ -3539,6 +3570,7 @@ const AppContent: React.FC = () => {
               <MigrationPackImportDialog
                 items={migrationImportItems}
                 currentUsername={Database.getCurrentUsername()}
+                keptCopies={migrationImportCopiesRef.current.length}
                 onImport={(selected) => void handleMigrationPackImport(selected)}
                 onClose={() => setMigrationImportItems(null)}
               />
@@ -3581,38 +3613,36 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   const [messageBox, setMessageBox] = useState<MessageBoxConfig | null>(null);
 
+  // ThemeProvider and LocalizationProvider come from main.tsx, outside the
+  // storage choice gate; a second, nested pair would hold its own theme state.
   return (
-    <LocalizationProvider>
-      <ThemeProvider>
-        <SettingsProvider>
-          <TooltipProvider>
-            <LeaderProvider>
-              <UpdateProvider>
-                <MessageBoxProvider onMessageBoxChange={setMessageBox}>
-                  <ToastProvider>
-                    <AppContent />
-                  </ToastProvider>
-                  {messageBox && (
-                    <MessageBox
-                      title={messageBox.title}
-                      message={messageBox.message}
-                      onConfirm={messageBox.onConfirm}
-                      onNo={messageBox.onNo}
-                      onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
-                      showCancel={messageBox.showCancel ?? true}
-                      confirmText={messageBox.confirmText}
-                      noText={messageBox.noText}
-                      cancelText={messageBox.cancelText}
-                      confirmDanger={messageBox.confirmDanger}
-                    />
-                  )}
-                </MessageBoxProvider>
-              </UpdateProvider>
-            </LeaderProvider>
-          </TooltipProvider>
-        </SettingsProvider>
-      </ThemeProvider>
-    </LocalizationProvider>
+    <SettingsProvider>
+      <TooltipProvider>
+        <LeaderProvider>
+          <UpdateProvider>
+            <MessageBoxProvider onMessageBoxChange={setMessageBox}>
+              <ToastProvider>
+                <AppContent />
+              </ToastProvider>
+              {messageBox && (
+                <MessageBox
+                  title={messageBox.title}
+                  message={messageBox.message}
+                  onConfirm={messageBox.onConfirm}
+                  onNo={messageBox.onNo}
+                  onCancel={messageBox.showCancel ? messageBox.onCancel : undefined}
+                  showCancel={messageBox.showCancel ?? true}
+                  confirmText={messageBox.confirmText}
+                  noText={messageBox.noText}
+                  cancelText={messageBox.cancelText}
+                  confirmDanger={messageBox.confirmDanger}
+                />
+              )}
+            </MessageBoxProvider>
+          </UpdateProvider>
+        </LeaderProvider>
+      </TooltipProvider>
+    </SettingsProvider>
   );
 };
 

@@ -22,7 +22,7 @@ export const songStoreCodec = uniType(
   }
 );
 
-const legacySongStoreCodec = t.type({
+export const legacySongStoreCodec = t.type({
   _id: t.string,
   _group_id: t.string,
   version: t.number,

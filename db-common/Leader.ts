@@ -1,3 +1,4 @@
+import { cloneJson } from "./cloneJson";
 import { Playlist } from "./Playlist";
 import { SongPreference } from "./SongPreference";
 import { SongPreferenceEntry } from "../common/pp-types";
@@ -29,6 +30,12 @@ export class Leader {
   private readonly preferences: Map<string, SongPreference> = new Map();
   private readonly schedule: Map<Date, Playlist> = new Map();
   private _version: number = 0;
+  // Stored entries the model cannot hold: an undated playlist, or a playlist or
+  // preference shadowed by a later one of the same date or song. Never live and
+  // never uploaded; kept only so that saving the profile locally loses nothing
+  // (earlier versions dropped them on the first save).
+  private retainedPreferences: unknown[] = [];
+  private retainedPlaylists: unknown[] = [];
 
   constructor(id: string, name: string, version: number = 0) {
     this._id = id;
@@ -65,7 +72,33 @@ export class Leader {
       l.setScheduleEntry(new Date(key.getTime()), value.clone());
     }
     l.version = this.version;
+    l.retainedPreferences = cloneJson(this.retainedPreferences);
+    l.retainedPlaylists = cloneJson(this.retainedPlaylists);
     return l;
+  }
+
+  /** Stored entries that are kept but not used; see retainedPreferences. */
+  get retainedEntryCount(): number {
+    return this.retainedPreferences.length + this.retainedPlaylists.length;
+  }
+
+  /**
+   * Adds the retained entries of the profile this one replaces (e.g. a newer
+   * server version pulled by a sync, which never contains them because they
+   * are not uploaded). Entries already retained here are not duplicated.
+   */
+  retainFrom(previous: Leader): void {
+    const merge = (own: unknown[], other: unknown[]) => {
+      const seen = new Set(own.map((entry) => JSON.stringify(entry)));
+      for (const entry of other) {
+        const key = JSON.stringify(entry);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        own.push(cloneJson(entry));
+      }
+    };
+    merge(this.retainedPreferences, previous.retainedPreferences);
+    merge(this.retainedPlaylists, previous.retainedPlaylists);
   }
 
   forAllSongPreference(cb: (songId: string, pref: SongPreference) => boolean): void {
@@ -265,24 +298,57 @@ export class Leader {
 
   static fromJSON(input: unknown): Leader {
     const data = decode(leaderDBProfileCodec, input);
+    // The decoded arrays correspond to the input's entry by entry; the retained
+    // copies are the input's own entries, never a normalized re-encoding.
+    const raw = input as { preferences?: unknown[]; playlists?: unknown[]; retainedPreferences?: unknown; retainedPlaylists?: unknown };
     const leader = new Leader(data.leaderId, data.leaderName, data.version || 0);
+    if (Array.isArray(raw.retainedPreferences)) leader.retainedPreferences.push(...cloneJson(raw.retainedPreferences));
+    if (Array.isArray(raw.retainedPlaylists)) leader.retainedPlaylists.push(...cloneJson(raw.retainedPlaylists));
 
-    for (const prefData of data.preferences ?? []) {
+    // Like every earlier version the last of duplicate preferences or same-date
+    // playlists is used and undated playlists are not; the others are retained.
+    const source = (entries: unknown[] | undefined, decoded: unknown[], index: number) => cloneJson(entries?.[index] ?? decoded[index]);
+    const preferences = data.preferences ?? [];
+    const preferenceIndex = new Map<string, number>();
+    preferences.forEach((prefData, index) => {
       const pref = SongPreference.fromJSON(prefData);
+      const shadowed = preferenceIndex.get(pref.songId);
+      if (shadowed !== undefined) leader.retainedPreferences.push(source(raw.preferences, preferences, shadowed));
+      preferenceIndex.set(pref.songId, index);
       leader.preferences.set(pref.songId, pref);
-    }
+    });
 
-    for (const playlistData of data.playlists ?? []) {
+    const playlists = data.playlists ?? [];
+    const playlistIndex = new Map<number, number>();
+    playlists.forEach((playlistData, index) => {
       const date = playlistData.scheduled ?? parseScheduleDate(playlistData.label);
       if (!date) {
-        console.warn("Leader", "Skipping playlist with invalid date.", playlistData.label, playlistData.scheduled);
-        continue;
+        leader.retainedPlaylists.push(source(raw.playlists, playlists, index));
+        return;
       }
-      const playlist = Playlist.fromJSON(playlistData);
-      leader.setScheduleEntry(date, playlist);
-    }
+      const shadowed = playlistIndex.get(date.getTime());
+      if (shadowed !== undefined) leader.retainedPlaylists.push(source(raw.playlists, playlists, shadowed));
+      playlistIndex.set(date.getTime(), index);
+      leader.setScheduleEntry(date, Playlist.fromJSON(playlistData));
+    });
 
+    if (leader.retainedEntryCount) {
+      console.warn(
+        "Leader",
+        `Profile ${data.leaderId}: ${leader.retainedEntryCount} undated or duplicate playlists/preferences are kept but not used`
+      );
+    }
     return leader;
+  }
+
+  /** The profile as stored locally: toJSON plus the retained entries, which are
+   * never uploaded (toJSON is also the sync format). */
+  toStorageJSON(): LeaderDBProfile & { retainedPreferences?: unknown[]; retainedPlaylists?: unknown[] } {
+    return {
+      ...this.toJSON(),
+      ...(this.retainedPreferences.length ? { retainedPreferences: cloneJson(this.retainedPreferences) } : {}),
+      ...(this.retainedPlaylists.length ? { retainedPlaylists: cloneJson(this.retainedPlaylists) } : {}),
+    };
   }
 
   // Convert to sync format for uploading to server - matching C# Leader.ToProfile()

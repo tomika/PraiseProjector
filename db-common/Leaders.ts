@@ -11,9 +11,11 @@ export class Leaders {
   }
 
   static fromJSON(input: unknown): Leaders {
-    const data = decode(leadersResponseCodec, input);
+    decode(leadersResponseCodec, input);
     const leaders = new Leaders();
-    leaders.items = data.map((d) => Leader.fromJSON(d));
+    // Leader.fromJSON gets the stored entries themselves, so the entries it
+    // retains stay verbatim (it validates each one again).
+    leaders.items = (input as unknown[]).map((entry) => Leader.fromJSON(entry));
     return leaders;
   }
 
@@ -57,6 +59,7 @@ export class Leaders {
     const leader = Leader.fromJSON(data);
     const existing = this.find(leader.id);
     if (existing) {
+      leader.retainFrom(existing);
       this.remove(existing);
     }
     this.add(leader);

@@ -14,6 +14,8 @@ export interface MigrationPackImportItem extends MigrationPackDatabase {
 interface MigrationPackImportDialogProps {
   items: MigrationPackImportItem[];
   currentUsername: string;
+  /** Further stored copies in the file: kept on import, never imported into a database. */
+  keptCopies?: number;
   onImport: (selected: MigrationPackImportItem[]) => void;
   onClose: () => void;
 }
@@ -23,7 +25,7 @@ interface MigrationPackImportDialogProps {
  * Accounts that have no database on this device are preselected; one that would
  * replace existing local data has to be ticked explicitly.
  */
-const MigrationPackImportDialog: React.FC<MigrationPackImportDialogProps> = ({ items, currentUsername, onImport, onClose }) => {
+const MigrationPackImportDialog: React.FC<MigrationPackImportDialogProps> = ({ items, currentUsername, keptCopies = 0, onImport, onClose }) => {
   const { t } = useLocalization();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(items.filter((item) => item.local === null).map((item) => item.username)));
 
@@ -57,6 +59,7 @@ const MigrationPackImportDialog: React.FC<MigrationPackImportDialogProps> = ({ i
             </div>
             <div className="modal-body">
               <p>{t("MigrationImportDescription")}</p>
+              {keptCopies > 0 && <p className="text-muted">{t("MigrationImportCopies").replace("{0}", String(keptCopies))}</p>}
               <div className="mb-2">
                 <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setSelected(new Set(items.map((item) => item.username)))}>
                   {t("SelectAll")}

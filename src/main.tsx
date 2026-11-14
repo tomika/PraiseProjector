@@ -36,6 +36,7 @@ import "./shared/performance.css";
 import { ensureHardwareInputMigrated } from "./hardware-input/hardwareInputSettings";
 import { getHardwareInputRuntime } from "./hardware-input/hardwareInputRuntime";
 import { stopAllAbcPlayback } from "../chordpro/abc-playback-registry";
+import { StorageChoiceGate } from "./components/StorageChoiceGate";
 
 /** Remembers whether the renderer was last showing the embedded new client view,
  *  so a reload (F5 / Ctrl+R) returns to the same UI instead of the full app. */
@@ -360,11 +361,17 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         </LocalizationProvider>
       </ThemeProvider>
     ) : (
-      <AuthProvider>
-        <OnlineSessionProvider>
-          <RootView />
-        </OnlineSessionProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <LocalizationProvider>
+          <StorageChoiceGate>
+            <AuthProvider>
+              <OnlineSessionProvider>
+                <RootView />
+              </OnlineSessionProvider>
+            </AuthProvider>
+          </StorageChoiceGate>
+        </LocalizationProvider>
+      </ThemeProvider>
     )}
   </React.StrictMode>
 );

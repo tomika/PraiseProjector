@@ -29,6 +29,7 @@ const GLOBS = [
   "scripts/run-chordpro-tests.js",
   "scripts/run-search-tests.js",
   "scripts/run-node-tests.js",
+  "scripts/run-database-tests.cjs",
   "tests/**/*.ts",
 ];
 

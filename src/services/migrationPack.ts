@@ -1,6 +1,8 @@
 import * as t from "io-ts";
+import localforage from "localforage";
 import { decode, parseAndDecode } from "../../common/io-utils";
 import { Database } from "../../db-common/Database";
+import { COPY_INBOX, keptCopyInboxKey, parseDatabaseCopyKey } from "../../db-common/databaseCopies";
 
 /**
  * A `.ppmigrate` pack is the backup file written when the web app moved between
@@ -55,12 +57,22 @@ async function sha256Hex(text: string): Promise<string | null> {
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+export interface MigrationPackCopy {
+  /** Content-addressed key the copy is kept under in the site migration inbox. */
+  inboxKey: string;
+  payload: string;
+}
+
 /**
- * Reads the account databases out of a pack, guest first, then users by name.
- * Returns null when the text is not a pack. Throws when a database in it is
- * damaged, so a partly readable pack is never offered as if it were complete.
+ * Reads a pack once: its account databases, guest first, then users by name,
+ * and its further stored copies of account databases (`database-copy`
+ * entries, see db-common/databaseCopies). The copies are never imported into
+ * the app's storage; they are kept verbatim in the site migration inbox, from
+ * where every later `.ppmigrate` backup of this origin carries them again.
+ * Returns null when the text is not a pack. Throws when a database or a copy
+ * in it is damaged, so a partly readable pack is never offered as complete.
  */
-export async function readMigrationPack(text: string): Promise<MigrationPackDatabase[] | null> {
+export async function readMigrationPackContents(text: string): Promise<{ databases: MigrationPackDatabase[]; copies: MigrationPackCopy[] } | null> {
   let pack: t.TypeOf<typeof migrationPackCodec>;
   try {
     pack = decode(migrationPackCodec, JSON.parse(text) as unknown);
@@ -69,16 +81,39 @@ export async function readMigrationPack(text: string): Promise<MigrationPackData
   }
 
   const databases: MigrationPackDatabase[] = [];
+  const copies: MigrationPackCopy[] = [];
   for (const entry of pack.entries) {
-    if (entry.kind !== "database") continue;
-    if (entry.key !== GUEST_KEY && !entry.key.startsWith(USER_KEY_PREFIX)) continue;
+    const isDatabase = entry.kind === "database" && (entry.key === GUEST_KEY || entry.key.startsWith(USER_KEY_PREFIX));
+    const isCopy = entry.kind === "database-copy" && parseDatabaseCopyKey(entry.key) !== null;
+    if (!isDatabase && !isCopy) continue;
     const hash = await sha256Hex(entry.payload);
     if (hash !== null && hash !== entry.sha256) throw new Error(`Integrity check failed for ${entry.key}`);
+    if (isCopy) {
+      const inboxKey = keptCopyInboxKey(entry.key, hash ?? entry.sha256);
+      if (!inboxKey) throw new Error(`Invalid database copy: ${entry.key}`);
+      copies.push({ inboxKey, payload: entry.payload });
+      continue;
+    }
     databases.push({
       username: entry.key === GUEST_KEY ? "" : entry.key.slice(USER_KEY_PREFIX.length),
       json: entry.payload,
       summary: summarizeDatabaseJson(entry.payload),
     });
   }
-  return databases.sort((left, right) => left.username.localeCompare(right.username));
+  return { databases: databases.sort((left, right) => left.username.localeCompare(right.username)), copies };
+}
+
+/** Keeps a pack's further stored copies (see readMigrationPackContents); keeping one again changes nothing. */
+export async function keepDatabaseCopies(copies: MigrationPackCopy[]): Promise<void> {
+  if (!copies.length) return;
+  const inbox = localforage.createInstance({ name: COPY_INBOX.name, storeName: COPY_INBOX.storeName });
+  for (const copy of copies) {
+    // Never overwrite a kept copy. Without Web Crypto the file's own digest
+    // names the copy unverified, so a differing payload under the same name
+    // means wrong checksums: refuse the import rather than lose either copy.
+    const existing = await inbox.getItem<string>(copy.inboxKey);
+    if (existing === copy.payload) continue;
+    if (existing !== null) throw new Error(`A different copy is already kept as ${copy.inboxKey}; the file's checksums are wrong`);
+    await inbox.setItem(copy.inboxKey, copy.payload);
+  }
 }

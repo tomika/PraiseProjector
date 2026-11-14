@@ -1,3 +1,4 @@
+import { cloneJson } from "./cloneJson";
 import { Song, songStoreCodec } from "./Song";
 import { Playlist } from "./Playlist";
 import { SongPreference } from "./SongPreference";
@@ -16,6 +17,7 @@ import * as t from "io-ts";
 import { TinyEmitter } from "tiny-emitter";
 import { databaseStorage, getStorageKey } from "./DatabaseStorage";
 import { matchesSongLanguage } from "../common/song-language";
+import { validateDatabaseState } from "./validateDatabaseState";
 
 export interface DatabaseSettings {
   searchMethod?: "traditional" | "typesense";
@@ -337,6 +339,22 @@ class WordMatch {
 /** Text regions a snippet can be taken from; each one owns a distinct word-position range. */
 type SnippetRegion = "lyrics" | "title" | "meta";
 
+/** A save of an account whose database never loaded (it was reported as unreadable). */
+export class DatabaseNotOpenError extends Error {
+  constructor(username: string) {
+    super(`The database of "${username}" is not open; it could not be loaded`);
+    this.name = "DatabaseNotOpenError";
+  }
+}
+
+/** A queued account switch whose requester no longer wants it (see Database.switchUser). */
+export class DatabaseSwitchSupersededError extends Error {
+  constructor(username: string) {
+    super(`The switch to the database of "${username}" was superseded`);
+    this.name = "DatabaseSwitchSupersededError";
+  }
+}
+
 class Database {
   public static readonly importExportCodec = uniType(
     {
@@ -348,6 +366,7 @@ class Database {
       songBackup: t.array(databaseSongBackupMapEntryCodec),
       profileBackup: t.array(databaseProfileBackupMapEntryCodec),
       publicLeaders: leadersResponseCodec,
+      retainedSongs: t.array(t.unknown),
     }
   );
 
@@ -452,6 +471,21 @@ class Database {
   // Tracks whether in-memory data has been modified since last load/save.
   // Used by switchUser to avoid writing an empty/unchanged instance over existing storage.
   private isDirty = false;
+  private persistenceReady = false;
+  // Replaced by an account switch (drained before that). A later save, from work
+  // still holding the old instance (a network refresh, a sync merge), goes to
+  // its own account against its own baseline, as in earlier versions; only
+  // while that account is open again in a newer instance is it dropped.
+  private retired = false;
+  // Its account was replaced by an import; the page reloads to open the import.
+  private supersededByImport = false;
+  // Stored song entries shadowed by a later entry with the same id: never live,
+  // but stored again on every save so no stored song is lost.
+  private retainedSongs: unknown[] = [];
+  // Distinguishes an instance that never loaded (holds nothing of the user's)
+  // from one whose reload failed (keeps its earlier data and unsaved edits).
+  private loadedOnce = false;
+  private mutationSequence = 0;
 
   // Per-instance username: captures the username this instance belongs to,
   // so saves always target the correct storage key even if the static
@@ -474,21 +508,30 @@ class Database {
     if (Database.initPromise) {
       return Database.initPromise;
     }
+    // Never load a second instance beside a queued or completed switch: go
+    // through the switch queue instead (it returns the current instance when
+    // that account is already active).
+    if (Database.switchPromise || (Database.isInitialized && Database.instance)) {
+      return Database.switchUser(username);
+    }
 
     Database.initPromise = (async () => {
       Database.currentUsername = username;
       Database.instance = new Database(username);
 
-      // Try to migrate from localStorage first (one-time migration)
-      await databaseStorage.migrateFromLocalStorage(username || undefined);
-
       // Load from IndexedDB
       await Database.instance.loadAsync();
       Database.isInitialized = true;
+      Database.lastInitFailure = null;
 
       console.info("Database", `Initialized for user: "${username || "(anonymous)"}"`);
       return Database.instance;
-    })();
+    })().catch((error) => {
+      Database.initPromise = null;
+      Database.isInitialized = false;
+      Database.lastInitFailure = username;
+      throw error;
+    });
 
     return Database.initPromise;
   }
@@ -517,10 +560,19 @@ class Database {
   /**
    * Wait for database to be ready
    */
+  // The account whose initialization failed: waitForReady does not reload it
+  // for every consumer (each would repeat the failing load); a switch retries.
+  private static lastInitFailure: string | null = null;
+
   public static async waitForReady(): Promise<Database> {
-    // If a user switch is in progress, wait for it to finish first
+    // If a user switch is in progress, wait for it to finish first. A failed or
+    // superseded switch leaves the current account active and valid.
     if (Database.switchPromise) {
-      return Database.switchPromise;
+      try {
+        return await Database.switchPromise;
+      } catch {
+        if (Database.isInitialized && Database.instance) return Database.instance;
+      }
     }
     if (Database.initPromise) {
       return Database.initPromise;
@@ -529,6 +581,7 @@ class Database {
     if (Database.isInitialized && Database.instance) {
       return Database.instance;
     }
+    if (Database.lastInitFailure === Database.currentUsername && Database.instance) return Database.instance;
     // If not initialized yet, initialize with empty username
     return Database.initialize();
   }
@@ -538,73 +591,91 @@ class Database {
    * This saves the current database, clears the instance, and loads the new user's data.
    * Serialized: concurrent calls are queued so only one switch runs at a time,
    * preventing a partially-loaded (empty) instance from being saved over existing data.
+   *
+   * `isCurrent` is checked in the queue right before the switch starts and
+   * right before the loaded account is published: once it returns false (e.g.
+   * the sign-in that asked for this account was superseded), the switch is
+   * abandoned with DatabaseSwitchSupersededError and the current account stays.
    */
-  public static async switchUser(username: string): Promise<Database> {
-    // Serialize: wait for any in-flight switch to finish before starting a new one.
-    // After the previous switch completes we re-check the early-return guard because
-    // the previous switch may have already switched to the requested user.
-    if (Database.switchPromise) {
-      await Database.switchPromise;
-    }
-
+  public static async switchUser(username: string, options: { isCurrent?: () => boolean } = {}): Promise<Database> {
     const nextUsername = username || "";
+    const checkCurrent = () => {
+      if (options.isCurrent && !options.isCurrent()) throw new DatabaseSwitchSupersededError(nextUsername);
+    };
+    // Attach to the queue before yielding; multiple waiting callers must not
+    // start switches concurrently when the previous operation finishes.
+    const task = (Database.switchPromise ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        // A failed initialization (e.g. an unreadable guest database) must not
+        // also block switching to another account.
+        if (Database.initPromise) await Database.initPromise.catch(() => {});
+        if (Database.isInitialized && Database.instance && Database.currentUsername === nextUsername) return Database.instance;
+        checkCurrent();
 
-    if (Database.isInitialized && Database.instance && Database.currentUsername === nextUsername) {
-      return Database.instance;
-    }
+        const previous = Database.instance;
+        const drainPrevious = async () => {
+          if (!previous) return;
+          if (!previous.persistenceReady) {
+            await previous.savePromise?.catch(() => {});
+            // After a failed reload the earlier data and unsaved edits are still
+            // in memory but cannot be saved: refuse to switch rather than drop them.
+            if (previous.loadedOnce && previous.isDirty) {
+              throw new Error("Unsaved changes cannot be stored after a failed reload; switch refused");
+            }
+            // It never loaded: it holds nothing of the user's, so its failing
+            // saves must not block the switch.
+            return;
+          }
+          while (previous.savePromise || previous.isDirty) {
+            if (previous.savePromise) await previous.savePromise;
+            else await previous.forceSaveAsync();
+          }
+        };
+        await drainPrevious();
 
-    // Wrap the actual work in a promise so subsequent callers can wait for it.
-    Database.switchPromise = (async () => {
-      // Save current user's data only if it has been modified since load.
-      // This prevents writing an empty/unchanged guest instance over existing
-      // storage when switching users on page reload.
-      if (Database.instance) {
-        if (Database.instance.savePromise) {
-          // A fire-and-forget save is already in progress — wait for it
-          await Database.instance.savePromise;
+        // Publish the new account only after every entity loads successfully.
+        // A failed load leaves the previous account and its in-memory edits intact.
+        const next = new Database(nextUsername);
+        try {
+          await next.loadAsync();
+          // Edits may arrive while the next account is loading. Drain those too
+          // before releasing the previous instance from the application.
+          await drainPrevious();
+          // Nothing is awaited between this check and the publication below.
+          checkCurrent();
+        } catch (error) {
+          next.persistenceReady = false;
+          databaseStorage.release(nextUsername, next);
+          throw error;
         }
-        if (Database.instance.isDirty) {
-          await Database.instance.forceSaveAsync();
-        }
-      }
-
-      // Update current username
-      Database.currentUsername = nextUsername;
-
-      // Reset initPromise so waitForReady() returns the new instance
-      Database.initPromise = null;
-      Database.isInitialized = false;
-
-      // Clear and recreate instance
-      Database.instance = new Database(nextUsername);
-
-      // Try to migrate from localStorage first (one-time migration)
-      await databaseStorage.migrateFromLocalStorage(nextUsername || undefined);
-
-      // Load from IndexedDB
-      await Database.instance.loadAsync();
-
-      // Mark as initialized after loading
-      Database.isInitialized = true;
-
-      console.info("Database", `Switched to user: "${username || "(anonymous)"}"`);
-
-      // Emit global event so all components can refresh with new database
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("pp-database-switched"));
-      }
-
-      // Emit db-updated event to notify components that the database has changed
-      Database.instance.emitter.emit("db-updated");
-
-      return Database.instance;
-    })();
-
+        // The previous instance keeps its own write baseline (see `retired`).
+        if (previous) previous.retired = true;
+        Database.lastInitFailure = null;
+        Database.instance = next;
+        Database.currentUsername = nextUsername;
+        Database.initPromise = null;
+        Database.isInitialized = true;
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-database-switched"));
+        next.emitter.emit("db-updated");
+        return next;
+      });
+    Database.switchPromise = task;
     try {
-      return await Database.switchPromise;
+      return await task;
     } finally {
-      Database.switchPromise = null;
+      if (Database.switchPromise === task) Database.switchPromise = null;
     }
+  }
+
+  /**
+   * After an import replaced these accounts in storage: the open instance of
+   * one of them stops saving (its state must not go over the import; the page
+   * reloads to open it) instead of failing every save until then.
+   */
+  public static supersedeByImport(usernames: string[]): void {
+    const current = Database.instance;
+    if (current && usernames.map((name) => name || "").includes(current.instanceUsername)) current.supersededByImport = true;
   }
 
   /**
@@ -631,17 +702,31 @@ class Database {
           songBackup: t.array(t.tuple([t.string, t.type({ version: t.number, song: t.unknown })])),
           profileBackup: t.array(t.tuple([t.string, t.type({ version: t.number, leader: t.unknown })])),
           publicLeaders: t.array(t.unknown),
+          retainedSongs: t.array(t.unknown),
         }
       );
 
-      const dbState = await databaseStorage.load<unknown>(this.instanceUsername || undefined);
+      const dbState = await databaseStorage.load<unknown>(this.instanceUsername || undefined, this);
 
       if (dbState) {
         const validatedState = decode(loadCodec, dbState);
         this.applyDbState(validatedState);
+      } else {
+        this.applyDbState({ songs: [], leaders: [] });
       }
+      this.persistenceReady = true;
+      this.loadedOnce = true;
+      this.isDirty = false;
     } catch (error) {
+      this.persistenceReady = false;
+      databaseStorage.release(this.instanceUsername, this);
       console.error("Database", "Failed to load data from IndexedDB", error);
+      // Callers (e.g. the auth context at startup) may continue with another
+      // account's database; the user must learn that this one was not opened.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("pp-db-load-error", { detail: { username: this.instanceUsername } }));
+      }
+      throw error;
     }
   }
 
@@ -655,53 +740,55 @@ class Database {
     publicLeaders?: unknown;
     songBackup?: Array<[string, { version: number; song: unknown }]>;
     profileBackup?: Array<[string, { version: number; leader: unknown }]>;
+    retainedSongs?: unknown[];
   }): void {
-    if (dbState.songs) {
-      const songMap = new Map<string, Song>();
-      for (const item of dbState.songs) {
-        const song = Song.fromJSON(item);
-        songMap.set(song.Id, song);
+    // Decode everything before replacing any live state. A malformed profile
+    // or backup cannot leave an existing instance half reloaded. Duplicates are
+    // resolved as in every earlier version (the last song wins, profiles are
+    // kept), but nothing is dropped: a shadowed song is retained and stored
+    // again, and Leader retains undated or shadowed playlists and preferences.
+    // Duplicate sync backups (server originals) are resolved last-wins.
+    let duplicates = 0;
+    const songs = new Map<string, Song>();
+    const songIndex = new Map<string, number>();
+    const retainedSongs: unknown[] = cloneJson(dbState.retainedSongs ?? []);
+    (dbState.songs ?? []).forEach((item, index) => {
+      const song = Song.fromJSON(item);
+      const shadowed = songIndex.get(song.Id);
+      if (shadowed !== undefined) {
+        duplicates++;
+        retainedSongs.push(cloneJson(dbState.songs![shadowed]));
       }
-      this.songs = songMap;
-      this.updateSearchEngine();
+      songIndex.set(song.Id, index);
+      songs.set(song.Id, song);
+    });
+    const loadLeader = (input: unknown): Leader => Leader.fromJSON(input);
+    const loadLeaders = (input: unknown): Leaders => {
+      const leaders = Leaders.fromJSON(input);
+      duplicates += leaders.items.length - new Set(leaders.items.map((leader) => leader.id)).size;
+      return leaders;
+    };
+    const leaders = loadLeaders(dbState.leaders ?? []);
+    const publicLeaders = loadLeaders(dbState.publicLeaders ?? []);
+    const songBackup = new Map<string, { version: number; song: Song }>();
+    for (const [songId, entry] of dbState.songBackup ?? []) {
+      if (songBackup.has(songId)) duplicates++;
+      songBackup.set(songId, { version: entry.version, song: Song.fromJSON(entry.song) });
     }
-
-    if (dbState.leaders) {
-      this.leaders = Leaders.fromJSON(dbState.leaders);
+    const profileBackup = new Map<string, { version: number; leader: Leader }>();
+    for (const [leaderId, entry] of dbState.profileBackup ?? []) {
+      if (profileBackup.has(leaderId)) duplicates++;
+      profileBackup.set(leaderId, { version: entry.version, leader: loadLeader(entry.leader) });
     }
-
-    if (dbState.publicLeaders) {
-      this.publicLeaders = Leaders.fromJSON(dbState.publicLeaders);
-    }
-
-    // Load song backups
-    const songBackupData = dbState.songBackup;
-    if (songBackupData) {
-      const backupMap = new Map<string, { version: number; song: Song }>();
-      for (const [songId, entry] of songBackupData) {
-        backupMap.set(songId, {
-          version: entry.version,
-          song: Song.fromJSON(entry.song),
-        });
-      }
-      this.songBackup = backupMap;
-    }
-
-    // Load profile backups
-    if (dbState.profileBackup) {
-      const backupMap = new Map<string, { version: number; leader: Leader }>();
-      for (const [leaderId, entry] of dbState.profileBackup) {
-        backupMap.set(leaderId, {
-          version: entry.version,
-          leader: Leader.fromJSON(entry.leader),
-        });
-      }
-      this.profileBackup = backupMap;
-    }
-
-    if (typeof dbState.version === "number") {
-      this.version = dbState.version;
-    }
+    if (duplicates) console.warn("Database", `${duplicates} duplicate stored songs, profiles or backups were resolved on load`);
+    this.songs = songs;
+    this.retainedSongs = retainedSongs;
+    this.leaders = leaders;
+    this.publicLeaders = publicLeaders;
+    this.songBackup = songBackup;
+    this.profileBackup = profileBackup;
+    this.version = dbState.version ?? 0;
+    this.updateSearchEngine();
   }
 
   /**
@@ -714,6 +801,7 @@ class Database {
 
   public save(): void {
     this.isDirty = true;
+    this.mutationSequence++;
     if (!this.autoSave) return;
     this.forceSave();
   }
@@ -725,49 +813,62 @@ class Database {
   public forceSave(): void {
     this.isDirty = true;
     // Use fire-and-forget pattern for backwards compatibility
-    this.forceSaveAsync().catch((error) => {
-      console.error("Database", "Failed to save data to IndexedDB", error);
-      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-db-save-error"));
-    });
+    // forceSaveAsync reports the failure to the user itself.
+    this.forceSaveAsync().catch((error) => console.error("Database", "Failed to save data to IndexedDB", error));
   }
 
   /**
    * Async force save to IndexedDB storage
    */
   public async forceSaveAsync(): Promise<void> {
-    // If a save is already in progress, wait for it and then save again
-    if (this.savePromise) {
-      await this.savePromise;
-    }
-
-    this.savePromise = (async () => {
-      try {
-        const dbState = {
-          version: this.version,
-          songs: Array.from(this.songs.values()),
-          leaders: this.leaders,
-          publicLeaders: this.publicLeaders,
-          songBackup: Array.from(this.songBackup.entries()),
-          profileBackup: Array.from(this.profileBackup.entries()),
-        };
-
-        if (Database.isDevValidationEnabled()) {
-          parseAndDecode(Database.importExportCodec, JSON.stringify(dbState));
+    this.isDirty = true;
+    const sequence = ++this.mutationSequence;
+    // Keep the entire chain, including queued writes, visible to switchUser.
+    // A failed write remains dirty and may be retried by a later explicit save.
+    const task = (this.savePromise ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        if (
+          this.supersededByImport ||
+          (this.retired && Database.instance !== this && Database.instance?.instanceUsername === this.instanceUsername)
+        ) {
+          // Its account holds an import, or is open in a newer instance: this
+          // instance's state must not go over either.
+          console.warn("Database", `Ignoring a late save of the replaced database of "${this.instanceUsername}"`);
+          return;
         }
-
-        await databaseStorage.save(dbState, this.instanceUsername || undefined);
-        this.isDirty = false;
-        this.emitter.emit("db-updated");
-      } catch (error) {
-        console.error("Database", "Failed to save data to IndexedDB", error);
-        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pp-db-save-error"));
-        throw error;
-      } finally {
-        this.savePromise = null;
-      }
-    })();
-
-    return this.savePromise;
+        try {
+          if (!this.persistenceReady) {
+            if (!this.loadedOnce) throw new DatabaseNotOpenError(this.instanceUsername);
+            throw new Error("Cannot save a database whose reload failed");
+          }
+          const dbState = this.persistentState();
+          if (Database.isDevValidationEnabled()) {
+            parseAndDecode(Database.importExportCodec, JSON.stringify(dbState));
+          }
+          await databaseStorage.save(dbState, this.instanceUsername || undefined, this);
+          if (sequence === this.mutationSequence) this.isDirty = false;
+          this.emitter.emit("db-updated");
+        } catch (error) {
+          console.error("Database", "Failed to save data to IndexedDB", error);
+          if (typeof window !== "undefined") {
+            // An account that never opened was reported as such on load (an
+            // export is impossible then); every other failure is a save error.
+            window.dispatchEvent(
+              error instanceof DatabaseNotOpenError
+                ? new CustomEvent("pp-db-load-error", { detail: { username: this.instanceUsername } })
+                : new CustomEvent("pp-db-save-error")
+            );
+          }
+          throw error;
+        }
+      });
+    this.savePromise = task;
+    try {
+      await task;
+    } finally {
+      if (this.savePromise === task) this.savePromise = null;
+    }
   }
 
   private static readonly SONG_SIMILARITY_THRESHOLD = 0.6;
@@ -1157,6 +1258,9 @@ class Database {
   public updateLeader(leader: Leader): void {
     const existing = this.leaders.find(leader.id);
     if (existing) {
+      // A replacement (e.g. the server's newer profile from a sync) knows
+      // nothing of the entries retained only locally; they must survive it.
+      if (existing !== leader) leader.retainFrom(existing);
       // Create profile backup before modifying (only if being marked as updated for the first time)
       if (existing.version !== 0 && leader.version === 0 && !this.profileBackup.has(leader.id)) {
         this.profileBackup.set(leader.id, {
@@ -1213,12 +1317,36 @@ class Database {
    * Used before sync to allow rollback if user cancels with pending conflicts
    */
   public serializeForBackup(): string {
-    const dbState = {
+    // Everything restoreFromBackup replaces: a rollback must not drop the
+    // public profile mirror, the original-version backups or retained entries.
+    return JSON.stringify(this.persistentState());
+  }
+
+  /** Everything stored for this account. Profiles are stored with their
+   * retained entries (Leader.toStorageJSON), which the sync format omits. */
+  private persistentState() {
+    const profiles = (leaders: Leaders) => leaders.items.map((leader) => leader.toStorageJSON());
+    return {
       version: this.version,
       songs: Array.from(this.songs.values()),
-      leaders: this.leaders,
+      leaders: profiles(this.leaders),
+      publicLeaders: profiles(this.publicLeaders),
+      songBackup: Array.from(this.songBackup.entries()),
+      profileBackup: Array.from(this.profileBackup.entries(), ([leaderId, entry]) => [
+        leaderId,
+        { version: entry.version, leader: entry.leader.toStorageJSON() },
+      ]),
+      ...(this.retainedSongs.length ? { retainedSongs: cloneJson(this.retainedSongs) } : {}),
     };
-    return JSON.stringify(dbState);
+  }
+
+  /** Export the actual working state, including edits a failed save could not
+   * persist. Never export an empty placeholder after a failed initial load. */
+  public exportForBackup(): string {
+    if (!this.loadedOnce) throw new Error("Cannot export a database that has never loaded successfully");
+    const json = this.serializeForBackup();
+    validateDatabaseState(json);
+    return json;
   }
 
   /**
@@ -1229,17 +1357,10 @@ class Database {
     try {
       const dbState = decode(Database.importExportCodec, JSON.parse(backupData));
 
-      // Clear current state
-      this.songs.clear();
-      this.leaders = new Leaders();
-      this.words = new SongWords();
-      this.songBackup.clear();
-      this.profileBackup.clear();
-      this.version = 0;
-
       this.applyDbState(dbState);
 
       this.isDirty = true;
+      this.mutationSequence++;
       this.invalidateFilterCache();
       console.info("Database", `Restored from backup with version ${this.version}`);
     } catch (error) {
@@ -1253,12 +1374,14 @@ class Database {
    */
   public clear(): void {
     this.songs.clear();
+    this.retainedSongs = [];
     this.leaders = new Leaders();
     this.words = new SongWords();
     this.songBackup.clear();
     this.profileBackup.clear();
     this.version = 0;
     this.isDirty = true;
+    this.mutationSequence++;
     this.invalidateFilterCache();
   }
 

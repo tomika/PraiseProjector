@@ -32,10 +32,11 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "node scripts/format.cjs",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"client/**/*.ts\" \"common/**/*.ts\" \"chordpro/**/*.{ts,css}\" \"musicxml/**/*.ts\" \"scripts/run-chordpro-tests.js\" \"db-common/**/*.ts\" \"scripts/run-search-tests.js\" \"scripts/run-node-tests.js\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\" \"client/**/*.ts\" \"common/**/*.ts\" \"chordpro/**/*.{ts,css}\" \"musicxml/**/*.ts\" \"scripts/run-chordpro-tests.js\" \"db-common/**/*.ts\" \"scripts/run-search-tests.js\" \"scripts/run-node-tests.js\" \"scripts/run-database-tests.cjs\" \"tests/**/*.ts\"",
     "check:ts": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p client/tsconfig.json --noEmit",
     "test:chordpro": "node scripts/run-chordpro-tests.js",
     "test:search": "node scripts/run-search-tests.js",
+    "test:database": "node scripts/run-database-tests.cjs",
     "test:src": "node scripts/run-node-tests.js --suite src",
     "test:hardware": "node scripts/run-node-tests.js --suite hardware"
   },
