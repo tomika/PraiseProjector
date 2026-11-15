@@ -22,14 +22,28 @@ import { useMessageBox, ConfirmOptions } from "../contexts/MessageBoxContext";
 import { ScheduleDialog } from "./ScheduleDialog";
 import { Leader } from "../../db-common/Leader";
 import { Settings } from "../types";
-import { updateCurrentDisplay } from "../state/CurrentSongStore";
+import { getCurrentDisplay, updateCurrentDisplay } from "../state/CurrentSongStore";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu/ContextMenu";
 import { generatePlaylistId } from "../../common/pp-utils";
 import { cloudApi } from "../../common/cloudApi";
 import { buildPlaylistShareUrl, sharePublicLink } from "../services/shareService";
 import { FileSaveUnsupportedError, saveGeneratedFile } from "../services/fileSave";
 import { readPersistedSettings } from "../services/settingsStore";
-import { createPlaylistOrigin, findScheduledPlaylist, parsePlaylistOrigin, PlaylistOrigin, resolvePlaylistOrigin } from "../services/playlistOrigin";
+import {
+  createPlaylistOrigin,
+  findScheduledPlaylist,
+  parsePlaylistOrigin,
+  PlaylistOrigin,
+  resolvePlaylistOrigin,
+  ScheduledPlaylist,
+} from "../services/playlistOrigin";
+
+/** Name of the working playlist when it is not loaded from anywhere. */
+const WORKING_PLAYLIST_NAME = "CurrentPlaylist";
+
+/** Outcome of a playlist file operation. "pending": the browser's file picker is open
+ *  and the playlist is loaded when the user picks a file. */
+export type PlaylistFileResult = { status: "done" | "cancelled" | "pending" } | { status: "failed"; error: string };
 
 // DisplayMode enum matching C# SectionListBox.Item.Mode
 enum DisplayMode {
@@ -114,11 +128,16 @@ export interface PlaylistPanelMethods {
   getSelectedIndex: () => number;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => Promise<void>;
-  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
+  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => Promise<void>;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
   getPlaylistOrigin: () => PlaylistOrigin | null;
   getCurrentPlaylist: () => Playlist;
+  replacePlaylist: (items: PlaylistEntryData[]) => Promise<void>;
+  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) => Promise<void>;
+  saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) => ScheduledPlaylist | null;
+  savePlaylistToFile: () => Promise<PlaylistFileResult>;
+  loadPlaylistFromFile: () => Promise<PlaylistFileResult>;
 }
 
 export interface PlaylistSelectionEvent {
@@ -201,7 +220,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const playlistOrigin = this.loadPlaylistOrigin();
     this.legacyScheduleDate = playlistOrigin ? null : this.loadLegacyScheduleDate();
     this.state = {
-      currentPlaylist: new Playlist("CurrentPlaylist", []),
+      currentPlaylist: new Playlist(WORKING_PLAYLIST_NAME, []),
       selectedItems: initialIndex >= 0 ? new Set([initialIndex]) : new Set<number>(),
       focusedIndex: initialIndex,
       selectionAnchor: initialIndex,
@@ -496,7 +515,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string, origin?: PlaylistOrigin | null): Promise<void> {
     // console.debug("Playlist", "updatePlaylist called", { itemsLength: items?.length, name, id, remoteProp: this.props.remotePlaylist != null });
     const playlist = new Playlist(
-      name || "CurrentPlaylist",
+      name || WORKING_PLAYLIST_NAME,
       items.map((item: PlaylistEntryData) => PlaylistEntry.fromJSON(item)),
       id
     );
@@ -505,6 +524,29 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.legacyScheduleDate = null;
       this.persistPlaylistOrigin(null);
     }
+    return this.commitState({ currentPlaylist: playlist, playlistOrigin }, () => {
+      this.updatePlaylistItemStates();
+      this.savePlaylist(playlist); // Persist and update Display state
+
+      // Notify parent that playlist is loaded (for state restoration)
+      this.props.onPlaylistLoaded?.(playlist.items.length);
+
+      // Apply pending selected index after playlist loads
+      const pendingIndex = this.pendingSelectedIndex;
+      if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
+        this.applySelectedIndex(pendingIndex, true);
+      }
+
+      this.tryRestoreInstructionsEditorAfterRemount();
+    });
+  }
+
+  /**
+   * setState that resolves once React has committed the change and `afterCommit` has run
+   * (or the panel unmounted first). Callers may immediately select an entry from the new
+   * list, so resolving earlier would make selectSongById see (and append to) the old list.
+   */
+  private commitState<K extends keyof PlaylistPanelState>(state: Pick<PlaylistPanelState, K>, afterCommit: () => void): Promise<void> {
     return new Promise((resolve) => {
       let settled = false;
       const finish = () => {
@@ -514,37 +556,106 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         resolve();
       };
       this.pendingPlaylistUpdateResolves.add(finish);
-      this.setState({ currentPlaylist: playlist, playlistOrigin }, () => {
-        // console.debug("Playlist", "setState callback ENTER for updatePlaylist");
+      this.setState(state, () => {
         try {
-          this.updatePlaylistItemStates();
-          this.savePlaylist(playlist); // Persist and update Display state
-
-          // Notify parent that playlist is loaded (for state restoration)
-          this.props.onPlaylistLoaded?.(playlist.items.length);
-
-          // Apply pending selected index after playlist loads
-          const pendingIndex = this.pendingSelectedIndex;
-          if (pendingIndex >= 0 && pendingIndex < playlist.items.length) {
-            this.applySelectedIndex(pendingIndex, true);
-          }
-
-          this.tryRestoreInstructionsEditorAfterRemount();
+          afterCommit();
         } catch (err) {
           console.error("Playlist", "error in setState callback", err);
         } finally {
-          // Resolve only after React has committed the replacement. Callers may
-          // immediately select an entry from the new list, so resolving before
-          // this callback would make selectSongById see (and append to) the old list.
           finish();
         }
       });
     });
   }
 
-  loadScheduledPlaylist(leaderId: string, scheduledDate: Date, playlist: Playlist): void {
+  loadScheduledPlaylist(leaderId: string, scheduledDate: Date, playlist: Playlist): Promise<void> {
     const origin = createPlaylistOrigin(leaderId, scheduledDate, playlist);
-    this.replaceCurrentPlaylist(playlist.clone(), origin);
+    return this.replaceCurrentPlaylist(playlist.clone(), origin);
+  }
+
+  /** Replaces the working list as loading a playlist file does: one undo step, no source, nothing selected. */
+  replacePlaylist(items: PlaylistEntryData[]): Promise<void> {
+    return this.replaceCurrentPlaylist(
+      new Playlist(
+        WORKING_PLAYLIST_NAME,
+        items.map((item) => PlaylistEntry.fromJSON(item))
+      ),
+      null
+    );
+  }
+
+  /**
+   * A change of the working list made outside the panel (the MCP assistant), kept like the
+   * user's own edits: one undo step, the list keeps its name, id and source (so the reminder
+   * to store it still comes), the selection follows its items, and a changed title,
+   * transposition or capo becomes the leader's song preference as far as the profile update
+   * mode allows (instructions alone do not, as in the instructions editor). Unlike the
+   * panel's controls it never selects or projects anything: the song on display only takes
+   * the new transposition, capo and instructions of its item.
+   *
+   * `items` is the new list; `sources[i]` is the index in the current list that item i comes
+   * from (kept, moved or edited), or null for a new item.
+   */
+  applyPlaylistEdit(items: PlaylistEntryData[], sources: readonly (number | null)[]): Promise<void> {
+    const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor, playlistOrigin } = this.state;
+    const current = currentPlaylist.items;
+    if (sources.length !== items.length) throw new Error("Every item of an edited playlist needs its source index");
+    const used = new Set<number>();
+    sources.forEach((source, index) => {
+      if (source === null) return;
+      if (!Number.isInteger(source) || source < 0 || source >= current.length || used.has(source) || current[source].songId !== items[index].songId) {
+        throw new Error(`Invalid source index ${source} for playlist item ${index}`);
+      }
+      used.add(source);
+    });
+
+    this.recordPlaylistSnapshotForUndo();
+    const modified: PlaylistEntry[] = [];
+    const preferenceChanges: PlaylistEntry[] = [];
+    const newItems = items.map((data, index) => {
+      const source = sources[index];
+      if (source === null) return PlaylistEntry.fromJSON(data);
+      // Edited in place, as the remote song_update does: the selection and the item on
+      // display keep referring to the same entry.
+      const entry = current[source];
+      const edited = PlaylistEntry.fromJSON(data);
+      if (!entry.equals(edited)) {
+        if (entry.title !== edited.title || entry.transpose !== edited.transpose || entry.capo !== edited.capo) preferenceChanges.push(entry);
+        entry.title = edited.title;
+        entry.transpose = edited.transpose;
+        entry.capo = edited.capo;
+        entry.instructions = edited.instructions;
+        modified.push(entry);
+      }
+      return entry;
+    });
+
+    const positions = new Map(newItems.map((entry, index) => [entry, index]));
+    const follow = (index: number) => (index >= 0 && index < current.length ? (positions.get(current[index]) ?? -1) : -1);
+    const newFocusedIndex = follow(focusedIndex);
+    const updatedPlaylist = new Playlist(currentPlaylist.name, newItems, currentPlaylist.id);
+    updatedPlaylist.modified = Date.now();
+
+    return this.commitState(
+      {
+        currentPlaylist: updatedPlaylist,
+        selectedItems: new Set([...selectedItems].map(follow).filter((index) => index >= 0)),
+        focusedIndex: newFocusedIndex,
+        selectionAnchor: follow(selectionAnchor),
+        // An empty working list no longer represents a stored playlist.
+        playlistOrigin: newItems.length === 0 ? null : playlistOrigin,
+      },
+      () => {
+        if (newItems.length === 0) this.persistPlaylistOrigin(null);
+        this.savePlaylist(updatedPlaylist);
+        this.updatePlaylistItemStates();
+        if (preferenceChanges.length) this.storeItemPreferences(preferenceChanges);
+        const focused = newFocusedIndex >= 0 ? newItems[newFocusedIndex] : null;
+        if (focused && modified.includes(focused) && getCurrentDisplay().songId === focused.songId) {
+          updateCurrentDisplay({ transpose: focused.transpose, capo: focused.capo, instructions: focused.instructions });
+        }
+      }
+    );
   }
 
   updatePlaylistItemPreferences(songId: string, transpose?: number, capo?: number, instructions?: string): Playlist | null {
@@ -786,18 +897,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   private createPlaylistEntryFromSong(song: Song): PlaylistEntry {
-    const newEntry = new PlaylistEntry(song.Id);
-    newEntry.title = song.Title;
-
-    const pref = this.props.selectedLeader?.getPreference(song.Id);
-    if (pref) {
-      if ((pref.title || "").trim()) newEntry.title = pref.title;
-      newEntry.transpose = pref.transpose ?? 0;
-      newEntry.capo = pref.capo ?? -1;
-      newEntry.instructions = pref.instructions ?? "";
-    }
-
-    return newEntry;
+    return PlaylistEntry.forSong(song, this.props.selectedLeader?.getPreference(song.Id));
   }
 
   doAddSongToPlaylist(song: Song, insertIndex?: number) {
@@ -1279,54 +1379,58 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       this.savePlaylist(updatedPlaylist);
 
       // Update leader profile for modified items (matching C# database.UpdatePreference call)
-      if (updateLeaderProfile && this.props.selectedLeader) {
-        const db = Database.getInstance();
-        const settings = this.props.settings;
-        const updateMode = settings?.leaderProfileUpdateMode || "allSources";
-
-        // Check if UI playlist changes should update the profile
-        if (updateMode === "leaderPageOnly") {
-          console.debug("PlaylistPanel", "Skipping profile update from UI changes (mode: leaderPageOnly)");
-        } else {
-          // Allow updates from UI (uiChangesAlso or allSources)
-          modifiedSet.forEach((idx) => {
-            const item = newItems[idx];
-            // Only update title if it differs from the original song title
-            const song = this.props.songs.find((s) => s.Id === item.songId);
-            const titleToSave = song && item.title === song.Title ? "" : item.title || "";
-            if (song) {
-              this.props.onPlaylistPreferenceUpdate?.({
-                songId: item.songId,
-                title: titleToSave,
-                transpose: item.transpose,
-                capo: item.capo,
-                instructions: item.instructions,
-              });
-            }
-
-            this.props.selectedLeader!.updatePreference(
-              item.songId,
-              {
-                title: titleToSave,
-                transpose: item.transpose,
-                capo: item.capo,
-                instructions: item.instructions,
-              },
-              db
-            );
-          });
-
-          // Commit the mutated leader back into the canonical DB leader collection.
-          // This keeps Settings/Leader views consistent even if selectedLeader was a stale reference.
-          db.updateLeader(this.props.selectedLeader!);
-        }
-      }
+      if (updateLeaderProfile) this.storeItemPreferences([...modifiedSet].map((idx) => newItems[idx]));
 
       // Notify parent if the focused item was one of the modified items
       if (focusedIndex >= 0 && modifiedSet.has(focusedIndex)) {
         this.emitPlaylistSelectionChange(newItems[focusedIndex], focusedIndex, "programmatic", true);
       }
     });
+  }
+
+  /** Stores edited playlist items as the selected leader's song preferences, as far as the
+   *  profile update mode allows changes made in the UI. */
+  private storeItemPreferences(items: PlaylistEntry[]) {
+    if (!this.props.selectedLeader) return;
+    const db = Database.getInstance();
+    const settings = this.props.settings;
+    const updateMode = settings?.leaderProfileUpdateMode || "allSources";
+
+    // Check if UI playlist changes should update the profile
+    if (updateMode === "leaderPageOnly") {
+      console.debug("PlaylistPanel", "Skipping profile update from UI changes (mode: leaderPageOnly)");
+      return;
+    }
+    // Allow updates from UI (uiChangesAlso or allSources)
+    items.forEach((item) => {
+      // Only update title if it differs from the original song title
+      const song = this.props.songs.find((s) => s.Id === item.songId);
+      const titleToSave = song && item.title === song.Title ? "" : item.title || "";
+      if (song) {
+        this.props.onPlaylistPreferenceUpdate?.({
+          songId: item.songId,
+          title: titleToSave,
+          transpose: item.transpose,
+          capo: item.capo,
+          instructions: item.instructions,
+        });
+      }
+
+      this.props.selectedLeader!.updatePreference(
+        item.songId,
+        {
+          title: titleToSave,
+          transpose: item.transpose,
+          capo: item.capo,
+          instructions: item.instructions,
+        },
+        db
+      );
+    });
+
+    // Commit the mutated leader back into the canonical DB leader collection.
+    // This keeps Settings/Leader views consistent even if selectedLeader was a stale reference.
+    db.updateLeader(this.props.selectedLeader);
   }
 
   handleTransposeUp() {
@@ -1703,33 +1807,38 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   // the dialog (load mode can switch to any own/public leader; save mode always
   // returns the own selected leader).
   async handleScheduleDateSelected(date: Date, leader: Leader, shareAfterSave = false, favoriteName?: string) {
-    const { scheduleDialogMode, currentPlaylist } = this.state;
+    const { scheduleDialogMode } = this.state;
 
     this.setState({
       showScheduleDialog: false,
       scheduleDialogMode: null,
     });
 
-    const db = Database.getInstance();
-
     if (scheduleDialogMode === "save") {
       // Save playlist to leader's schedule
-      db.schedule(leader, date, currentPlaylist, favoriteName);
-      const scheduled = findScheduledPlaylist(leader, date);
-      if (scheduled) {
-        const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
-        this.legacyScheduleDate = null;
-        this.setState({ playlistOrigin: origin });
-        this.persistPlaylistOrigin(origin);
-        if (shareAfterSave) await this.handleShareScheduledPlaylist(scheduled.date, leader);
-      }
+      const scheduled = this.saveToSchedule(leader, date, favoriteName);
+      if (scheduled && shareAfterSave) await this.handleShareScheduledPlaylist(scheduled.date, leader);
     } else if (scheduleDialogMode === "load") {
       // Load playlist from leader's schedule
       const scheduled = findScheduledPlaylist(leader, date, 24 * 60 * 60 * 1000);
       if (scheduled) {
-        this.loadScheduledPlaylist(leader.id, scheduled.date, scheduled.playlist);
+        void this.loadScheduledPlaylist(leader.id, scheduled.date, scheduled.playlist);
       }
     }
+  }
+
+  /** Stores the working list for the leader's date (a favorite on a reserved date) and makes
+   *  that stored list its source, as the Save dialog does. Null when nothing was stored. */
+  saveToSchedule(leader: Leader, date: Date, favoriteName?: string): ScheduledPlaylist | null {
+    Database.getInstance().schedule(leader, date, this.state.currentPlaylist, favoriteName);
+    const scheduled = findScheduledPlaylist(leader, date);
+    if (scheduled) {
+      const origin = createPlaylistOrigin(leader.id, scheduled.date, scheduled.playlist);
+      this.legacyScheduleDate = null;
+      this.setState({ playlistOrigin: origin });
+      this.persistPlaylistOrigin(origin);
+    }
+    return scheduled;
   }
 
   // Re-fetch the public-leader mirror on demand (the dialog's 🔄 button), then
@@ -1800,7 +1909,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   // Save playlist to file - matching C# SavePlayListToFile
-  async savePlaylistToFile() {
+  async savePlaylistToFile(): Promise<PlaylistFileResult> {
     const { currentPlaylist } = this.state;
     const playlistStr = currentPlaylist.toString();
 
@@ -1809,42 +1918,49 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       const result = await window.electronAPI.savePlaylistFile(playlistStr);
       if (result.success) {
         console.info("Playlist", "Playlist saved to:", result.filePath);
+        return { status: "done" };
       } else if (this.isDialogCancellation(result.error)) {
-        return;
+        return { status: "cancelled" };
       } else {
         console.error("Playlist", "Failed to save playlist", result.error);
         if (this.props.onError) {
           this.props.onError("SaveFailed", result.error || "Unknown error");
         }
+        return { status: "failed", error: result.error || "Unknown error" };
       }
     } else {
       // Web/Android: a download, or the Android document picker
       try {
         await saveGeneratedFile(new Blob([playlistStr], { type: "text/plain" }), "playlist.ppl");
+        return { status: "done" };
       } catch (error) {
         console.error("Playlist", "Failed to save playlist", error);
         const details =
           error instanceof FileSaveUnsupportedError ? this.props.t("FileSaveUnsupported") : error instanceof Error ? error.message : String(error);
         this.props.onError?.("SaveFailed", details);
+        return { status: "failed", error: details };
       }
     }
   }
 
   // Load playlist from file - matching C# LoadPlaylistFromFile
-  async loadPlaylistFromFile() {
+  async loadPlaylistFromFile(): Promise<PlaylistFileResult> {
     // Check if we're in Electron mode
     if (window.electronAPI?.loadPlaylistFile) {
       const result = await window.electronAPI.loadPlaylistFile();
       if (result.success && result.content) {
-        this.loadPlaylistData(result.content);
+        await this.loadPlaylistData(result.content);
+        return { status: "done" };
       } else if (this.isDialogCancellation(result.error)) {
-        return;
+        return { status: "cancelled" };
       } else if (result.error) {
         console.error("Playlist", "Failed to load playlist", result.error);
         if (this.props.onError) {
           this.props.onError("LoadFailed", result.error || "Unknown error");
         }
+        return { status: "failed", error: result.error };
       }
+      return { status: "failed", error: "The playlist file is empty." };
     } else {
       // Web mode - use file input
       const input = document.createElement("input");
@@ -1856,24 +1972,25 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
           const reader = new FileReader();
           reader.onload = (e) => {
             const content = e.target?.result as string;
-            this.loadPlaylistData(content);
+            void this.loadPlaylistData(content);
           };
           reader.readAsText(file);
         }
       };
       input.click();
+      return { status: "pending" };
     }
   }
 
   // Load playlist data - matching C# LoadPlaylistData
-  loadPlaylistData(data: string) {
-    this.replaceCurrentPlaylist(Playlist.parse(data), null);
+  loadPlaylistData(data: string): Promise<void> {
+    return this.replaceCurrentPlaylist(Playlist.parse(data), null);
   }
 
-  private replaceCurrentPlaylist(playlist: Playlist, origin: PlaylistOrigin | null): void {
+  private replaceCurrentPlaylist(playlist: Playlist, origin: PlaylistOrigin | null): Promise<void> {
     this.recordPlaylistSnapshotForUndo();
     this.legacyScheduleDate = null;
-    this.setState(
+    return this.commitState(
       {
         currentPlaylist: playlist,
         playlistOrigin: origin,

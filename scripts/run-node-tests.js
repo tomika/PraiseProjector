@@ -23,7 +23,7 @@ function isHardwareTest(file) {
 }
 
 const SUITES = {
-  src: { roots: ["src", "common/tests", "tests/support"], filter: (file) => !isHardwareTest(file) },
+  src: { roots: ["src", "common/tests", "tests/support", "electron/tests"], filter: (file) => !isHardwareTest(file) },
   hardware: { roots: ["src", "common/tests", "tests/support"], filter: isHardwareTest },
 };
 

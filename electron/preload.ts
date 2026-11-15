@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 import { Display, PlaylistEntry } from "../common/pp-types";
 import { Settings } from "../src/types";
 import { ApiResponse } from "../common/ipc-types";
+import type { McpBridgeRequest, McpBridgeResponse } from "../common/mcp-bridge";
 import type {
   WebServerApiRequest,
   WebServerEvent,
@@ -254,6 +255,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   sendWebserverApiResponse: (response: ApiResponse) => {
     ipcRenderer.send("webserver-api-response", response);
   },
+
+  // Built-in MCP server: the main process relays JSON-RPC messages, the renderer answers them.
+  onMcpRequest: (callback: (request: McpBridgeRequest) => void) => {
+    const subscription = (_event: IpcRendererEvent, request: McpBridgeRequest) => callback(request);
+    ipcRenderer.on("mcp-request", subscription);
+    return () => {
+      ipcRenderer.removeListener("mcp-request", subscription);
+    };
+  },
+  sendMcpResponse: (response: McpBridgeResponse) => {
+    ipcRenderer.send("mcp-response", response);
+  },
+  getMcpStatus: () => ipcRenderer.invoke("mcp-get-status"),
+  regenerateMcpToken: () => ipcRenderer.invoke("mcp-regenerate-token"),
 
   // Close guard: while registered, closing the main window first asks the page, which
   // answers whether the window may close.

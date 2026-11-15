@@ -83,6 +83,8 @@ export interface PreviewPanelMethods {
   /** The semantic section-command entry shared by the section list keys, the
    *  Controls-tab buttons and the hardware runtime. False when not handled. */
   runSectionCommand: (command: SectionListCommand) => boolean;
+  /** The section list as shown (one entry per projected slide). */
+  getSections: () => { label: string; text: string }[];
 }
 
 // Section display modes matching C# SectionListBox.Item.Mode
@@ -1160,6 +1162,7 @@ const PreviewPanel = forwardRef<PreviewPanelMethods, PreviewPanelProps>(
           sectionListRef.current?.focus();
         },
         runSectionCommand,
+        getSections: () => sections.map((section) => ({ label: section.label ?? "", text: section.text })),
       }),
       [sections, selectedSectionIndex, selectSectionIndex, runSectionCommand]
     );

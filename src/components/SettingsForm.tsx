@@ -16,6 +16,7 @@ import HardwareControlSettings from "./settings/HardwareControlSettings";
 import PerformanceSettings from "./settings/PerformanceSettings";
 import ScoreSettings from "./settings/ScoreSettings";
 import ClientsSettings from "./settings/ClientsSettings";
+import McpSettings, { isMcpRuntimeAvailable } from "./settings/McpSettings";
 import { Leader } from "../../db-common";
 import { v4 as uuidv4 } from "uuid";
 import "./SettingsForm.css";
@@ -54,6 +55,7 @@ function normalizeSettingsTab(tab: string | undefined, hasWebServerRuntime: bool
     "clients",
     "about",
     ...(hasWebServerRuntime ? ["webserver", "netdisplay"] : []),
+    ...(isMcpRuntimeAvailable() ? ["mcp"] : []),
   ]);
   if (tab && validTabs.has(tab)) {
     return tab;
@@ -328,6 +330,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
       clients: <ClientsSettings settings={settings} updateSetting={updateSetting} />,
       webserver: <WebServerSettings settings={settings} updateSetting={updateSetting} />,
       netdisplay: <NetDisplaySettings settings={settings} updateSetting={updateSetting} />,
+      mcp: <McpSettings settings={settings} updateSetting={updateSetting} />,
       about: <AboutSettings />,
     };
 
@@ -435,6 +438,13 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ onClose, initialTab, initia
               <li className="nav-item">
                 <a className={`nav-link ${activeTab === "netdisplay" ? "active" : ""}`} href="#" onClick={() => setActiveTab("netdisplay")}>
                   {t("SettingsPageNetDisplay")}
+                </a>
+              </li>
+            )}
+            {isMcpRuntimeAvailable() && (
+              <li className="nav-item">
+                <a className={`nav-link ${activeTab === "mcp" ? "active" : ""}`} href="#" onClick={() => setActiveTab("mcp")}>
+                  {t("SettingsPageMcp")}
                 </a>
               </li>
             )}

@@ -1,4 +1,5 @@
 import { PlaylistEntry as PlaylistEntryJSON } from "../common/pp-types";
+import type { SongPreference } from "./SongPreference";
 
 export class PlaylistEntry {
   title = "";
@@ -25,6 +26,20 @@ export class PlaylistEntry {
       this.transpose === entry.transpose &&
       this.capo === entry.capo
     );
+  }
+
+  /** A song added to a playlist as the leader plays it: the leader's own title, transposition,
+   *  capo and instructions where the leader has a preference, the song's title otherwise. */
+  static forSong(song: { Id: string; Title: string }, preference?: SongPreference | null): PlaylistEntry {
+    const entry = new PlaylistEntry(song.Id);
+    entry.title = song.Title;
+    if (preference) {
+      if ((preference.title || "").trim()) entry.title = preference.title;
+      entry.transpose = preference.transpose ?? 0;
+      entry.capo = preference.capo ?? -1;
+      entry.instructions = preference.instructions ?? "";
+    }
+    return entry;
   }
 
   static fromJSON(data: PlaylistEntryJSON): PlaylistEntry {

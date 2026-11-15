@@ -30,6 +30,7 @@ import type { WebServerConfig } from "../common/webserver-interface";
 import { installLoggerInterceptor, setupLoggerIPC, closeLogViewerWindow } from "./logger";
 import { changeDisplay } from "./display";
 import { WindowBounds } from "../src/types/electron";
+import { applyMcpSettings, initializeMcpHost, shutdownMcpHost } from "./mcp-host";
 
 const APPWINDOW_MIN_WIDTH = 360;
 const APPWINDOW_MIN_HEIGHT = 695;
@@ -1220,6 +1221,8 @@ app.on("ready", () => {
     });
   }
 
+  initializeMcpHost(getMainWindow);
+
   const webServer = initializeWebServer();
   UdpServer.initialize(webServer).then((udpServer) => {
     if (!udpServer) {
@@ -1259,6 +1262,10 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  shutdownMcpHost();
 });
 
 const closeNeedsQuestion = () => !!mainWindow && closeGuardRegistered && !closeApproved && !quittingForUpdate;
@@ -1579,6 +1586,8 @@ ipcMain.on("sync-settings", (_event, settings: Settings) => {
       `[Main] Startup hardware acceleration setting updated: ${nextDisableHardwareAccelerationOnStartup ? "disabled" : "enabled"} (restart required)`
     );
   }
+
+  applyMcpSettings(settings);
 
   const netDisplayEncodeChanged = updateNetDisplayEncodeSettings(settings);
   configuredPpdWatchTimeoutSeconds = settings.ppdWatchTimeoutSeconds;

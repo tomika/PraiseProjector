@@ -52,6 +52,8 @@ import {
 } from "./state/CurrentSongStore";
 import { setSharedSongFilter, subscribeSharedSongFilter } from "./state/SongFilterStore";
 import { useSettings } from "./hooks/useSettings";
+import { useMcpBridge } from "./services/mcp/useMcpBridge";
+import { useUpdate } from "./contexts/UpdateContext";
 import { useSessionUrl } from "./hooks/useSessionUrl";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { useLocalization } from "./localization/LocalizationContext";
@@ -246,7 +248,8 @@ const AppContent: React.FC = () => {
   const width = useWindowWidth();
   const orientation = useOrientation();
   const { settings, syncToBackend, updateSetting, updateSettingWithAutoSave } = useSettings();
-  const { selectedLeader } = useLeader();
+  const { selectedLeader, setSelectedLeaderId } = useLeader();
+  const { hasUpdate } = useUpdate();
   const {
     loadInitialCredentials,
     networkUnavailable,
@@ -258,7 +261,7 @@ const AppContent: React.FC = () => {
     user,
     isLoading: isAuthLoading,
   } = useAuth();
-  const { t } = useLocalization();
+  const { t, language } = useLocalization();
   const { showToast } = useToast();
   const {
     guestSessionId,
@@ -3221,6 +3224,44 @@ const AppContent: React.FC = () => {
     },
     [continueTutorialAfterSyncFlow, handleSwitchToMobileView, handleSyncRequest]
   );
+
+  // Built-in MCP server: lends the app's own entry points to the assistant tools.
+  useMcpBridge({
+    settings,
+    updateSetting: updateSettingWithAutoSave,
+    language,
+    account: { username: isGuest ? null : Database.getCurrentUsername() || null, signedIn: isAuthenticated, guest: isGuest },
+    selectedLeader,
+    selectLeader: setSelectedLeaderId,
+    leftPanel: leftPanelRef,
+    previewPanel: previewPanelRef,
+    following: watchedSessionId !== null,
+    remoteDisplayUpdate: (update) => enqueue(() => remoteDisplayUpdateHandler(update)),
+    importFiles: handleSongTreeExternalFilesDropped,
+    openView: (target, page) => {
+      if (target === "settings") openSettings(page ?? null);
+      else if (target === "sessions") setShowSessionsForm(true);
+      else if (target === "sync") handleSyncClick();
+      else if (target === "import") handleImportClick();
+      else if (target === "song-check") void handleSongCheckClick();
+      else if (target === "tutorial") requestVisibleTutorialStart();
+      else return false;
+      return true;
+    },
+    confirm: (title, message) => showConfirmAsync(title, message),
+    ui: {
+      activePanel,
+      openDialogs: [
+        showSettings && "settings",
+        showImportWizard && "import",
+        showDBSync && "sync",
+        showSessionsForm && "sessions",
+        showSongCheck && "song-check",
+      ].filter((name): name is string => !!name),
+      editingSong: isEditing,
+      updateAvailable: hasUpdate,
+    },
+  });
 
   return (
     <>

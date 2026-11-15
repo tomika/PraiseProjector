@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import UserPanel from "./UserPanel";
-import PlaylistPanel, { PlaylistPanelMethods, PlaylistSelectionEvent } from "./PlaylistPanel";
+import PlaylistPanel, { PlaylistFileResult, PlaylistPanelMethods, PlaylistSelectionEvent } from "./PlaylistPanel";
 import SongListPanel, { SongListPanelMethods } from "./SongListPanel";
 import ResizeHandle from "./ResizeHandle";
 import { Database } from "../../db-common/Database";
@@ -14,7 +14,10 @@ import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { PlaylistEntry as PlaylistEntryData, SongPreference as SongPreferenceData } from "../../common/pp-types";
 import { updateCurrentDisplay } from "../state/CurrentSongStore";
-import { PlaylistOrigin } from "../services/playlistOrigin";
+import { PlaylistOrigin, ScheduledPlaylist } from "../services/playlistOrigin";
+import type { Leader } from "../../db-common/Leader";
+
+const PANEL_MISSING = "The playlist panel is not available.";
 
 export interface PlaylistSelectionInput {
   index?: number;
@@ -29,11 +32,17 @@ export interface LeftPanelMethods {
   setPlaylistSelection: (selection: PlaylistSelectionInput | null) => PlaylistSelectionEvent | null;
   getPreferencesForSongId: (songId: string) => SongPreferenceData | null;
   updatePlaylist: (playlist: PlaylistEntryData[]) => Promise<void>;
-  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => void;
+  loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) => Promise<void>;
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
   getPlaylistOrigin: () => PlaylistOrigin | null;
   getCurrentPlaylist: () => Playlist;
+  /** Entries for changes made outside the playlist panel (the MCP assistant); see PlaylistPanel. */
+  replacePlaylist: (items: PlaylistEntryData[]) => Promise<void>;
+  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) => Promise<void>;
+  saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) => ScheduledPlaylist | null;
+  savePlaylistToFile: () => Promise<PlaylistFileResult>;
+  loadPlaylistFromFile: () => Promise<PlaylistFileResult>;
   // Song tree methods
   getSelectedSongId: () => string | null;
   setSelectedSongId: (songId: string | null) => void;
@@ -183,12 +192,19 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         getPreferencesForSongId: (songId: string) => playlistPanelRef.current?.getPreferencesForSongId(songId) ?? null,
         updatePlaylist: (playlist: PlaylistEntryData[]) => playlistPanelRef.current?.updatePlaylist(playlist) ?? Promise.resolve(),
         loadScheduledPlaylist: (leaderId: string, scheduledDate: Date, playlist: Playlist) =>
-          playlistPanelRef.current?.loadScheduledPlaylist(leaderId, scheduledDate, playlist),
+          playlistPanelRef.current?.loadScheduledPlaylist(leaderId, scheduledDate, playlist) ?? Promise.resolve(),
         updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) =>
           playlistPanelRef.current?.updatePlaylistItemPreferences(songId, transpose, capo, instructions) ?? null,
         getScheduleDate: () => playlistPanelRef.current?.getScheduleDate() ?? null,
         getPlaylistOrigin: () => playlistPanelRef.current?.getPlaylistOrigin() ?? null,
         getCurrentPlaylist: () => playlistPanelRef.current?.getCurrentPlaylist() ?? new Playlist("CurrentPlaylist", []),
+        replacePlaylist: (items: PlaylistEntryData[]) => playlistPanelRef.current?.replacePlaylist(items) ?? Promise.reject(new Error(PANEL_MISSING)),
+        applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) =>
+          playlistPanelRef.current?.applyPlaylistEdit(items, sources) ?? Promise.reject(new Error(PANEL_MISSING)),
+        saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) =>
+          playlistPanelRef.current?.saveToSchedule(leader, date, favoriteName) ?? null,
+        savePlaylistToFile: () => playlistPanelRef.current?.savePlaylistToFile() ?? Promise.resolve({ status: "failed", error: PANEL_MISSING }),
+        loadPlaylistFromFile: () => playlistPanelRef.current?.loadPlaylistFromFile() ?? Promise.resolve({ status: "failed", error: PANEL_MISSING }),
         // Song tree methods
         getSelectedSongId: () => songListPanelRef.current?.getSelectedSongId() ?? null,
         setSelectedSongId: (songId: string | null) => songListPanelRef.current?.setSelectedSongId(songId),

@@ -1,5 +1,6 @@
 import { Display as PPDisplay, DisplayUpdateRequest as PPDisplayUpdateRequest } from "../../common/pp-types";
 import type { WebServerInterface } from "../../common/webserver-interface";
+import type { McpBridgeRequest, McpBridgeResponse, McpServerStatus } from "../../common/mcp-bridge";
 import { Settings } from "../types";
 
 export type Display = PPDisplay;
@@ -71,6 +72,12 @@ export interface IElectronAPI {
     }) => void
   ) => () => void;
   sendWebserverApiResponse?: (response: { requestId?: string; status?: number; data: unknown; headers?: Record<string, string> }) => void;
+
+  // Built-in MCP server bridge (see common/mcp-bridge.ts)
+  onMcpRequest?: (callback: (request: McpBridgeRequest) => void) => () => void;
+  sendMcpResponse?: (response: McpBridgeResponse) => void;
+  getMcpStatus?: () => Promise<McpServerStatus>;
+  regenerateMcpToken?: () => Promise<McpServerStatus>;
 
   // Close guard: while registered, closing the main window first asks the page.
   setCloseGuard?: (registered: boolean) => void;

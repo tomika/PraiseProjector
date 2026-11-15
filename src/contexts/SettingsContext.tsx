@@ -1,6 +1,7 @@
 import React, { useContext, useState, useEffect, useCallback, useRef } from "react";
 import { hotStableContext } from "../utils/hotStableContext";
 import { Settings } from "../types";
+import { MCP_DEFAULT_PORT } from "../../common/mcp-bridge";
 import { createDefaultChordProStylesSettings, normalizeChordProStyles } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
 import { syncSettingsToBackend } from "../services/settingsSync";
@@ -197,6 +198,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       showTextInPreview: true,
       showImageInPreview: true,
       updateChannel: "stable",
+      mcpEnabled: false,
+      mcpPort: MCP_DEFAULT_PORT,
+      mcpAllowChanges: false,
+      mcpAllowLiveControl: false,
+      mcpConfirmChanges: true,
       chordProStyles: createDefaultChordProStylesSettings((key) => t(key as never)),
       stylesToClients: false,
     };

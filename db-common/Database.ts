@@ -2387,7 +2387,12 @@ class Database {
    * (YYYY.MM.DD). A favorite (see common/favorite-playlists) gets the label of
    * `favoriteName` when given; otherwise it keeps the name it already has.
    */
-  public schedule(leader: Leader, date: Date, playlist: Playlist, favoriteName?: string): void {
+  /**
+   * Stores a playlist for a date of the leader (a favorite on a reserved date). By default
+   * its items also become the leader's song preferences (titles, transposition, capo,
+   * instructions); `updatePreferences: false` stores the list only.
+   */
+  public schedule(leader: Leader, date: Date, playlist: Playlist, favoriteName?: string, options: { updatePreferences?: boolean } = {}): void {
     if (leader) {
       const playlistToStore = playlist.clone();
       if (isFavoriteScheduleDate(date)) {
@@ -2399,7 +2404,7 @@ class Database {
       } else {
         playlistToStore.name = formatLocalDateLabel(date); // YYYY.MM.DD format
       }
-      leader.addPlaylist(date, playlistToStore, true, this);
+      leader.addPlaylist(date, playlistToStore, options.updatePreferences !== false, this);
       this.save();
     }
   }

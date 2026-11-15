@@ -200,6 +200,14 @@ export interface Settings {
   showTextInPreview: boolean;
   showImageInPreview: boolean;
 
+  // Built-in MCP server (Electron): lets an AI assistant of the user read the app and,
+  // when allowed, change things. Off by default; see src/services/mcp.
+  mcpEnabled: boolean;
+  mcpPort: number;
+  mcpAllowChanges: boolean;
+  mcpAllowLiveControl: boolean;
+  mcpConfirmChanges: boolean;
+
   // Update channel: "stable" uses latest.yml, "testing" uses the testing subfolder
   updateChannel: "stable" | "testing";
 
