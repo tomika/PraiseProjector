@@ -1323,7 +1323,7 @@
   "StorageChoiceNewTitle": "New, efficient storage",
   "StorageChoiceNewDescription": "The new method saves songs, preferences and playlists separately. A small change rewrites only the affected data, using fewer resources and reducing SSD wear. Your existing data is converted to the new format; the old copy is removed only after successful verification.",
   "StorageChoiceCompatibility": "Important: older app versions cannot read the new format. Before returning to an older version, you must export from the new version and then import into the older version.",
-  "StorageChoiceDowngrade": "I understand: to return to an older app version, I must first export from the new version, then import into the old version.",
+  "StorageChoiceDowngrade": "I understand: to return to an older app version, I must first export every single user profile database one by one from the new version, then import all of them into the old version.",
   "StorageChoiceNewAction": "Choose the new storage…",
   "StorageChoiceOldTitle": "Keep the old storage",
   "StorageChoiceOldDescription": "The old method remains compatible with earlier versions, but rewrites the entire database even for a small change. This may use more energy and puts more load on the drive.",
