@@ -21,6 +21,7 @@ import {
   McpSong,
   McpSongHistory,
   McpSongInfo,
+  McpSongSection,
   McpSongVersion,
   McpStoredPlaylistRef,
   McpTool,
@@ -69,8 +70,16 @@ const ITEM_FIELD_SCHEMA = {
   },
   transpose: { type: "integer", minimum: -11, maximum: 11, description: "Semitones. Default: the leader's setting for the song, or 0." },
   capo: { type: "integer", minimum: -1, maximum: 11, description: "Recommended capo fret, -1 for none. Default: the leader's setting, or none." },
-  instructions: { type: "string", description: "Display instructions (section order). Usually left out." },
+  instructions: {
+    type: "string",
+    description:
+      "The song's performance order for this item, one line each: a section name from get_song 'sections', optionally 'Nx' to repeat it and '+N'/'-N' to transpose it on top of the item's transpose; other lines are notes for the musicians. Empty: the song's own order. Check a text with check_instructions. Default: the leader's stored instructions for the song.",
+  },
 };
+
+/** What an assistant needs to know about instructions; shown with check_instructions. */
+const INSTRUCTIONS_GUIDE =
+  "Instructions give the performance order of a song for one playlist item and never change the song itself. One line per step: the name of a section of the song (get_song 'sections', e.g. 'Verse 1', 'Chorus'; matching ignores case), optionally followed by a repeat count ('2x') and a transposition ('+2', '-1') that adds to the item's own transposition, e.g. a last chorus a step higher. Any other line is a note shown to the musicians at that place (e.g. 'slowly', 'only piano'). Adjacent repeats of the same section are merged ('Chorus 2x'). Empty instructions mean the song's own order: its sections as written, with any repeat count or transposition in a section's tag ({start_of_chorus: Chorus 2x}) and with comment lines that name a section ({c: Chorus}) repeating it there; this is 'defaultInstructions' in get_song. A song should hold each section once: repeats belong to instructions (or comment lines), not to copied text. Instructions travel with the song to tablets and phones, which show the song in this order while their 'Instructions' toolbar button is on (off by default; in page mode a repeat shows only its first line). The projector follows instructions only while the 'projectInstructions' setting (preview panel button 'Project instructions') is on; otherwise it shows every section once in the order of the song text. The leader can keep instructions per song in the profile; a new playlist item takes them from there.";
 
 const PLAYLIST_ITEM_SCHEMA = object(
   { songId: { type: "string", description: "Song id from search_songs, find_songs, query_songs or a playlist." }, ...ITEM_FIELD_SCHEMA },
@@ -87,6 +96,11 @@ const OPERATION_SCHEMA = {
     from: { type: "integer", minimum: 0, description: "move: index of the item." },
     to: { type: "integer", minimum: 0, description: "move: index it ends up at." },
     ...ITEM_FIELD_SCHEMA,
+    storeInProfile: {
+      type: "boolean",
+      description:
+        "add, update (working list only): also store the item's instructions as the selected leader's instructions for the song, as the instructions editor's 'Store in leader profile' does, so later playlists get them too. Ctrl+Z in the playlist does not undo this profile change.",
+    },
   },
   required: ["op"],
   additionalProperties: false,
@@ -268,16 +282,25 @@ export interface PlaylistEdit {
   sources: (number | null)[];
   /** The resulting list with marks (+ new, ✎ changed, ↕ moved) and the removed items, for the confirmation. */
   summary: string;
+  /** Indices (in `items`) whose instructions also go into the leader's profile. */
+  storeInstructions: number[];
 }
 
 /**
  * Applies add / remove / move / update operations in order, each to the result of the
  * previous one. Throws (and changes nothing) when any operation is invalid.
  */
-export function editPlaylistItems(host: McpHost, current: readonly McpPlaylistItem[], operations: unknown, leaderId: string | null): PlaylistEdit {
+export function editPlaylistItems(
+  host: McpHost,
+  current: readonly McpPlaylistItem[],
+  operations: unknown,
+  leaderId: string | null,
+  /** Name of the leader whose profile may keep instructions (storeInProfile); null: not offered here. */
+  profileLeader: string | null = null
+): PlaylistEdit {
   if (!Array.isArray(operations) || !operations.length) throw new McpToolError("'operations' must be a non-empty list.");
   if (operations.length > MAX_PLAYLIST_OPERATIONS) throw new McpToolError(`At most ${MAX_PLAYLIST_OPERATIONS} operations at once.`);
-  type Row = { item: McpPlaylistItem; source: number | null; added: boolean; moved: boolean; edited: boolean };
+  type Row = { item: McpPlaylistItem; source: number | null; added: boolean; moved: boolean; edited: boolean; store?: boolean };
   const rows: Row[] = current.map((item, index) => ({ item, source: index, added: false, moved: false, edited: false }));
   const removed: string[] = [];
 
@@ -293,10 +316,17 @@ export function editPlaylistItems(host: McpHost, current: readonly McpPlaylistIt
       }
       return value;
     };
+    const store = op.storeInProfile === true;
+    if (store && op.op !== "add" && op.op !== "update") throw new McpToolError(`${label}: 'storeInProfile' belongs to add and update.`);
+    if (store && !profileLeader) {
+      throw new McpToolError(
+        `${label}: 'storeInProfile' works on the playlist loaded in the app with a selected leader only (the leader whose profile keeps the instructions).`
+      );
+    }
     switch (op.op) {
       case "add": {
         const item = newItem(host, op, leaderId, label);
-        rows.splice(at("position", rows.length, rows.length), 0, { item, source: null, added: true, moved: false, edited: false });
+        rows.splice(at("position", rows.length, rows.length), 0, { item, source: null, added: true, moved: false, edited: false, store });
         break;
       }
       case "remove": {
@@ -320,6 +350,7 @@ export function editPlaylistItems(host: McpHost, current: readonly McpPlaylistIt
           row.item = updated;
           if (!row.added) row.edited = true;
         }
+        if (store) row.store = true;
         break;
       }
       default:
@@ -330,10 +361,20 @@ export function editPlaylistItems(host: McpHost, current: readonly McpPlaylistIt
 
   const lines = rows.map((row, index) => {
     const mark = row.added ? "+ " : row.edited ? "✎ " : row.moved ? "↕ " : "";
-    return `${index + 1}. ${mark}${row.item.title}${row.added || row.edited ? itemDetails(row.item) : ""}`;
+    const stored = row.store
+      ? ` [instructions kept in ${profileLeader}'s profile: ${row.item.instructions.replace(/\s*\r?\n\s*/g, " / ") || "(none)"}]`
+      : "";
+    return `${index + 1}. ${mark}${row.item.title}${row.added || row.edited ? itemDetails(row.item) : ""}${stored}`;
   });
   if (removed.length) lines.push("", `Removed: ${removed.map((title) => `− ${title}`).join(", ")}`);
-  return { items: rows.map((row) => row.item), sources: rows.map((row) => row.source), summary: lines.join("\n") };
+  if (rows.some((row) => row.store))
+    lines.push("", `The instructions kept in ${profileLeader}'s profile stay there even if the playlist change is undone.`);
+  return {
+    items: rows.map((row) => row.item),
+    sources: rows.map((row) => row.source),
+    summary: lines.join("\n"),
+    storeInstructions: rows.flatMap((row, index) => (row.store ? [index] : [])),
+  };
 }
 
 const describeItems = (host: McpHost, items: readonly McpPlaylistItem[]) =>
@@ -927,7 +968,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
   const workingEdit = (host: McpHost, args: Args) => {
     const current = assertEditable(host);
     assertRevision(current.items, text(args, "revision"), "The playlist");
-    return editPlaylistItems(host, current.items, args.operations, workingLeaderId(host));
+    return editPlaylistItems(host, current.items, args.operations, workingLeaderId(host), host.selectedLeader()?.name ?? null);
   };
   const storedEdit = (host: McpHost, args: Args) => {
     const { leader, ref, list } = stored(host, args, true);
@@ -1135,16 +1176,19 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_song",
       title: "Read a song",
       description:
-        "A song in ChordPro (chords in square brackets inside the lyrics) with its title, language, key, chord system, parsed metadata (authors, copyright, …), first lyric lines, the other versions of the same song (translations: 'related') and its upload facts from the cloud ('upload': when and by whom the newest version was uploaded, the first upload, and how the copy on this computer relates to them; 'note' says why something is missing). The metadata and first line are what you need to look the song up elsewhere, e.g. to find a recording; a related version in another language often carries the original title.",
+        "A song in ChordPro (chords in square brackets inside the lyrics) with its title, language, key, chord system, parsed metadata (authors, copyright, …), first lyric lines, the other versions of the same song (translations: 'related') and its upload facts from the cloud ('upload': when and by whom the newest version was uploaded, the first upload, and how the copy on this computer relates to them; 'note' says why something is missing). The metadata and first line are what you need to look the song up elsewhere, e.g. to find a recording; a related version in another language often carries the original title. For playlist instructions it gives 'sections' (the names instructions use), 'defaultInstructions' (the song's own order), 'repeatedSections' (sections written out twice that instructions should repeat instead) and 'selectedLeaderItem' (title, transposition, capo and instructions the selected leader's new playlist item gets).",
       inputSchema: object({ songId: { type: "string" } }, ["songId"]),
       access: "read",
       run: async (args, host) => {
         const song = requireSong(host, text(args, "songId"));
         const { version: _version, ...visible } = song;
+        const leaderId = workingLeaderId(host);
         return {
           ...visible,
           metadata: songMetadata(song.text),
           firstLines: lyricsOf(song.text).slice(0, 2),
+          ...host.songStructure(song.id),
+          ...(leaderId ? { selectedLeaderItem: host.newPlaylistItem(leaderId, song.id) } : {}),
           upload: describeUpload(song, await history(host, song)),
         };
       },
@@ -1243,6 +1287,62 @@ export function createMcpTools(content: McpContent): McpTool[] {
       },
     },
     {
+      name: "check_instructions",
+      title: "Check playlist instructions",
+      description: `Reads an instruction text against a song the way the app does, before you put it on a playlist item: which line plays which section (with repeat count, transposition and the resulting key), which lines are only notes, the text as the app would store it, and which sections are left out. Without instructions it shows the song's own order. ${INSTRUCTIONS_GUIDE}`,
+      inputSchema: object(
+        {
+          songId: { type: "string" },
+          instructions: { type: "string", description: "One step per line. Empty or left out: the song's own order." },
+          transpose: { type: "integer", minimum: -11, maximum: 11, description: "The playlist item's own transposition, for the keys. Default 0." },
+        },
+        ["songId"]
+      ),
+      access: "read",
+      run: (args, host) => {
+        const song = requireSong(host, text(args, "songId"));
+        const structure = host.songStructure(song.id);
+        const given = typeof args.instructions === "string" ? args.instructions : "";
+        const instructions = given.trim() ? given : (structure?.defaultInstructions ?? "");
+        const analysis = host.analyzeInstructions(song.id, instructions);
+        if (!structure || !analysis) throw new McpToolError(`There is no song with id '${song.id}'.`);
+        const itemTranspose = integer(args, "transpose", 0, -11, 11);
+        const keyOf = (transpose: number) => host.songKey(song.id, itemTranspose + transpose) || undefined;
+        // Only given instructions get warnings: the song's own comment lines are meant as notes.
+        // "Verse 3" falls back to the song's "Verse 1" when no "Verse 3" exists: say so.
+        const warnings = given.trim()
+          ? analysis.lines.flatMap((line) =>
+              line.kind === "section" && !line.exact
+                ? [`'${line.line.trim()}' is read as the section '${line.section}'.`]
+                : line.kind === "note"
+                  ? [
+                      `'${line.line.trim()}' names no section of this song, so it is only a note for the musicians. Section names: ${structure.sections.map((s) => s.name).join(", ")}.`,
+                    ]
+                  : []
+            )
+          : [];
+        const named = new Set(analysis.order.flatMap((step) => ("section" in step ? [foldText(step.section)] : [])));
+        // A score named as a whole plays its parts, and a named part plays a part of its score.
+        const used = (section: McpSongSection) =>
+          named.has(foldText(section.name)) ||
+          (!!section.partOf && named.has(foldText(section.partOf))) ||
+          structure.sections.some((part) => part.partOf === section.name && named.has(foldText(part.name)));
+        return {
+          song: infoOf(song),
+          instructions: given.trim() ? "as given" : "none given: the song's own order",
+          order: analysis.order.map((step) =>
+            "section" in step ? { ...step, ...(keyOf(step.transpose) ? { key: keyOf(step.transpose) } : {}) } : step
+          ),
+          normalized: analysis.normalized,
+          ...(warnings.length ? { warnings } : {}),
+          unusedSections: structure.sections.filter((section) => !used(section)).map((section) => section.name),
+          projector: host.getSettings()?.projectInstructions
+            ? "'projectInstructions' is on: the projector follows the instructions of the item (or the song's own order when it has none)."
+            : "'projectInstructions' is off: the projector shows every section once in the order of the song text. Tablets and phones follow the instructions while their 'Instructions' button is on.",
+        };
+      },
+    },
+    {
       name: "check_chords",
       title: "Check chords",
       description:
@@ -1290,7 +1390,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "validate_chordpro",
       title: "Check a ChordPro text",
       description:
-        "Reads a ChordPro text the way the app does: title, kind, number of sections and lyric lines, metadata, and every chord with its class (see check_chords: recognized / chord-shaped / not-a-chord). Use it on a text before import_song and fix what is not recognized.",
+        "Reads a ChordPro text the way the app does: title, kind, number of sections and lyric lines, metadata, every chord with its class (see check_chords: recognized / chord-shaped / not-a-chord), and 'repeatedSections': sections written out more than once, which should be written once and repeated with a comment line naming them ({c: Chorus}) or with playlist instructions. Use it on a text before import_song and fix what is not recognized.",
       inputSchema: object(
         {
           text: { type: "string" },
@@ -1455,7 +1555,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "edit_playlist",
       title: "Change the working playlist",
       description:
-        "Changes the working list in place, as the user's own playlist edits do: one undo step (Ctrl+Z), and the list keeps the stored list it came from, so the app still reminds the user to save the change there. Operations run in order, each on the result of the previous one (0-based indexes): add {songId, position?, title?, transpose?, capo?, instructions?}, remove {index}, move {from, to}, update {index, title?, transpose?, capo?, instructions?}; an empty title in update restores the song's own title. New items get the selected leader's settings for the song where not given. Nothing is selected or projected; when the song on display is updated, its new key, capo and section order show on the screens at once. A changed title, transposition or capo also becomes the selected leader's song setting, as far as the leader-profile setting allows (as with the user's own edits). Pass the revision from get_playlist: if the list changed meanwhile, nothing happens and you get the new revision.",
+        "Changes the working list in place, as the user's own playlist edits do: one undo step (Ctrl+Z), and the list keeps the stored list it came from, so the app still reminds the user to save the change there. Operations run in order, each on the result of the previous one (0-based indexes): add {songId, position?, title?, transpose?, capo?, instructions?, storeInProfile?}, remove {index}, move {from, to}, update {index, title?, transpose?, capo?, instructions?, storeInProfile?}; an empty title in update restores the song's own title. Check instructions with check_instructions first; storeInProfile also keeps them as the selected leader's instructions for the song. New items get the selected leader's settings for the song where not given. Nothing is selected or projected; when the song on display is updated, its new key, capo and section order show on the screens at once. A changed title, transposition or capo also becomes the selected leader's song setting together with the item's instructions, as far as the leader-profile setting allows (as with the playlist's own controls). Ctrl+Z restores the playlist, not the leader's profile. Pass the revision from get_playlist: if the list changed meanwhile, nothing happens and you get the new revision.",
       inputSchema: object(
         {
           revision: { type: "string", description: "The revision from get_playlist." },
@@ -1467,7 +1567,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       confirmation: (args, host) => `Change the current playlist like this?\n\n${workingEdit(host, args).summary}`,
       run: async (args, host) => {
         const edit = workingEdit(host, args);
-        await host.editPlaylist(edit.items, edit.sources);
+        await host.editPlaylist(edit.items, edit.sources, edit.storeInstructions);
         const view = workingPlaylistView(host);
         return view.source && !view.source.unchangedSinceLoaded
           ? {
@@ -1634,7 +1734,8 @@ export function createMcpTools(content: McpContent): McpTool[] {
     {
       name: "get_projection_state",
       title: "What is being projected",
-      description: "The song loaded for projection, its sections (slides) with their text, and which section is on the projector now.",
+      description:
+        "The song loaded for projection, its sections (slides) with their text, which section is on the projector now, the instructions of the item on display, and whether the projector follows them ('projectInstructions'; see check_instructions).",
       inputSchema: NO_ARGS,
       access: "read",
       run: (_args, host) => host.getProjection(),

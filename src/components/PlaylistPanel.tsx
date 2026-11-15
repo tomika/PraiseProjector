@@ -134,7 +134,7 @@ export interface PlaylistPanelMethods {
   getPlaylistOrigin: () => PlaylistOrigin | null;
   getCurrentPlaylist: () => Playlist;
   replacePlaylist: (items: PlaylistEntryData[]) => Promise<void>;
-  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) => Promise<void>;
+  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[], storeInstructions?: readonly number[]) => Promise<void>;
   saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) => ScheduledPlaylist | null;
   savePlaylistToFile: () => Promise<PlaylistFileResult>;
   loadPlaylistFromFile: () => Promise<PlaylistFileResult>;
@@ -588,15 +588,17 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
    * A change of the working list made outside the panel (the MCP assistant), kept like the
    * user's own edits: one undo step, the list keeps its name, id and source (so the reminder
    * to store it still comes), the selection follows its items, and a changed title,
-   * transposition or capo becomes the leader's song preference as far as the profile update
-   * mode allows (instructions alone do not, as in the instructions editor). Unlike the
-   * panel's controls it never selects or projects anything: the song on display only takes
-   * the new transposition, capo and instructions of its item.
+   * transposition or capo becomes the leader's song preference, with the item's
+   * instructions, as far as the profile update mode allows (as the panel's own controls do);
+   * changed instructions alone only when asked, as the instructions editor's "Store in leader
+   * profile" does. Unlike the panel's controls it never selects or projects anything: the
+   * song on display only takes the new transposition, capo and instructions of its item.
    *
    * `items` is the new list; `sources[i]` is the index in the current list that item i comes
-   * from (kept, moved or edited), or null for a new item.
+   * from (kept, moved or edited), or null for a new item. `storeInstructions` lists the new
+   * indices whose instructions also go into the selected leader's profile.
    */
-  applyPlaylistEdit(items: PlaylistEntryData[], sources: readonly (number | null)[]): Promise<void> {
+  applyPlaylistEdit(items: PlaylistEntryData[], sources: readonly (number | null)[], storeInstructions: readonly number[] = []): Promise<void> {
     const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor, playlistOrigin } = this.state;
     const current = currentPlaylist.items;
     if (sources.length !== items.length) throw new Error("Every item of an edited playlist needs its source index");
@@ -649,7 +651,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         if (newItems.length === 0) this.persistPlaylistOrigin(null);
         this.savePlaylist(updatedPlaylist);
         this.updatePlaylistItemStates();
-        if (preferenceChanges.length) this.storeItemPreferences(preferenceChanges);
+        const preferencesStored = preferenceChanges.length > 0 && this.storeItemPreferences(preferenceChanges);
+        for (const index of storeInstructions) {
+          const entry = newItems[index];
+          // A stored preference change already carried the item's instructions.
+          if (entry && !(preferencesStored && preferenceChanges.includes(entry))) this.storeInstructionsInProfile(entry);
+        }
         const focused = newFocusedIndex >= 0 ? newItems[newFocusedIndex] : null;
         if (focused && modified.includes(focused) && getCurrentDisplay().songId === focused.songId) {
           updateCurrentDisplay({ transpose: focused.transpose, capo: focused.capo, instructions: focused.instructions });
@@ -1389,9 +1396,9 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   /** Stores edited playlist items as the selected leader's song preferences, as far as the
-   *  profile update mode allows changes made in the UI. */
-  private storeItemPreferences(items: PlaylistEntry[]) {
-    if (!this.props.selectedLeader) return;
+   *  profile update mode allows changes made in the UI. False when nothing was stored. */
+  private storeItemPreferences(items: PlaylistEntry[]): boolean {
+    if (!this.props.selectedLeader) return false;
     const db = Database.getInstance();
     const settings = this.props.settings;
     const updateMode = settings?.leaderProfileUpdateMode || "allSources";
@@ -1399,7 +1406,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     // Check if UI playlist changes should update the profile
     if (updateMode === "leaderPageOnly") {
       console.debug("PlaylistPanel", "Skipping profile update from UI changes (mode: leaderPageOnly)");
-      return;
+      return false;
     }
     // Allow updates from UI (uiChangesAlso or allSources)
     items.forEach((item) => {
@@ -1431,6 +1438,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     // Commit the mutated leader back into the canonical DB leader collection.
     // This keeps Settings/Leader views consistent even if selectedLeader was a stale reference.
     db.updateLeader(this.props.selectedLeader);
+    return true;
   }
 
   handleTransposeUp() {
@@ -1637,6 +1645,35 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     });
   }
 
+  /** Stores an item's instructions as the selected leader's preference for its song
+   *  (the instructions editor's "Store instructions in leader profile"). */
+  private storeInstructionsInProfile(item: PlaylistEntry) {
+    const db = Database.getInstance();
+    const song = this.props.songs.find((s) => s.Id === item.songId);
+    if (!song) return;
+    this.props.onPlaylistPreferenceUpdate?.({
+      songId: song.Id,
+      title: item.title,
+      transpose: item.transpose,
+      capo: item.capo,
+      type: undefined,
+      instructions: item.instructions,
+    });
+
+    if (this.props.selectedLeader) {
+      // Use the selected leader from props (passed from LeaderContext)
+      this.props.selectedLeader.updatePreference(
+        song.Id,
+        {
+          instructions: item.instructions,
+        },
+        db
+      );
+      // Commit back to canonical DB collection so Settings sees the update immediately.
+      db.updateLeader(this.props.selectedLeader);
+    }
+  }
+
   handleInstructionsSave(instructions: string, storeInProfile: boolean) {
     const { editingInstructions } = this.state;
     if (!editingInstructions) return;
@@ -1648,33 +1685,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.updatePlaylistItem(index, updatedItem);
 
     // Store in profile if requested
-    if (storeInProfile) {
-      const db = Database.getInstance();
-      const song = this.props.songs.find((s) => s.Id === item.songId);
-      if (song) {
-        this.props.onPlaylistPreferenceUpdate?.({
-          songId: song.Id,
-          title: updatedItem.title,
-          transpose: updatedItem.transpose,
-          capo: updatedItem.capo,
-          type: undefined,
-          instructions: updatedItem.instructions,
-        });
-
-        if (this.props.selectedLeader) {
-          // Use the selected leader from props (passed from LeaderContext)
-          this.props.selectedLeader.updatePreference(
-            song.Id,
-            {
-              instructions,
-            },
-            db
-          );
-          // Commit back to canonical DB collection so Settings sees the update immediately.
-          db.updateLeader(this.props.selectedLeader);
-        }
-      }
-    }
+    if (storeInProfile) this.storeInstructionsInProfile(updatedItem);
 
     persistedInstructionsEditorState = null;
     this.setState({

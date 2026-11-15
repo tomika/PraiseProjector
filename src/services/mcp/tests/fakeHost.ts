@@ -1,6 +1,7 @@
 /** An in-memory McpHost for the tool and protocol tests. */
 import type { Settings } from "../../../types";
 import { chordStatus, gridChords, importerChord, importerConventions, knownChordTypes } from "../appChords";
+import { analyzeInstructions, songStructure } from "../songStructure";
 import type {
   McpFileResult,
   McpHost,
@@ -143,7 +144,20 @@ export function fakeHost(state: FakeState): McpHost {
       state.songs
         .filter((candidate) => candidate.title.toLowerCase().includes(query.toLowerCase()))
         .map((candidate) => ({ song: info(candidate), reason: "TITLE" })),
-    analyzeChordPro: () => ({ title: "", kind: "music", sectionCount: 1 }),
+    analyzeChordPro: (text, system) => ({
+      title: "",
+      kind: "music",
+      sectionCount: 1,
+      repeatedSections: songStructure(text, system).repeatedSections,
+    }),
+    songStructure: (id) => {
+      const found = state.songs.find((candidate) => candidate.id === id);
+      return found ? songStructure(found.text, found.system) : null;
+    },
+    analyzeInstructions: (id, instructions) => {
+      const found = state.songs.find((candidate) => candidate.id === id);
+      return found ? analyzeInstructions(found.text, found.system, instructions) : null;
+    },
     chordStatus,
     knownChordTypes,
     importerChord,
@@ -182,9 +196,13 @@ export function fakeHost(state: FakeState): McpHost {
       state.playlist = items;
       state.source = null;
     },
-    editPlaylist: async (items, sources) => {
+    editPlaylist: async (items, sources, storeInstructions = []) => {
       state.calls.push(`edit:${sources.map((source) => (source === null ? "new" : source)).join(",")}`);
       state.playlist = items;
+      for (const index of storeInstructions) {
+        const key = `${state.selectedLeaderId}/${items[index].songId}`;
+        state.preferences.set(key, { ...state.preferences.get(key), instructions: items[index].instructions });
+      }
     },
     loadStoredPlaylist: async (leaderId, ref) => {
       const stored = state.stored.get(storedKey(leaderId, ref));
@@ -210,7 +228,17 @@ export function fakeHost(state: FakeState): McpHost {
       state.calls.push("file:save");
       return state.fileResult;
     },
-    getProjection: async () => ({ songId: "", title: "", sectionIndex: -1, sections: [], transpose: 0, capo: -1, projectorOpen: false }),
+    getProjection: async () => ({
+      songId: "",
+      title: "",
+      sectionIndex: -1,
+      sections: [],
+      transpose: 0,
+      capo: -1,
+      instructions: "",
+      projectInstructions: state.settings.projectInstructions === true,
+      projectorOpen: false,
+    }),
     showSong: async (id) => {
       state.calls.push(`show:${id}`);
       return "tree";

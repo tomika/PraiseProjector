@@ -28,6 +28,7 @@ export const MCP_INSTRUCTIONS = [
   "This server lets you help the person using it. Start with get_app_status. For how-to questions call search_help first: it returns the application's own tutorial texts, so name the buttons and settings as they appear there. list_settings gives every setting with the label and the settings page the user sees.",
   "Answer in the user's language (the app UI is English or Hungarian; get_app_status reports which).",
   "The playlist in the app (the working list, which tablets see) is a copy: a leader's stored playlists (calendar days and favorites) and playlist files are loaded into it and saved from it, and changing one never changes the other. Users often expect otherwise; explain it when it matters, and offer to save a changed working list where it came from.",
+  "How a song is performed on a playlist item (which sections, how often, in which key) is set by its instructions; read check_instructions before writing them.",
   "Tools that change something need 'Allow changes' and tools that drive the live projection need 'Allow live control' in Settings → MCP; the user may also be asked to confirm a change inside the app. If a tool reports that it is not allowed, tell the user which switch to turn on instead of retrying.",
   "During a service be careful with live-control tools: what you select is shown to the congregation.",
 ].join("\n");

@@ -17,6 +17,7 @@ const CHORDPRO_RULES = [
   "- A chord stands in square brackets inside the lyric line, immediately before the syllable on which it changes: Az [D]Úr irgalma [G]végte[D]len",
   "- A chord after the end of the line goes at the end of the line; a line of chords only is written as [G] [C] [D].",
   "- Sections: {start_of_verse: 1} … {end_of_verse}, {start_of_chorus} … {end_of_chorus}, {start_of_bridge} … {end_of_bridge};",
+  "- Write each section once. Where the source repeats one (written out again, or marked 'Refr.', 'Chorus 2x'), put a comment line naming it at that place instead of copying it: {c: Chorus}. The app plays the named section there; the order for a service can also be changed later with playlist instructions.",
   "- Grid sections differs from chordpro standard, here grids contain chords without brackets only, separators (space, pipe, slash, dot etc allowed)",
   "- No empty lines",
 ].join("\n");

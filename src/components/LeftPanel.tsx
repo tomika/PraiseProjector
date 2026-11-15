@@ -39,7 +39,7 @@ export interface LeftPanelMethods {
   getCurrentPlaylist: () => Playlist;
   /** Entries for changes made outside the playlist panel (the MCP assistant); see PlaylistPanel. */
   replacePlaylist: (items: PlaylistEntryData[]) => Promise<void>;
-  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) => Promise<void>;
+  applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[], storeInstructions?: readonly number[]) => Promise<void>;
   saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) => ScheduledPlaylist | null;
   savePlaylistToFile: () => Promise<PlaylistFileResult>;
   loadPlaylistFromFile: () => Promise<PlaylistFileResult>;
@@ -199,8 +199,8 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         getPlaylistOrigin: () => playlistPanelRef.current?.getPlaylistOrigin() ?? null,
         getCurrentPlaylist: () => playlistPanelRef.current?.getCurrentPlaylist() ?? new Playlist("CurrentPlaylist", []),
         replacePlaylist: (items: PlaylistEntryData[]) => playlistPanelRef.current?.replacePlaylist(items) ?? Promise.reject(new Error(PANEL_MISSING)),
-        applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[]) =>
-          playlistPanelRef.current?.applyPlaylistEdit(items, sources) ?? Promise.reject(new Error(PANEL_MISSING)),
+        applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[], storeInstructions?: readonly number[]) =>
+          playlistPanelRef.current?.applyPlaylistEdit(items, sources, storeInstructions) ?? Promise.reject(new Error(PANEL_MISSING)),
         saveToSchedule: (leader: Leader, date: Date, favoriteName?: string) =>
           playlistPanelRef.current?.saveToSchedule(leader, date, favoriteName) ?? null,
         savePlaylistToFile: () => playlistPanelRef.current?.savePlaylistToFile() ?? Promise.resolve({ status: "failed", error: PANEL_MISSING }),

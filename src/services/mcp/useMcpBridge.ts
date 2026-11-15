@@ -43,6 +43,7 @@ import { findTutorialSteps } from "./help";
 import { createMcpPrompts } from "./prompts";
 import { createMcpDispatcher } from "./protocol";
 import { songKeyDirective } from "./songMeta";
+import { analyzeInstructions, songStructure } from "./songStructure";
 import { McpContent, createMcpResources, createMcpTools } from "./tools";
 import type { PlaylistOrigin } from "../playlistOrigin";
 import type {
@@ -261,7 +262,20 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
     },
     analyzeChordPro: (text, system) => {
       const song = new Song(text, system === "S" ? "S" : "G");
-      return { title: song.Title, kind: song.ContentKind, sectionCount: song.Sections.length };
+      return {
+        title: song.Title,
+        kind: song.ContentKind,
+        sectionCount: song.Sections.length,
+        repeatedSections: songStructure(text, system).repeatedSections,
+      };
+    },
+    songStructure: (songId) => {
+      const song = database()?.getSongById(songId);
+      return song ? songStructure(song.Text, song.System) : null;
+    },
+    analyzeInstructions: (songId, instructions) => {
+      const song = database()?.getSongById(songId);
+      return song ? analyzeInstructions(song.Text, song.System, instructions) : null;
     },
     chordStatus,
     knownChordTypes,
@@ -372,12 +386,13 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
       if (!panel) throw new Error("The playlist panel is not available");
       await panel.replacePlaylist(items.map((item) => toEntry(item).toJSON()));
     },
-    editPlaylist: async (items, sources) => {
+    editPlaylist: async (items, sources, storeInstructions) => {
       const panel = app().leftPanel.current;
       if (!panel) throw new Error("The playlist panel is not available");
       await panel.applyPlaylistEdit(
         items.map((item) => toEntry(item).toJSON()),
-        sources
+        sources,
+        storeInstructions
       );
     },
     loadStoredPlaylist: async (leaderId, ref) => {
@@ -423,6 +438,8 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
         sections: (preview?.getSections() ?? []).map((section, index) => ({ index, ...section })),
         transpose: display.transpose ?? 0,
         capo: display.capo ?? -1,
+        instructions: display.instructions ?? "",
+        projectInstructions: app().settings?.projectInstructions === true,
         projectorOpen,
       };
     },

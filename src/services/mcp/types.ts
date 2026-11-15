@@ -130,6 +130,10 @@ export interface McpProjectionState {
   sections: McpSection[];
   transpose: number;
   capo: number;
+  /** Instructions of the item on display (empty: none). */
+  instructions: string;
+  /** The 'Project instructions' switch: when on, `sections` follow the instructions. */
+  projectInstructions: boolean;
   /** Is the projector (second screen) window open. */
   projectorOpen: boolean | null;
 }
@@ -165,6 +169,42 @@ export interface McpChordProReport {
   title: string;
   kind: string;
   sectionCount: number;
+  /** Groups of sections with the same lyrics: write such a section once and repeat it with instructions. */
+  repeatedSections: string[][];
+}
+
+/** A section of a song that instructions can name. */
+export interface McpSongSection {
+  /** The name instructions use ("Verse 1", "Chorus"; "verse" for an unlabelled verse). */
+  name: string;
+  /** verse, chorus, bridge, grid, tab, abc, … (the ChordPro section directive). */
+  kind: string;
+  /** Repeat count and transposition written in the section's own tag, e.g. {soc: Chorus 2x +1}. */
+  repeat?: number;
+  transpose?: number;
+  /** For a part or verse of a score: the score's name, which plays this part when named. */
+  partOf?: string;
+  firstLine: string;
+}
+
+export interface McpSongStructure {
+  sections: McpSongSection[];
+  /** The song's own order as instructions: one line per section, plus its comment lines. */
+  defaultInstructions: string;
+  repeatedSections: string[][];
+}
+
+/** One line of an instruction text as the app reads it. */
+export type McpInstructionLine =
+  /** `exact`: the line names this section; false: it fell back to a section of the same base name. */
+  { line: string; kind: "section"; section: string; repeat: number; transpose: number; exact: boolean } | { line: string; kind: "note" | "empty" };
+
+export interface McpInstructionAnalysis {
+  lines: McpInstructionLine[];
+  /** The text as the app's instructions editor saves it (names normalized, adjacent repeats merged). */
+  normalized: string;
+  /** The resulting order: sections with their repeat count and transposition, and notes. */
+  order: ({ section: string; repeat: number; transpose: number } | { note: string })[];
 }
 
 export interface McpUiState {
@@ -210,6 +250,10 @@ export interface McpHost {
   /** All hits of the app's own song search, best first. */
   searchSongs(query: string): Promise<McpSearchHit[]>;
   analyzeChordPro(text: string, system: string): McpChordProReport;
+  /** The sections instructions can name, and the song's own order. Null: no such song. */
+  songStructure(songId: string): McpSongStructure | null;
+  /** Reads an instruction text against a song as the app does. Null: no such song. */
+  analyzeInstructions(songId: string, instructions: string): McpInstructionAnalysis | null;
   /**
    * "recognized": the app knows the chord in this chord system (it can transpose it and
    * draw its diagram). "chord-shaped": it is stored and shown as written, but the app
@@ -265,9 +309,10 @@ export interface McpHost {
   /**
    * Changes the working list as the user's own edits do (one undo step, the source and the
    * selection kept); `sources[i]` is the current index item i comes from, null for a new one.
-   * Nothing is selected or projected.
+   * Nothing is selected or projected. The items at the `storeInstructions` indices also store
+   * their instructions in the selected leader's profile.
    */
-  editPlaylist(items: McpPlaylistItem[], sources: (number | null)[]): Promise<void>;
+  editPlaylist(items: McpPlaylistItem[], sources: (number | null)[], storeInstructions?: number[]): Promise<void>;
   /** Loads a stored playlist into the working list, as the Load dialog does. False: no such list. */
   loadStoredPlaylist(leaderId: string, ref: McpStoredPlaylistRef): Promise<boolean>;
   /**

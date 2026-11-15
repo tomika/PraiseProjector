@@ -13,7 +13,7 @@ import { createMcpDispatcher } from "../protocol";
 import { SETTINGS_CATALOG, describeSettings, validateSettingsPatch } from "../settingsCatalog";
 import { McpContent, createMcpResources, createMcpTools, diagnose, findSongs, foldPattern, isRiskyPattern, lyricsOf, resolveLeader } from "../tools";
 import { McpToolError } from "../types";
-import { FakeState, fakeHost, fakeState } from "./fakeHost";
+import { FakeState, fakeHost, fakeState, song } from "./fakeHost";
 
 const content: McpContent = {
   strings: { en: enStrings as Record<string, string>, hu: huStrings as Record<string, string> },
@@ -522,6 +522,129 @@ test("song versions are listed and compared as line diffs", async () => {
     /\+\+\+ The flock \(this computer\)/
   );
   assert.match((await call("compare_songs", { songId: "s1", version: 0, otherVersion: 0 })).text, /two different texts/);
+});
+
+test("instructions: the song's sections and own order, a text checked line by line, and keeping them in the profile", async () => {
+  const state = fakeState();
+  state.songs.push(
+    song(
+      "i1",
+      "Hálaének",
+      "{title: Hálaének}\n{key: G}\n{start_of_verse: Verse 1}\n[G]Első vers[D]szak\n{end_of_verse}\n{start_of_chorus: Chorus}\n[C]Refrén [G]sor\n{end_of_chorus}\n{start_of_verse: Verse 2}\n[G]Második\n{end_of_verse}\n{c: Chorus}\n{c: halkan a végén}",
+      "G"
+    )
+  );
+  state.preferences.set("own1/i1", { transpose: 1 });
+  const { call } = server(state);
+
+  const read = (await call("get_song", { songId: "i1" })).value as {
+    sections: { name: string; kind: string; firstLine: string }[];
+    defaultInstructions: string;
+    repeatedSections: string[][];
+    selectedLeaderItem: { transpose: number; instructions: string };
+  };
+  assert.deepEqual(
+    read.sections.map((section) => [section.name, section.kind, section.firstLine]),
+    [
+      ["Verse 1", "verse", "Első versszak"],
+      ["Chorus", "chorus", "Refrén sor"],
+      ["Verse 2", "verse", "Második"],
+    ]
+  );
+  // The comment line naming the chorus repeats it in the song's own order.
+  assert.equal(read.defaultInstructions, "Verse 1\nChorus\nVerse 2\nChorus\nhalkan a végén");
+  assert.deepEqual(read.repeatedSections, []);
+  assert.equal(read.selectedLeaderItem.transpose, 1);
+
+  // The song's own comment lines are notes on purpose: no warnings for them.
+  const own = (await call("check_instructions", { songId: "i1" })).value as {
+    instructions: string;
+    order: ({ section: string } | { note: string })[];
+    warnings?: string[];
+  };
+  assert.match(own.instructions, /song's own order/);
+  assert.deepEqual(
+    own.order.map((step) => ("section" in step ? step.section : `(${step.note})`)),
+    ["Verse 1", "Chorus", "Verse 2", "Chorus", "(halkan a végén)"]
+  );
+  assert.equal(own.warnings, undefined);
+
+  const checked = (await call("check_instructions", { songId: "i1", instructions: "verse  1\nChorus\nChorus +2\nlassan\nVerse 3 2x", transpose: 2 }))
+    .value as {
+    order: ({ section: string; repeat: number; transpose: number; key?: string } | { note: string })[];
+    normalized: string;
+    warnings: string[];
+    unusedSections: string[];
+    projector: string;
+  };
+  // The section's transposition adds to the item's own (+2): the last chorus is at +4.
+  assert.deepEqual(checked.order, [
+    { section: "Verse 1", repeat: 1, transpose: 0, key: "G+2" },
+    { section: "Chorus", repeat: 1, transpose: 0, key: "G+2" },
+    { section: "Chorus", repeat: 1, transpose: 2, key: "G+4" },
+    { note: "lassan" },
+    { section: "Verse 1", repeat: 2, transpose: 0, key: "G+2" },
+  ]);
+  assert.equal(checked.normalized, "Verse 1\nChorus\nChorus +2\nlassan\nVerse 1 2x");
+  // "verse  1" (two spaces) names Verse 1 exactly; only the note and the fallback are warned about.
+  assert.equal(checked.warnings.length, 2);
+  assert.match(checked.warnings[0], /'lassan' names no section of this song, so it is only a note[\s\S]*Verse 1, Chorus, Verse 2/);
+  assert.match(checked.warnings[1], /'Verse 3 2x' is read as the section 'Verse 1'/);
+  assert.deepEqual(checked.unusedSections, ["Verse 2"]);
+  assert.match(checked.projector, /'projectInstructions' is off/);
+  state.settings.projectInstructions = true;
+  assert.match(((await call("check_instructions", { songId: "i1" })).value as { projector: string }).projector, /is on/);
+
+  // Set on the working list and kept in the selected leader's profile.
+  state.playlist = [{ songId: "i1", title: "Hálaének", transpose: 1, capo: -1, instructions: "" }];
+  const revision = ((await call("get_playlist")).value as { revision: string }).revision;
+  const edited = await call("edit_playlist", {
+    revision,
+    operations: [{ op: "update", index: 0, instructions: "Verse 1\nChorus 2x", storeInProfile: true }],
+  });
+  assert.equal(edited.isError, false, edited.text);
+  assert.equal(state.playlist[0].instructions, "Verse 1\nChorus 2x");
+  assert.equal(state.preferences.get("own1/i1")?.instructions, "Verse 1\nChorus 2x");
+  assert.match(
+    state.confirmations.at(-1)!,
+    /instructions kept in Kiss Tamás's profile: Verse 1 \/ Chorus 2x[\s\S]*stay there even if the playlist change is undone/
+  );
+  // A new item can keep its instructions too; a move cannot.
+  const next = ((await call("get_playlist")).value as { revision: string }).revision;
+  assert.equal(
+    (await call("edit_playlist", { revision: next, operations: [{ op: "add", songId: "s3", instructions: "Verse", storeInProfile: true }] })).isError,
+    false
+  );
+  assert.equal(state.preferences.get("own1/s3")?.instructions, "Verse");
+  const after = ((await call("get_playlist")).value as { revision: string }).revision;
+  assert.match(
+    (await call("edit_playlist", { revision: after, operations: [{ op: "move", from: 0, to: 1, storeInProfile: true }] })).text,
+    /'storeInProfile' belongs to add and update/
+  );
+  // Not for stored lists, and not without a selected leader.
+  state.stored.set("own1/2026-10-04", { name: "2026.10.04", items: [...state.playlist] });
+  const storedRevision = ((await call("get_stored_playlist", { date: "2026-10-04" })).value as { revision: string }).revision;
+  assert.match(
+    (
+      await call("edit_stored_playlist", {
+        date: "2026-10-04",
+        revision: storedRevision,
+        operations: [{ op: "update", index: 0, storeInProfile: true }],
+      })
+    ).text,
+    /'storeInProfile' works on the playlist loaded in the app/
+  );
+});
+
+test("a ChordPro text with a section written out twice is reported", async () => {
+  const { call } = server(fakeState());
+  const report = (
+    await call("validate_chordpro", {
+      text: "{title: X}\n{start_of_chorus: Chorus 2x}\n[G]Ugyanaz a sor\n{end_of_chorus}\n{start_of_verse: Verse}\n[D]Más\n{end_of_verse}\n{start_of_chorus: Refrain}\n[G]Ugyanaz a  sor\n{end_of_chorus}",
+    })
+  ).value as { repeatedSections: string[][] };
+  // By the names instructions use: the tag's repeat count is not part of the name.
+  assert.deepEqual(report.repeatedSections, [["Chorus", "Refrain"]]);
 });
 
 test("help comes from the tutorials, is searchable in both languages and can be pointed at", async () => {
