@@ -30,10 +30,20 @@ exports.default = async function afterPackLinuxNoSandbox(context) {
     await fs.unlink(executablePath);
   }
 
+  // Native Wayland (Electron's default in a Wayland session since v38, and the only
+  // GNOME session since Ubuntu 26.04) neither reports a window's global position nor
+  // honours a requested one. The projector would then exclude the wrong monitor and
+  // open on the main window's monitor. XWayland keeps X11 placement semantics, so it
+  // is used whenever an X display is available. An --ozone-platform=... argument
+  // passed by the user comes later on the command line and therefore still wins.
   const wrapper = `#!/bin/sh
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 export ELECTRON_DISABLE_SANDBOX=1
-exec "$HERE/${executableName}.bin" --no-sandbox --disable-gpu-sandbox "$@"
+PP_OZONE_ARG=""
+if [ -n "$DISPLAY" ]; then
+  PP_OZONE_ARG="--ozone-platform=x11"
+fi
+exec "$HERE/${executableName}.bin" --no-sandbox --disable-gpu-sandbox $PP_OZONE_ARG "$@"
 `;
 
   await fs.writeFile(executablePath, wrapper, "utf8");

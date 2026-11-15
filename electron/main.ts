@@ -1166,6 +1166,15 @@ app.on("ready", () => {
   console.log(`[Main] userData: ${app.getPath("userData")}`);
   console.log(`[Main] appData: ${app.getPath("appData")}`);
   console.log(`[Main] exe: ${app.getPath("exe")}`);
+  if (process.platform === "linux") {
+    const ozonePlatform = app.commandLine.getSwitchValue("ozone-platform") || "auto";
+    const sessionType = process.env.XDG_SESSION_TYPE || "unknown";
+    console.log(`[Main] Linux session: ${sessionType}, ozone-platform: ${ozonePlatform}`);
+    if (sessionType === "wayland" && ozonePlatform !== "x11") {
+      // Native Wayland hides window positions, so projector monitor selection cannot work.
+      console.warn("[Main] Native Wayland: the projector may open on the main window's monitor; start with --ozone-platform=x11");
+    }
+  }
   console.log(
     `[Main] trusted external domains: ${TRUSTED_EXTERNAL_DOMAINS.size > 0 ? Array.from(TRUSTED_EXTERNAL_DOMAINS).join(", ") : "(none configured)"}`
   );
