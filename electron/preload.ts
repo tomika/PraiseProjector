@@ -255,6 +255,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send("webserver-api-response", response);
   },
 
+  // Close guard: while registered, closing the main window first asks the page, which
+  // answers whether the window may close.
+  setCloseGuard: (registered: boolean) => {
+    ipcRenderer.send("close-guard", registered);
+  },
+  onCloseRequested: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on("close-requested", subscription);
+    return () => {
+      ipcRenderer.removeListener("close-requested", subscription);
+    };
+  },
+  answerCloseRequest: (proceed: boolean) => {
+    ipcRenderer.send("close-guard-answer", proceed);
+  },
+
   // Settings sync - frontend pushes settings to backend
   syncSettings: (settings: Settings) => {
     ipcRenderer.send("sync-settings", settings);

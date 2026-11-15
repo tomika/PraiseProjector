@@ -2351,37 +2351,66 @@ const AppContent: React.FC = () => {
   const nextSongForFlip = getAdjacentSongForFlip(1);
 
   // Check if current playlist has unsaved changes for a remembered schedule date
-  // and offer to save before syncing. Returns true to proceed with sync, false to cancel.
-  const checkAndSaveScheduledPlaylist = useCallback(async (): Promise<boolean> => {
-    const origin = leftPanelRef.current?.getPlaylistOrigin();
-    if (!origin) return true;
+  // and offer to save before syncing (or closing the program). Returns true to proceed,
+  // false to cancel.
+  const checkAndSaveScheduledPlaylist = useCallback(
+    async (before: "sync" | "exit" = "sync"): Promise<boolean> => {
+      const origin = leftPanelRef.current?.getPlaylistOrigin();
+      if (!origin) return true;
 
-    // Public playlist sources are read-only. For own sources, update the exact
-    // leader/date the working copy came from, independently of the selected leader.
-    const sourceLeader = Database.getInstance().getLeaderById(origin.leaderId);
-    if (!sourceLeader) return true;
-    const scheduleDate = new Date(origin.scheduledAt);
+      // Public playlist sources are read-only. For own sources, update the exact
+      // leader/date the working copy came from, independently of the selected leader.
+      const sourceLeader = Database.getInstance().getLeaderById(origin.leaderId);
+      if (!sourceLeader) return true;
+      const scheduleDate = new Date(origin.scheduledAt);
 
-    const currentPlaylist = leftPanelRef.current?.getCurrentPlaylist();
-    if (!currentPlaylist) return true;
+      const currentPlaylist = leftPanelRef.current?.getCurrentPlaylist();
+      if (!currentPlaylist) return true;
 
-    const savedPlaylist = sourceLeader.getPlaylist(scheduleDate);
-    if (savedPlaylist && currentPlaylist.equals(savedPlaylist)) return true; // No changes
+      const savedPlaylist = sourceLeader.getPlaylist(scheduleDate);
+      if (savedPlaylist && currentPlaylist.equals(savedPlaylist)) return true; // No changes
 
-    const question = isFavoriteScheduleDate(scheduleDate)
-      ? t("AskUpdateFavoritePlaylist").replace("{0}", favoriteNameFromLabel(savedPlaylist?.name ?? origin.label) || origin.label)
-      : t("AskUpdateScheduledPlaylist").replace("{0}", formatLocalDateLabel(scheduleDate));
-    const result = await showYesNoCancelAsync(t("UpdateScheduledPlaylist"), question, {
-      confirmText: t("UpdatePlaylistConfirm"),
+      const exit = before === "exit";
+      const question = isFavoriteScheduleDate(scheduleDate)
+        ? t(exit ? "AskUpdateFavoritePlaylistOnExit" : "AskUpdateFavoritePlaylist").replace(
+            "{0}",
+            favoriteNameFromLabel(savedPlaylist?.name ?? origin.label) || origin.label
+          )
+        : t(exit ? "AskUpdateScheduledPlaylistOnExit" : "AskUpdateScheduledPlaylist").replace("{0}", formatLocalDateLabel(scheduleDate));
+      const result = await showYesNoCancelAsync(t("UpdateScheduledPlaylist"), question, {
+        confirmText: t("UpdatePlaylistConfirm"),
+      });
+      if (result === "yes") {
+        // A favorite deleted meanwhile (e.g. on another device) is recreated with
+        // the name it was loaded with; an existing one keeps its current name.
+        const favoriteName = isFavoriteScheduleDate(scheduleDate) && !savedPlaylist ? favoriteNameFromLabel(origin.label) || undefined : undefined;
+        Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist, favoriteName);
+      }
+      return result !== "cancel";
+    },
+    [showYesNoCancelAsync, t]
+  );
+
+  // Closing the app gives the same reminder as a synchronization: a working list changed
+  // since it was loaded from (or saved to) a stored playlist can be saved there first.
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.setCloseGuard || !api.onCloseRequested || !api.answerCloseRequest) return;
+    const unsubscribe = api.onCloseRequested(() => {
+      void checkAndSaveScheduledPlaylist("exit").then(
+        (proceed) => api.answerCloseRequest?.(proceed),
+        (error) => {
+          console.error("App", "Close check failed", error);
+          api.answerCloseRequest?.(true);
+        }
+      );
     });
-    if (result === "yes") {
-      // A favorite deleted meanwhile (e.g. on another device) is recreated with
-      // the name it was loaded with; an existing one keeps its current name.
-      const favoriteName = isFavoriteScheduleDate(scheduleDate) && !savedPlaylist ? favoriteNameFromLabel(origin.label) || undefined : undefined;
-      Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist, favoriteName);
-    }
-    return result !== "cancel";
-  }, [showYesNoCancelAsync, t]);
+    api.setCloseGuard(true);
+    return () => {
+      api.setCloseGuard?.(false);
+      unsubscribe();
+    };
+  }, [checkAndSaveScheduledPlaylist]);
 
   const openDBSyncDialog = useCallback((continueTutorialAfterSync: boolean) => {
     continueTutorialAfterSyncRef.current = continueTutorialAfterSync;

@@ -12,7 +12,7 @@
   "toolbar_mobile_view": "Mobil nézetre váltás",
   "toolbar_logs": "Naplók megnyitása",
 
-  "playlist_load": "Lejászási lista betöltése fájlból",
+  "playlist_load": "Lejátszási lista betöltése fájlból",
   "playlist_save": "Lejátszási lista mentése fájlba",
   "playlist_add": "Kiválasztott dal hozzáadása a listához",
   "playlist_remove": "Dal törlése a lejátszási listából",
@@ -23,8 +23,8 @@
   "playlist_transpose_down": "A dal fél hanggal mélyebben játszandó (Alt+Down)",
   "playlist_capo_up": "Capo felemelése",
   "playlist_capo_down": "Capo leeresztése",
-  "playlist_load_profile": "Lejászási lista betöltése a naptárból",
-  "playlist_save_profile": "Lejátszási lista mentése a naptárba",
+  "playlist_load_profile": "Lejátszási lista betöltése a vezető naptárából vagy kedvencei közül",
+  "playlist_save_profile": "Lejátszási lista mentése a vezető naptárába vagy kedvencei közé",
 
   "format_bold": "Félkövér",
   "format_italic": "Dőlt",

@@ -269,9 +269,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-buttons button[aria-label='Load Playlist'], .playlist-buttons button[aria-label='Save Playlist']",
             tx(
               "Műsortár betöltése és mentése",
-              "A Betöltés gomb vezetői profilhoz tartozó ütemezett lista vagy mentett fájl megnyitására szolgál. A Mentés a munkalistát az aktív módtól függően a vezetői profilhoz vagy fájlba tárolja.",
+              "Ha van kiválasztott vezető, a Betöltés és a Mentés a naptárával és a kedvenceivel dolgozik (betöltéskor a többi saját és a nyilvános vezető listái is választhatók); vezető nélkül fájlba ment és fájlból tölt be. A munkalista másolat: amíg vissza nem mented, a módosítása nem változtatja meg a tárolt listát.",
               "Load and save playlists",
-              "Use Load to open a scheduled leader playlist or a saved file. Save stores the working list in the leader profile or in a file, depending on the active mode."
+              "With a leader selected, Load and Save work with the leader's calendar and favorites (Load also offers the other own and the public leaders' lists); with no leader selected, they use a playlist file. The working list is a copy: changing it does not change the stored list until you save it there."
             ),
             {
               highlightTargets: [".playlist-buttons button[aria-label='Load Playlist']", ".playlist-buttons button[aria-label='Save Playlist']"],

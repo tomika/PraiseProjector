@@ -42,7 +42,6 @@ const MOBILE_LONG_PRESS_TIMEOUT_MS = 420;
 const MOBILE_TOUCH_MOVE_TOLERANCE_PX = 10;
 const MOBILE_SIGNIFICANT_DRAG_DISTANCE_PX = 24;
 const MOBILE_NATIVE_CONTEXT_MENU_SUPPRESS_MS = 2600;
-const PUBLIC_LEADER_INITIAL_LOAD_TIMEOUT_MS = 4_000;
 
 type MobilePlaylistTouchSession = {
   sourceIndex: number;
@@ -181,7 +180,6 @@ interface PlaylistPanelState {
   showScheduleDialog: boolean;
   scheduleDialogMode: "save" | "load" | null;
   playlistOrigin: PlaylistOrigin | null; // Exact leader/date/label the working playlist was loaded from or saved to
-  loadingPublicLeaders: boolean;
   /** Render-only epoch: public leaders live in Database rather than component state. */
   publicLeadersRevision: number;
   contextMenu: { position: { x: number; y: number }; targetIndex: number; showShortcutHints: boolean } | null;
@@ -214,7 +212,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       showScheduleDialog: false,
       scheduleDialogMode: null,
       playlistOrigin,
-      loadingPublicLeaders: false,
       publicLeadersRevision: 0,
       contextMenu: null,
     };
@@ -842,9 +839,22 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return message === "cancelled" || message === "canceled" || message === "cancel" || message.includes("cancelled") || message.includes("canceled");
   }
 
-  movePlaylistItem(dragIndex: number, hoverIndex: number) {
+  // A reordering drag moves the item at every row it passes; it is one undo step,
+  // recorded at its first move.
+  private dragMoveRecorded = false;
+
+  private beginReorderDrag = () => {
+    this.dragMoveRecorded = false;
+  };
+
+  private moveDraggedItem = (dragIndex: number, hoverIndex: number) => {
+    this.movePlaylistItem(dragIndex, hoverIndex, !this.dragMoveRecorded);
+    this.dragMoveRecorded = true;
+  };
+
+  movePlaylistItem(dragIndex: number, hoverIndex: number, recordUndo = true) {
     const { currentPlaylist, selectedItems } = this.state;
-    this.recordPlaylistSnapshotForUndo();
+    if (recordUndo) this.recordPlaylistSnapshotForUndo();
     const updatedPlaylist = new Playlist(currentPlaylist.name, [...currentPlaylist.items], currentPlaylist.id);
     const [draggedItem] = updatedPlaylist.items.splice(dragIndex, 1);
     updatedPlaylist.items.splice(hoverIndex, 0, draggedItem);
@@ -1011,32 +1021,24 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.openItemContextMenuAt(index, event.clientX, event.clientY);
   }
 
+  // Opening the menu leaves the selection, and so what is projected, as it is. Its
+  // commands apply to the selection when the menu is opened on a selected item, and to
+  // the item it is opened on otherwise (see contextMenuIndices).
   private openItemContextMenuAt(index: number, clientX: number, clientY: number) {
-    const { currentPlaylist, selectedItems, focusedIndex, selectionAnchor } = this.state;
-    const item = currentPlaylist.items[index];
-
-    const shouldSelect = !selectedItems.has(index);
-    const nextSelectedItems = shouldSelect ? new Set<number>([index]) : selectedItems;
-    const nextFocusedIndex = shouldSelect ? index : focusedIndex;
-    const nextSelectionAnchor = shouldSelect ? index : selectionAnchor;
-
-    this.setState(
-      {
-        selectedItems: nextSelectedItems,
-        focusedIndex: nextFocusedIndex,
-        selectionAnchor: nextSelectionAnchor,
-        contextMenu: {
-          position: { x: clientX, y: clientY },
-          targetIndex: index,
-          showShortcutHints: PlaylistPanel.hasRoomForShortcutHints(clientX),
-        },
+    this.setState({
+      contextMenu: {
+        position: { x: clientX, y: clientY },
+        targetIndex: index,
+        showShortcutHints: PlaylistPanel.hasRoomForShortcutHints(clientX),
       },
-      () => {
-        if (shouldSelect) {
-          this.emitPlaylistSelectionChange(item, index, "mouse", true);
-        }
-      }
-    );
+    });
+  }
+
+  /** The items the open context menu's commands apply to. */
+  private contextMenuIndices(): number[] {
+    const target = this.state.contextMenu?.targetIndex ?? -1;
+    if (target < 0 || target >= this.state.currentPlaylist.items.length) return [];
+    return this.state.selectedItems.has(target) ? this.getSelectedIndices() : [target];
   }
 
   handleContainerContextMenu(event: React.MouseEvent<HTMLDivElement>) {
@@ -1191,6 +1193,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
     // Check if we can move all selected items up
     if (selectedIndices[0] <= 0) return;
+    this.recordPlaylistSnapshotForUndo();
 
     // Move all selected items up by 1 position in a single batch
     const newItems = [...currentPlaylist.items];
@@ -1229,6 +1232,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     // Check if we can move all selected items down
     const lastIndex = selectedIndices[selectedIndices.length - 1];
     if (lastIndex >= currentPlaylist.items.length - 1) return;
+    this.recordPlaylistSnapshotForUndo();
 
     // Move all selected items down by 1 position in a single batch
     const newItems = [...currentPlaylist.items];
@@ -1397,8 +1401,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.updatePlaylistItems(newItems, selectedIndices);
   }
 
-  handleSetTranspose(value: number) {
-    const selectedIndices = this.getSelectedIndices();
+  handleSetTranspose(value: number, selectedIndices: number[] = this.getSelectedIndices()) {
     if (selectedIndices.length === 0) return;
 
     const { currentPlaylist } = this.state;
@@ -1413,8 +1416,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.updatePlaylistItems(newItems, selectedIndices);
   }
 
-  handleSetCapo(value: number) {
-    const selectedIndices = this.getSelectedIndices();
+  handleSetCapo(value: number, selectedIndices: number[] = this.getSelectedIndices()) {
     if (selectedIndices.length === 0) return;
 
     const { currentPlaylist } = this.state;
@@ -1675,52 +1677,26 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     }
   }
 
-  // Load playlist - matching C# OnPlayListLoad
+  // Load playlist - matching C# OnPlayListLoad. Like Save: from the calendar when a
+  // leader is selected (the dialog also offers the other own and the public leaders),
+  // from a file otherwise.
   async handleLoadPlaylist() {
-    const db = Database.getInstance();
-    // The load dialog can pick any own OR public leader, so it opens whenever
-    // at least one exists; the file picker is the fallback only when none do.
-    const hasAnyLeader = !!this.props.selectedLeader || db.getAllLeaders().length > 0 || db.getPublicLeaders().length > 0;
-
-    if (hasAnyLeader) {
-      // Public profiles are a separate read-only mirror, so refresh them whenever
-      // the picker is opened instead of relying on an unrelated database sync.
-      // Existing local data lets the dialog open immediately.
-      const refreshPromise = db.updatePublicLeaders({ supersede: true });
-      this.setState({
-        showScheduleDialog: true,
-        scheduleDialogMode: "load",
-      });
-      void refreshPromise.then(() => {
-        if (!this.mounted || !this.state.showScheduleDialog || this.state.scheduleDialogMode !== "load") return;
-        this.setState((state) => ({ publicLeadersRevision: state.publicLeadersRevision + 1 }));
-      });
-    } else {
-      // On first use there is no dialog to show yet. Give the user immediate
-      // feedback on the Load button and cap the network wait so offline use
-      // falls back to the file picker promptly.
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), PUBLIC_LEADER_INITIAL_LOAD_TIMEOUT_MS);
-      this.setState({ loadingPublicLeaders: true });
-      try {
-        await db.updatePublicLeaders({ supersede: true, signal: controller.signal });
-      } finally {
-        window.clearTimeout(timeout);
-      }
-      if (!this.mounted) return;
-      this.setState({ loadingPublicLeaders: false });
-
-      const currentDb = Database.getInstance();
-      if (currentDb.getAllLeaders().length > 0 || currentDb.getPublicLeaders().length > 0) {
-        this.setState({
-          showScheduleDialog: true,
-          scheduleDialogMode: "load",
-        });
-      } else {
-        // Load from file when neither local nor freshly fetched leaders exist.
-        await this.loadPlaylistFromFile();
-      }
+    if (!this.props.selectedLeader) {
+      await this.loadPlaylistFromFile();
+      return;
     }
+    // Public profiles are a separate read-only mirror, so refresh them whenever
+    // the picker is opened instead of relying on an unrelated database sync.
+    // Existing local data lets the dialog open immediately.
+    const refreshPromise = Database.getInstance().updatePublicLeaders({ supersede: true });
+    this.setState({
+      showScheduleDialog: true,
+      scheduleDialogMode: "load",
+    });
+    void refreshPromise.then(() => {
+      if (!this.mounted || !this.state.showScheduleDialog || this.state.scheduleDialogMode !== "load") return;
+      this.setState((state) => ({ publicLeadersRevision: state.publicLeadersRevision + 1 }));
+    });
   }
 
   // Handle schedule dialog date selection. `leader` is the leader chosen inside
@@ -2233,7 +2209,6 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       editingInstructions,
       showScheduleDialog,
       scheduleDialogMode,
-      loadingPublicLeaders,
       contextMenu,
     } = this.state;
 
@@ -2245,6 +2220,17 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     const contextTargetItem = contextMenu && contextMenu.targetIndex >= 0 ? currentPlaylist.items[contextMenu.targetIndex] : null;
     const contextOnItem = !!contextMenu && contextMenu.targetIndex >= 0;
     const showShortcutHints = contextMenu?.showShortcutHints ?? false;
+    // On a selected item the menu acts on the selection, on any other item on that item only.
+    const menuIndices = contextOnItem ? this.contextMenuIndices() : [];
+    const menuOnSelection = !!contextMenu && selectedItems.has(contextMenu.targetIndex);
+    const menuCanMoveUp = menuIndices.length > 0 && menuIndices[0] > 0;
+    const menuCanMoveDown = menuIndices.length > 0 && menuIndices[menuIndices.length - 1] < currentPlaylist.items.length - 1;
+    const moveMenuItem = (delta: 1 | -1) => {
+      if (menuOnSelection) {
+        if (delta < 0) this.handleMoveUp();
+        else this.handleMoveDown();
+      } else if (contextMenu) this.movePlaylistItem(contextMenu.targetIndex, contextMenu.targetIndex + delta);
+    };
 
     const currentTranspose = contextTargetItem?.transpose ?? 0;
     const currentCapo = contextTargetItem?.capo ?? -1;
@@ -2279,8 +2265,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       ? []
       : contextOnItem
         ? [
-            { label: t("PlaylistMoveUp"), value: "move_up", disabled: isDisabled || !canMoveUp, iconClass: "fa fa-arrow-up" },
-            { label: t("PlaylistMoveDown"), value: "move_down", disabled: isDisabled || !canMoveDown, iconClass: "fa fa-arrow-down" },
+            { label: t("PlaylistMoveUp"), value: "move_up", disabled: isDisabled || !menuCanMoveUp, iconClass: "fa fa-arrow-up" },
+            { label: t("PlaylistMoveDown"), value: "move_down", disabled: isDisabled || !menuCanMoveDown, iconClass: "fa fa-arrow-down" },
             {
               label: "",
               value: "_transpose",
@@ -2295,7 +2281,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10);
-                      this.handleSetTranspose(val);
+                      this.handleSetTranspose(val, menuIndices);
                       this.hideContextMenu();
                     }}
                   >
@@ -2326,7 +2312,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10);
-                      this.handleSetCapo(val);
+                      this.handleSetCapo(val, menuIndices);
                       this.hideContextMenu();
                     }}
                   >
@@ -2340,14 +2326,14 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                 </>
               ),
             },
-            { label: t("PlaylistEditTitle"), value: "edit", disabled: isDisabled || !hasSelection, iconClass: "fa fa-pencil" },
-            { label: t("PlaylistEditInstructions"), value: "instructions", disabled: isDisabled || !hasSelection, iconClass: "fa fa-sticky-note-o" },
+            { label: t("PlaylistEditTitle"), value: "edit", disabled: isDisabled, iconClass: "fa fa-pencil" },
+            { label: t("PlaylistEditInstructions"), value: "instructions", disabled: isDisabled, iconClass: "fa fa-sticky-note-o" },
             {
-              label: t("DeleteSelected"),
+              label: menuOnSelection ? t("DeleteSelected") : t("Delete"),
               value: "remove",
-              disabled: isDisabled || !hasSelection,
+              disabled: isDisabled,
               iconClass: "fa fa-trash",
-              shortcut: showShortcutHints ? "Del" : undefined,
+              shortcut: showShortcutHints && menuOnSelection ? "Del" : undefined,
             },
             { separator: true, label: "", value: "__separator_playlist_main" },
             {
@@ -2380,22 +2366,16 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               <button
                 className="btn btn-light"
                 aria-label="Load Playlist"
-                title={this.props.tt("playlist_load")}
+                title={this.props.tt(this.props.selectedLeader ? "playlist_load_profile" : "playlist_load")}
                 onClick={this.handleLoadPlaylist}
-                disabled={isDisabled || loadingPublicLeaders}
+                disabled={isDisabled}
               >
-                {loadingPublicLeaders ? (
-                  <span className="spinner-border spinner-border-sm" role="status">
-                    <span className="visually-hidden">{t("Loading")}</span>
-                  </span>
-                ) : (
-                  <Icon type={IconType.LOAD} />
-                )}
+                <Icon type={IconType.LOAD} />
               </button>
               <button
                 className="btn btn-light"
                 aria-label="Save Playlist"
-                title={this.props.tt("playlist_save")}
+                title={this.props.tt(this.props.selectedLeader ? "playlist_save_profile" : "playlist_save")}
                 onClick={this.handleSavePlaylist}
                 disabled={isDisabled}
               >
@@ -2524,12 +2504,14 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                       hasInstructions={!!item.instructions}
                       isSelected={selectedItems.has(index)}
                       isFocused={index === focusedIndex}
+                      isContextTarget={contextMenu?.targetIndex === index && !selectedItems.has(index)}
                       isEditing={index === editingIndex}
                       backgroundColor={this.state.itemColors.get(index) || "transparent"}
                       onClick={(event) => this.handleItemClick(index, event)}
                       onContextMenu={(event) => this.handleItemContextMenu(index, event)}
                       onLongPressContextMenu={(clientX, clientY) => this.openItemContextMenuAt(index, clientX, clientY)}
-                      moveItem={this.movePlaylistItem}
+                      moveItem={this.moveDraggedItem}
+                      onReorderDragStart={this.beginReorderDrag}
                       insertSongAtIndex={(song, targetIndex) => this.addSongToPlaylist(song, targetIndex)}
                       onTitleChange={(newTitle) => this.handleTitleChange(index, newTitle)}
                       onTitleBlur={this.handleTitleBlur}
@@ -2549,14 +2531,15 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
               onSelect={(value) => {
                 if (value.startsWith("transpose_set:")) {
                   const newVal = parseInt(value.split(":")[1], 10);
-                  this.handleSetTranspose(newVal);
+                  this.handleSetTranspose(newVal, menuIndices);
                 } else if (value.startsWith("capo_set:")) {
                   const newVal = parseInt(value.split(":")[1], 10);
-                  this.handleSetCapo(newVal);
+                  this.handleSetCapo(newVal, menuIndices);
                 } else
                   switch (value) {
                     case "remove":
-                      this.handleRemove();
+                      if (menuOnSelection) this.handleRemove();
+                      else if (contextOnItem) this.removePlaylistItem(contextMenu.targetIndex);
                       break;
                     case "select_all":
                       this.handleSelectAll();
@@ -2568,10 +2551,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
                       this.handleRedo();
                       break;
                     case "move_up":
-                      this.handleMoveUp();
+                      moveMenuItem(-1);
                       break;
                     case "move_down":
-                      this.handleMoveDown();
+                      moveMenuItem(1);
                       break;
                     case "edit":
                       this.setState({ editingIndex: contextMenu.targetIndex });
@@ -2613,12 +2596,16 @@ const PlaylistItemRow: React.FC<{
   hasInstructions: boolean;
   isSelected: boolean;
   isFocused: boolean;
+  /** The context menu is open on this (unselected) item. */
+  isContextTarget: boolean;
   isEditing: boolean;
   backgroundColor: string;
   onClick: (event: React.MouseEvent<HTMLTableRowElement>) => void;
   onContextMenu: (event: React.MouseEvent<HTMLTableRowElement>) => void;
   onLongPressContextMenu: (clientX: number, clientY: number) => void;
   moveItem: (dragIndex: number, hoverIndex: number) => void;
+  /** A reordering drag of this row begins. */
+  onReorderDragStart: () => void;
   insertSongAtIndex: (song: Song, index: number) => void;
   onTitleChange: (newTitle: string) => void;
   onTitleBlur: () => void;
@@ -2634,12 +2621,14 @@ const PlaylistItemRow: React.FC<{
   hasInstructions,
   isSelected,
   isFocused,
+  isContextTarget,
   isEditing,
   backgroundColor,
   onClick,
   onContextMenu,
   onLongPressContextMenu,
   moveItem,
+  onReorderDragStart,
   insertSongAtIndex,
   onTitleChange,
   onTitleBlur,
@@ -2704,7 +2693,10 @@ const PlaylistItemRow: React.FC<{
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "playlist-item",
-    item: { index, sourceIndex: index },
+    item: () => {
+      onReorderDragStart();
+      return { index, sourceIndex: index };
+    },
     canDrag: () => !dragSuppressed,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
@@ -2716,6 +2708,14 @@ const PlaylistItemRow: React.FC<{
     hover: (draggedItem: unknown, monitor) => {
       if (monitor.getItemType() !== "playlist-item") return;
       if (isPlaylistReorderDragItem(draggedItem) && draggedItem.index !== index) {
+        // Move only once the pointer passes the middle of this row: right after a swap the
+        // pointer is still over the swapped neighbour, which would otherwise swap back.
+        const pointer = monitor.getClientOffset();
+        const rect = ref.current?.getBoundingClientRect();
+        if (pointer && rect) {
+          const middle = rect.top + rect.height / 2;
+          if ((draggedItem.index < index && pointer.y < middle) || (draggedItem.index > index && pointer.y > middle)) return;
+        }
         notifyMobilePlaylistDragOverDifferentItem(draggedItem.sourceIndex);
         moveItem(draggedItem.index, index);
         draggedItem.index = index;
@@ -2748,7 +2748,13 @@ const PlaylistItemRow: React.FC<{
   const cellStyle = backgroundColor !== "transparent" ? { backgroundColor, color: getContrastTextColor(backgroundColor) } : undefined;
 
   // Create combined class names for different states
-  const rowClasses = ["playlist-row", isSelected ? "table-active" : "", isFocused ? "playlist-focused" : "", isDragging ? "dragging" : ""]
+  const rowClasses = [
+    "playlist-row",
+    isSelected ? "table-active" : "",
+    isFocused ? "playlist-focused" : "",
+    isContextTarget ? "playlist-context-target" : "",
+    isDragging ? "dragging" : "",
+  ]
     .filter(Boolean)
     .join(" ");
 

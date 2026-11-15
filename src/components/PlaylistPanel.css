@@ -154,6 +154,12 @@
   opacity: 0.5;
 }
 
+/* The context menu is open on this item without selecting it. */
+.playlist-row.playlist-context-target {
+  outline: 2px solid #007bff;
+  outline-offset: -2px;
+}
+
 .playlist-row:hover {
   background-color: #f8f9fa;
 }

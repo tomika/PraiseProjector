@@ -101,6 +101,14 @@ let ppdShutdownFinished = false;
 let quittingForUpdate = false;
 let configuredPpdWatchTimeoutSeconds: number | undefined;
 
+// Close guard: while the renderer has registered one, closing the main window first asks
+// it (e.g. whether to save a changed working playlist where it came from). It is dropped
+// when the page (re)loads and ignored while the page does not respond or an update quits.
+let closeGuardRegistered = false;
+let closeQuestionPending = false;
+let closeApproved = false;
+let quitRequested = false;
+
 type NetDisplayEncodeSettings = {
   jpegQuality?: number;
   imageScale: number;
@@ -1107,6 +1115,20 @@ const createWindow = () => {
     mainWindow.loadFile(path.join(__dirname, `../webapp/index.html`));
   }
 
+  mainWindow.on("close", (event) => {
+    if (!closeNeedsQuestion()) return;
+    event.preventDefault();
+    askToClose();
+  });
+  // A hung page could never answer: let the window close then.
+  mainWindow.on("unresponsive", () => {
+    closeGuardRegistered = false;
+  });
+  mainWindow.webContents.on("did-start-loading", () => {
+    closeGuardRegistered = false;
+    closeQuestionPending = false;
+  });
+
   mainWindow.on("closed", () => {
     // Close the log viewer window when main window closes
     closeLogViewerWindow();
@@ -1239,7 +1261,38 @@ app.on("window-all-closed", () => {
   }
 });
 
+const closeNeedsQuestion = () => !!mainWindow && closeGuardRegistered && !closeApproved && !quittingForUpdate;
+
+function askToClose(): void {
+  if (closeQuestionPending) return;
+  closeQuestionPending = true;
+  mainWindow?.webContents.send("close-requested");
+}
+
+ipcMain.on("close-guard", (_event, registered: boolean) => {
+  closeGuardRegistered = registered === true;
+});
+
+ipcMain.on("close-guard-answer", (_event, proceed: boolean) => {
+  closeQuestionPending = false;
+  if (proceed !== true) {
+    // A quit (e.g. Cmd+Q) that the question interrupted is cancelled with it.
+    quitRequested = false;
+    return;
+  }
+  closeApproved = true;
+  if (quitRequested) app.quit();
+  else mainWindow?.close();
+});
+
 app.on("before-quit", (event) => {
+  // Ask before anything shuts down, so that a cancelled quit leaves the app intact.
+  if (closeNeedsQuestion()) {
+    event.preventDefault();
+    quitRequested = true;
+    askToClose();
+    return;
+  }
   const udpServer = getUdpServerInstance();
   if (!udpServer || ppdShutdownFinished) return;
   if (quittingForUpdate) {

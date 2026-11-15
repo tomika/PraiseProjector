@@ -1022,6 +1022,8 @@
   "UpdateScheduledPlaylist": "Update Scheduled Playlist",
   "AskUpdateScheduledPlaylist": "The current playlist has changed since it was loaded/saved for {0}. Do you want to update the saved playlist before syncing?",
   "AskUpdateFavoritePlaylist": "The current playlist has changed since it was loaded from or saved to the favorite “{0}”. Do you want to update the favorite before syncing?",
+  "AskUpdateScheduledPlaylistOnExit": "The current playlist has changed since it was loaded/saved for {0}. Do you want to update the saved playlist before closing the program?",
+  "AskUpdateFavoritePlaylistOnExit": "The current playlist has changed since it was loaded from or saved to the favorite “{0}”. Do you want to update the favorite before closing the program?",
   "PlaylistTabDates": "Dates",
   "PlaylistTabFavorites": "Favorites",
   "FavoriteName": "Name",

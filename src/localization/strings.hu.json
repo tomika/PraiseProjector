@@ -1023,6 +1023,8 @@
   "UpdateScheduledPlaylist": "Ütemezett lejátszási lista frissítése",
   "AskUpdateScheduledPlaylist": "A jelenlegi lejátszási lista megváltozott amióta betöltötték/elmentették a következő dátumra: {0}. Szeretné frissíteni a mentett lejátszási listát szinkronizálás előtt?",
   "AskUpdateFavoritePlaylist": "A jelenlegi lejátszási lista megváltozott, amióta a(z) „{0}” kedvencből betöltötték vagy oda elmentették. Szeretné frissíteni a kedvenc listát szinkronizálás előtt?",
+  "AskUpdateScheduledPlaylistOnExit": "A jelenlegi lejátszási lista megváltozott amióta betöltötték/elmentették a következő dátumra: {0}. Szeretné frissíteni a mentett lejátszási listát a program bezárása előtt?",
+  "AskUpdateFavoritePlaylistOnExit": "A jelenlegi lejátszási lista megváltozott, amióta a(z) „{0}” kedvencből betöltötték vagy oda elmentették. Szeretné frissíteni a kedvenc listát a program bezárása előtt?",
   "PlaylistTabDates": "Dátumok",
   "PlaylistTabFavorites": "Kedvencek",
   "FavoriteName": "Név",

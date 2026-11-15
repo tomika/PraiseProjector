@@ -72,6 +72,11 @@ export interface IElectronAPI {
   ) => () => void;
   sendWebserverApiResponse?: (response: { requestId?: string; status?: number; data: unknown; headers?: Record<string, string> }) => void;
 
+  // Close guard: while registered, closing the main window first asks the page.
+  setCloseGuard?: (registered: boolean) => void;
+  onCloseRequested?: (callback: () => void) => () => void;
+  answerCloseRequest?: (proceed: boolean) => void;
+
   // Settings sync - frontend pushes settings to backend
   syncSettings?: (settings: Settings) => void;
 

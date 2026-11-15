@@ -23,8 +23,8 @@
   "playlist_transpose_down": "Transpose playlist item half note lower (Alt+Down)",
   "playlist_capo_up": "Raise recommended capo value of playlist item",
   "playlist_capo_down": "Lower recommended capo value of playlist item",
-  "playlist_load_profile": "Load leader's playlist from calendar",
-  "playlist_save_profile": "Save leader's playlist into calendar",
+  "playlist_load_profile": "Load a playlist from the leader's calendar or favorites",
+  "playlist_save_profile": "Save the playlist into the leader's calendar or favorites",
 
   "format_bold": "Bold",
   "format_italic": "Italic",
