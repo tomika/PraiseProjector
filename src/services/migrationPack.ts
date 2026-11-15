@@ -2,7 +2,9 @@ import * as t from "io-ts";
 import localforage from "localforage";
 import { decode, parseAndDecode } from "../../common/io-utils";
 import { Database } from "../../db-common/Database";
-import { COPY_INBOX, keptCopyInboxKey, parseDatabaseCopyKey } from "../../db-common/databaseCopies";
+import { databaseStorage } from "../../db-common/DatabaseStorage";
+import { COPY_INBOX, keptCopyInboxKey, parseDatabaseCopyKey, type DatabaseCopySource } from "../../db-common/databaseCopies";
+import { isAccountKey } from "../../db-common/partitionedFormat";
 
 /**
  * A `.ppmigrate` pack is the backup file written when the web app moved between
@@ -101,6 +103,46 @@ export async function readMigrationPackContents(text: string): Promise<{ databas
     });
   }
   return { databases: databases.sort((left, right) => left.username.localeCompare(right.username)), copies };
+}
+
+/**
+ * A pack of the databases stored in the old format, saved before converting
+ * them so they can be imported again ("Import database"). Values are taken
+ * unchanged from storage. One that is not a readable database, and a
+ * localStorage copy differing from the IndexedDB one, go in as `database-copy`
+ * entries: an import keeps those aside instead of failing on them.
+ */
+export async function createLegacyMigrationPack(): Promise<string> {
+  const stored = JSON.parse(await databaseStorage.exportRecoveryData()) as {
+    indexedDb: { key: unknown; value: unknown }[];
+    localStorage: { key: string; value: string }[];
+  };
+  const accounts = new Map<string, { payload: string; source: DatabaseCopySource }>();
+  for (const { key, value } of stored.indexedDb) {
+    const payload = typeof value === "string" ? value : JSON.stringify(value);
+    if (isAccountKey(key) && payload !== undefined) accounts.set(key, { payload, source: "indexeddb-legacy" });
+  }
+  const entries: t.TypeOf<typeof migrationPackCodec>["entries"] = [];
+  const add = async (kind: "database" | "database-copy", key: string, payload: string) => {
+    const sha256 = await sha256Hex(payload);
+    if (sha256 === null) throw new Error("Web Crypto is not available to checksum the backup");
+    entries.push({ kind, key, payload, sha256 });
+  };
+  for (const { key, value } of stored.localStorage) {
+    const indexed = accounts.get(key);
+    if (!indexed) accounts.set(key, { payload: value, source: "localStorage" });
+    else if (indexed.payload !== value) await add("database-copy", `${key}#localStorage`, value);
+  }
+  for (const [key, { payload, source }] of accounts) {
+    let readable = true;
+    try {
+      summarizeDatabaseJson(payload);
+    } catch {
+      readable = false;
+    }
+    await (readable ? add("database", key, payload) : add("database-copy", `${key}#${source}`, payload));
+  }
+  return JSON.stringify({ format: "pp-site-migration-v1", entries });
 }
 
 /** Keeps a pack's further stored copies (see readMigrationPackContents); keeping one again changes nothing. */

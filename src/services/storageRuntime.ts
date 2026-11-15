@@ -29,3 +29,34 @@ export async function storageRuntimePolicy(): Promise<StoragePolicy> {
 export function prepareStorageForThisRuntime(policy: StoragePolicy): Promise<StorageMode | null> {
   return databaseStorage.prepareForRuntime(policy);
 }
+
+const CHOICE_REQUEST_KEY = "pp-storage-choice-request";
+
+/** True where the old format was kept by an explicit choice that can still be
+ * changed: Electron, until it converts (About → storage choice). */
+export async function canOfferStorageConversion(): Promise<boolean> {
+  return (await storageRuntimePolicy()) === "choice" && (await databaseStorage.getChoice()) === "legacy";
+}
+
+/** Asks the next start of this window to show the storage choice again. The
+ * choice converts every account, so it runs before the application mounts.
+ * False when the request could not be stored (then a reload would not ask). */
+export function requestStorageChoiceOnReload(): boolean {
+  try {
+    sessionStorage.setItem(CHOICE_REQUEST_KEY, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True once after requestStorageChoiceOnReload. */
+export function takeStorageChoiceRequest(): boolean {
+  try {
+    const requested = sessionStorage.getItem(CHOICE_REQUEST_KEY) === "1";
+    sessionStorage.removeItem(CHOICE_REQUEST_KEY);
+    return requested;
+  } catch {
+    return false;
+  }
+}

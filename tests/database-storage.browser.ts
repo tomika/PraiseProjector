@@ -12,7 +12,8 @@ import { LocalizationProvider } from "../src/localization/LocalizationContext";
 import { canAutomaticallyUpgradeAndroidStorage, includesPartitionedStorage } from "../src/services/androidStorageUpgrade";
 import strings from "../src/localization/strings.en.json";
 import { FileSaveUnsupportedError, saveGeneratedFile } from "../src/services/fileSave";
-import { keepDatabaseCopies, readMigrationPackContents } from "../src/services/migrationPack";
+import { createLegacyMigrationPack, keepDatabaseCopies, readMigrationPackContents } from "../src/services/migrationPack";
+import { canOfferStorageConversion, requestStorageChoiceOnReload } from "../src/services/storageRuntime";
 import { COPY_INBOX, keptCopyEntryKey, parseDatabaseCopyKey } from "../db-common/databaseCopies";
 import "bootstrap/dist/css/bootstrap.min.css";
 
@@ -237,8 +238,12 @@ function unmountGate() {
   setRuntime(false);
 }
 function checkBox(index: number) {
-  const inputs = host!.querySelectorAll<HTMLInputElement>('.storage-choice-confirm input[type="checkbox"]');
+  const inputs = host!.querySelectorAll<HTMLInputElement>('.storage-choice-acknowledgments input[type="checkbox"]');
   inputs[index].click();
+}
+/** The optional backup file before converting; ticked by default. */
+function backupFileBox() {
+  return host!.querySelector<HTMLInputElement>(".storage-choice-backup-file input")!;
 }
 function choiceButton(mode: "partitioned" | "legacy") {
   return host!.querySelector<HTMLButtonElement>(`.storage-choice-action[data-mode="${mode}"]`)!;
@@ -875,7 +880,9 @@ async function run() {
     assert(last.getBoundingClientRect().bottom <= window.innerHeight + 1);
     await fetch("/capture?name=storage-choice-phone");
     let confirm = await openConfirmation("partitioned");
-    equal(host!.querySelectorAll('.storage-choice-confirm input[type="checkbox"]').length, 2);
+    equal(host!.querySelectorAll('.storage-choice-acknowledgments input[type="checkbox"]').length, 2);
+    // The backup file is optional (ticked by default) and does not gate the confirmation.
+    assert(backupFileBox().checked);
     assert(confirm.disabled);
     await waitFor(() => dialog.inert);
     await fetch("/capture?name=storage-choice-confirm-phone");
@@ -892,6 +899,7 @@ async function run() {
     assert(confirm.disabled);
     checkBox(1);
     await waitFor(() => !confirm.disabled);
+    backupFileBox().click();
     confirm.click();
     await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
     equal(await databaseStorage.getChoice(), "partitioned");
@@ -905,7 +913,9 @@ async function run() {
     await mountGate();
     await fetch("/capture?name=storage-choice-desktop");
     const confirm = await openConfirmation("legacy");
-    equal(host!.querySelectorAll('.storage-choice-confirm input[type="checkbox"]').length, 3);
+    equal(host!.querySelectorAll('.storage-choice-acknowledgments input[type="checkbox"]').length, 3);
+    // Keeping the old format converts nothing, so there is no backup option.
+    assert(!host!.querySelector(".storage-choice-backup-file"));
     checkBox(1);
     checkBox(2);
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -942,6 +952,107 @@ async function run() {
     equal(await databaseStorage.getChoice(), "legacy");
     unmountGate();
   });
+  await test("a kept old format can be converted later from About, saving a backup file first unless declined", async () => {
+    const stored = await appLegacy.getItem<string>(account);
+    assert(typeof stored === "string");
+    setRuntime(true);
+    equal(await canOfferStorageConversion(), true);
+    setRuntime(false);
+    equal(await canOfferStorageConversion(), false);
+    // Cancel leaves the kept old format as it is.
+    assert(requestStorageChoiceOnReload());
+    await mountGate();
+    host!.querySelector<HTMLButtonElement>(".storage-choice-cancel button")!.click();
+    await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
+    equal(await databaseStorage.getChoice(), "legacy");
+    unmountGate();
+    // The request opens the choice once, also under StrictMode's double effects.
+    requestStorageChoiceOnReload();
+    await mountGate(true, true, true);
+    let confirm = await openConfirmation("partitioned");
+    checkBox(0);
+    checkBox(1);
+    await waitFor(() => !confirm.disabled);
+    // A cancelled backup file does not start the conversion.
+    let savedName = "";
+    let savedData: ArrayBuffer | null = null;
+    const api = window.electronAPI as unknown as {
+      saveDatabaseFile: (data: ArrayBuffer, name?: string) => Promise<{ success: boolean; error?: string }>;
+    };
+    api.saveDatabaseFile = async () => ({ success: false, error: "Cancelled" });
+    confirm.click();
+    await waitFor(() => !!host!.querySelector(".storage-choice-confirm .storage-choice-status") && !confirm.disabled);
+    equal(await databaseStorage.getChoice(), "legacy");
+    // Neither does a failed one.
+    api.saveDatabaseFile = async () => ({ success: false, error: "Disk full" });
+    confirm.click();
+    await waitFor(() => !!host!.querySelector('.storage-choice-confirm [role="alert"]') && !confirm.disabled);
+    equal(await databaseStorage.getChoice(), "legacy");
+    api.saveDatabaseFile = async (data, name) => {
+      savedData = data;
+      savedName = name ?? "";
+      return { success: true };
+    };
+    confirm.click();
+    await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
+    equal(await databaseStorage.getChoice(), "partitioned");
+    assert(savedName.endsWith(".ppmigrate"), savedName);
+    // The file is a pack "Import database" reads, holding the database unchanged.
+    const pack = await readMigrationPackContents(new TextDecoder().decode(savedData!));
+    equal(
+      pack?.databases.map((database) => [database.username, database.json]),
+      [["user", stored]]
+    );
+    equal(pack?.copies, []);
+    unmountGate();
+    // Converted: nothing to offer, and a stale request is ignored.
+    setRuntime(true);
+    equal(await canOfferStorageConversion(), false);
+    requestStorageChoiceOnReload();
+    await mountGate(false);
+    unmountGate();
+    // Declining the backup converts without saving a file.
+    await resetApp();
+    await appLegacy.setItem(account, JSON.stringify(state()));
+    await databaseStorage.choose("legacy");
+    requestStorageChoiceOnReload();
+    await mountGate();
+    confirm = await openConfirmation("partitioned");
+    checkBox(0);
+    checkBox(1);
+    backupFileBox().click();
+    await waitFor(() => !confirm.disabled);
+    let calls = 0;
+    (window.electronAPI as unknown as typeof api).saveDatabaseFile = async () => {
+      calls++;
+      return { success: true };
+    };
+    confirm.click();
+    await waitFor(() => !!host?.querySelector("[data-app-mounted]"));
+    equal(calls, 0);
+    unmountGate();
+  });
+  await test("the conversion backup keeps unreadable and differing copies aside instead of failing the import", async () => {
+    await resetApp();
+    const json = JSON.stringify(state());
+    await appLegacy.setItem(account, json);
+    await appLegacy.setItem("pp-database-broken", "not a database");
+    localStorage.setItem(account, JSON.stringify({ ...state(), version: 99 }));
+    localStorage.setItem("pp-database-local", json);
+    const pack = await readMigrationPackContents(await createLegacyMigrationPack());
+    equal(
+      pack?.databases.map((database) => [database.username, database.json]),
+      [
+        ["local", json],
+        ["user", json],
+      ]
+    );
+    equal(pack?.copies.map((copy) => copy.inboxKey.replace(/#[0-9a-f]{64}$/, "")).sort(), [
+      "copy:pp-database-broken#indexeddb-legacy",
+      "copy:pp-database-user#localStorage",
+    ]);
+    await resetApp();
+  });
   await test("failed choice stays gated and can be retried without partial conversion", async () => {
     await resetApp();
     await appLegacy.setItem(account, JSON.stringify(state()));
@@ -949,6 +1060,7 @@ async function run() {
     const button = await openConfirmation("partitioned");
     checkBox(0);
     checkBox(1);
+    backupFileBox().click();
     await waitFor(() => !button.disabled);
     const restore = injectFailure(3, "throw");
     try {

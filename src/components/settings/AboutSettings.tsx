@@ -7,6 +7,9 @@ import { getSettingsAboutLicenseSections } from "../../about-licenses";
 import WebAppBundleSettings from "./WebAppBundleSettings";
 import "./AboutSettings.css";
 import { requestTutorialStart } from "../../tutorial/tutorialEvents";
+import { useMessageBox } from "../../contexts/MessageBoxContext";
+import { canOfferStorageConversion, requestStorageChoiceOnReload } from "../../services/storageRuntime";
+import { Database } from "../../../db-common/Database";
 
 // Version is injected by Vite from package.json
 declare const __APP_VERSION__: string;
@@ -39,6 +42,36 @@ const AboutSettings: React.FC = () => {
       cancelled = true;
     };
   }, [isNativeBundleRuntime]);
+  // Electron that kept the old storage format can open the storage choice again.
+  const { showConfirm } = useMessageBox();
+  const [canConvertStorage, setCanConvertStorage] = useState(false);
+  useEffect(() => {
+    if (!isElectronRuntime) return;
+    let cancelled = false;
+    canOfferStorageConversion()
+      .then((offer) => {
+        if (!cancelled) setCanConvertStorage(offer);
+      })
+      .catch((error) => console.warn("Cannot read the storage format", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [isElectronRuntime]);
+  const openStorageChoice = () =>
+    showConfirm(
+      t("StorageConversionTitle"),
+      t("StorageConversionRestart"),
+      () => {
+        void (async () => {
+          // A save still running would be cut off by the reload; a failed one reports itself.
+          await Database.getInstance().forceSaveAsync();
+          if (requestStorageChoiceOnReload()) window.location.reload();
+          else console.warn("Cannot request the storage choice for the next start");
+        })().catch((error) => console.error("Storage choice reload", error));
+      },
+      undefined,
+      { confirmText: t("StorageConversionRestartConfirm") }
+    );
   const selectedUpdateChannel = settings?.updateChannel ?? "stable";
   const licenseSections = getSettingsAboutLicenseSections(isElectronRuntime ? "full-electron" : "frontend-only");
 
@@ -137,6 +170,14 @@ const AboutSettings: React.FC = () => {
       )}
       {renderUpdateStatus()}
       {renderUpdateActions()}
+      {canConvertStorage && (
+        <div className="mb-3">
+          <p className="mb-1">{t("StorageConversionAbout")}</p>
+          <button type="button" className="btn btn-outline-primary btn-sm" onClick={openStorageChoice}>
+            {t("StorageConversionOpen")}
+          </button>
+        </div>
+      )}
       <WebAppBundleSettings />
       <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
         <button type="button" className="btn btn-primary btn-sm" onClick={() => requestTutorialStart("full")}>

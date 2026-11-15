@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { databaseStorage, type StorageMode, type StoragePolicy } from "../../db-common/DatabaseStorage";
 import { useLocalization, type StringKey } from "../localization/LocalizationContext";
 import { FileSaveUnsupportedError, saveGeneratedFile } from "../services/fileSave";
-import { prepareStorageForThisRuntime, storageRuntimePolicy } from "../services/storageRuntime";
+import { createLegacyMigrationPack } from "../services/migrationPack";
+import { prepareStorageForThisRuntime, storageRuntimePolicy, takeStorageChoiceRequest } from "../services/storageRuntime";
 import "./StorageChoiceGate.css";
 
 /** Saves every stored database row unchanged, for when the app cannot start. */
@@ -10,6 +11,12 @@ async function saveRecoveryFile(): Promise<boolean> {
   const fileName = `pp-storage-recovery-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.json`;
   const text = await databaseStorage.exportRecoveryData();
   return (await saveGeneratedFile(new Blob([text], { type: "application/json" }), fileName)) === "saved";
+}
+
+/** Saves the old-format databases as a `.ppmigrate` pack ("Import database" reads it). */
+async function saveConversionBackup(): Promise<"saved" | "cancelled"> {
+  const fileName = `praiseprojector-backup-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.ppmigrate`;
+  return saveGeneratedFile(new Blob([await createLegacyMigrationPack()], { type: "application/json" }), fileName);
 }
 
 /** Offered whenever the gate reports an error: the user can keep their data
@@ -101,6 +108,12 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
   // The format whose confirmation dialog is open, and what has been ticked there.
   const [pending, setPending] = useState<StorageMode | null>(null);
   const [checked, setChecked] = useState<StringKey[]>([]);
+  // Optional backup file before converting, and why the conversion stopped at it.
+  const [backupFile, setBackupFile] = useState(true);
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupNotice, setBackupNotice] = useState<"cancelled" | "failed" | null>(null);
+  // Opened from About over an old format already kept: leaving changes nothing.
+  const [reopened, setReopened] = useState(false);
   // Startup check failure (shown on the main panel) vs. a failed confirmation.
   const [prepareError, setPrepareError] = useState(false);
   const [chooseError, setChooseError] = useState(false);
@@ -129,11 +142,16 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
     };
     prepare()
       .then((choice) => {
-        if (active) setStatus(choice ? "ready" : "choose");
+        if (!active) return;
+        // About → storage choice: an old format kept by choice is offered again.
+        const requested = takeStorageChoiceRequest() && choice === "legacy" && current === "choice";
+        setReopened(requested);
+        setStatus(choice && !requested ? "ready" : "choose");
       })
       .catch((reason) => {
         console.error("Storage choice", reason);
         if (active) {
+          takeStorageChoiceRequest();
           setPrepareError(true);
           // Only the explicit-choice runtime may offer the formats.
           setStatus(current === "choice" ? "choose" : "failed");
@@ -160,12 +178,15 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
   const openConfirmation = (mode: StorageMode, button: HTMLButtonElement) => {
     opener.current = button;
     setChecked([]);
+    setBackupFile(true);
+    setBackupNotice(null);
     setChooseError(false);
     setPending(mode);
   };
   const closeConfirmation = () => {
     if (busy.current) return;
     setPending(null);
+    setBackupNotice(null);
     setChooseError(false);
     const button = opener.current;
     // Focus returns to the option that was chosen once the main panel is interactive again.
@@ -175,15 +196,36 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
   const choose = async (mode: StorageMode) => {
     if (busy.current || !acknowledgments[mode].every((key) => checked.includes(key))) return;
     busy.current = true;
-    setStatus("saving");
     setChooseError(false);
+    setBackupNotice(null);
     try {
-      await databaseStorage.choose(mode);
-      setStatus("ready");
-    } catch (reason) {
-      console.error("Storage choice", reason);
-      setChooseError(true);
-      setStatus("choose");
+      if (mode === "partitioned" && backupFile) {
+        // Nothing is converted unless the backup file was saved.
+        setBackingUp(true);
+        let saved: boolean;
+        try {
+          saved = (await saveConversionBackup()) === "saved";
+        } catch (reason) {
+          console.error("Storage conversion backup", reason);
+          setBackupNotice("failed");
+          return;
+        } finally {
+          setBackingUp(false);
+        }
+        if (!saved) {
+          setBackupNotice("cancelled");
+          return;
+        }
+      }
+      setStatus("saving");
+      try {
+        await databaseStorage.choose(mode);
+        setStatus("ready");
+      } catch (reason) {
+        console.error("Storage choice", reason);
+        setChooseError(true);
+        setStatus("choose");
+      }
     } finally {
       busy.current = false;
     }
@@ -217,6 +259,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
     );
 
   const saving = status === "saving";
+  const working = saving || backingUp;
   const required = pending ? acknowledgments[pending] : [];
   const complete = required.every((key) => checked.includes(key));
   return (
@@ -280,6 +323,13 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
               </button>
             </article>
           </div>
+          {reopened && (
+            <div className="storage-choice-cancel">
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setStatus("ready")}>
+                {t("Cancel")}
+              </button>
+            </div>
+          )}
           {prepareError && !pending && (
             <>
               <p role="alert" className="storage-choice-error">
@@ -306,7 +356,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
             trapFocus(event, confirmHeading.current);
           }}
         >
-          <section className={`storage-choice-panel storage-choice-confirm-panel storage-choice-confirm-${pending}`} aria-busy={saving}>
+          <section className={`storage-choice-panel storage-choice-confirm-panel storage-choice-confirm-${pending}`} aria-busy={working}>
             <h1 id="storage-choice-confirm-title" ref={confirmHeading} tabIndex={-1}>
               {t(pending === "partitioned" ? "StorageChoiceConfirmNewTitle" : "StorageChoiceConfirmOldTitle")}
             </h1>
@@ -317,7 +367,7 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
                   <input
                     type="checkbox"
                     checked={checked.includes(key)}
-                    disabled={saving}
+                    disabled={working}
                     onChange={(event) => {
                       const on = event.target.checked;
                       setChecked((list) => (on ? [...list, key] : list.filter((item) => item !== key)));
@@ -327,6 +377,25 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
                 </label>
               ))}
             </div>
+            {pending === "partitioned" && (
+              <label className="storage-choice-backup-file">
+                <input type="checkbox" checked={backupFile} disabled={working} onChange={(event) => setBackupFile(event.target.checked)} />
+                <span>{t("StorageChoiceBackupFile")}</span>
+              </label>
+            )}
+            {backingUp && (
+              <p role="status" className="storage-choice-status">
+                {t("StorageChoiceBackupSaving")}
+              </p>
+            )}
+            {backupNotice && (
+              <p
+                role={backupNotice === "failed" ? "alert" : "status"}
+                className={backupNotice === "failed" ? "storage-choice-error" : "storage-choice-status"}
+              >
+                {t(backupNotice === "failed" ? "StorageChoiceBackupFailed" : "StorageChoiceBackupCancelled")}
+              </p>
+            )}
             {saving && (
               <p role="status" className="storage-choice-status">
                 {t("StorageChoiceSaving")}
@@ -341,13 +410,13 @@ export function StorageChoiceGate({ children }: { children: ReactNode }) {
               </>
             )}
             <div className="storage-choice-confirm-actions">
-              <button type="button" className="btn btn-outline-secondary" disabled={saving} onClick={closeConfirmation}>
+              <button type="button" className="btn btn-outline-secondary" disabled={working} onClick={closeConfirmation}>
                 {t("StorageChoiceBack")}
               </button>
               <button
                 type="button"
                 className="btn btn-primary storage-choice-confirm-action"
-                disabled={saving || !complete}
+                disabled={working || !complete}
                 onClick={() => void choose(pending)}
               >
                 {t(pending === "partitioned" ? "StorageChoiceConfirmNew" : "StorageChoiceConfirmOld")}

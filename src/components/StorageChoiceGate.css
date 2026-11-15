@@ -212,6 +212,28 @@
   margin-top: 2px;
   accent-color: var(--sc-accent);
 }
+.storage-choice-cancel {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.storage-choice-backup-file {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: -6px 0 18px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sc-new-bg);
+  cursor: pointer;
+}
+.storage-choice-backup-file input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: var(--sc-accent);
+}
 .storage-choice-confirm-actions {
   display: flex;
   flex-wrap: wrap;

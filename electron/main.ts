@@ -1479,11 +1479,14 @@ ipcMain.handle("load-playlist-file", async () => {
 // IPC handler for database export file save
 ipcMain.handle("save-database-file", async (_event, payload: { data: ArrayBuffer; defaultFileName?: string }) => {
   try {
+    const defaultPath = payload?.defaultFileName || "database.ppdb";
+    // Offer the file's own type (.ppdb, .ppmigrate, .ppl, .json) so the name is kept as given.
+    const extension = path.extname(defaultPath).slice(1).toLowerCase() || "ppdb";
     const result = await dialog.showSaveDialog({
       title: "Export Database",
-      defaultPath: payload?.defaultFileName || "database.ppdb",
+      defaultPath,
       filters: [
-        { name: "PraiseProjector Database", extensions: ["ppdb"] },
+        { name: extension === "ppdb" ? "PraiseProjector Database" : `${extension.toUpperCase()} file`, extensions: [extension] },
         { name: "All Files", extensions: ["*"] },
       ],
     });
