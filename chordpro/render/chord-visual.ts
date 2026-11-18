@@ -102,7 +102,7 @@ function formatModifierText(text: string, readOnly: boolean, chordFormat: number
   return { text: substituted, subscript };
 }
 
-function resolveInKeyBaseNote(options: BuildChordVisualModelOptions, baseNote: string): string {
+function resolveInKeyNote(options: BuildChordVisualModelOptions, baseNote: string): string {
   const { system, chordFormat, readOnly, actualKey, chordsInKey } = options;
   if (!readOnly || (chordFormat & CHORDFORMAT_INKEY) !== CHORDFORMAT_INKEY || !actualKey) return baseNote;
   const key = system.getKey(actualKey);
@@ -134,7 +134,7 @@ export function buildChordVisualModel(options: BuildChordVisualModelOptions): Ch
 
   if (chordDetails.prefix) tokens.push({ role: "prefix", text: chordDetails.prefix, subscript: false, gapBefore: 0 });
 
-  const baseNote = resolveInKeyBaseNote(options, chordDetails.baseNote);
+  const baseNote = resolveInKeyNote(options, chordDetails.baseNote);
   let note = formatNote(system, readOnly, chordFormat, baseNote, chordDetails.minor);
   tokens.push({ role: "base-note", text: note.substring(0, 1), subscript: false, gapBefore: 0 });
 
@@ -150,7 +150,7 @@ export function buildChordVisualModel(options: BuildChordVisualModelOptions): Ch
   if (!readOnly || (chordFormat & CHORDFORMAT_SIMPLIFIED) === 0) {
     if (chordDetails.bassNote) {
       tokens.push({ role: "bass-separator", text: "/", subscript: false, gapBefore: 0 });
-      note = formatNote(system, readOnly, chordFormat, chordDetails.bassNote, false);
+      note = formatNote(system, readOnly, chordFormat, resolveInKeyNote(options, chordDetails.bassNote), false);
       tokens.push({ role: "bass-note", text: note.substring(0, 1), subscript: false, gapBefore: 0 });
       const bassModifier = formatModifierText(note.substring(1), readOnly, chordFormat);
       tokens.push({ role: "bass-modifier", text: bassModifier.text, subscript: bassModifier.subscript, gapBefore: 0 });

@@ -246,11 +246,12 @@ export const chordRegexPattern = (() => {
 
   findKeysWithChords(chords: Iterable<string>, keys?: Set<Key>, basic = true) {
     const result = new Set<Key>();
+    const requested = Array.from(chords);
     if (keys === undefined) keys = new Set(this.keys.values());
     for (const key of keys) {
       let found = 0;
       let total = 0;
-      for (const chordInSet of chords) {
+      for (const chordInSet of requested) {
         for (const chordInKey of key.chords(basic))
           if (this.compareChords(chordInKey, chordInSet)) {
             ++found;
@@ -350,6 +351,7 @@ export type ChordProContext = {
   comments: DifferentialText;
   other: ChordProProperties;
   pending_abc?: ChordProAbc;
+  pendingSectionStart?: string;
 };
 
 export type ChordProLineRange = { top: number; bottom: number };
@@ -437,6 +439,8 @@ export class ChordProLine {
   styles = new ChordProProperties();
   private commentDirectiveType?: ChordProCommentType;
   sourceLineNumber = -1;
+  /** Explicit boundary even when two adjacent sections have the same label. */
+  startsSection?: string;
   sectionChordDuplicate: boolean | null = null;
   marked = 0;
   modifyRanges: { start: number; added?: boolean }[] | null = null;
@@ -468,6 +472,7 @@ export class ChordProLine {
     targetLine.styles = this.styles.clone();
     targetLine.commentDirectiveType = this.commentDirectiveType;
     targetLine.sourceLineNumber = this.sourceLineNumber;
+    targetLine.startsSection = this.startsSection;
     targetLine.multiplierOverride = this.multiplierOverride;
     targetLine.transposeOverride = this.transposeOverride;
     targetLine.instructedSectionIndex = this.instructedSectionIndex;
@@ -1600,7 +1605,11 @@ export class ChordProDocument {
         if (name.startsWith("end_of_")) {
           name = "start_of_" + name.substr(7);
           target.delete(name, current);
-        } else target.set(name, value, current);
+          if (current && context.pendingSectionStart === name) context.pendingSectionStart = undefined;
+        } else {
+          target.set(name, value, current);
+          if (current && name.startsWith("start_of_")) context.pendingSectionStart = name;
+        }
 
         if (target === context.format && name.startsWith("comment")) comment_directive_type = name.substring(8);
         processed = comment_directive_type == null;
@@ -1749,6 +1758,10 @@ export class ChordProDocument {
       }
     }
 
+    if (context.pendingSectionStart && line_obj.styles.has(context.pendingSectionStart)) {
+      line_obj.startsSection = context.pendingSectionStart;
+      context.pendingSectionStart = undefined;
+    }
     return line_obj;
   }
 
@@ -1785,16 +1798,19 @@ export class ChordProDocument {
       text += strlist.sort().join("") + line_obj.comments;
 
       strlist = [];
-      if (!line_obj.isComment)
-        line_obj.styles.forEach((value, name) => {
-          if (!name.startsWith("start_of_") || !context.has(name)) strlist.push(format_directive(name, value));
-          else if (context.get(name) !== value) strlist.push("{end_of_" + name.substr(9) + "}\n" + format_directive(name, value));
-          context.set(name, value);
-        });
-      else if (line_obj.text) strlist.push(format_directive(line_obj.getCommentDirective(), line_obj.text));
+      line_obj.styles.forEach((value, name) => {
+        const section = name.startsWith("start_of_");
+        if (line_obj.isComment && !section) return;
+        if (!section || !context.has(name)) strlist.push(format_directive(name, value));
+        else if (context.get(name) !== value || line_obj.startsSection === name)
+          strlist.push("{end_of_" + name.substr(9) + "}\n" + format_directive(name, value));
+        context.set(name, value);
+      });
       text += strlist.sort().join("");
-      if (line_obj instanceof ChordProAbc) text += line_obj.getAbc(true, false) + "\n";
-      else if (!line_obj.isComment) text += line_obj.text + "\n";
+      if (line_obj.isComment) {
+        if (line_obj.text) text += format_directive(line_obj.getCommentDirective(), line_obj.text);
+      } else if (line_obj instanceof ChordProAbc) text += line_obj.getAbc(true, false) + "\n";
+      else text += line_obj.text + "\n";
     }
 
     strlist = [];

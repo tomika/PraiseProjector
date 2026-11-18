@@ -23,7 +23,8 @@ import type { AbcRange, SectionRepeatCount as SharedSectionRepeatCount } from ".
 import { abcHeaderDefaults, resolveAbcOptions, scoreOptionValues } from "./abc-options";
 import { createDivElement, DifferentialText, DiffTextPreProcessor, VersionedMap, virtualKeyboard } from "../common/utils";
 import * as clipboard from "./clipboard";
-import { ChordDetails, Key, Mode } from "./note_system";
+import { ChordDetails } from "./note_system";
+import { analyzeDocumentKeys, type DocumentKeyAnalysis } from "./key-analysis";
 import { Settings } from "../common/settings";
 import { NoteHitBox, Point, Rectangle } from "./ui_base";
 import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY, CHORDFORMAT_SUBSCRIPT } from "./chord_drawer";
@@ -828,7 +829,7 @@ export class ChordProEditor extends ChordDrawer {
   private customStyles: ChordProStylesSettings | null = null;
   private customStylesSource: ChordProStylesSettings | null = null;
   private styleNormalizationDefaults: { rootFontPx: number; styles: ChordProStylesSettings } | null = null;
-  private keyIsAuto = false;
+  private keyAnalysisCache?: { document: ChordProDocument; analysis: DocumentKeyAnalysis };
 
   private inApplyState = false;
   private multiChordChangeEnabled = true;
@@ -1675,6 +1676,7 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private completeDocumentMutation() {
+    this.keyAnalysisCache = undefined;
     this.documentRevision += 1;
     this.semanticDocumentText = this.chordProCode;
     this.invalidateDisplaySequence();
@@ -1718,6 +1720,7 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private acceptDisplayOnlyDocumentProjection() {
+    this.keyAnalysisCache = undefined;
     this.semanticDocumentText = this.chordProCode;
   }
 
@@ -1841,7 +1844,7 @@ export class ChordProEditor extends ChordDrawer {
       editing: this.createDomEditingInput(),
       metaInputs: this.readOnly ? null : this.getDomMetaInputHost(),
       chordStrip: this.createDomChordStripInput(),
-      keyIsAuto: this.keyIsAuto,
+      keyAnalysis: this.displayKeyAnalysis(),
       localize: (key) => this.localize(key),
       overlayRevMoveCost: Settings.current.chordRevMoveCost,
       overlayFwdMoveCost: Settings.current.chordFwdMoveCost,
@@ -2066,6 +2069,7 @@ export class ChordProEditor extends ChordDrawer {
         // The input edits the RAW metadata value; readonly key adornments
         // (signature/robot symbols) exist only in the readonly text path.
         const raw = this.chordPro?.getMeta(meta.name) ?? "";
+        if (meta.name === "key") el.value.placeholder = raw ? "" : this.displayKeyAnalysis()?.key || "";
         if (document.activeElement !== el.value && el.value.value !== raw) el.value.value = raw;
         this.updateMetaInputWidth(meta.name, raw);
         if (el.row.parentElement !== container) container.replaceChildren(el.row);
@@ -2220,7 +2224,7 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   getKey() {
-    return this.chordPro?.key;
+    return this.chordPro?.key || this.displayKeyAnalysis()?.key || undefined;
   }
 
   setDisplayMode(
@@ -2268,15 +2272,6 @@ export class ChordProEditor extends ChordDrawer {
     }
     if (chordBoxType !== undefined && this.chordBoxType !== chordBoxType) {
       this.chordBoxType = chordBoxType;
-      updateRequired = true;
-    }
-    if ((chordFlags & CHORDFORMAT_INKEY) === CHORDFORMAT_INKEY && this.chordPro && !this.chordPro.key) {
-      const key = this.guessKey();
-      if (key) {
-        this.chordPro.setMeta("key", key);
-        this.keyIsAuto = true;
-        this.acceptDisplayOnlyDocumentProjection();
-      }
       updateRequired = true;
     }
     if (updateRequired) {
@@ -4504,11 +4499,13 @@ export class ChordProEditor extends ChordDrawer {
     const lineIndex = line.getLineIndex();
     if (lineIndex < 0) return false;
 
+    const analysis = this.analyzeKeys(this.chordPro);
+    const writtenKey = analysis.writtenKeyByLine.get(line) || this.chordPro.key || analysis.key || "";
+    const key = this.chordPro.getAbcKey(writtenKey) || "C";
     this.saveState();
     const suffix = line.splitAt(this.cursorPos);
     if (!suffix) return false;
 
-    const key = this.chordPro.getAbcKey(this.chordPro.key || this.guessKey()) || "C";
     const tonic = key.charAt(0);
     const abc = new ChordProAbc(this.chordPro, ["X:1", `K:${key}`, tonic]);
     this.chordPro.lines.splice(lineIndex + 1, 0, abc);
@@ -5742,7 +5739,7 @@ export class ChordProEditor extends ChordDrawer {
     if (!el) return;
 
     const requestedAlign = el.row.dataset.requestedAlign || el.row.style.textAlign || "";
-    const text = valueOverride ?? el.value.value;
+    const text = (valueOverride ?? el.value.value) || el.value.placeholder;
     const measured = Math.ceil(this.measureMetaValueWidth(el.value, text) + 3);
     const prefixWidth = el.prefix.offsetWidth;
     const paddingLeft = Number.parseFloat(getComputedStyle(el.row).paddingLeft) || 0;
@@ -5831,75 +5828,13 @@ export class ChordProEditor extends ChordDrawer {
 
   // ---- Abc notation HTML methods ----
 
-  private guessKey() {
-    if (!this.chordPro) return "";
+  private analyzeKeys(doc: ChordProDocument) {
+    if (this.keyAnalysisCache?.document !== doc) this.keyAnalysisCache = { document: doc, analysis: analyzeDocumentKeys(doc) };
+    return this.keyAnalysisCache.analysis;
+  }
 
-    const chordHist = new Map<string, number>(); // chord -> count
-    const firstChords = new Map<string, number>(); // chord -> count
-    const lastChords = new Map<string, number>(); // chord -> count
-
-    const processChord = (chord: string | ChordProChordBase, first: boolean, last: boolean) => {
-      const details = this.getChordDetails(chord);
-      let ch = "";
-      if (details) {
-        ch = details.baseNote;
-        if (details.normalized.match(/2|4|sus/g)) ch += "2";
-        else if (details.minor) ch += "m";
-      }
-      if (ch) {
-        chordHist.set(ch, (chordHist.get(ch) ?? 0) + 1);
-        if (first) if (ch) firstChords.set(ch, (firstChords.get(ch) ?? 0) + 1);
-        if (last) lastChords.set(ch, (lastChords.get(ch) ?? 0) + 1);
-      }
-    };
-
-    if (this.chordPro.sectionInfo.size > 0)
-      this.chordPro.sectionInfo.forEach((info, _tag) => {
-        if (!info.duplicate) {
-          //const baseName = tag.replace(/ [0-9]+$/, "");
-          const chords = info.signature.split("~");
-          for (let i = 0; i < chords.length; ++i) processChord(chords[i], i === 0, i === chords.length - 1);
-        }
-      });
-    else {
-      const chords: (string | ChordProChordBase)[] = [];
-      this.chordPro.forAllChords((chord) => {
-        chords.push(chord);
-      });
-      for (let i = 0; i < chords.length; ++i) processChord(chords[i], i === 0, i === chords.length - 1);
-    }
-
-    let keys = this.system.findKeysWithChords(firstChords.keys());
-    if (keys.size > 0) keys = this.system.findKeysWithChords(lastChords.keys(), keys);
-
-    const hist = Array.from(chordHist.entries());
-    hist.sort((a, b) => b[1] - a[1]);
-    for (const h of hist) {
-      if (keys.size === 0) break;
-      const filtered = this.system.findKeysWithChords([h[0]], keys);
-      if (filtered.size === 0) break;
-      keys = filtered;
-    }
-
-    const scores: { key: Key; score: number }[] = [];
-    for (const key of keys) {
-      let score = 0;
-      if (key.scaleType === Mode.ionian || key.scaleType === Mode.aeolian) score += 1.5;
-      firstChords.forEach((count, chord) => {
-        if (this.system.compareChords(chord, key.baseChord, true)) score += 3 * count;
-      });
-      lastChords.forEach((count, chord) => {
-        if (this.system.compareChords(chord, key.baseChord, true)) score += 2 * count;
-      });
-      scores.push({ key, score });
-    }
-
-    scores.sort((a, b) => {
-      let diff = b.score - a.score;
-      if (!diff) diff = diff = Math.abs(a.key.signature) - Math.abs(b.key.signature);
-      return diff ? diff : a.key.name.localeCompare(b.key.name);
-    });
-    return scores.length > 0 ? scores[0].key.name : "";
+  private displayKeyAnalysis() {
+    return this.chordPro && this.chordFormat & CHORDFORMAT_INKEY ? this.analyzeKeys(this.chordPro) : undefined;
   }
 
   playChord(box: ChordBoxHitBox) {
@@ -6097,7 +6032,7 @@ export class ChordProEditor extends ChordDrawer {
       highlight: null,
       highlightOpacity: this.highlightOpacity,
       diagrams: null,
-      keyIsAuto: this.keyIsAuto,
+      keyAnalysis: this.displayKeyAnalysis(),
       localize: (key) => this.localize(key),
       overlayRevMoveCost: Settings.current.chordRevMoveCost,
       overlayFwdMoveCost: Settings.current.chordFwdMoveCost,

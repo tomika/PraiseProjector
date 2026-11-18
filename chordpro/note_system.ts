@@ -69,14 +69,14 @@ export class NoteSystem {
   }
 
   stringToNote(noteStr: string) {
-    let offset = 12;
-    if (noteStr.length > 1 && noteStr.endsWith("b")) {
-      noteStr = noteStr.substr(0, noteStr.length - 1);
-      --offset;
+    let pitch = this.baseNoteList.indexOf(noteStr.charAt(0).toUpperCase());
+    if (pitch < 0) return null;
+    for (const accidental of noteStr.slice(1)) {
+      if (accidental === "#" || accidental === "♯") ++pitch;
+      else if (accidental === "b" || accidental === "♭") --pitch;
+      else return null;
     }
-    noteStr = noteStr.toUpperCase();
-    const index = this.baseNoteList.indexOf(noteStr);
-    return index >= 0 ? (index + offset) % 12 : null;
+    return ((pitch % 12) + 12) % 12;
   }
 
   convertNotesToSteps(s: string, majChange?: boolean) {
@@ -148,31 +148,29 @@ export class NoteSystem {
   }
 
   shiftNote(note: string, shift: number) {
-    if (!note) return note;
-    let idx: number;
-    if (note.length > 1) {
-      idx = this.baseNoteList.indexOf(note.charAt(0));
-      if (note.charAt(1) === "#") ++idx;
-      else --idx;
-    } else idx = this.baseNoteList.indexOf(note);
-    return this.baseNoteList[(1200000 + idx + shift) % 12];
+    const pitch = this.stringToNote(note);
+    return pitch === null ? note : this.noteToString(pitch + shift);
   }
 
-  getKey(name: string) {
+  getKey(name: string): Key | undefined {
     let key = this.keys.get(name);
     if (!key) {
-      let fs = name.indexOf(" ");
-      if (fs < 0) fs = name.length;
-      const baseNote = this.stringToNote(name.substring(0, fs));
-      if (baseNote !== null) {
-        const rem = name.substring(fs).trim();
-        const mode =
-          rem === "" ? Mode.ionian : rem === "m" ? Mode.aeolian : ((Mode as unknown as Record<string, number>)[rem] ?? (decodeRoman(rem) ?? 0) - 1);
-        if (mode >= 0) {
-          key = this.keysMap.get(10 * baseNote + mode);
-          if (key) this.keysMap.set(name, key);
-        }
-      }
+      // Some imported songs spell the mode out (e.g. "{key:C Major}").
+      const parts = /^([A-Ha-h])([#♯b♭]?)(m|\s+\S+)?$/.exec(name.trim());
+      if (!parts) return undefined;
+      const tonic = parts[1].toUpperCase() + parts[2].replace("♯", "#").replace("♭", "b");
+      const suffix = parts[3]?.trim().toLowerCase() ?? "";
+      const mode =
+        suffix === "" || suffix === "major"
+          ? Mode.ionian
+          : suffix === "m" || suffix === "minor"
+            ? Mode.aeolian
+            : ((Mode as unknown as Record<string, number>)[suffix] ?? (decodeRoman(suffix.toUpperCase()) ?? 0) - 1);
+      const baseNote = this.stringToNote(tonic);
+      if (baseNote === null || !Number.isInteger(mode) || mode < Mode.ionian || mode > Mode.locrian) return undefined;
+      // Prefer the exact spelling (Gb vs F#) before trying an enharmonic alias.
+      key = this.keysMap.get(tonic + " " + Mode[mode]) ?? this.keysMap.get(10 * baseNote + mode);
+      if (key) this.keysMap.set(name, key);
     }
     return key;
   }

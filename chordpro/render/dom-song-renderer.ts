@@ -1,3 +1,4 @@
+import type { DocumentKeyAnalysis } from "../key-analysis";
 import "./chordpro-dom.css";
 
 import type { TuneObject } from "abcjs";
@@ -400,7 +401,7 @@ export interface DomSongRendererInput extends SemanticRevisions {
   readonly metaInputs?: DomMetaInputHost | null;
   /** Chord-template strip; null/absent when the strip is not shown. */
   readonly chordStrip?: DomChordStripInput | null;
-  readonly keyIsAuto?: boolean;
+  readonly keyAnalysis?: DocumentKeyAnalysis;
   readonly localize?: (key: string) => string;
   readonly overlayRevMoveCost: number;
   readonly overlayFwdMoveCost: number;
@@ -924,7 +925,7 @@ export class DomSongRenderer {
       instructionsMode: input.instructionsMode,
       instructionsPane: input.instructionsPane,
       sequence: input.sequence ?? undefined,
-      keyIsAuto: input.keyIsAuto,
+      keyAnalysis: input.keyAnalysis,
       localize: input.localize,
     });
     const plan = this.applyInstructionCollapse(fullPlan);

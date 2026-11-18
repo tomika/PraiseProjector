@@ -1,3 +1,4 @@
+import { projectedKeyName, type DocumentKeyAnalysis } from "../key-analysis";
 import { UnicodeSymbol } from "../../common/symbols";
 import type { AbcRange } from "../../common/pp-types";
 import { matchesAbcRange } from "../abc-range";
@@ -664,7 +665,7 @@ export interface BuildDisplayPlanOptions {
   readonly abcMode?: AbcDisplayMode;
   /** Pre-resolved sequence. Supplied by the controller so the projection is computed once. */
   readonly sequence?: DisplaySequence;
-  readonly keyIsAuto?: boolean;
+  readonly keyAnalysis?: DocumentKeyAnalysis;
   readonly localize?: (key: string) => string;
 }
 
@@ -722,17 +723,18 @@ function formatMetaKey(system: ChordSystem, value: string, keyIsAuto: boolean) {
 function buildMeta(options: BuildDisplayPlanOptions): DisplayMeta[] {
   const result: DisplayMeta[] = [];
   for (const [name, style] of Object.entries(options.directives)) {
+    const inferredKey = name === "key" && !options.differential && !options.document.key ? options.keyAnalysis?.key : null;
     if (
       name.startsWith("start_of_") ||
       !style ||
       style.hidden ||
       !style.height ||
-      (!options.document.hasMeta(name) && !(options.differential && options.document.hasMeta(name, false)))
+      (!inferredKey && !options.document.hasMeta(name) && !(options.differential && options.document.hasMeta(name, false)))
     )
       continue;
     if (name === "title" ? !options.showTitle : !options.showMeta) continue;
     let value: string | DifferentialText = options.differential ? options.document.differentialMeta(name) : options.document.getMeta(name);
-    if (name === "key" && typeof value === "string") value = formatMetaKey(options.system, value, !!options.keyIsAuto);
+    if (name === "key" && typeof value === "string") value = formatMetaKey(options.system, inferredKey || value, !!inferredKey);
     const prefix = style.prefix ? `${style.prefix}:\u00a0` : "";
     const textUnits = prefixDifferentialTextUnits(prefix, differentialTextUnits(value));
     result.push({
@@ -816,7 +818,7 @@ function instructionsAdapterForLine(line: ChordProLine, pane: InstructionsPane |
   return { pane, section, dragTagName: section };
 }
 
-function buildGridRuns(id: string, line: ChordProLine, options: BuildDisplayPlanOptions): DisplayGridRun[] {
+function buildGridRuns(id: string, line: ChordProLine, options: BuildDisplayPlanOptions, actualKey: string): DisplayGridRun[] {
   const runs: DisplayGridRun[] = [];
   let sourceOffset = 0;
   const duplicates = new Map<string, number>();
@@ -847,7 +849,7 @@ function buildGridRuns(id: string, line: ChordProLine, options: BuildDisplayPlan
         system: options.system,
         chordFormat: options.chordFormat,
         readOnly: true,
-        actualKey: options.document.key,
+        actualKey,
       }),
     });
     pushText(suffix);
@@ -908,6 +910,13 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
     const synthetic = projected.role === "label" || projected.role === "ellipsis";
     const originLine = synthetic ? null : projected.origin;
     const chordOriginLine = projected.origin;
+    const writtenKey =
+      (chordOriginLine && options.keyAnalysis?.writtenKeyByLine.get(chordOriginLine)) || options.document.key || options.keyAnalysis?.key || "";
+    // Projection transposes the chord pitches exactly once. Use its applied shift
+    // only for enharmonic spelling; an inferred written lift is already in the chords.
+    const shift =
+      line.transposeOverride ?? (projected.role === "document" && line !== chordOriginLine ? chordOriginLine?.getSectionInfo().transpose : 0);
+    const actualKey = options.keyAnalysis ? projectedKeyName(options.system, writtenKey, shift) : writtenKey;
     const originIdentity = originLine ? identities.line(originLine) : null;
     const logicalLineId = originIdentity?.id ?? identities.syntheticLineId(projected.role);
     const differentialLines = options.differential
@@ -967,7 +976,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
               system: options.system,
               chordFormat: options.chordFormat,
               readOnly: true,
-              actualKey: options.document.key,
+              actualKey,
             }),
           } satisfies DisplayChord;
         });
@@ -995,7 +1004,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
         ? { misplacedReference: true }
         : {}),
       chords,
-      gridRuns: kind === "grid" ? buildGridRuns(id, line, options) : [],
+      gridRuns: kind === "grid" ? buildGridRuns(id, line, options, actualKey) : [],
       suppressChords,
       instructionsAdapter: instructionsAdapterForLine(line, options.instructionsPane),
     });
@@ -1009,7 +1018,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
     display: options.display,
     chordFormat: options.chordFormat,
     noteSystemCode: options.system.systemCode,
-    key: options.document.key || undefined,
+    key: options.document.key || options.keyAnalysis?.key || undefined,
     showTags: options.showTags,
     instructionsPane: options.instructionsPane ?? null,
     sectionGroups: sequence.groups,
