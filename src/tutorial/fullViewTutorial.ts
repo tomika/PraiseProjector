@@ -26,7 +26,7 @@ const preview = () => {
 
 export const fullViewTutorial: TutorialDefinition = {
   view: "full",
-  version: 4,
+  version: 5,
   cleanup: closeFullTutorialPopovers,
   steps: [
     s(
@@ -596,9 +596,9 @@ export const fullViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='full-editor-comment']",
             tx(
               "Megjegyzés",
-              "A kijelölt, akkordot nem tartalmazó sorokat megjegyzéssé alakítja, illetve visszaalakítja normál dalszöveggé. Akkordos kijelölésnél a gomb le van tiltva.",
+              "A kijelölt, akkordot nem tartalmazó sorokat megjegyzéssé alakítja, illetve visszaalakítja normál dalszöveggé. Akkordos kijelölésnél a gomb le van tiltva. A szakaszok közé írt, szakaszt megnevező megjegyzés (például „Refrén 2x”) annak ismétlését jelzi: olvasási módban a szakasz első sora jelenik meg „...” végződéssel, szürke címkével. Egy másik szakaszon belül ez nem számít instrukciónak, ezért piros hullámvonal jelöli.",
               "Comment",
-              "Toggle selected chord-free lines between comments and normal lyrics. The button is disabled when the selection contains chords."
+              "Toggle selected chord-free lines between comments and normal lyrics. The button is disabled when the selection contains chords. A comment naming a section between sections (for example “Chorus 2x”) repeats it: read mode shows that section's first line ending in “...” under a grey label. Inside another section it is not an instruction, so a red wavy line marks it."
             )
           ),
           s(

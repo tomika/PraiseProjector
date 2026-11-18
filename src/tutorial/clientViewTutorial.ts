@@ -32,7 +32,7 @@ const leaderLists = () => {
 
 export const clientViewTutorial: TutorialDefinition = {
   view: "client",
-  version: 5,
+  version: 6,
   cleanup: closeClientTutorialPopovers,
   steps: [
     s(
@@ -187,9 +187,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ["#btnInstructions", "#mainToolbar"],
             tx(
               "Instrukciók",
-              "A dal instrukciói rövid koppintással vagy kattintással kapcsolhatók be és ki.",
+              "A rövid koppintás vagy kattintás sorban vált: kikapcsolva, megjegyzések nélkül → a dal megjegyzései úgy, ahogy a szerkesztőben látszanak (borostyán fény; a szakaszra hivatkozó megjegyzés helyén a szakasz első sora áll) → instrukciók (kék fény) → kikapcsolva. Gyorsbillentyű és hardveres gomb az instrukciókat kapcsolja be és ki.",
               "Instructions",
-              "Tap or click briefly to show or hide the song instructions."
+              "Tap or click briefly to step through: off, without comments → the song's comments as the editor shows them (amber glow; a comment naming a section shows that section's first line) → instructions (blue glow) → off. Hotkeys and hardware buttons switch instructions on and off."
             )
           ),
           s(
