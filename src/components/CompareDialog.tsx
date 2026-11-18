@@ -358,6 +358,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   song={new Song(leftContent, leftSong?.System, undefined, leftSong?.Language)}
                   initialEditMode={editableInConflict}
                   previewOnly={usePreviewOnly}
+                  commentDisplay="SHOW"
                 />
               )}
               {mode === "Conflict" && !showDiffActive && (
@@ -428,6 +429,7 @@ const CompareDialog: React.FC<CompareDialogProps> = ({
                   song={new Song(rightContent, rightSong?.System, undefined, rightSong?.Language)}
                   initialEditMode={editableInConflict}
                   previewOnly={usePreviewOnly}
+                  commentDisplay="SHOW"
                 />
               )}
               {mode === "Conflict" && !showDiffActive && (

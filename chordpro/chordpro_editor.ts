@@ -27,7 +27,7 @@ import { ChordDetails, Key, Mode } from "./note_system";
 import { Settings } from "../common/settings";
 import { NoteHitBox, Point, Rectangle } from "./ui_base";
 import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY, CHORDFORMAT_SUBSCRIPT } from "./chord_drawer";
-import { projectDisplaySequence, type AbcDisplayMode, type DisplaySequence } from "./render/display-plan";
+import { projectDisplaySequence, type AbcDisplayMode, type CommentDisplayMode, type DisplaySequence } from "./render/display-plan";
 import { buildChordVisualModel } from "./render/chord-visual";
 import { collectChordDiagramLabels } from "./render/diagram-chords";
 import { safeMetaAlignment } from "./layout/meta-alignment";
@@ -521,6 +521,12 @@ export interface ChordProEditorOptions {
    * the browser owns native touch scrolling over the rendered song text.
    */
   readonly routeTouch?: boolean;
+  /**
+   * Readonly, without instructions displayed: how the song's comments show (see
+   * `CommentDisplayMode`). The full editor previews section references; the
+   * client view switches it at runtime with `setCommentDisplay`.
+   */
+  readonly commentDisplay?: CommentDisplayMode;
 }
 
 /**
@@ -612,6 +618,7 @@ export class ChordProEditor extends ChordDrawer {
   private domRenderer: DomSongRenderer | null = null;
   private readonly canvasLayout = new LayoutSnapshotCoordinator();
   private readonly viewportAlignedTitle: boolean;
+  private commentDisplay: CommentDisplayMode;
   private domMetaInputHost: DomMetaInputHost | null = null;
   /** Post-commit hook that keeps the DOM caret in view; owned with the renderer. */
   private domCaretScrollUnsubscribe: (() => void) | null = null;
@@ -918,6 +925,7 @@ export class ChordProEditor extends ChordDrawer {
     window.addEventListener("pp-settings-changed", this.handleScoreDefaultsChanged);
     this.printSurface = !!this.parent_div.closest(".print-editor-area");
     this.viewportAlignedTitle = !!options?.viewportAlignedTitle && !this.printSurface;
+    this.commentDisplay = options?.commentDisplay ?? "SHOW";
     this.rxStartsWithChord = new RegExp("^" + system.chordLikeRegexPattern);
 
     if (eventHandlers) {
@@ -2282,6 +2290,16 @@ export class ChordProEditor extends ChordDrawer {
   enableInstructionRendering(mode: InstructionsRenderMode, draw = true) {
     if (this.instructionsRenderMode !== mode) {
       this.instructionsRenderMode = mode;
+      this.invalidateDisplaySequence();
+      this.invalidateDisplaySemantics();
+    }
+    if (draw) this.draw();
+  }
+
+  /** How readonly raw order shows the song's comments (see `CommentDisplayMode`). */
+  setCommentDisplay(mode: CommentDisplayMode, draw = true) {
+    if (this.commentDisplay !== mode) {
+      this.commentDisplay = mode;
       this.invalidateDisplaySequence();
       this.invalidateDisplaySemantics();
     }
@@ -6468,7 +6486,7 @@ export class ChordProEditor extends ChordDrawer {
     this.instructionsAbcUpdater = () => {
       if (cleaned || !this.chordPro) return;
       const current = this.instructions?.format() ?? "";
-      this.applyInstructions(current === pendingDefault ? this.chordPro.expandAbc().getDefaultInstructions() : current, false);
+      this.applyInstructions(current === pendingDefault ? Instructions.defaultsFor(this.chordPro.expandAbc()) : current, false);
       const sourceInput = this.createInstructionsRendererInput("source", null, 0);
       if (sourceRenderer && sourceInput) sourceRenderer.update(sourceInput, "structure");
       this.buildInstructions(instructionsEditor, updatePreview);
@@ -6524,7 +6542,7 @@ export class ChordProEditor extends ChordDrawer {
     if (!this.chordPro) return "";
     const doc = this.getInstructionsDocument()!;
 
-    const genDefault = () => doc.getDefaultInstructions();
+    const genDefault = () => Instructions.defaultsFor(doc);
 
     switch (mode) {
       case "PRESET":
@@ -6655,6 +6673,7 @@ export class ChordProEditor extends ChordDrawer {
         instructionsMode: this.instructionsRenderMode,
         instructions: this.instructions ?? null,
         abcMode: this.abcDisplayMode,
+        commentDisplay: this.differentialDisplay ? "SHOW" : this.commentDisplay,
       });
     return this.displaySequence;
   }

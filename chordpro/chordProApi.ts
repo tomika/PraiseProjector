@@ -19,7 +19,7 @@ import * as clipboard from "./clipboard";
 import { ChordBoxType } from "./chord_drawer";
 import { NoteHitBox } from "./ui_base";
 import type { ChordProStylesSettings } from "./chordpro_styles";
-import type { AbcDisplayMode } from "./render/display-plan";
+import type { AbcDisplayMode, CommentDisplayMode } from "./render/display-plan";
 import type { AbcRange } from "../common/pp-types";
 
 const NOTE_SYSTEM_CODE: NoteSystemCode = "G";
@@ -344,6 +344,11 @@ function bindEditor(editorDiv: HTMLDivElement) {
     enableInstructionRendering: (mode: InstructionsRenderMode, draw = true) => {
       const instance = getBoundEditor();
       if (instance) instance.enableInstructionRendering(mode, draw);
+    },
+    /** How readonly rendering without instructions shows the song's comments — see display-plan's CommentDisplayMode. */
+    setCommentDisplay: (mode: CommentDisplayMode, draw = true) => {
+      const instance = getBoundEditor();
+      if (instance) instance.setCommentDisplay(mode, draw);
     },
     /** How readonly rendering shows ABC blocks — see display-plan's AbcDisplayMode. */
     setAbcDisplayMode: (mode: AbcDisplayMode, draw = true) => {

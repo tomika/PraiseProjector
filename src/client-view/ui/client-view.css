@@ -2592,6 +2592,17 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf) drop-shadow(0 0 0.36em rgba(255, 255, 255, 0.45));
 }
 
+/* The wand's middle state (instructions off, song comments shown): the same
+   glow language in amber, so it reads as "partly on". */
+#mainToolbar .btnDiv.cv-toolbtn-comments .btnImg {
+  opacity: 1;
+  filter: drop-shadow(0 0 0.18em #fb3) drop-shadow(0 0 0.36em rgba(255, 187, 51, 0.7));
+}
+
+#mainView.dark #mainToolbar .btnDiv.cv-toolbtn-comments .btnImg {
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #fb3) drop-shadow(0 0 0.36em rgba(255, 220, 150, 0.45));
+}
+
 #mainToolbar .btnDiv.cv-toolbtn-on #capoValue,
 #mainToolbar .btnDiv.cv-toolbtn-on #shiftValue {
   color: #fff;

@@ -28,6 +28,7 @@
   "ChpMenuBridge": "Bridge",
   "ChpMenuGrid": "Instrumental",
   "ChpMenuComment": "Comment",
+  "ChpMenuMisplacedReference": "A comment naming a section inside another section is not an instruction. Move it outside the section.",
   "ChpMenuTransposeUp": "Transpose up",
   "ChpMenuTransposeDown": "Transpose down",
   "ChpMenuClearTag": "Clear Tag",

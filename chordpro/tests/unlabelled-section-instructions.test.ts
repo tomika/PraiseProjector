@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Song } from "../../db-common/Song";
 import { ChordProDocument, getChordSystem } from "../chordpro_base";
+import { Instructions } from "../chordpro_instructions";
 
 const songText = `{title:Jézus véred megtisztít}
 {start_of_verse}
@@ -17,7 +18,7 @@ Fehér mint a [A]hó [E/G#](mint a [F#m/E]hó).
 test("unlabelled standard section produces a default instruction", () => {
   const document = new ChordProDocument(getChordSystem("G"), songText);
 
-  assert.equal(document.getDefaultInstructions(), "verse");
+  assert.equal(Instructions.defaultsFor(document), "verse");
 });
 
 test("unlabelled standard section remains projectable through instructed sections", () => {

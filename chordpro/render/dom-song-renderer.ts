@@ -8,7 +8,7 @@ import { CHORDFORMAT_SUBSCRIPT } from "./chord-visual";
 import { ChordProAbc, type ChordProChord, type ChordProDocument, type ChordProLine, type ChordSystem } from "../chordpro_base";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { safeMetaAlignment } from "../layout/meta-alignment";
-import { layoutSong, type LayoutLyricRun, type SongLayoutResult, type SongWidthPolicy } from "../layout/song-layout";
+import { commentChipInset, layoutSong, type LayoutLyricRun, type SongLayoutResult, type SongWidthPolicy } from "../layout/song-layout";
 import { segmentVisualUnits } from "../layout/text-units";
 import type { ChordVisualModel } from "./chord-visual";
 import { createChordNode, createDifferentialTextNode, createLyricRunNode, createTagNode } from "./dom-nodes";
@@ -408,6 +408,8 @@ export interface DomSongRendererInput extends SemanticRevisions {
 }
 
 const ABC_SCALE = 2 / 3;
+/** Tooltip of a misplaced section reference when the host has no translation for it. */
+const MISPLACED_REFERENCE_HINT = "A comment naming a section inside another section is not an instruction. Move it outside the section.";
 
 /**
  * The impure ABC geometry source, injected for the same reason measurement is:
@@ -1272,7 +1274,7 @@ export class DomSongRenderer {
 
       const tagNode = this.doc.createElement("div");
       tagNode.className = "chp-dom-tag";
-      const firstLyricsY = occurrenceLayout.rows?.[0]?.lyricsY ?? 0;
+      const firstLyricsY = occurrenceLayout.rows?.[0]?.lyricsY ?? occurrenceLayout.blockTextTop ?? 0;
       const firstLyricsTop = occurrenceLayout.tagSeparation + firstLyricsY;
       // Section separation belongs before the first row. The tag then shares
       // the exact top and line-height of that row's lyrics, so different tag
@@ -1287,7 +1289,15 @@ export class DomSongRenderer {
       if (plan.showTags && occurrence.tag?.visible) {
         if (occurrence.tag.textUnits.some((unit) => unit.change !== "equal"))
           this.appendDifferentialText(tagNode, occurrence.tag.textUnits, { font: plan.display.tagFont, color: plan.display.tagColor });
-        else tagNode.appendChild(createTagNode(this.doc, occurrence.tag.text, { font: plan.display.tagFont, color: plan.display.tagColor }));
+        else if (occurrence.tag.reference) {
+          // A comment's section reference keeps the comment's look in the tag
+          // lane; the layout already counts the chip's inset in the lane width.
+          const label = createTagNode(this.doc, occurrence.tag.text, { font: plan.display.tagFont, color: plan.display.commentFg });
+          label.classList.add("chp-dom-tag-reference");
+          label.style.backgroundColor = plan.display.commentBg;
+          label.style.paddingInline = `${commentChipInset(plan.display)}px`;
+          tagNode.appendChild(label);
+        } else tagNode.appendChild(createTagNode(this.doc, occurrence.tag.text, { font: plan.display.tagFont, color: plan.display.tagColor }));
       }
       for (const child of Array.from(tagNode.children)) {
         (child as HTMLElement).style.lineHeight = `${plan.display.lyricsLineHeight}px`;
@@ -1973,10 +1983,6 @@ export class DomSongRenderer {
     block.style.font = occurrence.style.font;
     block.style.color = occurrence.style.color;
     block.style.textAlign = occurrence.style.align;
-    if (occurrence.kind === "comment") {
-      block.style.backgroundColor = plan.display.commentBg;
-      if (occurrence.commentType === "box") block.classList.add("chp-dom-comment-box");
-    }
     if (occurrence.kind === "abc") {
       const abc = this.abcNodes.get(occurrence.id);
       if (abc) {
@@ -2023,16 +2029,37 @@ export class DomSongRenderer {
           block.appendChild(chord);
         }
       }
-    } else if (occurrence.kind === "comment" && !this.input.differential) {
-      for (const unit of segmentVisualUnits(occurrence.text)) {
-        const text = this.doc.createElement("span");
-        text.className = "chp-dom-comment-text";
-        text.dataset.sourceStart = String(unit.sourceStart);
-        text.dataset.sourceEnd = String(unit.sourceEnd);
-        if (selection && unit.sourceStart < selection.end && unit.sourceEnd > selection.start) text.classList.add("chp-dom-selected");
-        text.textContent = unit.text;
-        block.appendChild(text);
+    } else if (occurrence.kind === "comment") {
+      // The background chip hugs the text; the layout's inset and text top are
+      // already part of the block width and of the caret geometry.
+      const chip = this.doc.createElement("span");
+      chip.className = "chp-dom-comment-chip";
+      if (occurrence.commentType === "box") chip.classList.add("chp-dom-comment-box");
+      if (occurrence.misplacedReference) {
+        chip.classList.add("chp-dom-comment-misplaced");
+        // `localize` hands back the key itself when no translation exists.
+        const localized = this.input.localize?.("MisplacedReference");
+        chip.title = localized && !localized.endsWith("MisplacedReference") ? localized : MISPLACED_REFERENCE_HINT;
       }
+      chip.style.backgroundColor = plan.display.commentBg;
+      chip.style.marginTop = `${occurrenceLayout.blockTextTop ?? 0}px`;
+      chip.style.paddingInline = `${occurrenceLayout.blockTextInset ?? 0}px`;
+      const textHeight = occurrenceLayout.blockTextHeight ?? plan.display.lyricsLineHeight;
+      chip.style.height = `${textHeight}px`;
+      chip.style.lineHeight = `${textHeight}px`;
+      if (this.input.differential)
+        this.appendDifferentialText(chip, occurrence.textUnits, { font: occurrence.style.font, color: occurrence.style.color });
+      else
+        for (const unit of segmentVisualUnits(occurrence.text)) {
+          const text = this.doc.createElement("span");
+          text.className = "chp-dom-comment-text";
+          text.dataset.sourceStart = String(unit.sourceStart);
+          text.dataset.sourceEnd = String(unit.sourceEnd);
+          if (selection && unit.sourceStart < selection.end && unit.sourceEnd > selection.start) text.classList.add("chp-dom-selected");
+          text.textContent = unit.text;
+          chip.appendChild(text);
+        }
+      block.appendChild(chip);
     } else this.appendDifferentialText(block, occurrence.textUnits, { font: occurrence.style.font, color: occurrence.style.color });
     parent.appendChild(block);
   }

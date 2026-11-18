@@ -47,7 +47,7 @@ test("a comment line naming a section repeats it in the song's own order", () =>
 {c: Chorus}
 {c: Softly at the end}`;
   const document = new ChordProDocument(getChordSystem("G"), text);
-  assert.equal(document.getDefaultInstructions(), "Verse 1\nChorus\nVerse 2\nChorus\nSoftly at the end");
+  assert.equal(Instructions.defaultsFor(document), "Verse 1\nChorus\nVerse 2\nChorus\nSoftly at the end");
   const sequence = projectDisplaySequence({ document, readOnly: true, instructionsMode: "FULL", instructions: null });
   assert.deepEqual(
     sequence.lines.filter((entry) => entry.role === "section" && entry.line.chords.length).map((entry) => entry.item?.value),

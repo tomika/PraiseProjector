@@ -34,7 +34,7 @@ export function formatTransposeSuffix(transpose: number | undefined): string {
 /** One lazily built ABC expansion shared by a whole lookup pass. The document
  *  caches the expansion itself, but validating that cache serializes the whole
  *  song, so a loop over many unresolved (comment) lines must not repeat it. */
-function lazyAbcExpansion(doc: ChordProDocument): () => ChordProDocument {
+export function lazyAbcExpansion(doc: ChordProDocument): () => ChordProDocument {
   let expanded: ChordProDocument | undefined;
   return () => (expanded ??= doc.expandAbc());
 }
@@ -160,6 +160,84 @@ export class Instructions {
       })
       .join("\n");
   }
+  /**
+   * Reads one instruction line — or a comment line, which the song's default
+   * instructions read the same way. A line naming a section becomes a section
+   * item (multiplier set); anything else stays free text (`{ value }` only).
+   */
+  static parseItem(line: string, doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)): InstructionItem {
+    const trimmedLine = line.trim();
+    const item: InstructionItem = { value: trimmedLine };
+    if (!trimmedLine) return item;
+    const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
+    const canonical = probe.instructionName();
+    const section = Instructions.findSection(doc, canonical || trimmedLine, abcExpansion);
+    if (section) {
+      item.info = section;
+      item.value = section.instructionName();
+      item.multiplier = probe.multiplier ?? 1;
+      if (item.multiplier < 1) item.multiplier = 1;
+      // Inherit transpose from the section tag (e.g. `{soc: Chorus +2}`) when
+      // the instruction line doesn't specify one explicitly. This keeps tag
+      // transposes effective even with custom user-supplied instructions.
+      const t = clampTranspose(probe.transpose ?? section.transpose);
+      if (t !== undefined) item.transpose = t;
+    }
+    return item;
+  }
+
+  /**
+   * The section a comment line names, read exactly as the default instructions
+   * read it (so `{c: Chorus softly}` names the Chorus too), or null for free
+   * text. The single rule for "this comment is a section reference".
+   */
+  static commentReference(line: ChordProLine, doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)): InstructionItem | null {
+    if (!line.isComment) return null;
+    const item = Instructions.parseItem(line.text, doc, abcExpansion);
+    return item.multiplier != null ? item : null;
+  }
+
+  /**
+   * A comment that plainly names a section (`{c: Chorus 2x}`, no words of its
+   * own), written inside another section, where no comment is an instruction:
+   * the editor marks it. A note that only mentions a section (`{c: Chorus
+   * softly}`) is not marked there.
+   */
+  static isMisplacedReference(line: ChordProLine, doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)) {
+    if (!line.isComment || !line.getSectionInfo().name) return false;
+    const item = Instructions.commentReference(line, doc, abcExpansion);
+    if (!item) return false;
+    const probe = new ChordProSectionInfo("start_of_chorus:" + line.text.trim());
+    return probe.variant == null || probe.instructionName().toLocaleLowerCase() === item.value.toLocaleLowerCase();
+  }
+
+  /**
+   * The song's built-in "default" instructions: one entry per comment line (raw
+   * text) and one per distinct section block (in `ChordProSectionInfo.normalized()`
+   * form, or the directive name for an unlabelled standard section). A comment
+   * inside a section is never read as a {@link commentReference section
+   * reference}. This seeds the editor's instructions pane, and readonly views
+   * and `Song.ts` use it when no explicit instructions are supplied.
+   */
+  static defaultsFor(doc: ChordProDocument): string {
+    const abcExpansion = lazyAbcExpansion(doc);
+    const lines: string[] = [];
+    for (let i = 0; i < doc.lines.length; ++i) {
+      const line = doc.lines[i];
+      if (line.isComment) {
+        if (!line.getSectionInfo().name || !Instructions.commentReference(line, doc, abcExpansion)) lines.push(line.text);
+        continue;
+      }
+      const info = line.getSectionInfo();
+      const instructionName = info.normalizedInstructionName() || line.abcSource?.getSectionInfo().normalizedInstructionName();
+      if (instructionName) {
+        while (i + 1 < doc.lines.length && doc.lines[i + 1].getSectionInfo() === info) ++i;
+        lines.push(instructionName);
+      }
+    }
+    return lines.join("\n");
+  }
+
   parse(data: string, doc: ChordProDocument) {
     try {
       data = JSON.parse('"' + data + '"');
@@ -168,27 +246,7 @@ export class Instructions {
     }
     this.items.splice(0, this.items.length);
     const abcExpansion = lazyAbcExpansion(doc);
-    for (const line of data.split("\n")) {
-      const trimmedLine = line.trim();
-      const item: InstructionItem = { value: trimmedLine };
-      if (trimmedLine) {
-        const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
-        const canonical = probe.instructionName();
-        const section = Instructions.findSection(doc, canonical || trimmedLine, abcExpansion);
-        if (section) {
-          item.info = section;
-          item.value = section.instructionName();
-          item.multiplier = probe.multiplier ?? 1;
-          if (item.multiplier < 1) item.multiplier = 1;
-          // Inherit transpose from the section tag (e.g. `{soc: Chorus +2}`) when
-          // the instruction line doesn't specify one explicitly. This keeps tag
-          // transposes effective even with custom user-supplied instructions.
-          const t = clampTranspose(probe.transpose ?? section.transpose);
-          if (t !== undefined) item.transpose = t;
-        }
-      }
-      this.items.push(item);
-    }
+    for (const line of data.split("\n")) this.items.push(Instructions.parseItem(line, doc, abcExpansion));
     this.normalize();
   }
   normalize(index?: number) {

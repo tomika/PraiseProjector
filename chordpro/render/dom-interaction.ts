@@ -217,8 +217,8 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
         top: blockTop,
         bottom: blockTop + (entry.blockHeight ?? plan.display.lyricsLineHeight),
         left: blockLeft,
-        lyricsTop: blockTop,
-        lyricsHeight: plan.display.lyricsLineHeight,
+        lyricsTop: blockTop + (entry.blockTextTop ?? 0),
+        lyricsHeight: entry.blockTextHeight ?? plan.display.lyricsLineHeight,
         caretStops: entry.blockCaretStops,
       });
     }
@@ -229,7 +229,7 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
       plan.showTags && entry.source.tag?.visible
         ? {
             left: leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth - entry.tagWidth,
-            top: top + entry.tagSeparation + (entry.rows?.[0]?.lyricsY ?? 0),
+            top: top + entry.tagSeparation + (entry.rows?.[0]?.lyricsY ?? entry.blockTextTop ?? 0),
             width: entry.tagWidth,
             height: plan.display.lyricsLineHeight,
             name: entry.source.tag.name,

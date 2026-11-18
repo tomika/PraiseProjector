@@ -212,6 +212,7 @@ interface PersistedClientViewState {
   listMode: ListMode;
   navigationMode: NavigationMode;
   showInstructions: boolean;
+  showSongComments?: boolean;
   highlightOn: boolean;
   highlightControl: boolean;
   highlightOpacity: number;
@@ -320,6 +321,10 @@ export interface ClientViewState {
   /** Whether the song's display instructions are overlaid on the song view
    *  (legacy chkInstructions wand toggle). */
   showInstructions: boolean;
+  /** With instructions off: show the song's comments (its default instructions)
+   *  as the full editor does, instead of none. The wand cycles
+   *  off → comments → instructions → off (see {@link ClientViewStore.cycleInstructions}). */
+  showSongComments: boolean;
   /** Whether highlight is shown in the song view (legacy chkHighlight.checked).
    *  States: off (false/false) → on (true/false) → control (true/true) → off. */
   highlightOn: boolean;
@@ -491,6 +496,7 @@ function initialState(): ClientViewState {
     startupScanMode: null,
     sessionsFoundBadge: false,
     showInstructions: false,
+    showSongComments: false,
     highlightOn: false,
     highlightControl: false,
     highlightPending: false,
@@ -829,6 +835,7 @@ export class ClientViewStore {
       listMode: s.listMode,
       navigationMode: s.navigationMode,
       showInstructions: s.showInstructions,
+      showSongComments: s.showSongComments,
       highlightOn: s.highlightOn,
       highlightControl: s.highlightControl,
       highlightOpacity: s.highlightOpacity,
@@ -908,6 +915,7 @@ export class ClientViewStore {
       patch.navigationMode = persisted.navigationMode;
     }
     if (typeof persisted.showInstructions === "boolean") patch.showInstructions = persisted.showInstructions;
+    if (typeof persisted.showSongComments === "boolean") patch.showSongComments = persisted.showSongComments;
     if (typeof persisted.highlightOpacity === "number") patch.highlightOpacity = persisted.highlightOpacity;
     // Highlight visibility is a pure local display preference — restore it in
     // every mode. Control implies a visible highlight (keep the invariant). In
@@ -1459,8 +1467,21 @@ export class ClientViewStore {
     };
   }
 
+  /** Instructions on/off (hardware commands); off returns to the last comments choice. */
   toggleInstructions(on?: boolean): void {
     this.set({ showInstructions: on ?? !this.state.showInstructions });
+  }
+
+  /** The wand's three states, forward: off → comments → instructions → off.
+   *  Instructions keep the comments choice they were reached from, so turning
+   *  them off with a hotkey lands where the wand came from. */
+  cycleInstructions(direction: -1 | 1 = 1): void {
+    const order = ["off", "comments", "instructions"] as const;
+    const { showInstructions, showSongComments } = this.state;
+    const current = showInstructions ? 2 : showSongComments ? 1 : 0;
+    const next = order[(current + direction + order.length) % order.length];
+    if (next === "instructions") this.set({ showInstructions: true });
+    else this.set({ showInstructions: false, showSongComments: next === "comments" });
   }
 
   // ── highlight control (legacy chkHighlight) ──────────────────────────────────────
@@ -2135,6 +2156,7 @@ export class ClientViewStore {
         this.toggleHighlight();
         break;
       case "instructions":
+        // Hotkeys keep the legacy on/off; off returns to the wand's last comments choice.
         this.toggleInstructions();
         break;
       case "capo": {

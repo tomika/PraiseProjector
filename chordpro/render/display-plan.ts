@@ -9,10 +9,11 @@ import {
   ChordProCommentType,
   ChordProDocument,
   ChordProLine,
+  ChordProSectionInfo,
   ChordSystem,
   fixChordProText,
 } from "../chordpro_base";
-import { Instructions, type InstructionItem } from "../chordpro_instructions";
+import { Instructions, lazyAbcExpansion, type InstructionItem } from "../chordpro_instructions";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { buildChordVisualModel, CHORDFORMAT_NOCHORDS, CHORDFORMAT_NOSECTIONDUP, CHORDFORMAT_SIMPLIFIED, type ChordVisualModel } from "./chord-visual";
 import {
@@ -79,6 +80,8 @@ export interface DisplayTag {
   readonly textUnits: readonly DifferentialTextUnit[];
   readonly identity: string;
   readonly visible: boolean;
+  /** The label of a comment's section reference ({@link ProjectedLine.reference}), drawn on the comment background. */
+  readonly reference?: boolean;
 }
 
 export interface DisplayChord {
@@ -138,6 +141,8 @@ export interface DisplayOccurrence {
   readonly text: string;
   readonly textUnits: readonly DifferentialTextUnit[];
   readonly commentType?: "normal" | "italic" | "box";
+  /** Editing only: a comment naming a section from inside another section, which is never an instruction. */
+  readonly misplacedReference?: boolean;
   readonly chords: readonly DisplayChord[];
   readonly gridRuns: readonly DisplayGridRun[];
   readonly suppressChords: boolean;
@@ -346,6 +351,11 @@ export interface ProjectedLine {
   readonly item: InstructionItem | null;
   readonly instructionIndex?: number;
   readonly role: DisplayOccurrenceRole;
+  /**
+   * An authored comment's section reference, previewed in its place
+   * ({@link CommentDisplayMode} PREVIEW): the label it shows in the tag lane.
+   */
+  readonly reference?: string;
 }
 
 export interface DisplaySequence {
@@ -369,12 +379,23 @@ export interface DisplaySequence {
  */
 export type AbcDisplayMode = "AUTO" | "NOTATION" | "CHORDS" | "HIDDEN";
 
+/**
+ * How readonly raw order (no instructions displayed) shows the song's comments,
+ * which are its default instructions. SHOW renders them as authored; PREVIEW
+ * also replaces a comment naming a section with that section's first line
+ * (the full editor, and the client view's comments state); HIDE drops them all
+ * (the client view with instructions off).
+ */
+export type CommentDisplayMode = "SHOW" | "PREVIEW" | "HIDE";
+
 export interface ProjectDisplaySequenceOptions {
   readonly document: ChordProDocument;
   readonly readOnly: boolean;
   readonly instructionsMode: DisplayInstructionsMode;
   readonly instructions?: Instructions | null;
   readonly abcMode?: AbcDisplayMode;
+  /** Raw readonly order only; SHOW when omitted. */
+  readonly commentDisplay?: CommentDisplayMode;
 }
 
 function genInstructionComment(document: ChordProDocument, text: string, type: ChordProCommentType = "") {
@@ -401,6 +422,51 @@ function readonlySectionLabel(line: ChordProLine) {
   const multiplier = line.multiplierOverride ?? section.multiplier;
   if (multiplier != null && multiplier > 1) label += ` ${multiplier}x`;
   return label;
+}
+
+/** A section line as an instruction item plays it: the item's repeat count and transpose. */
+function projectSectionLine(origin: ChordProLine, item: InstructionItem) {
+  const line = cloneForProjection(origin);
+  line.multiplierOverride = item.multiplier;
+  if (item.transpose) {
+    line.transposeOverride = item.transpose;
+    line.transpose(item.transpose);
+  }
+  labelAbcClone(line);
+  return line;
+}
+
+/** A repeat's preview: a copy of the section's first projected line, ending in " ...". */
+function firstLinePreview(first: ChordProLine, multiplier: number | undefined) {
+  const line = first.clone();
+  line.insertString(line.text.length, " ...");
+  line.multiplierOverride = multiplier;
+  return line;
+}
+
+/**
+ * An authored comment naming a section (`Instructions.commentReference`, the
+ * reading the default instructions use) previews that section's first line
+ * instead, labelled with the comment as written, so `{c: Chorus softly}` keeps
+ * its words. It stays a comment inside a section, where no comment is an
+ * instruction, and when its section starts with notation, which has no first line.
+ */
+function sectionReferencePreview(
+  document: ChordProDocument,
+  authored: ChordProDocument,
+  comment: ChordProLine,
+  abcExpansion: () => ChordProDocument
+): ProjectedLine | null {
+  if (comment.getSectionInfo().name) return null;
+  const item = Instructions.commentReference(comment, authored, abcExpansion);
+  if (!item) return null;
+  const origin = document.lines.find((line) => Instructions.matchesSection(line, item));
+  if (!origin || origin instanceof ChordProAbc) return null;
+  // The previewed chords already show a transpose, so the label leaves it out.
+  const label = new ChordProSectionInfo("start_of_chorus:" + comment.text.trim()).withoutTranspose();
+  // The preview keeps the first line's source line number, so selecting it
+  // selects the referenced section and projecting that section highlights it.
+  return { line: firstLinePreview(projectSectionLine(origin, item), item.multiplier), origin, item: null, role: "ellipsis", reference: label };
 }
 
 /** Notation carries its label in its own R: header rather than in the tag lane, so
@@ -451,13 +517,7 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
         if (!Instructions.matchesSection(origin, item)) continue;
         matched = true;
         if (abcMode === "HIDDEN" && (origin instanceof ChordProAbc || origin.abcSource)) continue;
-        const line = cloneForProjection(origin);
-        line.multiplierOverride = item.multiplier;
-        if (item.transpose) {
-          line.transposeOverride = item.transpose;
-          line.transpose(item.transpose);
-        }
-        labelAbcClone(line);
+        const line = projectSectionLine(origin, item);
         line.instructedSectionIndex = i;
         const projected: ProjectedLine = { line, origin, item, instructionIndex: i, role: "section" };
         if (!firstLine) firstLine = projected;
@@ -472,9 +532,7 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
       const first = firstLines.get(repeatKey);
       // Notation has no "first line" to preview; such a repeat gets the label row.
       if (first && !(first.line instanceof ChordProAbc)) {
-        const line = first.line.clone();
-        line.insertString(line.text.length, " ...");
-        line.multiplierOverride = item.multiplier;
+        const line = firstLinePreview(first.line, item.multiplier);
         line.sourceLineNumber = -1; // to prevent from highlight via from/to
         line.instructedSectionIndex = i;
         lines.push({ line, origin: first.origin, item, instructionIndex: i, role: "ellipsis" });
@@ -512,7 +570,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
   // Instruction indices are wire identities. Defaults must be bound against
   // the authored document before a view chooses notation or expanded lyrics.
   if (options.instructionsMode && !instructions) {
-    const defaults = document.getDefaultInstructions();
+    const defaults = Instructions.defaultsFor(document);
     if (defaults) {
       instructions = new Instructions();
       instructions.parse(defaults, document);
@@ -542,7 +600,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
       // With no explicit instructions bound, fall back to the song's built-in
       // defaults (comments + section list) so `{c: …}` directive comments are
       // still honored without the playlist carrying an instructions string.
-      const defaultStr = document.getDefaultInstructions();
+      const defaultStr = Instructions.defaultsFor(document);
       if (defaultStr) {
         instructions = new Instructions();
         instructions.parse(defaultStr, document);
@@ -553,9 +611,21 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
 
   let mutated = false;
   const lines: ProjectedLine[] = [];
+  const abcExpansion = lazyAbcExpansion(options.document);
   for (const origin of document.lines) {
     const abc = origin instanceof ChordProAbc;
     if (abc && abcMode === "HIDDEN") {
+      mutated = true;
+      continue;
+    }
+    if (origin.isComment && options.commentDisplay === "HIDE") {
+      mutated = true;
+      continue;
+    }
+    const preview =
+      options.commentDisplay === "PREVIEW" && origin.isComment ? sectionReferencePreview(document, options.document, origin, abcExpansion) : null;
+    if (preview) {
+      lines.push(preview);
       mutated = true;
       continue;
     }
@@ -812,6 +882,11 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
   const noChords = (options.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS;
   const noSectionDuplicates = (options.chordFormat & CHORDFORMAT_NOSECTIONDUP) === CHORDFORMAT_NOSECTIONDUP;
   const repeatOrdinals = new Map<string, number>();
+  // Editing marks misplaced section references (see `Instructions.isMisplacedReference`).
+  // This runs on every editing frame, so it skips the ABC expansion (whose cache
+  // check serializes the song): a reference to a notation part goes unmarked.
+  const marksMisplaced = !options.readOnly && !options.differential;
+  const withoutAbcExpansion = () => document;
   const itemByInstructionIndex = new Map<number, InstructionItem>();
   for (const entry of sequence.lines)
     if (entry.instructionIndex != null && entry.item) itemByInstructionIndex.set(entry.instructionIndex, entry.item);
@@ -854,7 +929,13 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
     repeatOrdinals.set(repeatKey, repeatOrdinal + 1);
     const id = occurrenceId(logicalLineId, instructionItemId, instructionGroupId, repeatOrdinal, differentialLines);
 
-    const tag = noChords ? null : tagForLine(line, options, sequence.labels, previousTagIdentity);
+    let tag: DisplayTag | null = noChords ? null : tagForLine(line, options, sequence.labels, previousTagIdentity);
+    // A reference always shows its label, and its own identity makes the
+    // section after it show its label again too.
+    if (!noChords && projected.reference != null) {
+      const text = options.abbreviateTags ? abbreviate(projected.reference) : projected.reference;
+      tag = { name: tag?.name ?? "", text, textUnits: differentialTextUnits(text), identity: `reference:${id}`, visible: !!text, reference: true };
+    }
     if (tag?.text && tag.identity) previousTagIdentity = tag.identity;
     const duplicateSection = noSectionDuplicates && !!document.sectionInfo.get(line.getTagInfo().key)?.duplicate;
     const suppressChords = noChords || duplicateSection;
@@ -910,6 +991,9 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
       text,
       textUnits,
       commentType: line.getCommentType(),
+      ...(marksMisplaced && kind === "comment" && Instructions.isMisplacedReference(line, document, withoutAbcExpansion)
+        ? { misplacedReference: true }
+        : {}),
       chords,
       gridRuns: kind === "grid" ? buildGridRuns(id, line, options) : [],
       suppressChords,

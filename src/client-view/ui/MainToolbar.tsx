@@ -131,14 +131,20 @@ export function MainToolbar({
 
   // Long-press plumbing for the wand (instructions) button. Editing is gated by
   // display-control capability. A long press — or the native contextmenu (touch
-  // long-press / right-click) — opens the editor dialog; a short press is the
-  // normal show/hide toggle. Shared useLongPress, same as capo/lamp/zoom: ONE
+  // long-press / right-click) — opens the editor dialog; a short press cycles
+  // off → song comments → instructions → off. Shared useLongPress, same as capo/lamp/zoom: ONE
   // long-press implementation (native contextmenu preferred, timer fallback).
   const canEditInstructions = state.capabilities.canControlDisplay;
   const instructionsPress = useLongPress(
-    () => store.toggleInstructions(),
+    () => store.cycleInstructions(),
     () => store.openInstructionsEditor()
   );
+  const instructionsTitle =
+    (state.showInstructions
+      ? "Instructions shown (tap: off)"
+      : state.showSongComments
+        ? "Song comments shown (tap: instructions)"
+        : "Instructions off (tap: song comments)") + (canEditInstructions ? ", hold to edit" : "");
 
   // Network indicator state (rendered by controls.netstatus below). Tapping forces
   // an immediate reconnect — the new-interface analog of the legacy
@@ -254,16 +260,16 @@ export function MainToolbar({
         <img className="btnImg" src={icon("home.svg")} alt="Home" />
       </div>
     ) : null,
-    // Instructions (wand): short press toggles the instructions overlay; long
-    // press opens the instructions text editor (when the user can control
+    // Instructions (wand): short press cycles off → song comments → instructions;
+    // long press opens the instructions text editor (when the user can control
     // display — mirrors legacy chkInstructions + editInstructions).
     instructions: (
       <div
         id="btnInstructions"
-        className={`btnDiv${state.showInstructions ? " cv-toolbtn-on" : ""}${state.hotkeyActiveControl === "instructions" ? " cv-hotkey-active" : ""}`}
-        title={canEditInstructions ? "Show/hide instructions (hold to edit)" : "Show/hide instructions"}
+        className={`btnDiv${state.showInstructions ? " cv-toolbtn-on" : state.showSongComments ? " cv-toolbtn-comments" : ""}${state.hotkeyActiveControl === "instructions" ? " cv-hotkey-active" : ""}`}
+        title={instructionsTitle}
         {...(canEditInstructions ? instructionsPress : {})}
-        onClick={canEditInstructions ? undefined : () => store.toggleInstructions()}
+        onClick={canEditInstructions ? undefined : () => store.cycleInstructions()}
       >
         <img className="btnImg cv-toggle-icon" src={icon("wand.svg")} alt="Instructions" />
       </div>

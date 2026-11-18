@@ -146,8 +146,39 @@
   white-space: pre;
 }
 
+/* A comment's background hugs its text instead of banding the content column,
+ * and a comment's section reference wears the same chip in the tag lane. The
+ * height, offsets and inline padding come from the layout, which keeps them in
+ * the measured geometry (block width, caret stops, tag lane width). */
+.chp-dom-comment-chip,
+.chp-dom-tag-reference {
+  display: inline-block;
+  box-sizing: content-box;
+  vertical-align: top;
+  white-space: pre;
+  border-radius: 0.25em;
+}
+
+/* A section reference inside another section is never an instruction: marked
+ * like a spelling error. The glyph spans turn inline so the chip's one wavy
+ * decoration runs unbroken under them (it never enters an inline-block). */
+.chp-dom-comment-misplaced {
+  /* Inline glyphs could otherwise kern across span edges, off their caret stops. */
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: red;
+  text-decoration-skip-ink: none;
+}
+
+.chp-dom-comment-misplaced .chp-dom-comment-text {
+  display: inline;
+}
+
+/* An outline, unlike a border, adds nothing to the measured geometry. */
 .chp-dom-comment-box {
-  border: var(--chp-comment-border, 1px solid currentColor);
+  outline: var(--chp-comment-border, 1px solid currentColor);
 }
 
 .chp-dom-grid-text {

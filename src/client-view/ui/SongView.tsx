@@ -41,7 +41,7 @@ import {
 } from "../../../chordpro/chord_drawer";
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import type { ChordProStylesSettings } from "../../../chordpro/chordpro_styles";
-import type { AbcDisplayMode } from "../../../chordpro/render/display-plan";
+import type { AbcDisplayMode, CommentDisplayMode } from "../../../chordpro/render/display-plan";
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
 import { icon } from "./assets";
@@ -153,6 +153,15 @@ function buildChordFlags(s: DisplaySettings): number {
  *  is on; otherwise ABC blocks always render as notation. */
 function abcDisplayMode(s: DisplaySettings): AbcDisplayMode {
   return s.maxText ? s.zoomAbcMode : "NOTATION";
+}
+
+/**
+ * The song's comments are its default instructions: with the wand off they are
+ * hidden; in its comments state they look as in the full editor. With
+ * instructions on, only raw-order pages (e.g. preloaded neighbours) consult it.
+ */
+function commentDisplayMode(showInstructions: boolean, showSongComments: boolean): CommentDisplayMode {
+  return showInstructions || showSongComments ? "PREVIEW" : "HIDE";
 }
 
 function advanceFitGeneration(host: HTMLDivElement): number {
@@ -432,12 +441,14 @@ function renderSong(
   chordProStyles: ChordProStylesSettings | null,
   dark: boolean,
   sizingMode: ZoomSizingMode,
+  commentDisplay: CommentDisplayMode,
   fitViewport?: HTMLElement | null
 ): void {
   // suppressDraw: apply settings + transpose before the first paint; fitAndZoom()
   // below issues the single draw. Keeps preloaded neighbour pages flash-free too.
   api.load(text, false, undefined, undefined, true, CLIENT_VIEW_EDITOR_OPTIONS);
   api.setStyles(chordProStyles, false);
+  api.setCommentDisplay(commentDisplay, false);
   const maxText = settings.maxText;
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
@@ -475,7 +486,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const performancePreferences = useClientPerformancePreferences();
   const pageTurnEnabled = resolvePerformanceFeature(performancePreferences.clientViewPageTurnMode, performanceProfile.chordProSlow);
   const neighbourPreloadingEnabled = pageTurnEnabled;
-  const { optionsOpen, showInstructions, highlightOn, highlightControl, highlightOpacity } = state;
+  const { optionsOpen, showInstructions, showSongComments, highlightOn, highlightControl, highlightOpacity } = state;
+  const commentDisplay = commentDisplayMode(showInstructions, showSongComments);
   const viewingRemoteDisplay = isViewingRemoteDisplay(state);
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
@@ -1189,6 +1201,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // draw=false here is enough.
     api.applyInstructions(display.instructions ?? "", false);
     api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
+    api.setCommentDisplay(commentDisplay, false);
     api.setSectionRepeatCounts(sectionRepeatCounts, false);
     // Submit the current decoration without drawing; fitAndZoom owns the single
     // document paint for this content/layout change.
@@ -1248,6 +1261,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     dark,
     scrollMode,
     showInstructions,
+    commentDisplay,
     sizingMode,
     autoWrap,
     store,
@@ -1302,6 +1316,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
           chordProStyles,
           dark,
           sizingMode,
+          commentDisplay,
           prevPageRef.current ?? nextPageRef.current ?? swipeRef.current
         );
       } catch {
@@ -1328,6 +1343,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     settings,
     dark,
     sizingMode,
+    commentDisplay,
     store,
   ]);
 

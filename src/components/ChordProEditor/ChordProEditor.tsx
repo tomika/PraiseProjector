@@ -14,6 +14,7 @@ import { PageFlip } from "../../../chordpro/pageFlip";
 import { getClientPerformanceSnapshot, recordChordProRenderDuration, subscribeClientPerformance } from "../../shared/clientPerformanceProfile";
 import "./ChordProEditor.css";
 import type { ChordProEditorEventHandlers, ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
+import type { CommentDisplayMode } from "../../../chordpro/render/display-plan";
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
 import type { PerformanceFeatureMode } from "../../types";
 import SongLanguageSelect from "../SongLanguageSelect";
@@ -138,6 +139,8 @@ interface ChordProEditorProps {
   /** Injected by the functional wrapper from the shared runtime-local profile. */
   chordProSlow?: boolean;
   confirmDiscardChordChanges?: (discard: () => void) => void;
+  /** Readonly comments without instructions; the full view previews section references. */
+  commentDisplay?: CommentDisplayMode;
 }
 
 interface ChordProEditorState {
@@ -800,10 +803,10 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     const api = this.getBoundChordProAPI(host);
     if (!api) return;
     if (!song) {
-      api.load("", false, undefined, undefined, undefined, { viewportAlignedTitle: true });
+      api.load("", false, undefined, undefined, undefined, this.editorOptions);
       return;
     }
-    api.load(song.Text, false, undefined, undefined, undefined, { viewportAlignedTitle: true });
+    api.load(song.Text, false, undefined, undefined, undefined, this.editorOptions);
     const shouldHideChords = this.props.settings?.hideChordsInReadonlyEditor ?? false;
     api.setDisplay(true, true, false, false, "Am", "Full", 1.0, shouldHideChords);
     api.setStyles?.(this.props.settings?.chordProStyles ?? null);
@@ -898,6 +901,11 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
     this.skipNextWysiwygSync = false;
   };
 
+  /** The full view's song surface; the client view has its own options. */
+  private get editorOptions(): ChordProEditorOptions {
+    return { viewportAlignedTitle: true, commentDisplay: this.props.commentDisplay ?? "PREVIEW" };
+  }
+
   private getEditorEventHandlers(): ChordProEditorEventHandlers {
     return {
       OnLineSel: (lineNumber: number) => {
@@ -953,7 +961,7 @@ class ChordProEditor extends React.Component<ChordProEditorProps, ChordProEditor
         if (!this.hasLoadedDocument || !!compareBase) {
           // When compareBase is provided, show diff view (non-editable)
           chordApi.load(textToLoad, compareBase ? false : this.isEditable, compareBase, this.getEditorEventHandlers(), undefined, {
-            viewportAlignedTitle: true,
+            ...this.editorOptions,
             routeTouch: this.routeEditorTouchInteractions,
           });
           this.hasLoadedDocument = true;

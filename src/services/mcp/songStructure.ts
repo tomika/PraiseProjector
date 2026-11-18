@@ -71,7 +71,7 @@ export function songStructure(text: string, system: string): McpSongStructure {
   // Parts and verses of a score with lyrics can be named as well.
   const expanded = document.expandAbc();
   if (expanded !== document) addSections(expanded);
-  return { sections, defaultInstructions: document.getDefaultInstructions(), repeatedSections: repeatedSections(song, document) };
+  return { sections, defaultInstructions: Instructions.defaultsFor(document), repeatedSections: repeatedSections(song, document) };
 }
 
 export function analyzeInstructions(text: string, system: string, instructions: string): McpInstructionAnalysis {

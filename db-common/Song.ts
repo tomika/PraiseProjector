@@ -549,7 +549,7 @@ export class Song {
     // When no explicit instructions are supplied, derive the song's built-in
     // defaults from the ChordPro document (one entry per comment line plus
     // one normalized entry per distinct section block, in source order).
-    const source = instructions && instructions.trim() ? instructions : this.doc.getDefaultInstructions();
+    const source = instructions && instructions.trim() ? instructions : Instructions.defaultsFor(this.doc);
     if (!source.trim()) return sections;
 
     const list = new Instructions();

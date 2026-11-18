@@ -91,6 +91,12 @@ export interface LayoutOccurrence {
   readonly blockCaretStops?: readonly RowCaretStop[];
   readonly blockWidth?: number;
   readonly blockHeight?: number;
+  /** Comment blocks: top of the text line inside the block, centring it in the comment spacing. */
+  readonly blockTextTop?: number;
+  /** Comment blocks: horizontal padding of the background chip, already in `blockWidth` and the caret stops. */
+  readonly blockTextInset?: number;
+  /** Comment blocks: height of the text line (and its chip); a larger comment font grows it. */
+  readonly blockTextHeight?: number;
 }
 
 export interface LayoutGridRun {
@@ -185,8 +191,17 @@ function measurementRequests(plan: DisplayPlan): MeasurementRequest[] {
   return requests;
 }
 
-function lineTagWidth(occurrence: DisplayOccurrence, tagWidths: ReadonlyMap<string, number>) {
-  return occurrence.tag?.visible ? (tagWidths.get(occurrence.id) ?? 0) : 0;
+/**
+ * Horizontal padding of a comment-background chip: a comment's text, or the
+ * label of a comment's section reference. Part of the measured geometry.
+ */
+export function commentChipInset(display: { readonly lyricsLineHeight: number }) {
+  return Math.round(display.lyricsLineHeight / 4);
+}
+
+function lineTagWidth(plan: DisplayPlan, occurrence: DisplayOccurrence, tagWidths: ReadonlyMap<string, number>) {
+  if (!occurrence.tag?.visible) return 0;
+  return (tagWidths.get(occurrence.id) ?? 0) + (occurrence.tag.reference ? 2 * commentChipInset(plan.display) : 0);
 }
 
 function layoutLyrics(
@@ -389,9 +404,9 @@ function layoutGrid(plan: DisplayPlan, occurrence: DisplayOccurrence, measured: 
   return { width: x, height, runs, caretStops };
 }
 
-function layoutComment(occurrence: DisplayOccurrence, measured: ReadonlyMap<string, { width: number; height: number }>) {
+function layoutComment(occurrence: DisplayOccurrence, measured: ReadonlyMap<string, { width: number; height: number }>, inset: number) {
   const caretStops: RowCaretStop[] = [];
-  let width = 0;
+  let width = inset;
   let height = 0;
   for (const unit of segmentVisualUnits(occurrence.text)) {
     caretStops.push({ pos: width, sourceOffset: unit.sourceStart });
@@ -400,7 +415,7 @@ function layoutComment(occurrence: DisplayOccurrence, measured: ReadonlyMap<stri
     height = Math.max(height, size.height);
   }
   caretStops.push({ pos: width, sourceOffset: occurrence.text.length });
-  return { width, height, caretStops };
+  return { width: width + inset, height, caretStops };
 }
 
 /** Natural-width FIT_PAGE layout. It is pure and performs no DOM access. */
@@ -410,7 +425,7 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
   const constrainedWidth = widthPolicy === "FIT_PAGE" ? Number.POSITIVE_INFINITY : (options.contentWidth ?? 0);
   const fillsConstrainedWidth = widthPolicy === "FIT_WIDTH" || widthPolicy === "PRINT";
   const tagLaneWidth = plan.showTags
-    ? plan.occurrences.reduce((maximum, occurrence) => Math.max(maximum, lineTagWidth(occurrence, options.tagWidths)), 0)
+    ? plan.occurrences.reduce((maximum, occurrence) => Math.max(maximum, lineTagWidth(plan, occurrence, options.tagWidths)), 0)
     : 0;
   const tagGap = tagLaneWidth > 0 ? 2 * plan.display.lyricsLineHeight : 0;
   const meta: LayoutMeta[] = [];
@@ -438,7 +453,7 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
   let pending = false;
   const bodyMeasure = constrainedWidth - 2 * plan.display.horizontalMargin - tagLaneWidth - tagGap;
   for (const occurrence of plan.occurrences) {
-    const tagWidth = lineTagWidth(occurrence, options.tagWidths);
+    const tagWidth = lineTagWidth(plan, occurrence, options.tagWidths);
     const noChordSeparation = (plan.chordFormat & CHORDFORMAT_NOCHORDS) === CHORDFORMAT_NOCHORDS ? Math.max(2, plan.display.chordLineHeight / 2) : 0;
     const tagSeparation = (occurrence.tag?.visible ? 10 : 0) + noChordSeparation;
     if (occurrence.kind === "lyrics") {
@@ -454,14 +469,18 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
     }
 
     const grid = occurrence.kind === "grid" ? layoutGrid(plan, occurrence, measured) : undefined;
-    const comment = occurrence.kind === "comment" ? layoutComment(occurrence, measured) : undefined;
+    // A comment's background hugs its text (the canvas painted it per glyph)
+    // with a small inset, instead of banding the whole content column.
+    const commentInset = occurrence.kind === "comment" ? commentChipInset(plan.display) : 0;
+    const comment = occurrence.kind === "comment" ? layoutComment(occurrence, measured, commentInset) : undefined;
     const blockSize = grid ?? comment ?? measured.get(`${occurrence.id}:block`) ?? { width: 0, height: 0 };
     const extraCommentHeight = occurrence.kind === "comment" ? plan.display.chordLineHeight / 2 : 0;
+    const textHeight = Math.max(plan.display.lyricsLineHeight, blockSize.height);
     const measuredAbcHeight = occurrence.kind === "abc" ? options.abcHeights?.get(occurrence.id) : undefined;
     const blockHeight =
       occurrence.kind === "abc"
         ? (measuredAbcHeight ?? Math.max(plan.display.lyricsLineHeight, 2 * plan.display.chordLineHeight))
-        : Math.max(plan.display.lyricsLineHeight, blockSize.height) + extraCommentHeight;
+        : textHeight + extraCommentHeight;
     const blockWidth = occurrence.style.indent + blockSize.width;
     const height = tagSeparation + blockHeight;
     occurrences.push({
@@ -472,7 +491,9 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
       tagWidth,
       tagSeparation,
       ...(grid ? { grid } : {}),
-      ...(comment ? { blockCaretStops: comment.caretStops } : {}),
+      ...(comment
+        ? { blockCaretStops: comment.caretStops, blockTextTop: extraCommentHeight / 2, blockTextInset: commentInset, blockTextHeight: textHeight }
+        : {}),
       blockWidth,
       blockHeight,
     });

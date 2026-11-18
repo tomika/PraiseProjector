@@ -1384,32 +1384,6 @@ export class ChordProDocument {
     return info;
   }
 
-  /**
-   * Returns the song's built-in "default" instruction string: one entry per
-   * comment line (raw text) and one entry per distinct section block (in
-   * `ChordProSectionInfo.normalized()` form, or the directive name for an
-   * unlabelled standard section). This is the source the editor uses to seed
-   * the instructions side pane, and the source `Song.ts` uses when no explicit
-   * playlist instructions are supplied.
-   */
-  getDefaultInstructions(): string {
-    const lines: string[] = [];
-    for (let i = 0; i < this.lines.length; ++i) {
-      const line_obj = this.lines[i];
-      if (line_obj.isComment) {
-        lines.push(line_obj.text);
-      } else {
-        const info = line_obj.getSectionInfo();
-        const instructionName = info.normalizedInstructionName() || line_obj.abcSource?.getSectionInfo().normalizedInstructionName();
-        if (instructionName) {
-          while (i + 1 < this.lines.length && this.lines[i + 1].getSectionInfo() === info) ++i;
-          lines.push(instructionName);
-        }
-      }
-    }
-    return lines.join("\n");
-  }
-
   constructor(
     readonly system: ChordSystem,
     chp_text: string | DifferentialText[]

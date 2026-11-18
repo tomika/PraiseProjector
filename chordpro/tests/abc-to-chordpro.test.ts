@@ -526,7 +526,7 @@ test("legacy instrumental section aliases still resolve to their parent", () => 
 
 test("unlabelled instrumental ABC stays selectable after expansion", () => {
   const document = new ChordProDocument(getChordSystem("S"), '{start_of_abc}\nX:1\nK:C\n"C"CDEF|\n{end_of_abc}');
-  assert.equal(document.expandAbc().getDefaultInstructions(), "abc");
+  assert.equal(Instructions.defaultsFor(document.expandAbc()), "abc");
   const instructions = new Instructions();
   instructions.parse("abc", document.expandAbc());
   assert.equal(instructions.items[0].multiplier, 1);

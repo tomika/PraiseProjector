@@ -28,6 +28,7 @@
   "ChpMenuBridge": "Bridge",
   "ChpMenuGrid": "Instrumentális",
   "ChpMenuComment": "Megjegyzés",
+  "ChpMenuMisplacedReference": "Más szakaszon belül álló szakaszhivatkozás nem számít instrukciónak. Helyezd a szakaszon kívülre.",
   "ChpMenuTransposeUp": "Transzponálás felfelé",
   "ChpMenuTransposeDown": "Transzponálás lefelé",
   "ChpMenuClearTag": "Jelölés törlése",
