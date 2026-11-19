@@ -125,15 +125,17 @@ test("songs with problems are found and counted", () => {
     song("t", "", "{key: C}\n[C]szöveg", "C"),
     song("e", "Üres", "{key: C}"),
     song("g", "Rácsos", "{key: G}\n[G]szöveg\n{start_of_grid}\n| G | D | Bridge | C |\n{end_of_grid}", "G"),
+    song("k", "Rossz hangnem", "{key: C}\n[D]Egy [G]kettő [A7]három [D]négy", "C"),
   ];
   const all = { offset: 0, limit: 10 };
   const report = findSongProblems(fakeHost(state), SONG_PROBLEMS, all);
-  assert.equal(report.songsScanned, 6);
+  assert.equal(report.songsScanned, 7);
   assert.deepEqual(report.songsWithProblems, {
     "unrecognized-chords": 1,
     "not-a-chord": 1,
     "grid-text": 1,
     "missing-key": 1,
+    "key-mismatch": 1,
     "missing-title": 1,
     "no-lyrics": 1,
   });
@@ -141,7 +143,9 @@ test("songs with problems are found and counted", () => {
   assert.deepEqual(byId.u, { "unrecognized-chords": ["fisz", "N.C."] });
   assert.deepEqual(byId.b, { "not-a-chord": ["[x2]", "[]"], "missing-key": true });
   assert.deepEqual(byId.g, { "grid-text": ["Bridge"] });
-  assert.deepEqual(Object.keys(byId).sort(), ["b", "e", "g", "t", "u"]);
+  // A stated key whose tonic chord is never played and which the chords contradict.
+  assert.deepEqual(byId.k, { "key-mismatch": ["stated C", "chords: D"] });
+  assert.deepEqual(Object.keys(byId).sort(), ["b", "e", "g", "k", "t", "u"]);
   assert.deepEqual(report.mostUsedUnrecognizedChords, [
     { chord: "fisz", songs: 1 },
     { chord: "N.C.", songs: 1 },

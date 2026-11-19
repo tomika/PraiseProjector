@@ -43,6 +43,7 @@ import { findTutorialSteps } from "./help";
 import { createMcpPrompts } from "./prompts";
 import { createMcpDispatcher } from "./protocol";
 import { songKeyDirective } from "./songMeta";
+import { estimateSongKey } from "./songKey";
 import { analyzeInstructions, songStructure } from "./songStructure";
 import { McpContent, createMcpResources, createMcpTools } from "./tools";
 import type { PlaylistOrigin } from "../playlistOrigin";
@@ -267,11 +268,16 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
         kind: song.ContentKind,
         sectionCount: song.Sections.length,
         repeatedSections: songStructure(text, system).repeatedSections,
+        keyEstimate: estimateSongKey(text, system),
       };
     },
     songStructure: (songId) => {
       const song = database()?.getSongById(songId);
       return song ? songStructure(song.Text, song.System) : null;
+    },
+    songKeyEstimate: (songId) => {
+      const song = database()?.getSongById(songId);
+      return song ? estimateSongKey(song.Text, song.System) : null;
     },
     analyzeInstructions: (songId, instructions) => {
       const song = database()?.getSongById(songId);

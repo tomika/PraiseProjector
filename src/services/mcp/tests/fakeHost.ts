@@ -1,6 +1,7 @@
 /** An in-memory McpHost for the tool and protocol tests. */
 import type { Settings } from "../../../types";
 import { chordStatus, gridChords, importerChord, importerConventions, knownChordTypes } from "../appChords";
+import { estimateSongKey } from "../songKey";
 import { analyzeInstructions, songStructure } from "../songStructure";
 import type {
   McpFileResult,
@@ -149,10 +150,15 @@ export function fakeHost(state: FakeState): McpHost {
       kind: "music",
       sectionCount: 1,
       repeatedSections: songStructure(text, system).repeatedSections,
+      keyEstimate: estimateSongKey(text, system),
     }),
     songStructure: (id) => {
       const found = state.songs.find((candidate) => candidate.id === id);
       return found ? songStructure(found.text, found.system) : null;
+    },
+    songKeyEstimate: (id) => {
+      const found = state.songs.find((candidate) => candidate.id === id);
+      return found ? estimateSongKey(found.text, found.system) : null;
     },
     analyzeInstructions: (id, instructions) => {
       const found = state.songs.find((candidate) => candidate.id === id);

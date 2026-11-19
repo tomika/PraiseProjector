@@ -171,6 +171,42 @@ export interface McpChordProReport {
   sectionCount: number;
   /** Groups of sections with the same lyrics: write such a section once and repeat it with instructions. */
   repeatedSections: string[][];
+  /** The key estimated from the text's chords (see {@link McpKeyEstimate}). */
+  keyEstimate: McpKeyEstimate;
+}
+
+/** The key of one run of chords of a song, as the key detector reads it. */
+export interface McpSectionKey {
+  /** The section's name as instructions use it; empty for chords outside any section. */
+  section: string;
+  /** 1-based line of the section's first chord in the text. */
+  line: number;
+  /** The key the chords are written in. */
+  writtenKey: string;
+  /** The key that sounds after the section's own transposition (e.g. {start_of_verse: V +2}). */
+  soundingKey: string;
+  /** Semitones of the sounding key from the song's key, -5…+6. */
+  semitonesFromBase: number;
+  sectionTranspose?: number;
+}
+
+/**
+ * A song's key estimated from its chords by the app's key detector, ignoring the song's
+ * {key} line. Null estimatedKey: the song has no recognized chords.
+ */
+export interface McpKeyEstimate {
+  estimatedKey: string | null;
+  /** The key the song's {key} line states; empty when it has none. */
+  statedKey: string;
+  /** Present when both keys are known: same tonic and mode (enharmonic spellings agree). */
+  agreesWithStatedKey?: boolean;
+  /**
+   * Present when the song states a key and has chords: the stated key's tonic chord occurs
+   * in the song. False together with a disagreeing estimate: the stated key is likely wrong.
+   */
+  statedKeyTonicUsed?: boolean;
+  /** Present only when the key changes inside the song: the key of every run of chords. */
+  sectionKeys?: McpSectionKey[];
 }
 
 /** A section of a song that instructions can name. */
@@ -252,6 +288,8 @@ export interface McpHost {
   analyzeChordPro(text: string, system: string): McpChordProReport;
   /** The sections instructions can name, and the song's own order. Null: no such song. */
   songStructure(songId: string): McpSongStructure | null;
+  /** The song's key estimated from its chords. Null: no such song. */
+  songKeyEstimate(songId: string): McpKeyEstimate | null;
   /** Reads an instruction text against a song as the app does. Null: no such song. */
   analyzeInstructions(songId: string, instructions: string): McpInstructionAnalysis | null;
   /**

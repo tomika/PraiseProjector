@@ -678,7 +678,15 @@ export function checkChords(
   };
 }
 
-export const SONG_PROBLEMS = ["unrecognized-chords", "not-a-chord", "grid-text", "missing-key", "missing-title", "no-lyrics"] as const;
+export const SONG_PROBLEMS = [
+  "unrecognized-chords",
+  "not-a-chord",
+  "grid-text",
+  "missing-key",
+  "key-mismatch",
+  "missing-title",
+  "no-lyrics",
+] as const;
 export type SongProblem = (typeof SONG_PROBLEMS)[number];
 type SongProblems = Partial<Record<SongProblem, string[] | true>>;
 const PROBLEM_SCAN_BUDGET_MS = 4000;
@@ -695,6 +703,12 @@ function songProblems(host: McpHost, info: McpSongInfo, song: McpSong): { proble
   const broken = withStatus("not-a-chord");
   if (broken.length) problems["not-a-chord"] = broken.map((chord) => `[${chord}]`);
   if (chords.length && !info.key) problems["missing-key"] = true;
+  if (info.key && chords.length) {
+    const estimate = host.songKeyEstimate(info.id);
+    // Few chords leave the estimate open (G and D alone may be D): flag only a stated key whose tonic chord never occurs.
+    if (estimate?.estimatedKey && estimate.agreesWithStatedKey === false && estimate.statedKeyTonicUsed === false)
+      problems["key-mismatch"] = [`stated ${info.key}`, `chords: ${estimate.estimatedKey}`];
+  }
   if (!info.title.trim()) problems["missing-title"] = true;
   const words = gridText(host, song.text, song.system);
   if (words.length) problems["grid-text"] = words;
@@ -864,6 +878,7 @@ const HISTORY_CACHE_SIZE = 500;
 const UPLOAD_BUDGET_MS = 25_000;
 const UPLOAD_CONCURRENCY = 4;
 const MAX_UPLOAD_SONGS = 50;
+const MAX_KEY_SONGS = 100;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1176,7 +1191,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_song",
       title: "Read a song",
       description:
-        "A song in ChordPro (chords in square brackets inside the lyrics) with its title, language, key, chord system, parsed metadata (authors, copyright, …), first lyric lines, the other versions of the same song (translations: 'related') and its upload facts from the cloud ('upload': when and by whom the newest version was uploaded, the first upload, and how the copy on this computer relates to them; 'note' says why something is missing). The metadata and first line are what you need to look the song up elsewhere, e.g. to find a recording; a related version in another language often carries the original title. For playlist instructions it gives 'sections' (the names instructions use), 'defaultInstructions' (the song's own order), 'repeatedSections' (sections written out twice that instructions should repeat instead) and 'selectedLeaderItem' (title, transposition, capo and instructions the selected leader's new playlist item gets).",
+        "A song in ChordPro (chords in square brackets inside the lyrics) with its title, language, key (the one its {key} line states), 'keyEstimate' (the key estimated from its chords, see estimate_song_keys), chord system, parsed metadata (authors, copyright, …), first lyric lines, the other versions of the same song (translations: 'related') and its upload facts from the cloud ('upload': when and by whom the newest version was uploaded, the first upload, and how the copy on this computer relates to them; 'note' says why something is missing). The metadata and first line are what you need to look the song up elsewhere, e.g. to find a recording; a related version in another language often carries the original title. For playlist instructions it gives 'sections' (the names instructions use), 'defaultInstructions' (the song's own order), 'repeatedSections' (sections written out twice that instructions should repeat instead) and 'selectedLeaderItem' (title, transposition, capo and instructions the selected leader's new playlist item gets).",
       inputSchema: object({ songId: { type: "string" } }, ["songId"]),
       access: "read",
       run: async (args, host) => {
@@ -1188,8 +1203,29 @@ export function createMcpTools(content: McpContent): McpTool[] {
           metadata: songMetadata(song.text),
           firstLines: lyricsOf(song.text).slice(0, 2),
           ...host.songStructure(song.id),
+          keyEstimate: host.songKeyEstimate(song.id),
           ...(leaderId ? { selectedLeaderItem: host.newPlaylistItem(leaderId, song.id) } : {}),
           upload: describeUpload(song, await history(host, song)),
+        };
+      },
+    },
+    {
+      name: "estimate_song_keys",
+      title: "Estimate song keys from the chords",
+      description:
+        "The key of up to 100 songs estimated from their chords by the app's own key detector (the one behind the key the editor and song view show), independently of the key the song states in its {key} line. Each song gets 'estimatedKey' (null: no recognized chords), 'statedKey' (empty: none), 'agreesWithStatedKey' (same tonic and mode, any spelling), 'statedKeyTonicUsed' (the stated key's tonic chord occurs in the song; false together with a disagreement: the stated key is likely wrong), and 'sectionKeys' only when the key changes inside the song (a lift to a new key, a bridge in the relative minor, a section tag transposition such as {start_of_verse: V +2}): the written and sounding key of every run of chords. Key names follow the song's chord system (German/Hungarian: H, B). It is an estimate: a song that only uses a few chords can be read as its relative minor/major or as a neighbouring key; look at the chords before changing a stated key. get_song and validate_chordpro give the same 'keyEstimate' for one song or text; find_song_problems 'key-mismatch' lists the songs whose stated key is likely wrong.",
+      inputSchema: object({ songIds: { type: "array", items: { type: "string" }, description: `Up to ${MAX_KEY_SONGS} song ids.` } }, ["songIds"]),
+      access: "read",
+      run: (args, host) => {
+        const ids = args.songIds;
+        if (!Array.isArray(ids) || !ids.length || !ids.every((id) => typeof id === "string"))
+          throw new McpToolError("'songIds' must be a list of song ids.");
+        if (ids.length > MAX_KEY_SONGS) throw new McpToolError(`At most ${MAX_KEY_SONGS} songs at once.`);
+        return {
+          songs: [...new Set(ids as string[])].map((id) => {
+            const song = requireSong(host, id);
+            return { songId: song.id, title: song.title, ...host.songKeyEstimate(song.id) };
+          }),
         };
       },
     },
@@ -1390,7 +1426,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "validate_chordpro",
       title: "Check a ChordPro text",
       description:
-        "Reads a ChordPro text the way the app does: title, kind, number of sections and lyric lines, metadata, every chord with its class (see check_chords: recognized / chord-shaped / not-a-chord), and 'repeatedSections': sections written out more than once, which should be written once and repeated with a comment line naming them ({c: Chorus}) or with playlist instructions. Use it on a text before import_song and fix what is not recognized.",
+        "Reads a ChordPro text the way the app does: title, kind, number of sections and lyric lines, metadata, every chord with its class (see check_chords: recognized / chord-shaped / not-a-chord), 'keyEstimate' (the key estimated from the chords, see estimate_song_keys; useful for the {key} line of a new song), and 'repeatedSections': sections written out more than once, which should be written once and repeated with a comment line naming them ({c: Chorus}) or with playlist instructions. Use it on a text before import_song and fix what is not recognized.",
       inputSchema: object(
         {
           text: { type: "string" },
@@ -1423,7 +1459,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "find_song_problems",
       title: "Find songs with problems",
       description:
-        "Scans the whole database for songs that need attention: chords the app does not recognize (so they are not transposed reliably), bracket texts that are not chords, words in grid sections (grids hold bare chords and separators only; the app would transpose letters of such words), songs with chords but no stated key, songs without a title or without lyrics. Returns totals per problem and the affected songs in title order (page with offset). A large database may need more than one call to finish: the answer says so. The user fixes a song by opening it in the editor.",
+        "Scans the whole database for songs that need attention: chords the app does not recognize (so they are not transposed reliably), bracket texts that are not chords, words in grid sections (grids hold bare chords and separators only; the app would transpose letters of such words), songs with chords but no stated key, songs whose stated key disagrees with the key estimated from their chords and whose chords never include the stated key's tonic chord ('key-mismatch', see estimate_song_keys; check the chords before changing the key), songs without a title or without lyrics. Returns totals per problem and the affected songs in title order (page with offset). A large database may need more than one call to finish: the answer says so. The user fixes a song by opening it in the editor.",
       inputSchema: object({
         problems: {
           type: "array",
