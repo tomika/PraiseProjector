@@ -18,6 +18,9 @@ import {
   normalizeMcpPort,
 } from "../common/mcp-bridge";
 import { McpHttpServer } from "./mcp-http";
+// Embedded verbatim: the bridge is run by an external MCP client, never by this
+// process, so it ships inside the main bundle instead of as a packaged resource.
+import stdioScriptSource from "./praiseprojector-mcp-stdio.cjs?raw";
 
 /** A tool call may wait for the user to confirm a change in the app. */
 const RENDERER_TIMEOUT_MS = 120_000;
@@ -77,11 +80,8 @@ function writeConnectionFile(): void {
 /** Keeps a copy of the bridge script at a path that survives application updates. */
 function installStdioScript(): string {
   const target = path.join(app.getPath("userData"), "mcp", STDIO_SCRIPT);
-  const source = app.isPackaged
-    ? path.join(process.resourcesPath, "public", "mcp", STDIO_SCRIPT)
-    : path.join(app.getAppPath(), "public", "mcp", STDIO_SCRIPT);
   try {
-    const content = fs.readFileSync(source);
+    const content = Buffer.from(stdioScriptSource, "utf8");
     if (!fs.existsSync(target) || !fs.readFileSync(target).equals(content)) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, content);

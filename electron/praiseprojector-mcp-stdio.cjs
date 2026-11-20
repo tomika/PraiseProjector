@@ -15,7 +15,9 @@
  * offers a single status tool; clients that did the `initialize` handshake are told to
  * reload the tool list as soon as the application answers.
  *
- * Plain CommonJS without dependencies: it is shipped as a resource, not bundled.
+ * Plain CommonJS without dependencies: electron/mcp-host.ts embeds this file verbatim
+ * (`?raw` import) and writes it to the user data folder, so it is never transformed and
+ * needs no packaged resource path.
  */
 "use strict";
 

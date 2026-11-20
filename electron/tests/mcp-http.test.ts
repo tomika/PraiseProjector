@@ -115,7 +115,7 @@ test("a 2025-03-26 batch is answered as a batch", async () => {
 
 /** Runs the stdio bridge, feeds it lines and collects what it prints. */
 function bridge(connectionFile: string) {
-  const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "public", "mcp", "praiseprojector-mcp-stdio.cjs");
+  const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "praiseprojector-mcp-stdio.cjs");
   const child = spawn(process.execPath, [script, connectionFile], { stdio: ["pipe", "pipe", "ignore"] });
   const lines: Record<string, unknown>[] = [];
   let buffer = "";
