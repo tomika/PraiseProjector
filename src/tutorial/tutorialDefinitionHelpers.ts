@@ -15,7 +15,7 @@ export function tutorialStep(
   id: string,
   target: TutorialStep["target"],
   text: LocalizedTutorialText,
-  options: Pick<TutorialStep, "highlightTargets" | "prepare" | "details" | "branches" | "actions"> = {}
+  options: Pick<TutorialStep, "helpIcons" | "highlightTargets" | "prepare" | "details" | "branches" | "actions"> = {}
 ): TutorialStep {
   return { id, target, text, ...options };
 }

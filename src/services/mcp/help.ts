@@ -3,9 +3,15 @@
  * the two built-in tutorials (full view and client view) and the button tooltips.
  * Nothing here is written separately, so the help cannot drift from the UI.
  */
-import type { TutorialDefinition, TutorialStep } from "../../tutorial/tutorialTypes";
+import type { HelpIcon, TutorialDefinition, TutorialStep } from "../../tutorial/tutorialTypes";
 
 export type HelpLanguage = "en" | "hu";
+
+interface HelpLine {
+  prefix: string;
+  text: string;
+  icons?: TutorialStep["helpIcons"];
+}
 
 export interface HelpTopic {
   id: string;
@@ -13,6 +19,8 @@ export interface HelpTopic {
   area: string;
   title: string;
   text: string;
+  /** Formatted lines for the web help generator. */
+  lines?: readonly HelpLine[];
   /** Parts of the screen the app can point at (see the show_in_app tool). */
   targets?: { id: string; title: string }[];
 }
@@ -20,6 +28,7 @@ export interface HelpTopic {
 export interface HelpSources {
   tutorials: readonly TutorialDefinition[];
   tooltips: Record<HelpLanguage, Record<string, string>>;
+  tooltipIcons?: Readonly<Record<string, readonly HelpIcon[]>>;
 }
 
 const AREA: Record<string, string> = { full: "full-view", client: "client-view" };
@@ -34,26 +43,34 @@ const TOOLTIP_GROUPS: Record<string, Record<HelpLanguage, string>> = {
   dbsync: { en: "Resolving sync differences", hu: "Szinkronizálási eltérések feloldása" },
 };
 
-function stepLines(step: TutorialStep, language: HelpLanguage, depth: number): string[] {
+function stepLines(step: TutorialStep, language: HelpLanguage, depth: number): HelpLine[] {
   const text = step.text[language];
-  const lines = depth === 0 ? [text.body] : [`${"  ".repeat(depth - 1)}- ${text.title}: ${text.body}`];
+  const lines: HelpLine[] = [
+    {
+      prefix: depth === 0 ? "" : `${"  ".repeat(depth - 1)}- `,
+      text: depth === 0 ? text.body : `${text.title}: ${text.body}`,
+      icons: step.helpIcons,
+    },
+  ];
   for (const detail of step.details ?? []) lines.push(...stepLines(detail, language, depth + 1));
   for (const branch of step.branches ?? []) {
-    lines.push(`${"  ".repeat(depth)}- ${branch.label[language]}:`);
+    lines.push({ prefix: `${"  ".repeat(depth)}- `, text: `${branch.label[language]}:` });
     for (const branchStep of branch.steps) lines.push(...stepLines(branchStep, language, depth + 2));
   }
   return lines;
 }
 
-export function buildHelpTopics(sources: HelpSources, language: HelpLanguage): HelpTopic[] {
+export function buildHelpTopics(sources: HelpSources, language: HelpLanguage, { includeIcons = false } = {}): HelpTopic[] {
   const topics: HelpTopic[] = [];
   for (const tutorial of sources.tutorials) {
     for (const step of tutorial.steps) {
+      const lines = stepLines(step, language, 0);
       topics.push({
         id: `${tutorial.view}/${step.id}`,
         area: AREA[tutorial.view] ?? tutorial.view,
         title: step.text[language].title,
-        text: stepLines(step, language, 0).join("\n"),
+        text: lines.map(({ prefix, text }) => prefix + text).join("\n"),
+        ...(includeIcons ? { lines } : {}),
         targets: [step, ...(step.details ?? [])].map((part, index) => ({
           id: index ? `${tutorial.view}/${step.id}/${part.id}` : `${tutorial.view}/${step.id}`,
           title: part.text[language].title,
@@ -61,18 +78,19 @@ export function buildHelpTopics(sources: HelpSources, language: HelpLanguage): H
       });
     }
   }
-  const groups = new Map<string, string[]>();
+  const groups = new Map<string, HelpLine[]>();
   for (const [key, text] of Object.entries(sources.tooltips[language] ?? {})) {
     const group = key.split("_")[0];
     if (!groups.has(group)) groups.set(group, []);
-    groups.get(group)!.push(`- ${text}`);
+    groups.get(group)!.push({ prefix: "- ", text, icons: sources.tooltipIcons?.[key] });
   }
   for (const [group, lines] of groups) {
     topics.push({
       id: `buttons/${group}`,
       area: "buttons",
       title: TOOLTIP_GROUPS[group]?.[language] ?? `${group} (${language === "hu" ? "gombok" : "buttons"})`,
-      text: lines.join("\n"),
+      text: lines.map(({ prefix, text }) => prefix + text).join("\n"),
+      ...(includeIcons ? { lines } : {}),
     });
   }
   return topics;

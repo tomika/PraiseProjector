@@ -1,3 +1,4 @@
+import { IconType } from "../services/IconService";
 import type { TutorialDefinition } from "./tutorialTypes";
 import {
   activateEditorTab,
@@ -39,6 +40,7 @@ export const fullViewTutorial: TutorialDefinition = {
         "Your account selects the local and cloud song database, while the leader profile stores personal performance settings. Synchronization and sessions are also available here."
       ),
       {
+        helpIcons: [IconType.USER, IconType.SYNC, IconType.LEADER, IconType.SESSIONS],
         prepare: side,
         actions: [{ id: "sync-now", label: tl("Szinkronizálás most", "Synchronize now"), command: "sync-now" }],
         details: [
@@ -50,7 +52,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A fiók választja ki a helyi és felhős adatbázist. A felhasználói vezérlő bejelentkezésre, fiókváltásra és kijelentkezésre szolgál.",
               "User account",
               "Your account selects the local and cloud database. Use the user control to sign in, switch account or sign out."
-            )
+            ),
+            { helpIcons: [IconType.USER] }
           ),
           s(
             "sync-main",
@@ -61,7 +64,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "Start synchronization",
               "The main Sync button starts synchronization. If you have unsaved song edits, Discard & Sync drops those edits. To keep them, dismiss the prompt, save the song, and start Sync again. In guest mode, Download Public Songs starts the download."
             ),
-            { actions: [{ id: "sync-now", label: tl("Szinkronizálás most", "Synchronize now"), command: "sync-now" }] }
+            { helpIcons: [IconType.SYNC], actions: [{ id: "sync-now", label: tl("Szinkronizálás most", "Synchronize now"), command: "sync-now" }] }
           ),
           s(
             "sync-badges",
@@ -71,7 +74,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Az ↑ a helyi, feltöltésre váró, a ↓ a letöltendő változatokat jelzi. A piros szám ellenőrzendő dalokat mutat. A felhőhibajel internetkapcsolati hibát vagy újrabejelentkezést igénylő állapotot is jelenthet.",
               "Status badges",
               "↑ marks local changes waiting to upload and ↓ marks downloads. A red count means songs need review. A cloud error can indicate either a lost connection or a session that needs a new sign-in."
-            )
+            ),
+            { helpIcons: [{ label: "↑" }, { label: "↓" }, IconType.CLOUD_ACCESS_FAILED] }
           ),
           s(
             "sync-attention-colors",
@@ -81,7 +85,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A nézetváltó és a kliensnézet színes pontjai a teendő típusát jelzik: zöld a feltöltés, kék a letöltés, türkiz mindkettő, narancs az offline állapot. A piros további teendőt jelez, például dalellenőrzést, frissítést vagy újrabejelentkezést.",
               "Attention badge colors",
               "Dots on the view switcher and in client view identify the task: green for upload, blue for download, turquoise for both, and orange for offline. Red indicates another task, such as song review, an app update or signing in again."
-            )
+            ),
+            { helpIcons: [IconType.VIEWER, "images/menu.svg"] }
           ),
           s(
             "sync-menu",
@@ -92,7 +97,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "Synchronization menu",
               "The Sync menu also offers Export database, Import database and Replace database with online. When signed in, open Songs to Review here. To import a song or score, use the import button on the song toolbar."
             ),
-            { prepare: () => clickVisible(".sync-menu-toggle") }
+            { helpIcons: [{ label: "▾" }], prepare: () => clickVisible(".sync-menu-toggle") }
           ),
           s(
             "profiles-leader-settings",
@@ -102,7 +107,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Saját munkamenetben a gomb közvetlenül a Beállítások Dicsőítésvezetők oldalára visz. PPD-munkamenet követésekor, ha a házigazda engedélyezte, ugyanez a gomb a követő és vezető mód között vált; a kék kiemelés jelzi az aktív vezető módot.",
               "Worship leader and leader mode",
               "In your own session, the button opens the Leaders page in Settings. While following a PPD session, the same button switches between follower and leader mode when the host permits it; a blue highlight marks active leader mode."
-            )
+            ),
+            { helpIcons: [IconType.LEADER] }
           ),
           s(
             "profiles-leader",
@@ -122,7 +128,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Ez a vezérlő helyi, webes és felhős kapcsolatok más eszközökkel való indítására és követésére szolgál.",
               "Sessions",
               "Start or follow local, web and cloud sessions with other devices."
-            )
+            ),
+            { helpIcons: [IconType.SESSIONS] }
           ),
           s(
             "profiles-settings",
@@ -132,7 +139,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A felület, vetítés, adatkezelés, stílusok és kapcsolatok részletes beállításai itt érhetők el.",
               "Profile and application settings",
               "Detailed interface, projection, data, style and connection settings are available here."
-            )
+            ),
+            { helpIcons: [IconType.SETTINGS] }
           ),
         ],
       }
@@ -157,7 +165,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Ha kiválasztasz egy dicsőítésvezetőt, a kereső melletti szív gomb három nézet között vált. Az alapnézet a kedvelt és a semleges dalokat mutatja. A második nézetben csak a kedvelt dalok jelennek meg. A harmadik a figyelmen kívül hagyott dalokat is megjeleníti. A többi aktív szűrő mindhárom nézetben érvényben marad.",
               "Preference filter",
               "With a worship leader selected, the heart button next to Search cycles through three views. The default view shows preferred and neutral songs. The second shows preferred songs only. The third also includes ignored songs. Other active filters apply in all three views."
-            )
+            ),
+            { helpIcons: [IconType.BIG_HEART_EMPTY, IconType.BIG_HEART_FILLED, IconType.EYE] }
           ),
           s(
             "song-preference-status",
@@ -167,7 +176,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Válassz vezetői profilt. A dal melletti szívvel Kedvelt állapotot adhatsz a dalnak, a telt szívre kattintva pedig Semlegesre válthatsz. A dal helyi menüjének Preferencia sorában a Semleges, a Kedvelt és a Figyelmen kívül hagyott állapot is választható. A keresőmező melletti szűrő üres szívvel a figyelmen kívül hagyottakat rejti el, telt szívvel csak a kedvelteket mutatja, szem ikonnal a figyelmen kívül hagyottakat is megjeleníti.",
               "Mark a song as preferred",
               "Select a leader profile. Click the heart next to a song to mark it Preferred, or click a filled heart to make the song Neutral. The song's context menu has a Preference row with Neutral, Preferred and Ignored. The filter beside the search box hides ignored songs with the empty heart, shows only preferred songs with the filled heart, and includes ignored songs with the eye icon."
-            )
+            ),
+            { helpIcons: [IconType.HEART_EMPTY, IconType.HEART_FILLED, IconType.HEART_IGNORED] }
           ),
           s(
             "song-search",
@@ -177,7 +187,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A keresés címre, dalszövegre, valamint a beállított módtól függően más metaadatra is kiterjedhet.",
               "Search",
               "Search by title, lyrics or other metadata, depending on your search settings."
-            )
+            ),
+            { helpIcons: [IconType.CLEAR] }
           ),
           s(
             "song-search-options",
@@ -187,7 +198,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A hagyományos keresésnél külön kapcsolható a hasonló szöveg, a kis- és nagybetű érzékenysége és a teljes szavak egyezése.",
               "Search options",
               "Traditional search can match similar text, respect letter case and require complete words."
-            )
+            ),
+            { helpIcons: [IconType.SEARCH_FUZZY, IconType.SEARCH_CASE, IconType.SEARCH_WHOLE_WORD] }
           ),
           s(
             "song-content-filters",
@@ -197,7 +209,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Alapértelmezésben minden daltípus engedélyezett. A helyi menü Szűrő almenüjében külön kapcsolhatók az akkordos, csak szöveges, csak kottás és megjelölt elemek. Az Általános beállítások dalnyelvi szűrője is szűkít; hiányzó dalnál ezeket és a kedveltségi szűrőt is ellenőrizd.",
               "Content and language filters",
               "All song types are enabled by default. The context menu's Filter submenu separately includes songs with chords, text-only, score-only and marked entries. General settings also has a song-language filter; if a song is missing, check these and the preference filter."
-            )
+            ),
+            { helpIcons: ["fa fa-filter", IconType.CHECKBOX_CHECKED, IconType.CHECKBOX_EMPTY] }
           ),
           s(
             "song-active-filter",
@@ -207,7 +220,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A tölcsér akkor jelenik meg, ha ki van kapcsolva valamelyik tartalmi szűrőbeállítás, aktív a dalnyelvi szűrő, vagy a kedveltségi nézet csak a kedvelt dalokat mutatja. Ha egy figyelmen kívül hagyott dalt keresel, a szív gombbal válts arra a nézetre, amely ezeket a dalokat is megjeleníti. A keresőmező törlése egyik szűrőbeállítást sem módosítja.",
               "Active filter indicator",
               "The funnel appears when a content category is turned off, the song-language filter is set, or the preference view shows only preferred songs. To find an ignored song, use the heart button to switch to the view that includes ignored songs. Clearing the search field leaves these filter settings in place."
-            )
+            ),
+            { helpIcons: ["fa fa-filter"] }
           ),
           s(
             "song-items",
@@ -217,7 +231,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A mappák összetartozó változatokat jelölnek; a dalok csoportosítására és műsortárhoz adására is lehetőséget adnak.",
               "Songs and groups",
               "Folders represent related versions. Songs can be grouped with another song or added to the playlist."
-            )
+            ),
+            { helpIcons: [IconType.FOLDER, IconType.MUSIC, IconType.TEXT_ONLY, IconType.SCORE] }
           ),
           s(
             "song-drag-and-drop",
@@ -237,7 +252,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Nyisd meg a dal helyi menüjét jobb kattintással vagy hosszan nyomva. Kiválasztott dalnál itt érhető el a megosztás. Vendégmódban itt törölheted a dalt, fiókkal pedig a verzióelőzményeket nézheted meg. A csoportbontás csoportba tartozó dalnál jelenik meg. A vágólapos importálás akkor választható, ha a vágólap olvasható, importálható tartalmat ad.",
               "Context menu",
               "Right-click or press and hold a song to open its context menu. Use it to share the selected song. In guest mode you can delete the song here. With an account you can open its version history. Ungroup appears for songs in a group. Import from clipboard is available when the app can read importable clipboard content."
-            )
+            ),
+            { helpIcons: ["fa fa-filter", "fa fa-sort", "fa fa-history", "fa fa-clipboard", "fa fa-share-alt"] }
           ),
           s(
             "song-keyboard",
@@ -284,6 +300,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "With a leader selected, Load and Save work with the leader's calendar and favorites (Load also offers the other own and the public leaders' lists); with no leader selected, they use a playlist file. The working list is a copy: changing it does not change the stored list until you save it there."
             ),
             {
+              helpIcons: [IconType.LOAD, IconType.SAVE],
               highlightTargets: [".playlist-buttons button[aria-label='Load Playlist']", ".playlist-buttons button[aria-label='Save Playlist']"],
             }
           ),
@@ -296,7 +313,10 @@ export const fullViewTutorial: TutorialDefinition = {
               "Move playlist entries",
               "Use the up and down arrows to move the selected playlist entries one position earlier or later."
             ),
-            { highlightTargets: [".playlist-buttons button[aria-label='Move Up']", ".playlist-buttons button[aria-label='Move Down']"] }
+            {
+              helpIcons: [IconType.MOVE_UP, IconType.MOVE_DOWN],
+              highlightTargets: [".playlist-buttons button[aria-label='Move Up']", ".playlist-buttons button[aria-label='Move Down']"],
+            }
           ),
           s(
             "playlist-transpose",
@@ -308,6 +328,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "Use the up and down arrows to raise or lower the selected playlist entries' per-entry transpose by one semitone."
             ),
             {
+              helpIcons: [IconType.TRANSPOSE_UP, IconType.TRANSPOSE_DOWN],
               highlightTargets: [".playlist-buttons button[aria-label='Transpose Up']", ".playlist-buttons button[aria-label='Transpose Down']"],
             }
           ),
@@ -320,7 +341,10 @@ export const fullViewTutorial: TutorialDefinition = {
               "Capo",
               "Use the up and down arrows to increase or decrease the capo value of selected playlist entries."
             ),
-            { highlightTargets: [".playlist-buttons button[aria-label='Capo Up']", ".playlist-buttons button[aria-label='Capo Down']"] }
+            {
+              helpIcons: [IconType.CAPO_UP, IconType.CAPO_DOWN],
+              highlightTargets: [".playlist-buttons button[aria-label='Capo Up']", ".playlist-buttons button[aria-label='Capo Down']"],
+            }
           ),
           s(
             "playlist-remove",
@@ -330,7 +354,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A kijelölt tételeket az aktuális műsortárból távolítja el; az adatbázis dalait nem törli.",
               "Remove",
               "Remove selected entries from the current playlist without deleting database songs."
-            )
+            ),
+            { helpIcons: [IconType.REMOVE] }
           ),
           s(
             "playlist-edit",
@@ -340,7 +365,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Ez a vezérlő a kijelölt műsortétel egyedi címének szerkesztésére szolgál.",
               "Edit playlist entry",
               "Edit the selected entry's custom title."
-            )
+            ),
+            { helpIcons: [IconType.EDIT] }
           ),
           s(
             "playlist-add",
@@ -350,7 +376,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A dalkönyvtárban kijelölt dalt hozzáadja az aktuális műsortárhoz.",
               "Add song",
               "Add the selected library song to the current playlist."
-            )
+            ),
+            { helpIcons: [IconType.ADD] }
           ),
           s(
             "playlist-instructions",
@@ -360,7 +387,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A műsortétel saját címet és előadási instrukciót kaphat. A cím szerkesztéséhez kattints duplán a címre. Az instrukciószerkesztőt a sor jobb szélén lévő instrukciócellában nyithatod meg dupla kattintással, érintőképernyőn egy koppintással. Ezek a beállítások a műsortételhez tartoznak.",
               "Title and instructions",
               "Each playlist entry can have its own title and performance instructions. Double-click the title to edit it. Open the instructions editor in the rightmost cell with a double-click, or with one tap on a touchscreen. These settings belong to the playlist entry."
-            )
+            ),
+            { helpIcons: [IconType.CHECKBOX_EMPTY, IconType.CHECKBOX_CHECKED] }
           ),
           s(
             "playlist-context",
@@ -370,7 +398,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A jobb gombos menü transzponálást, capo-választást, kijelölést, visszavonást, ismétlést és – mentett listánál – megosztást kínál.",
               "Context menu and history",
               "The context menu offers transpose, capo, selection, undo, redo and sharing for saved lists."
-            )
+            ),
+            { helpIcons: ["fa fa-undo", "fa fa-repeat", "fa fa-share-alt"] }
           ),
           s(
             "playlist-instruction-editor",
@@ -380,7 +409,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A Forrás, Szerkesztő és Előnézet panelek összecsukhatók. A szöveg törölhető, visszaállítható és menthető, a változat pedig a vezető profiljában is tárolható.",
               "Instructions editor",
               "Source, Editor and Preview panes can be collapsed. Clear, reset and save the text, optionally storing it in the leader profile."
-            )
+            ),
+            { helpIcons: [IconType.CHECKBOX_EMPTY, IconType.CHECKBOX_CHECKED] }
           ),
           s(
             "playlist-score-instructions",
@@ -425,12 +455,14 @@ export const fullViewTutorial: TutorialDefinition = {
               "Visszaállítja az adatbázisban mentett változatot; nem mentett módosításnál előbb megerősítést kérhet.",
               "Reload song",
               "Restore the database version; the app may ask before discarding unsaved changes."
-            )
+            ),
+            { helpIcons: [IconType.LOAD] }
           ),
           s(
             "toolbar-save",
             ".btn-toolbar button[aria-label='Save Song']",
-            tx("Dal mentése", "Rögzíti az aktuális szerkesztést a daladatbázisban.", "Save song", "Store the current edit in the song database.")
+            tx("Dal mentése", "Rögzíti az aktuális szerkesztést a daladatbázisban.", "Save song", "Store the current edit in the song database."),
+            { helpIcons: [IconType.SAVE] }
           ),
           s(
             "toolbar-new",
@@ -440,7 +472,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Ez a vezérlő új, üres dalt hoz létre, amely közvetlenül a szerkesztőben szerkeszthető.",
               "New song",
               "Create an empty song and start working directly in the editor."
-            )
+            ),
+            { helpIcons: [IconType.NEW] }
           ),
           s(
             "toolbar-import",
@@ -450,12 +483,14 @@ export const fullViewTutorial: TutorialDefinition = {
               "Az importálót a dalkezelő eszköztár importálásgombjával nyithatod meg. A ChordPro- és ABC-fájl közvetlenül a szerkesztési lépésre kerül, a MusicXML-fájl ABC-kottává alakul. A felismert, beillesztett ABC-szöveg importálása előtt az alkalmazás megerősítést kér.",
               "Import",
               "Open the importer from the song toolbar. ChordPro and ABC files go straight to the editing step. MusicXML files are converted to ABC notation. When pasted text is recognized as ABC, the app asks before importing it as notation."
-            )
+            ),
+            { helpIcons: [IconType.IMPORT] }
           ),
           s(
             "toolbar-print",
             ".btn-toolbar button[aria-label='Print']",
-            tx("Nyomtatás", "Az aktuális dal nyomtatható ki itt.", "Print", "The current song can be printed here.")
+            tx("Nyomtatás", "Az aktuális dal nyomtatható ki itt.", "Print", "The current song can be printed here."),
+            { helpIcons: [IconType.PRINT] }
           ),
           s(
             "toolbar-client",
@@ -466,7 +501,10 @@ export const fullViewTutorial: TutorialDefinition = {
               "Client view",
               "In the full-view toolbar, Switch to mobile view opens the streamlined client view for performances. In the built-in tutorial, use Switch to client view to continue the tour there."
             ),
-            { actions: [{ id: "switch-client", label: tl("Kliens nézetre váltás", "Switch to client view"), command: "switch-client" }] }
+            {
+              helpIcons: [IconType.VIEWER],
+              actions: [{ id: "switch-client", label: tl("Kliens nézetre váltás", "Switch to client view"), command: "switch-client" }],
+            }
           ),
           s(
             "toolbar-settings",
@@ -476,7 +514,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A Beállítások gomb nyitja meg a keresés, a dalnyelvek, a vetítés, a kotta, a hardveres vezérlés, a vezetők, a stílusok, a kliensjogosultságok és a hálózati funkciók beállításait. A dalnyelvhez az Általános, a billentyű- és MIDI-kiosztáshoz a Hardveres vezérlés, a kotta alapbeállításaihoz a Kotta lapot válaszd.",
               "Settings",
               "Open Settings to configure search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and networking. Use General for song language, Hardware control for keyboard and MIDI mappings, and Score for notation defaults."
-            )
+            ),
+            { helpIcons: [IconType.SETTINGS] }
           ),
         ],
         branches: [
@@ -492,7 +531,8 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A Beállítások Általános lapján az alapértelmezett dalnyelv az új dalok kiinduló nyelvét adja meg. A dalnyelvi szűrő a könyvtárat és a kapcsolódó kereséseket szűkíti. Ez a felület nyelvétől külön beállítás; a dal saját nyelve a Metaadatok lapon módosítható.",
                   "Song language and filtering",
                   "In Settings → General, default song language supplies the initial language for new songs. The song-language filter restricts the library and related searches. This is separate from the interface language; edit an individual song's language on its Metadata tab."
-                )
+                ),
+                { helpIcons: [IconType.SETTINGS] }
               ),
               s(
                 "settings-hardware-profiles",
@@ -502,7 +542,8 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A Beállítások Hardveres vezérlés lapján először válaszd ki a teljes vagy a kliensnézetet: mindkettő saját billentyűzet- és MIDI-profilt használ. A gyári profil csak olvasható; saját kiosztáshoz készíts róla másolatot, és azt szerkeszd.",
                   "Hardware control profiles",
                   "In Settings → Hardware control, first select full or client view: each has its own keyboard and MIDI profile. The factory profile is read-only; copy it to create and edit your own mapping."
-                )
+                ),
+                { helpIcons: [IconType.SETTINGS] }
               ),
               s(
                 "settings-hardware-learning",
@@ -512,7 +553,8 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A Hardveres vezérlés lapon a művelethez billentyűkombináció vagy MIDI-jel tanítható be, illetve kézzel is megadható a hozzárendelés. Az ütközésjelzés segít elkerülni az azonos bemeneteket. A MIDI használatához a környezet támogatása és hozzáférési engedély is szükséges lehet; a lap az állapotát is mutatja.",
                   "Learn keyboard and MIDI inputs",
                   "On the Hardware control page, learn a key combination or MIDI signal for an action, or enter the binding manually. Conflict indicators help avoid overlapping inputs. MIDI requires a supported runtime and may require permission; its status is shown on this page."
-                )
+                ),
+                { helpIcons: [IconType.SETTINGS] }
               ),
               s(
                 "settings-hardware-scope",
@@ -522,7 +564,8 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A teljes nézetben egy billentyű csak a fókuszban lévő szakaszlistára vagy a teljes nézet minden paneljére is érvényes lehet. A tutorial billentyűleírásai a gyári kiosztást ismertetik; saját profil más műveleteket rendelhet hozzájuk. Nyitott párbeszédablakban annak vezérlői élveznek elsőbbséget.",
                   "Keyboard scope",
                   "In full view a key can apply only while the section list has focus, or across all full-view panels. The tutorial's keyboard descriptions refer to factory mappings; a custom profile can assign different actions. An open dialog takes priority over hardware commands."
-                )
+                ),
+                { helpIcons: [IconType.SETTINGS] }
               ),
               s(
                 "settings-score-defaults",
@@ -532,7 +575,8 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A Beállítások Kotta lapján a lejátszás hangszerei, kísérete és a kotta megjelenésének alapértékei állíthatók. A kotta saját beállításai elsőbbséget élveznek az alapértékekkel szemben. A változások a Beállítások mentése után érvényesek.",
                   "Score defaults",
                   "Settings → Score sets default playback instruments, accompaniment and notation appearance. A score's own options take priority over these defaults. Changes take effect after saving Settings."
-                )
+                ),
+                { helpIcons: [IconType.SETTINGS] }
               ),
             ],
           },
@@ -559,7 +603,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A ceruza vált az olvasási és szerkesztési mód között. Módosítás után kilépéskor választható a Mentés, a Kilépés mentés nélkül vagy a Szerkesztés folytatása; az utóbbi a szerkesztőben tartja a munkát.",
               "Edit mode",
               "The pencil switches between reading and editing. After changes, choose Save, Leave without saving or Continue editing when leaving; the last choice keeps your work in edit mode."
-            )
+            ),
+            { helpIcons: [IconType.EDIT] }
           ),
           s(
             "editor-wysiwyg",
@@ -569,27 +614,32 @@ export const fullViewTutorial: TutorialDefinition = {
               "A vizuális nézetben a dalszöveg és az akkordok a kész megjelenéshez hasonló formában szerkeszthetők.",
               "Song editor",
               "Edit lyrics and chords in a visual layout that resembles the finished song."
-            )
+            ),
+            { helpIcons: ["fa fa-music"] }
           ),
           s(
             "editor-title",
             "[data-tutorial-id='full-editor-title']",
-            tx("Cím", "A kijelölt szöveget a dal címévé alakítja.", "Title", "Turn the selected text into the song title.")
+            tx("Cím", "A kijelölt szöveget a dal címévé alakítja.", "Title", "Turn the selected text into the song title."),
+            { helpIcons: [IconType.TITLE] }
           ),
           s(
             "editor-verse",
             "[data-tutorial-id='full-editor-verse']",
-            tx("Versszak", "A kijelölt sorokat számozott versszakként jelöli.", "Verse", "Mark the selected lines as a numbered verse.")
+            tx("Versszak", "A kijelölt sorokat számozott versszakként jelöli.", "Verse", "Mark the selected lines as a numbered verse."),
+            { helpIcons: [IconType.VERSE] }
           ),
           s(
             "editor-chorus",
             "[data-tutorial-id='full-editor-chorus']",
-            tx("Refrén", "A kijelölt sorokat refrénként jelöli.", "Chorus", "Mark the selected lines as a chorus.")
+            tx("Refrén", "A kijelölt sorokat refrénként jelöli.", "Chorus", "Mark the selected lines as a chorus."),
+            { helpIcons: [IconType.CHORUS] }
           ),
           s(
             "editor-bridge",
             "[data-tutorial-id='full-editor-bridge']",
-            tx("Híd", "A kijelölt sorokat hídként jelöli.", "Bridge", "Mark the selected lines as a bridge.")
+            tx("Híd", "A kijelölt sorokat hídként jelöli.", "Bridge", "Mark the selected lines as a bridge."),
+            { helpIcons: [IconType.BRIDGE] }
           ),
           s(
             "editor-grid",
@@ -599,7 +649,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A kijelölt sorokat csak hangszeres akkordmenetként jelöli.",
               "Chord grid",
               "Mark the selected lines as an instrumental chord grid."
-            )
+            ),
+            { helpIcons: [IconType.GRID] }
           ),
           s(
             "editor-comment",
@@ -609,7 +660,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A kijelölt, akkordot nem tartalmazó sorokat megjegyzéssé alakítja, illetve visszaalakítja normál dalszöveggé. Akkordos kijelölésnél a gomb le van tiltva. A szakaszok közé írt, szakaszt megnevező megjegyzés (például „Refrén 2x”) annak ismétlését jelzi: olvasási módban a szakasz első sora jelenik meg „...” végződéssel, szürke címkével. Egy másik szakaszon belül ez nem számít instrukciónak, ezért piros hullámvonal jelöli.",
               "Comment",
               "Toggle selected chord-free lines between comments and normal lyrics. The button is disabled when the selection contains chords. A comment naming a section between sections (for example “Chorus 2x”) repeats it: read mode shows that section's first line ending in “...” under a grey label. Inside another section it is not an instruction, so a red wavy line marks it."
-            )
+            ),
+            { helpIcons: [IconType.COMMENT] }
           ),
           s(
             "editor-abc",
@@ -619,7 +671,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Szerkesztési módban a kurzornál új ABC-kottablokkot szúr be; meglévő kottára dupla kattintva a kottaszerkesztő nyílik meg. Olvasási módban a dupla kattintás vagy dupla koppintás ehelyett a kotta MIDI-lejátszását indítja vagy állítja le.",
               "ABC notation",
               "In edit mode, insert a new ABC block at the caret or double-click existing notation to open the score editor. In read mode, double-clicking or double-tapping notation instead starts or stops its MIDI playback."
-            )
+            ),
+            { helpIcons: [IconType.NOTATION] }
           ),
           s(
             "editor-abc-saving",
@@ -629,7 +682,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A kottaszerkesztő Súgó gombja saját részletes bemutatót nyit. Az Alkalmazás a dal szerkesztési állapotába veszi át a kottát, a Mégse elveti a kottaszerkesztő módosításait. Alkalmazás után a teljes dalt is mentsd el a daladatbázisba.",
               "Using the score editor",
               "The score editor's Help button opens its own detailed tutorial. Apply transfers the notation into the song's editing state; Cancel discards the score editor's changes. After applying, also save the song to the song database."
-            )
+            ),
+            { helpIcons: [IconType.NOTATION] }
           ),
           s(
             "editor-context-menu",
@@ -649,7 +703,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Itt kezelhető többek között a dal nyelve, címe, előadója, szerzője, hangneme, tempója, üteme és capója. Mentéshez a cím kitöltése szükséges.",
               "Metadata",
               "Edit song language, title, artist, author, key, tempo, time signature, capo and other metadata here. A title is required before saving."
-            )
+            ),
+            { helpIcons: ["fa fa-info-circle"] }
           ),
           s(
             "editor-song-language",
@@ -670,7 +725,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A nyers ChordPro nézet teljes hozzáférést ad a dal direktíváihoz és jelöléseihez, amikor a vizuális nézetnél pontosabb vezérlés szükséges.",
               "ChordPro source",
               "The raw ChordPro view gives complete access to directives and notation when you need more control than the visual editor provides."
-            )
+            ),
+            { helpIcons: ["fa fa-code"] }
           ),
         ],
         branches: [
@@ -793,7 +849,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A vetítési kimenet részletes beállításait nyitja meg, amikor ez a gomb az aktuális elrendezésben látható.",
               "Projection settings",
               "Open detailed projection output settings when this button is present in the current layout."
-            )
+            ),
+            { helpIcons: [IconType.SETTINGS] }
           ),
           s(
             "sections-items",
@@ -813,7 +870,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A jelölőnégyzettel egy szakasz az adatbázis módosítása nélkül kihagyható a vetítésből.",
               "Omit",
               "Uncheck a section to omit it from projection without modifying the database song."
-            )
+            ),
+            { helpIcons: [{ label: "☑" }, { label: "☐" }] }
           ),
           s(
             "sections-keys",
@@ -848,12 +906,14 @@ export const fullViewTutorial: TutorialDefinition = {
               "Be- vagy kikapcsolja a külső vetítési kimenetet. Egyetlen monitor esetén korlátozott lehet.",
               "Enable display",
               "Turn the external projection output on or off. It may be limited on a single-monitor system."
-            )
+            ),
+            { helpIcons: [IconType.DISPLAY] }
           ),
           s(
             "projection-text",
             ".preview-button-column button[aria-label='Display Text']",
-            tx("Dalszöveg", "A dalszöveg kivetítését kapcsolja be vagy ki.", "Lyrics", "Toggle lyrics on the projection output.")
+            tx("Dalszöveg", "A dalszöveg kivetítését kapcsolja be vagy ki.", "Lyrics", "Toggle lyrics on the projection output."),
+            { helpIcons: [IconType.TEXT] }
           ),
           s(
             "projection-image",
@@ -863,12 +923,14 @@ export const fullViewTutorial: TutorialDefinition = {
               "A kiválasztott háttérkép megjelenítését kapcsolja be vagy ki.",
               "Background image",
               "Toggle the selected background image on the output."
-            )
+            ),
+            { helpIcons: [IconType.IMAGE] }
           ),
           s(
             "projection-background",
             ".preview-button-column [aria-label='Background Color']",
-            tx("Háttérszín", "A kép nélküli háttér színét választja ki.", "Background color", "Choose the background color used without an image.")
+            tx("Háttérszín", "A kép nélküli háttér színét választja ki.", "Background color", "Choose the background color used without an image."),
+            { helpIcons: [IconType.BG_COLOR] }
           ),
           s(
             "projection-content-format",
@@ -878,7 +940,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A vetítés szakasztördelését automatikusan, a dal tartalma alapján végzi.",
               "Content-based formatting",
               "Apply automatic section breaks according to the song's content."
-            )
+            ),
+            { helpIcons: [IconType.CONTENT_FORMAT] }
           ),
           s(
             "projection-instructions",
@@ -888,7 +951,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Az előadási instrukciókból felépített sorrendet kapcsolja a szakaszlistára.",
               "Instruction-based list",
               "Use performance instructions to build the order shown in the section list."
-            )
+            ),
+            { helpIcons: [IconType.INSTRUCTIONS] }
           ),
           s(
             "projection-remote-control",
@@ -898,7 +962,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Engedélyezi vagy letiltja, hogy egy jogosult kliens távolról váltson a vetített szakaszok között. A kliens aktivitását jelző tablet kikapcsolt állapotban is látható marad; közvetlen kérésnél az időtúllépés a Vetítés beállításainak végén módosítható.",
               "Remote control",
               "Allow or block an authorized client from changing projected sections remotely. The tablet activity indicator remains visible while this switch is off; its direct-request timeout is configurable at the end of Projecting settings."
-            )
+            ),
+            { helpIcons: [IconType.REMOTE_CONTROL] }
           ),
           s(
             "projection-freeze",
@@ -908,7 +973,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A vetítőn megtartja a jelenlegi képet, miközben az alkalmazásban előkészíthető a következő tartalom.",
               "Freeze",
               "Keep the current output visible while preparing the next content in the app."
-            )
+            ),
+            { helpIcons: [IconType.FREEZE] }
           ),
           s(
             "projection-message",
@@ -918,7 +984,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "A Formátum terület Üzenet lapján megadott rövid szöveget kapcsolja a kimenetre.",
               "Message",
               "Toggle the short text entered on the Message tab onto the output."
-            )
+            ),
+            { helpIcons: [IconType.MESSAGE] }
           ),
         ],
       }
@@ -944,7 +1011,18 @@ export const fullViewTutorial: TutorialDefinition = {
               "Text format",
               "Set font, size, style, color and alignment. These affect presentation, not the song text."
             ),
-            { prepare: () => activatePreviewTab(0) }
+            {
+              helpIcons: [
+                "fa fa-paint-brush",
+                IconType.BOLD,
+                IconType.ITALIC,
+                IconType.UNDERLINE,
+                IconType.ALIGN_LEFT,
+                IconType.ALIGN_CENTER,
+                IconType.ALIGN_RIGHT,
+              ],
+              prepare: () => activatePreviewTab(0),
+            }
           ),
           s(
             "format-image",
@@ -955,7 +1033,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "Image",
               "Choose a background, fit mode and image-related settings."
             ),
-            { prepare: () => activatePreviewTab(1) }
+            { helpIcons: ["fa fa-picture-o"], prepare: () => activatePreviewTab(1) }
           ),
           s(
             "format-message",
@@ -966,7 +1044,7 @@ export const fullViewTutorial: TutorialDefinition = {
               "Message",
               "Write a short message here and show it with the separate Message toggle."
             ),
-            { prepare: () => activatePreviewTab(2) }
+            { helpIcons: ["fa fa-comment-o"], prepare: () => activatePreviewTab(2) }
           ),
           s(
             "format-controls",
@@ -977,7 +1055,20 @@ export const fullViewTutorial: TutorialDefinition = {
               "Controls",
               "Projection and display controls appear on this tab; the buttons implement the functions of the keyboard controls available in the section list."
             ),
-            { prepare: () => activatePreviewTab(3) }
+            {
+              helpIcons: [
+                "fa fa-arrows",
+                "fa fa-step-backward",
+                "fa fa-angle-double-up",
+                "fa fa-arrow-up",
+                "fa fa-undo",
+                "fa fa-step-forward",
+                "fa fa-angle-double-down",
+                "fa fa-arrow-down",
+                "fa fa-sign-in",
+              ],
+              prepare: () => activatePreviewTab(3),
+            }
           ),
           s(
             "format-collapse",
@@ -987,7 +1078,8 @@ export const fullViewTutorial: TutorialDefinition = {
               "Ezzel több lépésben összecsukhatók a beállítások vagy az előnézet, hogy több hely maradjon a fontos területnek.",
               "Panel layout",
               "Cycle through collapsed layouts to give more room to either settings or the preview."
-            )
+            ),
+            { helpIcons: ["fa fa-columns fa-rotate-90", "fa fa-window-maximize", "fa fa-window-minimize"] }
           ),
         ],
       }

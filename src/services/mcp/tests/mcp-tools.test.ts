@@ -1210,6 +1210,12 @@ test("help comes from the tutorials, is searchable in both languages and can be 
   assert.match((await call("show_in_app", { target: "full/nope" })).text, /Unknown target/);
   const topics = (await call("search_help", { query: "synchronize", limit: 2 })).value as { id: string; targets: unknown[] }[];
   assert.ok(topics.length >= 1 && topics[0].targets.length >= 1);
+  assert.ok(topics.every((topic) => !Object.hasOwn(topic, "lines")));
+  const topic = (await call("get_help_topic", { id: "full/song-tree", language: "en" })).value;
+  assert.deepEqual(
+    topic,
+    en.find((item) => item.id === "full/song-tree")
+  );
 });
 
 test("diagnose names what blocks the user and how to get out", async () => {

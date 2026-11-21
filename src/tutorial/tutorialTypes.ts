@@ -1,4 +1,5 @@
 import type { Language } from "../localization/LocalizationContext";
+import type { IconType } from "../services/IconService";
 
 export type TutorialView = "full" | "client";
 
@@ -10,6 +11,8 @@ export interface TutorialText {
 export type LocalizedTutorialText = Record<Language, TutorialText>;
 
 export type LocalizedTutorialLabel = Record<Language, string>;
+
+export type HelpIcon = IconType | `images/${string}.${"svg" | "png"}` | `fa fa-${string}` | { label: string };
 
 export type TutorialCommand = "sync-now" | "switch-client" | "switch-full";
 
@@ -29,6 +32,8 @@ export interface TutorialStep {
   id: string;
   target: string | readonly string[];
   text: LocalizedTutorialText;
+  /** Application icons or visible control symbols shown beside this step in the web help. */
+  helpIcons?: readonly HelpIcon[];
   /** Additional targets that share one tutorial spotlight with the primary target. */
   highlightTargets?: readonly string[];
   prepare?: () => void | TutorialCleanup;

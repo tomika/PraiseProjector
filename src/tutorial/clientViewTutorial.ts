@@ -75,7 +75,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A lapozási művelet és a vezérlősáv előző/következő gombjai ugyanazt a lapfordítást indítják.",
               "Paging",
               "Paging and the toolbar's previous/next buttons start the same page-turn action."
-            )
+            ),
+            { helpIcons: ["images/left.svg", "images/right.svg"] }
           ),
           s(
             "song-two-finger",
@@ -85,7 +86,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Mozdítás nélküli kétujjas koppintással a módok Ki → Teljes oldal → Szélesség → Kézi sorrendben váltanak; az új mód röviden megjelenik.",
               "Two-finger tap",
               "Tap with two fingers without moving. Modes cycle Off → Fit page → Fit width → Manual, and the new mode briefly appears."
-            )
+            ),
+            { helpIcons: ["images/zoom.svg", "images/fitpage.svg", "images/scrollpage.svg", { label: "M" }] }
           ),
           s(
             "song-zoom-modes",
@@ -95,7 +97,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A Teljes oldal a teljes dalt a rendelkezésre álló területre illeszti. A Szélesség a szélességet tölti ki, és hosszabb dalnál függőlegesen görgethető marad. A Kézi megadott betűméretet használ. Az Automatikus sortörés külön kapcsolható; rövid dalnál az illesztés nagyobb betűméretet is választhat. Kétujjas koppintás vagy Ctrl+Shift+görgő váltja a módot.",
               "Zoom modes",
               "Fit page fits the entire song into the available area. Fit width fills the width and keeps longer songs vertically scrollable. Manual uses an explicit font size. Auto wrap is a separate option; fitting may choose a larger font for short songs. A two-finger tap or Ctrl+Shift+wheel cycles modes."
-            )
+            ),
+            { helpIcons: ["images/fitpage.svg", "images/scrollpage.svg", { label: "M" }, "images/wrap.svg"] }
           ),
           s(
             "song-pinch",
@@ -115,7 +118,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A lapozási ikon az adatbázis, a keresési találatok, az aktuális műsortár vagy egy mentett vezetői lista sorrendjét jelzi. Ha vezérelheted a kijelzőt és az aktuális műsortárban van dal, az ikonra koppintva visszatérhetsz a műsortári lapozáshoz.",
               "Navigation source",
               "The navigation icon shows whether paging follows the database, search results, the current playlist or a saved leader playlist. If you can control the display and the working playlist contains a song, tap the icon to return to playlist navigation."
-            )
+            ),
+            { helpIcons: ["images/database.svg", "images/playlist.svg", "images/magnifier.svg", "images/calendar.svg"] }
           ),
           s(
             "song-add",
@@ -125,7 +129,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Adatbázisból vagy keresésből megnyitott, még nem műsortári dal itt adható a műsortárhoz, és a navigáció műsortári sorrendre állítható.",
               "Add song",
               "If a database or search result is not yet in the playlist, add it and switch to playlist navigation here."
-            )
+            ),
+            { helpIcons: [{ label: "▶" }] }
           ),
           s(
             "song-highlight",
@@ -135,7 +140,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Kiemelésvezérlő módban a dalszöveg kijelölt része a vezetői és az engedélyezett követői kijelzőkön egyaránt megjeleníthető kiemelve.",
               "Highlight",
               "In highlight-control mode, select lyrics to highlight them on the leader and permitted follower displays."
-            )
+            ),
+            { helpIcons: ["images/hand.svg"] }
           ),
         ],
       }
@@ -160,7 +166,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az aktuális navigációs sorrend előző dalára lép. Távoli kijelző követésekor a vezető irányít, ezért a gomb hiányozhat.",
               "Previous song",
               "Move to the previous song in the current navigation order. It may be hidden while a remote leader controls the display."
-            )
+            ),
+            { helpIcons: ["images/left.svg"] }
           ),
           s(
             "toolbar-next",
@@ -170,7 +177,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az aktuális navigációs sorrend következő dalára lép. Távoli kijelző követésekor a vezető irányít, ezért a gomb hiányozhat.",
               "Next song",
               "Move to the next song in the current navigation order. It may be hidden while a remote leader controls the display."
-            )
+            ),
+            { helpIcons: ["images/right.svg"] }
           ),
           s(
             "toolbar-home",
@@ -180,7 +188,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Megosztott vagy rögzített munkamenetből a házikóval térhetsz vissza az alkalmazás saját felületére. Ez a követett tartalom elhagyására szolgál; a teljes szerkesztőre váltás külön művelet a Több menüben, ahol elérhető.",
               "Return to your own app",
               "Use Home to leave a shared or locked session and return to the app's own interface. Switching to the full editor is a separate action in More where that option is available."
-            )
+            ),
+            { helpIcons: ["images/home.svg"] }
           ),
           s(
             "toolbar-instructions",
@@ -190,7 +199,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A rövid koppintás vagy kattintás sorban vált: kikapcsolva, megjegyzések nélkül → a dal megjegyzései úgy, ahogy a szerkesztőben látszanak (borostyán fény; a szakaszra hivatkozó megjegyzés helyén a szakasz első sora áll) → instrukciók (kék fény) → kikapcsolva. Gyorsbillentyű és hardveres gomb az instrukciókat kapcsolja be és ki.",
               "Instructions",
               "Tap or click briefly to step through: off, without comments → the song's comments as the editor shows them (amber glow; a comment naming a section shows that section's first line) → instructions (blue glow) → off. Hotkeys and hardware buttons switch instructions on and off."
-            )
+            ),
+            { helpIcons: ["images/wand.svg"] }
           ),
           s(
             "toolbar-instruction-editor",
@@ -200,7 +210,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Vezérlési jogosultság esetén a hosszú nyomás vagy jobb kattintás nyitja meg a Forrás, Szerkesztő és Előnézet paneleket. Mentéskor a változás azonnal megjelenik. A vetített dal instrukciója a közös kijelzőre is átkerül; egy másik, helyben megnyitott dalé helyi marad. Üres szöveg mentésével az instrukció törölhető.",
               "Instructions editor",
               "With control permission, hold or right-click this button to open the Source, Editor and Preview panes. Saved changes appear immediately. Instructions for the projected song also update the shared display; another locally opened song stays local. Saving empty text clears the instructions."
-            )
+            ),
+            { helpIcons: ["images/wand.svg", "images/reset.svg", "images/revert.svg", "images/ok.svg"] }
           ),
           s(
             "toolbar-capo",
@@ -210,7 +221,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Rövid koppintás vagy kattintás kapcsolja be és ki a capót. Hosszú nyomással, jobb kattintással, a külön lenyíló vezérlővel vagy vízszintes elhúzással közvetlen capoérték választható.",
               "Capo",
               "Tap or click briefly to toggle capo. Hold, right-click, use the separate dropdown control or just drag horizontally to choose a capo value directly."
-            )
+            ),
+            { helpIcons: ["images/capo.svg"] }
           ),
           s(
             "toolbar-transpose",
@@ -220,7 +232,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Koppintás, kattintás vagy vízszintes elhúzás nyitja az értékválasztót, ahol félhangonként állítható a megnyitott dal hangneme. A vetített dal vezérlésekor a módosítás a közös kijelzőre is átkerül. Egy másik, adatbázisból vagy mentett listából helyben megnyitott dal transzponálása helyi marad.",
               "Transpose",
               "Tap, click or drag horizontally to open the picker and transpose the viewed song by semitones. While controlling the projected song, changes also reach the shared display. Transposing a different song opened locally from the database or a saved list stays local."
-            )
+            ),
+            { helpIcons: ["images/transpose.svg"] }
           ),
           s(
             "toolbar-picker",
@@ -231,7 +244,11 @@ export const clientViewTutorial: TutorialDefinition = {
               "Value picker",
               "Drag, use the visible choices or use the keyboard to step through values; dragging from the transpose or capo control also opens the picker directly. Pressing Enter or clicking a specific value applies that new value; pressing Escape or clicking outside the value picker closes it and restores the original value."
             ),
-            { prepare: openClientTutorialValuePicker, highlightTargets: ["#transpose", "#capo", ".cv-wheel"] }
+            {
+              helpIcons: ["images/transpose.svg", "images/capo.svg"],
+              prepare: openClientTutorialValuePicker,
+              highlightTargets: ["#transpose", "#capo", ".cv-wheel"],
+            }
           ),
           s(
             "toolbar-highlight",
@@ -241,7 +258,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A gomb csak akkor látható, amikor az aktív kiemelés a jelenlegi jogosultsággal törölhető.",
               "Clear highlight",
               "This control appears only when the active highlight can be cleared with your current permission."
-            )
+            ),
+            { helpIcons: ["images/off.svg"] }
           ),
           s(
             "toolbar-fullscreen",
@@ -251,7 +269,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Váltás teljes képernyős és ablakos megjelenítés között.",
               "Full screen",
               "Switch between full-screen and windowed display."
-            )
+            ),
+            { helpIcons: ["images/fullscreen.svg", "images/restore.svg"] }
           ),
           s(
             "toolbar-refresh",
@@ -271,7 +290,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az ikon a kapcsolódás, követés, engedélyezett vezetés vagy hiba állapotát mutatja; hiba esetén itt kezdeményezhető újracsatlakozás.",
               "Network status",
               "The icon indicates connection, following, authorized leading or error. Reconnection can be requested from the same control."
-            )
+            ),
+            { helpIcons: ["images/startup.svg", "images/online.svg", "images/online-leader.svg", "images/offline.svg", "images/nearby.svg"] }
           ),
           s(
             "toolbar-input",
@@ -295,7 +315,7 @@ export const clientViewTutorial: TutorialDefinition = {
         "Options and lists",
         "Open display settings, search and, with sufficient permission, the playlist here."
       ),
-      { prepare: song }
+      { helpIcons: ["images/options.svg"], prepare: song }
     ),
     s(
       "search",
@@ -327,7 +347,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Ha szerkesztheted az aktuális műsortárat, a gomb a daladatbázis, az aktuális műsortár és a vezetői listák között vált. Az ikon az aktuális módot mutatja.",
               "List mode",
               "If you can edit the working playlist, the button cycles through the song database, the current playlist and leader lists. The icon shows the current mode."
-            )
+            ),
+            { helpIcons: ["images/database.svg", "images/playlist.svg", "images/calendar.svg"] }
           ),
           s(
             "search-filter",
@@ -338,7 +359,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Search and filter",
               "In database mode it searches songs; in playlist mode it first filters locally. Escape or Clear empties the field."
             ),
-            { prepare: databaseList }
+            { helpIcons: ["images/cancel.svg"], prepare: databaseList }
           ),
           s(
             "search-database",
@@ -349,7 +370,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Database search",
               "While filtering the playlist, search the complete song database for the same phrase."
             ),
-            { prepare: playlistList }
+            { helpIcons: ["images/magnifier.svg"], prepare: playlistList }
           ),
           s(
             "search-leaders",
@@ -360,7 +381,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Leader lists",
               "Choose a leader, then a dated or named favorite playlist. Search lists matches song titles across all lists for that leader. Each result shows its source list. Tap a result to select that list. After confirmation, := replaces the working playlist with the entire selected list, leaving the saved list intact."
             ),
-            { prepare: leaderLists }
+            { helpIcons: [{ label: ":=" }], prepare: leaderLists }
           ),
         ],
       }
@@ -395,7 +416,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A plusz hozzáadja a dalt a műsortárhoz; a pipa jelzi, hogy már szerepel benne, és ugyanazzal a vezérlővel eltávolítható.",
               "Add",
               "Plus adds the song to the playlist; a check marks existing entries and the same control removes it."
-            )
+            ),
+            { helpIcons: [{ label: "+" }, { label: "✓" }] }
           ),
           s(
             "list-play",
@@ -405,7 +427,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A dal melletti ▶ gomb szükség esetén az aktuális műsortárhoz adja a dalt, megjeleníti, és műsortári sorrendre váltja a lapozást. A kotta MIDI-lejátszását magára a kottára duplán kattintva vagy koppintva indíthatod.",
               "Show song now",
               "The ▶ button beside a song adds it to the current playlist if needed, displays it and switches paging to playlist order. Double-click or double-tap the displayed notation to start its MIDI playback."
-            )
+            ),
+            { helpIcons: [{ label: "▶" }] }
           ),
           s(
             "list-found",
@@ -415,7 +438,19 @@ export const clientViewTutorial: TutorialDefinition = {
               "A jelölő mutatja, hogy a keresett rész címben, dalszövegben, fejlécben vagy más mezőben található.",
               "Match location",
               "The marker shows whether the match came from title, lyrics, header or another field."
-            )
+            ),
+            {
+              helpIcons: [
+                "images/found_title.svg",
+                "images/found_lyrics.svg",
+                "images/found_meta.svg",
+                "images/found_head.svg",
+                "images/found_title_words.svg",
+                "images/found_lyrics_words.svg",
+                "images/found_meta_words.svg",
+                "images/found_head_words.svg",
+              ],
+            }
           ),
           s(
             "list-size",
@@ -470,7 +505,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A sor saját vezérlői csak ezt a műsortételt módosítják, az adatbázis dalát nem.",
               "Transpose and capo",
               "Row controls affect only this playlist entry, not the database song."
-            )
+            ),
+            { helpIcons: ["images/transpose.svg", "images/capo.svg"] }
           ),
           s(
             "playlist-remove",
@@ -480,7 +516,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A sor eltávolítási területre húzásával a dal csak az aktuális munkalistából kerül ki; az adatbázisban megmarad.",
               "Remove",
               "Drag the row to the removal target to remove it only from the current working list; the database song remains."
-            )
+            ),
+            { helpIcons: ["images/trashcan.svg"] }
           ),
           s(
             "playlist-size",
@@ -515,7 +552,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Sorba írt akkordok, gitár- vagy zongorafogások, illetve akkordok nélküli nézet választható; a közvetlen választómenü ugyanezeket az opciókat mutatja.",
               "Chord display",
               "Choose inline chords, guitar or piano diagrams, or a lyrics-only view; the direct picker offers the same options."
-            )
+            ),
+            { helpIcons: ["images/am.svg", "images/guitarchord.svg", "images/pianochord.svg", "images/nochordbox.svg"] }
           ),
           s(
             "display-minor",
@@ -525,7 +563,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az Am, am és a rendelkezésre álló jelölési változatok választhatók.",
               "Minor chord spelling",
               "Choose among Am, am and the available minor-chord spellings."
-            )
+            ),
+            { helpIcons: [{ label: "Am" }, { label: "am" }, { label: "a" }] }
           ),
           s(
             "display-repeat-chords",
@@ -535,7 +574,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Elrejti az előző, azonos típusú szakasz akkordjait, ha az akkordmenet változatlan.",
               "Repeated section chords",
               "Hide chords repeated unchanged from the previous section of the same type."
-            )
+            ),
+            { helpIcons: [{ label: "V1 Am / V2 A̶m̶" }] }
           ),
           s(
             "display-subscript",
@@ -545,7 +585,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az akkordmódosítókat kisebb, indexelt formában jeleníti meg.",
               "Subscript modifiers",
               "Show chord modifiers in a smaller indexed style."
-            )
+            ),
+            { helpIcons: [{ label: "Aᵐ⁷" }] }
           ),
           s(
             "display-auto-tone",
@@ -555,7 +596,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az Ab kapcsoló az akkordok hangneveit a hangnemhez igazítja, például ugyanazt a hangot G♯ vagy A♭ néven írja ki. Ha a dal hangneme nincs megadva, a megjelenítéshez a program az akkordmenetből következtethet rá. Más hangmagasság választásához használd a Transzponálás vezérlőt.",
               "Automatic key",
               "The Ab switch spells chord notes for the key, for example G♯ or A♭ for the same pitch. If the song has no declared key, the app can infer one for display from the chord progression. Use Transpose to change pitch."
-            )
+            ),
+            { helpIcons: [{ label: "Ab" }] }
           ),
           s(
             "display-highlight",
@@ -565,7 +607,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Rövid kattintás vagy koppintás kapcsolja a kiemelést. Hosszú nyomás vagy jobb kattintás nyitja az átlátszóság beállítását. A kéz ikon a kiemelés vezérlését jelzi; a lehetőségek a munkamenet jogosultságaitól függnek.",
               "Highlight",
               "A short click or tap toggles highlighting. Hold or right-click to open its opacity setting. A hand icon indicates highlight control; available actions depend on session permissions."
-            )
+            ),
+            { helpIcons: ["images/lamp.svg", "images/hand.svg"] }
           ),
           s(
             "display-b-flat",
@@ -575,7 +618,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Az akkordok megjelenítését az angolszász ABCDEFG és a magyar/német AHCDEFG hangnévrendszer között váltja.",
               "Note-name system",
               "Switch chord display between the English ABCDEFG and Hungarian/German AHCDEFG note-name systems."
-            )
+            ),
+            { helpIcons: [{ label: "Bb" }] }
           ),
           s(
             "display-simplified",
@@ -585,7 +629,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Elrejti a bonyolult akkordmódosítók egy részét az áttekinthetőbb megjelenéshez.",
               "Chord simplification",
               "Hide some complex chord modifiers for a clearer display."
-            )
+            ),
+            { helpIcons: [{ label: "Aᵐ⁷̶♯̶⁵̶" }] }
           ),
           s(
             "display-zoom",
@@ -595,7 +640,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Rövid kattintás vagy koppintás be- vagy kikapcsolja a nagyítást. Hosszú nyomás vagy jobb kattintás nyitja meg a részletes nagyítási panelt.",
               "Zoom",
               "A short click or tap toggles zoom. Hold or right-click to open the detailed zoom panel."
-            )
+            ),
+            { helpIcons: ["images/zoom.svg"] }
           ),
           s(
             "display-zoom-panel",
@@ -606,7 +652,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Zoom panel",
               "Control title, metadata, section labels, notation and auto wrap separately. Choose a sizing mode; Manual shows a font-size slider. Changes apply immediately on this device."
             ),
-            { prepare: openClientZoomPanel }
+            { helpIcons: ["images/fitpage.svg", "images/scrollpage.svg", { label: "M" }, "images/wrap.svg"], prepare: openClientZoomPanel }
           ),
           s(
             "display-score-mode",
@@ -617,7 +663,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Notation or lyrics and chords",
               "With zoom enabled, the ♪ button switches between full notation and lyrics/chords derived from it. Instrumental notation may become a chord grid; unsupported scores retain notation. The original song is unchanged."
             ),
-            { prepare: openClientZoomPanel }
+            { helpIcons: [{ label: "♪" }, { label: "♪ᶜ" }], prepare: openClientZoomPanel }
           ),
           s(
             "display-wrap",
@@ -628,7 +674,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Auto wrap",
               "The wrap icon separately enables wrapping long lines; blue highlighting marks it as active. Fit width remains scrollable for long content, and Manual preserves the selected font size."
             ),
-            { prepare: openClientZoomPanel }
+            { helpIcons: ["images/wrap.svg"], prepare: openClientZoomPanel }
           ),
           s(
             "display-section-labels",
@@ -639,12 +685,13 @@ export const clientViewTutorial: TutorialDefinition = {
               "Section labels",
               "Cycle between full section labels, abbreviations and hidden labels. This changes this device's display without editing the song's stored section names."
             ),
-            { prepare: openClientZoomPanel }
+            { helpIcons: [{ label: "Verse" }, { label: "V" }, { label: "—" }], prepare: openClientZoomPanel }
           ),
           s(
             "display-theme",
             "[data-tutorial-id='client-theme']",
-            tx("Téma", "A megjelenés automatikus, világos vagy sötét módra állítható.", "Theme", "Cycle among automatic, light and dark appearance.")
+            tx("Téma", "A megjelenés automatikus, világos vagy sötét módra állítható.", "Theme", "Cycle among automatic, light and dark appearance."),
+            { helpIcons: ["images/autolight.svg", "images/day.svg", "images/night.svg"] }
           ),
           s(
             "display-leader",
@@ -654,7 +701,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A környezet támogatásától/jogosultságtól függően a kliens követő vagy vezető módban használható; vezető módban a közös kijelző állapota is módosítható.",
               "Leader mode",
               "Where supported, switch between follower and leader. A leader can modify shared display state."
-            )
+            ),
+            { helpIcons: ["images/leader.svg"] }
           ),
           s(
             "display-close",
@@ -664,7 +712,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "Bezárja a beállítások panelt és visszatér a dalnézethez.",
               "Close",
               "Close options panel and return to the full song view."
-            )
+            ),
+            { helpIcons: ["images/close-up.svg"] }
           ),
         ],
       }
@@ -679,6 +728,7 @@ export const clientViewTutorial: TutorialDefinition = {
         "Depending on mode, More contains clear list, sessions, switch UI, about and exit."
       ),
       {
+        helpIcons: ["images/menu.svg"],
         prepare: options,
         details: [
           s(
@@ -689,7 +739,8 @@ export const clientViewTutorial: TutorialDefinition = {
               "A Beállítások, Több és Felületváltás vezérlők pontjai a gazdaalkalmazás teendőit jelzik: zöld feltöltés, kék letöltés, türkiz mindkettő, narancs offline állapot. A piros például ellenőrzendő dalt, frissítést vagy újrabejelentkezést jelezhet. A felhős adatbázis szinkronizálása a teljes nézetben érhető el.",
               "Attention badge colors",
               "Dots on Options, More and Switch UI report host-app tasks: green for upload, blue for download, turquoise for both, and orange for offline. Red can indicate song review, an update or a new sign-in. Cloud database synchronization is available in full view."
-            )
+            ),
+            { helpIcons: ["images/menu.svg"] }
           ),
           s(
             "more-menu",
@@ -700,7 +751,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "More menu",
               "Only actions available in the current runtime and mode are shown."
             ),
-            { prepare: openClientMoreMenu }
+            { helpIcons: ["images/menu.svg"], prepare: openClientMoreMenu }
           ),
           s(
             "more-clear",
@@ -711,7 +762,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Clear list",
               "After confirmation, remove entries from the working list without changing its saved source."
             ),
-            { prepare: openClientMoreMenu }
+            { helpIcons: ["images/clear.svg"], prepare: openClientMoreMenu }
           ),
           s(
             "more-sessions",
@@ -722,7 +773,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Sessions and connection",
               "Open the hub for discovering, starting and following connections. It manages local, nearby and cloud sessions, can provide a sharing QR code, and lets you return to your own lists while following. The main toolbar network indicator shows the current connection state."
             ),
-            { prepare: openClientMoreMenu }
+            { helpIcons: ["images/wifi.svg"], prepare: openClientMoreMenu }
           ),
           s(
             "more-switch",
@@ -734,6 +785,7 @@ export const clientViewTutorial: TutorialDefinition = {
               "Open More in client view and choose Switch UI, where available. When the client view is open inside the full app, the full view takes over the selected song. In the built-in tutorial, Return to full view continues the tour there."
             ),
             {
+              helpIcons: ["images/full-ui.svg"],
               prepare: openClientMoreMenu,
               actions: [{ id: "switch-full", label: tl("Visszatérés a teljes nézetre", "Return to full view"), command: "switch-full" }],
             }
@@ -747,13 +799,13 @@ export const clientViewTutorial: TutorialDefinition = {
               "About",
               "Shows app version, licenses and device information. You can restart this tutorial here at any time."
             ),
-            { prepare: openClientMoreMenu }
+            { helpIcons: ["images/about.svg"], prepare: openClientMoreMenu }
           ),
           s(
             "more-exit",
             "[data-tutorial-id='client-more-exit']",
             tx("Kilépés", "Natív alkalmazáskörnyezetben bezárja a programot.", "Exit", "Close the program in a native application runtime."),
-            { prepare: openClientMoreMenu }
+            { helpIcons: ["images/power.svg"], prepare: openClientMoreMenu }
           ),
         ],
       }
