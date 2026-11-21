@@ -729,9 +729,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-more-home']",
             tx(
               "Vissza a teljes nézetre",
-              "Nyisd meg a kliensnézet More menüjét, majd válaszd a Switch UI lehetőséget, ha elérhető. A kiválasztott dalt átveszi a teljes nézet. A beépített bemutató Visszatérés a teljes nézetre gombja ott folytatja a bemutatót.",
+              "Nyisd meg a kliensnézet More menüjét, majd válaszd a Switch UI lehetőséget, ha elérhető. Ha a kliensnézet a teljes alkalmazáson belül fut, a teljes nézet átveszi a kiválasztott dalt. A beépített bemutató Visszatérés a teljes nézetre gombja ott folytatja a bemutatót.",
               "Back to full view",
-              "Open More in client view and choose Switch UI, where available. The full view takes over the selected song. In the built-in tutorial, Return to full view continues the tour there."
+              "Open More in client view and choose Switch UI, where available. When the client view is open inside the full app, the full view takes over the selected song. In the built-in tutorial, Return to full view continues the tour there."
             ),
             {
               prepare: openClientMoreMenu,
