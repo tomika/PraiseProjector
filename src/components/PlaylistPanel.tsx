@@ -210,6 +210,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   private redoStack: PlaylistHistorySnapshot[] = [];
   private isApplyingHistory = false;
   private mounted = false;
+  private playlistPublishSequence = 0;
   private readonly pendingPlaylistUpdateResolves = new Set<() => void>();
   private legacyScheduleDate: Date | null;
   private static readonly PLAYLIST_HISTORY_MAX = 50;
@@ -501,7 +502,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return null;
   }
 
-  doUpdatePlaylistCallback(newPlaylist: Playlist) {
+  async doUpdatePlaylistCallback(newPlaylist: Playlist): Promise<void> {
+    const sequence = ++this.playlistPublishSequence;
     const playlist = newPlaylist.items.map((item) => ({
       songId: item.songId,
       title: item.title,
@@ -509,7 +511,10 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
       capo: item.capo,
       instructions: item.instructions,
     }));
-    generatePlaylistId(playlist).then((playlist_id) => updateCurrentDisplay({ playlist, playlist_id }));
+    const playlist_id = await generatePlaylistId(playlist);
+    if (this.mounted && this.state.currentPlaylist === newPlaylist && sequence === this.playlistPublishSequence) {
+      updateCurrentDisplay({ playlist, playlist_id });
+    }
   }
 
   updatePlaylist(items: PlaylistEntryData[], name?: string, id?: string, origin?: PlaylistOrigin | null): Promise<void> {
@@ -546,22 +551,27 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
    * (or the panel unmounted first). Callers may immediately select an entry from the new
    * list, so resolving earlier would make selectSongById see (and append to) the old list.
    */
-  private commitState<K extends keyof PlaylistPanelState>(state: Pick<PlaylistPanelState, K>, afterCommit: () => void): Promise<void> {
-    return new Promise((resolve) => {
+  private commitState<K extends keyof PlaylistPanelState>(
+    state: Pick<PlaylistPanelState, K>,
+    afterCommit: () => void | Promise<void>
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
       let settled = false;
-      const finish = () => {
+      const settle = (complete: () => void) => {
         if (settled) return;
         settled = true;
         this.pendingPlaylistUpdateResolves.delete(finish);
-        resolve();
+        complete();
       };
+      const finish = () => settle(resolve);
       this.pendingPlaylistUpdateResolves.add(finish);
       this.setState(state, () => {
         try {
-          afterCommit();
+          const pending = afterCommit();
+          if (pending) void pending.then(finish, (error) => settle(() => reject(error)));
+          else finish();
         } catch (err) {
           console.error("Playlist", "error in setState callback", err);
-        } finally {
           finish();
         }
       });
@@ -647,9 +657,8 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         // An empty working list no longer represents a stored playlist.
         playlistOrigin: newItems.length === 0 ? null : playlistOrigin,
       },
-      () => {
+      async () => {
         if (newItems.length === 0) this.persistPlaylistOrigin(null);
-        this.savePlaylist(updatedPlaylist);
         this.updatePlaylistItemStates();
         const preferencesStored = preferenceChanges.length > 0 && this.storeItemPreferences(preferenceChanges);
         for (const index of storeInstructions) {
@@ -661,6 +670,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         if (focused && modified.includes(focused) && getCurrentDisplay().songId === focused.songId) {
           updateCurrentDisplay({ transpose: focused.transpose, capo: focused.capo, instructions: focused.instructions });
         }
+        await this.persistPlaylist(updatedPlaylist);
       }
     );
   }
@@ -846,13 +856,12 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
   }
 
   savePlaylist(playlist: Playlist) {
-    try {
-      const playlistJson = JSON.stringify(playlist.toJSON());
-      localStorage.setItem("pp-playlist", playlistJson);
-      this.doUpdatePlaylistCallback(playlist); // Update Display state whenever playlist is saved
-    } catch (error) {
-      console.error("Playlist", "Error saving playlist to localStorage", error);
-    }
+    void this.persistPlaylist(playlist).catch((error) => console.error("Playlist", "Error saving playlist to localStorage", error));
+  }
+
+  private async persistPlaylist(playlist: Playlist): Promise<void> {
+    localStorage.setItem("pp-playlist", JSON.stringify(playlist.toJSON()));
+    await this.doUpdatePlaylistCallback(playlist);
   }
 
   addSongToPlaylist(song: Song, insertIndex?: number) {

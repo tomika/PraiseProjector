@@ -57,11 +57,14 @@ test("estimate_song_keys answers for several songs and refuses unknown ids", asy
   const host = fakeHost(state);
   const tool = createMcpTools({ strings: { en: {}, hu: {} }, help: { tutorials: [], tooltips: { en: {}, hu: {} } } }).find(
     (candidate) => candidate.name === "estimate_song_keys"
-  )!;
-  const result = (await tool.run({ songIds: ["a", "b", "a"] }, host)) as { songs: Record<string, unknown>[] };
+  );
+  assert.ok(tool?.run);
+  const run = tool.run;
+  const result = (await run({ songIds: ["a", "b", "a"] }, host)) as { songs: Record<string, unknown>[] };
+  const songState = { marked: false, changedLocally: false, preference: { leaderId: "own1", type: "neutral" } };
   assert.deepEqual(result.songs, [
-    { songId: "a", title: "Első", estimatedKey: "D", statedKey: "C", agreesWithStatedKey: false, statedKeyTonicUsed: false },
-    { songId: "b", title: "Második", estimatedKey: "Am", statedKey: "" },
+    { songId: "a", title: "Első", estimatedKey: "D", statedKey: "C", agreesWithStatedKey: false, statedKeyTonicUsed: false, state: songState },
+    { songId: "b", title: "Második", estimatedKey: "Am", statedKey: "", state: songState },
   ]);
-  await assert.rejects(async () => tool.run({ songIds: ["nincs"] }, host));
+  await assert.rejects(async () => run({ songIds: ["nincs"] }, host));
 });

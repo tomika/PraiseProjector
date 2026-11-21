@@ -17,6 +17,7 @@ import {
   JsonRpcRequest,
   JsonRpcResponse,
   MCP_ENDPOINT_PATH,
+  MCP_META_PROTOCOL_VERSION,
   MCP_STATELESS_PROTOCOL_VERSION,
   MCP_SUPPORTED_PROTOCOL_VERSIONS,
   McpErrorCode,
@@ -28,7 +29,7 @@ import {
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
-export type McpForward = (message: JsonRpcRequest) => Promise<JsonRpcResponse | null>;
+export type McpForward = (message: JsonRpcRequest, protocolVersion?: string) => Promise<JsonRpcResponse | null>;
 
 export interface McpHttpOptions {
   port: number;
@@ -85,6 +86,31 @@ export function checkMcpAccess(input: McpAccessInput, token: string): 0 | 401 | 
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function requestVersion(message: JsonRpcRequest): unknown {
+  return (message.params?._meta as Record<string, unknown> | undefined)?.[MCP_META_PROTOCOL_VERSION];
+}
+
+function decodeNameHeader(value: string | undefined): string | undefined {
+  if (!value?.startsWith("=?base64?") || !value.endsWith("?=")) return value;
+  const encoded = value.slice(9, -2);
+  const bytes = Buffer.from(encoded, "base64");
+  return bytes.toString("base64") === encoded ? bytes.toString("utf8") : undefined;
+}
+
+function mismatchedHeader(message: JsonRpcRequest, headers: http.IncomingHttpHeaders, version: string | undefined): string | undefined {
+  const bodyVersion = requestVersion(message);
+  const modern = version === MCP_STATELESS_PROTOCOL_VERSION || bodyVersion === MCP_STATELESS_PROTOCOL_VERSION;
+  if (modern && version !== bodyVersion) return "MCP-Protocol-Version";
+  const method = headerValue(headers["mcp-method"]);
+  if ((modern || method !== undefined) && method !== message.method) return "Mcp-Method";
+  if (!modern) return undefined;
+  const key = message.method === "resources/read" ? "uri" : message.method === "tools/call" || message.method === "prompts/get" ? "name" : undefined;
+  const header = headerValue(headers["mcp-name"]);
+  if (!key) return header === undefined ? undefined : "Mcp-Name";
+  const name = message.params?.[key];
+  return typeof name === "string" && decodeNameHeader(header) === name ? undefined : "Mcp-Name";
 }
 
 /** The stateless revision maps protocol errors to HTTP statuses; older clients expect 200. */
@@ -260,15 +286,20 @@ export class McpHttpServer {
       return;
     }
 
-    // 2025-03-26 allowed batches; later revisions send one message per POST.
+    // Retain legacy batching, but a stateless POST carries exactly one message.
     if (Array.isArray(parsed)) {
-      if (!parsed.length || !parsed.every(isJsonRpcRequest)) {
+      if (
+        stateless ||
+        !parsed.length ||
+        !parsed.every(isJsonRpcRequest) ||
+        parsed.some((message) => requestVersion(message) === MCP_STATELESS_PROTOCOL_VERSION)
+      ) {
         this.sendJson(res, 400, jsonRpcError(null, McpErrorCode.InvalidRequest, "Invalid request"));
         return;
       }
       const responses: JsonRpcResponse[] = [];
       for (const message of parsed) {
-        const response = await this.answer(message);
+        const response = await this.answer(message, versionHeader);
         if (response) responses.push(response);
       }
       if (responses.length) this.sendJson(res, 200, responses);
@@ -281,21 +312,17 @@ export class McpHttpServer {
       return;
     }
 
-    const methodHeader = headerValue(req.headers["mcp-method"]);
-    if (methodHeader !== undefined && methodHeader !== parsed.method) {
+    const mismatch = mismatchedHeader(parsed, req.headers, versionHeader);
+    if (mismatch) {
       this.sendJson(
         res,
         400,
-        jsonRpcError(
-          parsed.id ?? null,
-          McpErrorCode.HeaderMismatch,
-          `Header mismatch: Mcp-Method header value '${methodHeader}' does not match body value '${parsed.method}'`
-        )
+        jsonRpcError(parsed.id ?? null, McpErrorCode.HeaderMismatch, `Header mismatch: ${mismatch} is missing or does not match the request body.`)
       );
       return;
     }
 
-    const response = await this.answer(parsed);
+    const response = await this.answer(parsed, versionHeader);
     if (!response) {
       res.writeHead(202).end();
       return;
@@ -303,11 +330,11 @@ export class McpHttpServer {
     this.sendJson(res, statusFor(response, stateless), response);
   }
 
-  private async answer(message: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+  private async answer(message: JsonRpcRequest, protocolVersion?: string): Promise<JsonRpcResponse | null> {
     const notification = isJsonRpcNotification(message);
     const id: JsonRpcId = message.id ?? null;
     try {
-      const response = await this.options.forward(message);
+      const response = await this.options.forward(message, protocolVersion);
       return notification ? null : (response ?? jsonRpcError(id, McpErrorCode.InternalError, "No response"));
     } catch (error) {
       if (notification) return null;

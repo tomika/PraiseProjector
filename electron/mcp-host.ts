@@ -113,7 +113,7 @@ function status(): McpServerStatus {
   };
 }
 
-function forwardToRenderer(message: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+function forwardToRenderer(message: JsonRpcRequest, protocolVersion?: string): Promise<JsonRpcResponse | null> {
   const window = getWindow();
   if (!window || window.isDestroyed() || window.webContents.isLoading()) {
     return Promise.reject(new Error("The PraiseProjector window is not ready yet"));
@@ -129,7 +129,7 @@ function forwardToRenderer(message: JsonRpcRequest): Promise<JsonRpcResponse | n
       pending.delete(requestId);
       resolve(response);
     });
-    const request: McpBridgeRequest = { requestId, message };
+    const request: McpBridgeRequest = { requestId, message, protocolVersion };
     window.webContents.send("mcp-request", request);
   });
 }

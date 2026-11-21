@@ -585,8 +585,18 @@ const GroupFolderNode: React.FC<{
 };
 
 // Methods exposed for external access
+export type SongListViewState = Pick<
+  SongListPanelState,
+  "showSongs" | "showTextOnly" | "showScoreOnly" | "showMarked" | "orderMode" | "preferenceFilter"
+> & {
+  query: string;
+  songLanguageFilter: string[] | null;
+  hasHiddenFilter: boolean;
+};
+
 export interface SongListPanelMethods {
   getSelectedSongId: () => string | null;
+  getSongListState: () => SongListViewState | null;
   setSelectedSongId: (songId: string | null) => void;
   getAdjacentSong: (delta: 1 | -1) => Song | null;
   refreshLayout: () => void;
@@ -757,6 +767,22 @@ class SongListPanel extends React.Component<SongListPanelProps, SongListPanelSta
   // Public methods for external access (SongListPanelMethods interface)
   public getSelectedSongId(): string | null {
     return this.state.selectedSong?.Id ?? null;
+  }
+
+  public getSongListState(): SongListViewState {
+    const { filter, showSongs, showTextOnly, showScoreOnly, showMarked, orderMode, preferenceFilter } = this.state;
+    const languages = this.props.settings.songLanguageFilter;
+    return {
+      query: filter,
+      showSongs,
+      showTextOnly,
+      showScoreOnly,
+      showMarked,
+      orderMode,
+      preferenceFilter,
+      songLanguageFilter: languages ? [...languages] : null,
+      hasHiddenFilter: this.hasHiddenTreeFilter(!!this.props.selectedLeader),
+    };
   }
 
   public setSelectedSongId(songId: string | null): void {
@@ -2389,6 +2415,7 @@ const SongListPanelWithSettings = React.forwardRef<
   // Forward the ref to expose the inner component's methods
   React.useImperativeHandle(ref, () => ({
     getSelectedSongId: () => innerRef.current?.getSelectedSongId() ?? null,
+    getSongListState: () => innerRef.current?.getSongListState() ?? null,
     setSelectedSongId: (songId: string | null) => innerRef.current?.setSelectedSongId(songId),
     getAdjacentSong: (delta: 1 | -1) => innerRef.current?.getAdjacentSong(delta) ?? null,
     refreshLayout: () => innerRef.current?.refreshLayout(),

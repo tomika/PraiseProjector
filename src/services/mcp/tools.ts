@@ -8,7 +8,7 @@
 import { createTwoFilesPatch } from "diff";
 import { isFavoriteScheduleDate } from "../../../common/favorite-playlists";
 import type { Settings } from "../../types";
-import { HelpLanguage, HelpSources, buildHelpTopics, foldText, searchHelp } from "./help";
+import { HelpLanguage, HelpSources, buildHelpTopics, foldText, renderHelpMarkdown, searchHelp } from "./help";
 import { SETTINGS_PAGES, describeSettings, validateSettingsPatch } from "./settingsCatalog";
 import { chordsOf, gridLinesOf, songDirectives, songLines, songMetadata } from "./songMeta";
 import {
@@ -21,6 +21,7 @@ import {
   McpSong,
   McpSongHistory,
   McpSongInfo,
+  MCP_SONG_PREFERENCE_TYPES as PREFERENCE_TYPES,
   McpSongSection,
   McpSongVersion,
   McpStoredPlaylistRef,
@@ -28,6 +29,7 @@ import {
   McpToolError,
   McpViewTarget,
 } from "./types";
+import { invalidArgument, strictObject, validateArgument } from "./validation";
 
 export interface McpContent {
   strings: Record<HelpLanguage, Record<string, string>>;
@@ -52,6 +54,7 @@ const VIEW_TARGETS: readonly McpViewTarget[] = ["settings", "sessions", "sync", 
 const REGEX_TIME_BUDGET_MS = 1500;
 const MAX_PLAYLIST_ITEMS = 200;
 const MAX_PLAYLIST_OPERATIONS = 50;
+const MAX_PLAYLIST_INSERT_ITEMS = MAX_PLAYLIST_OPERATIONS;
 
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
@@ -60,8 +63,73 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 const NO_ARGS = { type: "object", additionalProperties: false };
+const STRING = { type: "string" };
+const NUMBER = { type: "number" };
+const NONEMPTY_STRING = { ...STRING, minLength: 1, pattern: "\\S" };
+const NONNEGATIVE_INTEGER = { type: "integer", minimum: 0 };
 
 const OFFSET_SCHEMA = { type: "integer", minimum: 0, description: "Results to skip: the nextOffset of the previous answer. Default 0." };
+
+const LEADER_SCHEMA = { ...NONEMPTY_STRING, description: "Leader profile ID or name. Default: the selected leader." };
+const PREFERENCE_FILTERS = [...PREFERENCE_TYPES, "not-ignored"] as const;
+const PREFERENCE_FILTER_FIELDS = {
+  leader: LEADER_SCHEMA,
+  preference: {
+    type: "string",
+    enum: PREFERENCE_FILTERS,
+    description: "Filter by this leader's song preference. 'not-ignored' includes preferred and neutral songs. Omit for all types.",
+  },
+  marked: { type: "boolean", description: "Filter by the song's note marker in the song tree." },
+  changedLocally: { type: "boolean", description: "Filter by locally created or modified songs awaiting sync (star icon)." },
+};
+const PREFERENCE_LIST_LIMIT = 100;
+const MAX_PREFERENCE_UPDATES = 50;
+const PREFERENCE_LIST_FIELDS = {
+  leader: LEADER_SCHEMA,
+  type: { type: "string", enum: PREFERENCE_TYPES },
+  offset: { ...OFFSET_SCHEMA, maximum: 1_000_000 },
+  limit: { type: "integer", minimum: 1, maximum: PREFERENCE_LIST_LIMIT, default: 20 },
+};
+const PREFERENCE_SET_FIELDS = {
+  leader: LEADER_SCHEMA,
+  type: { type: "string", enum: PREFERENCE_TYPES, description: "'neutral' clears the preference type and keeps the song's other profile settings." },
+  songIds: { type: "array", items: NONEMPTY_STRING, minItems: 1, maxItems: MAX_PREFERENCE_UPDATES, uniqueItems: true },
+};
+const LEADER_OUTPUT = object({ id: STRING, name: STRING, access: { type: "string", enum: ["own", "public"] } }, ["id", "name", "access"]);
+const PREFERENCE_ITEM_OUTPUT = object(
+  {
+    songId: STRING,
+    title: STRING,
+    type: { type: "string", enum: PREFERENCE_TYPES },
+    overrides: object({ title: STRING, transpose: NUMBER, capo: NUMBER, hasInstructions: { type: "boolean" } }, [
+      "title",
+      "transpose",
+      "capo",
+      "hasInstructions",
+    ]),
+  },
+  ["songId", "title", "type", "overrides"]
+);
+const PREFERENCE_LIST_OUTPUT = object(
+  {
+    leader: LEADER_OUTPUT,
+    total: NONNEGATIVE_INTEGER,
+    offset: NONNEGATIVE_INTEGER,
+    returned: NONNEGATIVE_INTEGER,
+    nextOffset: { type: ["integer", "null"], minimum: 0 },
+    items: { type: "array", items: PREFERENCE_ITEM_OUTPUT },
+  },
+  ["leader", "total", "offset", "returned", "nextOffset", "items"]
+);
+const PREFERENCE_SET_OUTPUT = object(
+  {
+    leader: LEADER_OUTPUT,
+    type: { type: "string", enum: PREFERENCE_TYPES },
+    changed: NONNEGATIVE_INTEGER,
+    songIds: { type: "array", items: STRING },
+  },
+  ["leader", "type", "changed", "songIds"]
+);
 
 const ITEM_FIELD_SCHEMA = {
   title: {
@@ -82,8 +150,54 @@ const INSTRUCTIONS_GUIDE =
   "Instructions give the performance order of a song for one playlist item and never change the song itself. One line per step: the name of a section of the song (get_song 'sections', e.g. 'Verse 1', 'Chorus'; matching ignores case), optionally followed by a repeat count ('2x') and a transposition ('+2', '-1') that adds to the item's own transposition, e.g. a last chorus a step higher. Any other line is a note shown to the musicians at that place (e.g. 'slowly', 'only piano'). Adjacent repeats of the same section are merged ('Chorus 2x'). Empty instructions mean the song's own order: its sections as written, with any repeat count or transposition in a section's tag ({start_of_chorus: Chorus 2x}) and with comment lines that name a section ({c: Chorus}) repeating it there; this is 'defaultInstructions' in get_song. A song should hold each section once: repeats belong to instructions (or comment lines), not to copied text. Instructions travel with the song to tablets and phones, which show the song in this order while their 'Instructions' toolbar button is on (off by default; in page mode a repeat shows only its first line). The projector follows instructions only while the 'projectInstructions' setting (preview panel button 'Project instructions') is on; otherwise it shows every section once in the order of the song text. The leader can keep instructions per song in the profile; a new playlist item takes them from there.";
 
 const PLAYLIST_ITEM_SCHEMA = object(
-  { songId: { type: "string", description: "Song id from search_songs, find_songs, query_songs or a playlist." }, ...ITEM_FIELD_SCHEMA },
+  { songId: { ...NONEMPTY_STRING, description: "Song id from search_songs, find_songs, query_songs or a playlist." }, ...ITEM_FIELD_SCHEMA },
   ["songId"]
+);
+
+const INSERT_PLAYLIST_SCHEMA = object(
+  {
+    revision: { ...NONEMPTY_STRING, description: "The opaque revision string from get_playlist." },
+    items: { type: "array", minItems: 1, maxItems: MAX_PLAYLIST_INSERT_ITEMS, items: PLAYLIST_ITEM_SCHEMA },
+    position: { ...NONNEGATIVE_INTEGER, description: "Zero-based index through the current list length. Omit to append." },
+  },
+  ["revision", "items"]
+);
+
+const PLAYLIST_VIEW_ITEM_SCHEMA = object(
+  {
+    index: NONNEGATIVE_INTEGER,
+    songId: STRING,
+    title: STRING,
+    transpose: NUMBER,
+    capo: NUMBER,
+    instructions: STRING,
+    key: STRING,
+  },
+  ["index", "songId", "title", "transpose", "capo", "instructions", "key"]
+);
+
+const playlistSourceFields = { leaderId: STRING, leader: STRING, unchangedSinceLoaded: { type: "boolean" } };
+const playlistSourceRequired = Object.keys(playlistSourceFields);
+const INSERT_PLAYLIST_OUTPUT_SCHEMA = object(
+  {
+    items: { type: "array", items: PLAYLIST_VIEW_ITEM_SCHEMA },
+    selectedIndex: { type: "integer", minimum: -1 },
+    revision: NONEMPTY_STRING,
+    source: {
+      oneOf: [
+        { type: "null" },
+        object({ ...playlistSourceFields, date: STRING }, [...playlistSourceRequired, "date"]),
+        object({ ...playlistSourceFields, favorite: STRING }, [...playlistSourceRequired, "favorite"]),
+      ],
+    },
+    readOnly: { type: "boolean" },
+    inserted: object({ position: NONNEGATIVE_INTEGER, count: { type: "integer", minimum: 1, maximum: MAX_PLAYLIST_INSERT_ITEMS } }, [
+      "position",
+      "count",
+    ]),
+    note: STRING,
+  },
+  ["items", "selectedIndex", "revision", "source", "readOnly", "inserted"]
 );
 
 const OPERATION_SCHEMA = {
@@ -170,34 +284,199 @@ export function pageOf<T>(all: readonly T[], offset: number, limit: number): { p
 /** The fixed order of song lists: title, then id, so pages never overlap. */
 const byTitle = (a: McpSongInfo, b: McpSongInfo) => a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-const infoOf = ({ id, title, language, kind, key }: McpSong): McpSongInfo => ({ id, title, language, kind, key });
+const infoOf = ({ id, title, language, kind, key, state }: McpSong): McpSongInfo => ({ id, title, language, kind, key, state });
+const leaderInfo = ({ id, name, access }: McpLeader) => ({ id, name, access });
+type McpAccount = ReturnType<McpHost["account"]>;
+const sameAccount = (a: McpAccount, b: McpAccount): boolean => a.username === b.username && a.signedIn === b.signedIn && a.guest === b.guest;
 
 /** A leader by id or (accent- and case-insensitive, possibly partial) name. */
-export function resolveLeader(host: McpHost, reference: string): McpLeader {
+export function resolveLeader(host: McpHost, reference: string, mode: "legacy" | "unique" = "legacy"): McpLeader {
   const leaders = host.listLeaders();
   if (!reference) {
     const selected = host.selectedLeader();
-    const leader = selected && leaders.find((candidate) => candidate.id === selected.id);
-    if (!leader) throw new McpToolError("No leader is selected in the app. Name a leader (see list_leaders).");
+    const matching = selected ? leaders.filter((candidate) => candidate.id === selected.id) : [];
+    const leader = matching.find((candidate) => candidate.access === "own") ?? matching[0];
+    if (!leader) throw new McpToolError("No leader is selected in the app. Use list_leaders and pass a leader ID.", "NO_LEADER");
     return leader;
   }
   const wanted = foldText(reference);
-  const exact = leaders.filter((leader) => leader.id === reference || foldText(leader.name) === wanted);
+  const ids = leaders.filter((leader) => leader.id === reference);
+  const exact = ids.length ? ids : leaders.filter((leader) => foldText(leader.name) === wanted);
   const found = exact.length ? exact : leaders.filter((leader) => foldText(leader.name).includes(wanted));
   // The same person may exist as an own profile and as its public mirror.
-  const own = found.filter((leader) => leader.access === "own");
-  const candidates = own.length ? own : found;
+  const byId = new Map<string, McpLeader>();
+  for (const leader of found) {
+    if (!byId.has(leader.id) || leader.access === "own") byId.set(leader.id, leader);
+  }
+  const unique = [...byId.values()];
+  const own = mode === "legacy" ? unique.filter((leader) => leader.access === "own") : [];
+  const candidates = own.length ? own : unique;
   if (candidates.length === 1) return candidates[0];
-  if (!candidates.length) throw new McpToolError(`No leader matches '${reference}'. Use list_leaders to see the names.`);
-  throw new McpToolError(`'${reference}' matches several leaders: ${candidates.map((leader) => leader.name).join(", ")}. Use the exact name.`);
+  if (!candidates.length) throw new McpToolError(`No leader matches '${reference}'. Use list_leaders to find its ID.`, "LEADER_NOT_FOUND");
+  throw new McpToolError(
+    `'${reference}' matches several leaders: ${candidates.map((leader) => `${leader.name} (${leader.id})`).join(", ")}. Use a leader ID.`,
+    "LEADER_AMBIGUOUS",
+    { candidates: candidates.map(leaderInfo) }
+  );
 }
 
-function ownLeader(host: McpHost, reference: string): McpLeader {
-  const leader = resolveLeader(host, reference);
+function ownLeader(host: McpHost, reference: string, mode: "legacy" | "unique" = "legacy"): McpLeader {
+  const leader = resolveLeader(host, reference, mode);
   if (leader.access !== "own") {
-    throw new McpToolError(`${leader.name} is a public, read-only profile. Use one of the user's own leader profiles (list_leaders).`);
+    throw new McpToolError(`${leader.name} is a public, read-only profile. Use one of the user's own leader profiles (list_leaders).`, "READ_ONLY");
   }
   return leader;
+}
+
+function leaderArgument(args: Args): string {
+  return args.leader === undefined ? "" : validateArgument("leader", () => text(args, "leader"));
+}
+
+function enumArgument<T extends string>(args: Args, key: string, values: readonly T[]): T {
+  const value = args[key];
+  const match = values.find((entry) => entry === value);
+  if (match === undefined) throw invalidArgument(`'${key}' must be one of: ${values.join(", ")}.`, key);
+  return match;
+}
+
+function booleanFilter(args: Args, key: string): boolean | undefined {
+  const value = args[key];
+  if (value === undefined || typeof value === "boolean") return value;
+  throw invalidArgument(`'${key}' must be true or false.`, key);
+}
+
+interface SongStateFilter {
+  leaderId?: string;
+  preference?: (typeof PREFERENCE_FILTERS)[number];
+  marked?: boolean;
+  changedLocally?: boolean;
+}
+
+function songStateFilter(host: McpHost, args: Args): SongStateFilter {
+  const preference = args.preference === undefined ? undefined : enumArgument(args, "preference", PREFERENCE_FILTERS);
+  return {
+    leaderId: args.leader !== undefined || preference ? resolveLeader(host, leaderArgument(args), "unique").id : host.selectedLeader()?.id,
+    preference,
+    marked: booleanFilter(args, "marked"),
+    changedLocally: booleanFilter(args, "changedLocally"),
+  };
+}
+
+function songStateDecorator(host: McpHost, leaderId: string | undefined, songIds: readonly string[]) {
+  const preferences = leaderId ? host.getSongPreferences(leaderId, songIds) : null;
+  return <T extends McpSongInfo>(song: T): T =>
+    leaderId && preferences ? { ...song, state: { ...song.state, preference: { leaderId, type: preferences[song.id]?.type ?? "neutral" } } } : song;
+}
+
+function matchesSongState({ state }: McpSongInfo, filter: SongStateFilter): boolean {
+  if (filter.marked !== undefined && state.marked !== filter.marked) return false;
+  if (filter.changedLocally !== undefined && state.changedLocally !== filter.changedLocally) return false;
+  if (!filter.preference) return true;
+  return filter.preference === "not-ignored" ? state.preference?.type !== "ignored" : state.preference?.type === filter.preference;
+}
+
+function withSongStates<T extends { song: McpSongInfo }>(host: McpHost, leaderId: string | undefined, rows: readonly T[]): T[] {
+  const decorate = songStateDecorator(
+    host,
+    leaderId,
+    rows.map(({ song }) => song.id)
+  );
+  return rows.map((row) => ({ ...row, song: decorate(row.song) }));
+}
+
+function matchingSongIds(host: McpHost, filter: SongStateFilter): string[] | undefined {
+  if (filter.preference === undefined && filter.marked === undefined && filter.changedLocally === undefined) return undefined;
+  const songs = host.listSongs();
+  const decorate = songStateDecorator(
+    host,
+    filter.leaderId,
+    songs.map(({ id }) => id)
+  );
+  const ids = songs.filter((song) => matchesSongState(decorate(song), filter)).map(({ id }) => id);
+  return ids.length && ids.length === songs.length ? undefined : ids;
+}
+
+function listSongPreferences(rawArgs: Args, host: McpHost) {
+  const args = strictObject(rawArgs, Object.keys(PREFERENCE_LIST_FIELDS));
+  const leader = resolveLeader(host, leaderArgument(args), "unique");
+  const type = args.type === undefined ? undefined : enumArgument(args, "type", PREFERENCE_TYPES);
+  const offset = validateArgument("offset", () => integer(args, "offset", 0, 0, 1_000_000));
+  const limit = validateArgument("limit", () => integer(args, "limit", 20, 1, PREFERENCE_LIST_LIMIT));
+  const songs = host.listSongs().sort(byTitle);
+  const preferences = host.getSongPreferences(
+    leader.id,
+    songs.map(({ id }) => id)
+  );
+  const rows = songs.flatMap(({ id, title }) => {
+    const preference = preferences[id];
+    if (!preference || (type && preference.type !== type)) return [];
+    const { type: songType, ...overrides } = preference;
+    return [{ songId: id, title, type: songType, overrides }];
+  });
+  const page = pageOf(rows, offset, limit);
+  return { leader: leaderInfo(leader), ...page.paging, items: page.items };
+}
+
+function prepareSongPreference(rawArgs: Args, host: McpHost) {
+  const args = strictObject(rawArgs, Object.keys(PREFERENCE_SET_FIELDS));
+  const reference = leaderArgument(args);
+  const type = enumArgument(args, "type", PREFERENCE_TYPES);
+  const leader = ownLeader(host, reference, "unique");
+  const database = host.databaseIdentity();
+  const account = { ...host.account() };
+  const contextChanged = () =>
+    new McpToolError(
+      "The song or leader context changed. Read list_leaders and list_song_preferences, then prepare the change again.",
+      "CONTEXT_CHANGED"
+    );
+  if (!database) throw contextChanged();
+
+  const values = args.songIds;
+  if (!Array.isArray(values) || !values.length || values.length > MAX_PREFERENCE_UPDATES) {
+    throw invalidArgument(`'songIds' must be an array of 1–${MAX_PREFERENCE_UPDATES} song IDs.`, "songIds");
+  }
+  const seen = new Set<string>();
+  const songs = values.map((value, index) => {
+    const id = validateArgument("songIds", () => text({ songId: value }, "songId"), index);
+    if (seen.has(id)) throw invalidArgument(`Duplicate song ID '${id}'. Give each song once.`, "songIds", index);
+    seen.add(id);
+    const song = host.getSong(id);
+    if (!song) throw new McpToolError(`Song '${id}' was not found. Search for it and use its ID.`, "SONG_NOT_FOUND", { songId: id, index });
+    return { id, title: song.title };
+  });
+  const songIds = songs.map(({ id }) => id);
+  const previous = host.getSongPreferences(leader.id, songIds);
+  const previousType = (id: string) => previous[id]?.type ?? "neutral";
+  const changed = songs.filter(({ id }) => previousType(id) !== type);
+  const hu = host.language() === "hu";
+  const label = hu ? { preferred: "Kedvelt", ignored: "Figyelmen kívül hagyott", neutral: "Semleges" }[type] : type;
+  const heading = hu
+    ? `Beállítod a következő dalok preferenciáját „${label}” értékre ${leader.name} profiljában?`
+    : `Set these songs to ${label} in ${leader.name}'s profile?`;
+  return {
+    confirmation: changed.length ? `${heading}\n\n${changed.map(({ title }) => `• ${title}`).join("\n")}` : null,
+    commit: async () => {
+      if (host.databaseIdentity() !== database || !sameAccount(host.account(), account) || (!reference && host.selectedLeader()?.id !== leader.id)) {
+        throw contextChanged();
+      }
+      const currentLeader = host.listLeaders().find((candidate) => candidate.id === leader.id && candidate.access === "own");
+      if (!currentLeader || currentLeader.name !== leader.name || songs.some(({ id, title }) => host.getSong(id)?.title !== title)) {
+        throw contextChanged();
+      }
+      const current = host.getSongPreferences(leader.id, songIds);
+      if (songIds.some((id) => (current[id]?.type ?? "neutral") !== previousType(id))) throw contextChanged();
+      await host.setSongPreferences(
+        leader.id,
+        changed.map(({ id }) => id),
+        type
+      );
+      if (host.databaseIdentity() !== database || !sameAccount(host.account(), account)) throw contextChanged();
+      const savedLeader = host.listLeaders().find((candidate) => candidate.id === leader.id && candidate.access === "own");
+      const saved = host.getSongPreferences(leader.id, songIds);
+      if (!savedLeader || songIds.some((id) => !host.getSong(id) || (saved[id]?.type ?? "neutral") !== type)) throw contextChanged();
+      return { leader: leaderInfo(leader), type, changed: changed.length, songIds };
+    },
+  };
 }
 
 /** The stored playlist the arguments name: a calendar day or a favorite. */
@@ -236,24 +515,27 @@ function optionalString(fields: Args, key: string): string | undefined {
 }
 
 /** An item with the given fields changed; an empty title means the default title. */
-function withFields(item: McpPlaylistItem, fields: Args, defaultTitle: () => string): McpPlaylistItem {
-  const title = optionalString(fields, "title");
-  const instructions = optionalString(fields, "instructions");
+function withFields(item: McpPlaylistItem, fields: Args, defaultTitle: () => string, batchIndex?: number): McpPlaylistItem {
+  const title = validateArgument("title", () => optionalString(fields, "title"), batchIndex);
+  const instructions = validateArgument("instructions", () => optionalString(fields, "instructions"), batchIndex);
   return {
     songId: item.songId,
     title: title === undefined ? item.title : title.trim() || defaultTitle(),
-    transpose: integer(fields, "transpose", item.transpose, -11, 11),
-    capo: integer(fields, "capo", item.capo, -1, 11),
+    transpose: validateArgument("transpose", () => integer(fields, "transpose", item.transpose, -11, 11), batchIndex),
+    capo: validateArgument("capo", () => integer(fields, "capo", item.capo, -1, 11), batchIndex),
     instructions: instructions ?? item.instructions,
   };
 }
 
 /** A new item as the user's own "add" makes it (the leader's settings), with the given fields applied. */
-function newItem(host: McpHost, fields: Args, leaderId: string | null, label: string): McpPlaylistItem {
-  const songId = text(fields, "songId");
+function newItem(host: McpHost, fields: Args, leaderId: string | null, label: string, batchIndex?: number): McpPlaylistItem {
+  const songId = validateArgument("songId", () => text(fields, "songId"), batchIndex);
   const base = host.newPlaylistItem(leaderId, songId);
-  if (!base) throw new McpToolError(`${label}: there is no song with id '${songId}'.`);
-  return withFields(base, fields, () => base.title);
+  if (!base) {
+    const details = { songId, ...(batchIndex === undefined ? {} : { index: batchIndex }) };
+    throw new McpToolError(`${label}: there is no song with id '${songId}'. Search again and use an actual song ID.`, "SONG_NOT_FOUND", details);
+  }
+  return withFields(base, fields, () => base.title, batchIndex);
 }
 
 function playlistItems(host: McpHost, value: unknown, leaderId: string | null): McpPlaylistItem[] {
@@ -265,11 +547,11 @@ function playlistItems(host: McpHost, value: unknown, leaderId: string | null): 
 const sameItem = (a: McpPlaylistItem, b: McpPlaylistItem) =>
   a.songId === b.songId && a.title === b.title && a.transpose === b.transpose && a.capo === b.capo && a.instructions === b.instructions;
 
-function itemDetails(item: McpPlaylistItem): string {
+function itemDetails(item: McpPlaylistItem, language: HelpLanguage = "en"): string {
   const details = [
-    item.transpose ? `transpose ${item.transpose > 0 ? "+" : ""}${item.transpose}` : "",
-    item.capo >= 0 ? `capo ${item.capo}` : "",
-    item.instructions ? "own section order" : "",
+    item.transpose ? `${language === "hu" ? "transzponálás" : "transpose"} ${item.transpose > 0 ? "+" : ""}${item.transpose}` : "",
+    item.capo >= 0 ? `${language === "hu" ? "kapodaszter" : "capo"} ${item.capo}` : "",
+    item.instructions ? (language === "hu" ? "egyéni sorrend" : "own section order") : "",
   ].filter(Boolean);
   return details.length ? ` (${details.join(", ")})` : "";
 }
@@ -296,7 +578,8 @@ export function editPlaylistItems(
   operations: unknown,
   leaderId: string | null,
   /** Name of the leader whose profile may keep instructions (storeInProfile); null: not offered here. */
-  profileLeader: string | null = null
+  profileLeader: string | null = null,
+  addArgument: "operations" | "items" = "operations"
 ): PlaylistEdit {
   if (!Array.isArray(operations) || !operations.length) throw new McpToolError("'operations' must be a non-empty list.");
   if (operations.length > MAX_PLAYLIST_OPERATIONS) throw new McpToolError(`At most ${MAX_PLAYLIST_OPERATIONS} operations at once.`);
@@ -325,7 +608,8 @@ export function editPlaylistItems(
     }
     switch (op.op) {
       case "add": {
-        const item = newItem(host, op, leaderId, label);
+        const item =
+          addArgument === "items" ? newItem(host, op, leaderId, `Item at index ${position}`, position) : newItem(host, op, leaderId, label);
         rows.splice(at("position", rows.length, rows.length), 0, { item, source: null, added: true, moved: false, edited: false, store });
         break;
       }
@@ -412,8 +696,7 @@ function workingCopyNote(host: McpHost, leaderId: string, ref: McpStoredPlaylist
   return "The playlist loaded in the app was loaded from this list and stays as it is. If the user saves it there again (the app offers it before synchronizing), it replaces this change.";
 }
 
-function workingPlaylistView(host: McpHost) {
-  const playlist = host.getPlaylist();
+function workingPlaylistView(host: McpHost, playlist = host.getPlaylist()) {
   return {
     items: describeItems(host, playlist.items),
     selectedIndex: playlist.selectedIndex,
@@ -423,19 +706,126 @@ function workingPlaylistView(host: McpHost) {
   };
 }
 
+function workingEditView(host: McpHost, playlist = host.getPlaylist()) {
+  const view = workingPlaylistView(host, playlist);
+  return view.source && !view.source.unchangedSinceLoaded
+    ? {
+        ...view,
+        note: `The working list now differs from ${describeRef(view.source)} of ${view.source.leader}, which it was loaded from. Tell the user, or save it there with save_playlist if they want.`,
+      }
+    : view;
+}
+
 function assertEditable(host: McpHost): McpPlaylistState {
   const playlist = host.getPlaylist();
-  if (playlist.readOnly) throw new McpToolError("The app is following another session, so its playlist cannot be changed.");
+  if (playlist.readOnly) {
+    throw new McpToolError("The app is following another session, so its playlist cannot be changed. Choose an editable list.", "READ_ONLY");
+  }
   return playlist;
 }
 
-function assertRevision(items: readonly McpPlaylistItem[], revision: string, what: string): void {
+const sameItems = (items: readonly McpPlaylistItem[], expected: readonly McpPlaylistItem[]) =>
+  items.length === expected.length && items.every((item, index) => sameItem(item, expected[index]));
+
+function assertRevision(items: readonly McpPlaylistItem[], revision: string, what: string, expectedItems?: readonly McpPlaylistItem[]): void {
   const now = playlistRevision(items);
-  if (revision !== now) {
+  if (revision !== now || (expectedItems && !sameItems(items, expectedItems))) {
     throw new McpToolError(
-      `${what} changed since you read it (its revision is now ${now}). Read it again and repeat the change on the current content.`
+      `${what} changed since you read it (its revision is now ${now}). Read ${what === "The playlist" ? "get_playlist" : "get_stored_playlist"} and reconcile the intended change with the current list before sending it again.`,
+      "REVISION_CONFLICT",
+      { currentRevision: now }
     );
   }
+}
+
+const playlistContextChanged = () =>
+  new McpToolError(
+    "The playlist context changed. Read get_playlist and check the intended list and leader before making a fresh request.",
+    "CONTEXT_CHANGED"
+  );
+
+function preparePlaylistInsertion(args: Args, host: McpHost) {
+  strictObject(args, Object.keys(INSERT_PLAYLIST_SCHEMA.properties));
+  validateArgument("revision", () => text(args, "revision"));
+  const revision = args.revision as string;
+  if (!Array.isArray(args.items) || args.items.length < 1 || args.items.length > MAX_PLAYLIST_INSERT_ITEMS) {
+    throw invalidArgument(`'items' must contain between 1 and ${MAX_PLAYLIST_INSERT_ITEMS} playlist items.`, "items");
+  }
+  const members = args.items.map((item, index) => strictObject(item, Object.keys(PLAYLIST_ITEM_SCHEMA.properties), "items", index));
+  const current = assertEditable(host);
+  const { editContext } = current;
+  const database = host.databaseIdentity();
+  if (!database || !editContext.panel) throw playlistContextChanged();
+
+  assertRevision(current.items, revision, "The playlist");
+  const position = validateArgument("position", () => integer(args, "position", current.items.length, 0, current.items.length));
+  if (current.items.length + members.length > MAX_PLAYLIST_ITEMS) {
+    throw invalidArgument(`The resulting playlist can have at most ${MAX_PLAYLIST_ITEMS} items. Remove rows or insert fewer songs.`, "items");
+  }
+  const operations = members.map((item, index) => ({ ...item, op: "add", position: args.position === undefined ? undefined : position + index }));
+  const leaderId = host.selectedLeader()?.id ?? null;
+  const before = current.items.map((item) => ({ ...item }));
+  const edit = editPlaylistItems(host, before, operations, leaderId, null, "items");
+  const inserted = { position, count: members.length };
+  const additions = edit.items.slice(position, position + inserted.count);
+  const language = host.language();
+  const heading =
+    language === "hu"
+      ? `Beszúrja a következő ${inserted.count} dalt a megnyitott lejátszási lista ${position + 1}. helyétől kezdve?`
+      : `Insert these ${inserted.count} songs into the working playlist starting at position ${position + 1}?`;
+  const preview = additions.map((item, index) => `${position + index + 1}. ${item.title}${itemDetails(item, language)}`).join("\n");
+  const account = { ...host.account() };
+
+  const assertContext = (playlist: McpPlaylistState) => {
+    const live = playlist.editContext;
+    if (
+      host.databaseIdentity() !== database ||
+      !sameAccount(host.account(), account) ||
+      live.leader !== editContext.leader ||
+      (host.selectedLeader()?.id ?? null) !== leaderId ||
+      live.panel !== editContext.panel ||
+      live.playlistId !== editContext.playlistId ||
+      live.origin !== editContext.origin
+    ) {
+      throw playlistContextChanged();
+    }
+  };
+
+  return {
+    confirmation: `${heading}\n\n${preview}`,
+    commit: async () => {
+      const live = assertEditable(host);
+      assertContext(live);
+      assertRevision(live.items, revision, "The playlist", before);
+      for (const [index, item] of operations.entries()) {
+        let resolved: McpPlaylistItem;
+        try {
+          resolved = newItem(host, item, leaderId, `Item at index ${index}`, index);
+        } catch (error) {
+          if (error instanceof McpToolError && error.code === "SONG_NOT_FOUND") throw playlistContextChanged();
+          throw error;
+        }
+        if (!sameItem(resolved, additions[index])) throw playlistContextChanged();
+      }
+
+      try {
+        await host.editPlaylist(
+          edit.items.map((item) => ({ ...item })),
+          edit.sources
+        );
+      } catch (error) {
+        console.error("MCP", "Working playlist insertion did not settle", error);
+        throw new McpToolError(
+          "The app could not finish saving or publishing the playlist change. Read get_playlist before deciding whether to retry.",
+          "SAVE_FAILED"
+        );
+      }
+      const after = host.getPlaylist();
+      assertContext(after);
+      if (after.readOnly || !sameItems(after.items, edit.items)) throw playlistContextChanged();
+      return { ...workingEditView(host, after), inserted };
+    },
+  };
 }
 
 /** Lyrics of a ChordPro text: chords, directives and comments removed. */
@@ -484,6 +874,7 @@ interface FindOptions {
   ignoreAccents: boolean;
   offset: number;
   limit: number;
+  stateFilter?: SongStateFilter;
 }
 
 export function findSongs(host: McpHost, options: FindOptions, now: () => number = Date.now) {
@@ -500,15 +891,23 @@ export function findSongs(host: McpHost, options: FindOptions, now: () => number
   const prepare = (line: string) => (options.ignoreAccents ? foldText(line) : line);
   const started = now();
   const songs = host.listSongs().sort(byTitle);
+  const filter = options.stateFilter ?? { leaderId: host.selectedLeader()?.id };
+  const decorate = songStateDecorator(
+    host,
+    filter.leaderId,
+    songs.map((song) => song.id)
+  );
   const matches: { song: McpSongInfo; lines: string[] }[] = [];
   let searched = 0;
   let timedOut = false;
-  for (const info of songs) {
+  for (const songInfo of songs) {
     if (now() - started > REGEX_TIME_BUDGET_MS) {
       timedOut = true;
       break;
     }
     searched++;
+    const info = decorate(songInfo);
+    if (!matchesSongState(info, filter)) continue;
     let lines: string[];
     if (options.scope === "title") lines = [info.title];
     else {
@@ -546,6 +945,21 @@ export async function diagnose(host: McpHost, now: () => number = Date.now): Pro
   const settings = host.getSettings();
   const account = host.account();
   const ui = host.getUiState();
+  const pending = host.getSyncPending();
+  if (pending?.needsSync) {
+    add(
+      "hint",
+      `Pending synchronization affects ${pending.songs} of your songs and ${pending.profiles} of your leader profiles.`,
+      "Review the changes in the synchronization dialog (open_view target 'sync')."
+    );
+  }
+  if (ui.songList?.hasHiddenFilter) {
+    add(
+      "hint",
+      "The song library has active filters that may hide songs.",
+      "Check the content and language filters (show_in_app target 'full/song-tree/song-content-filters') or the preference filter ('full/song-tree/song-preference')."
+    );
+  }
 
   if (!account.signedIn || account.guest) {
     add(
@@ -793,9 +1207,18 @@ export function querySongs(host: McpHost, args: Args) {
   const kind = text(args, "kind", false);
   const needsText = !!regex || !!field;
   const { offset, limit } = pagingArgs(args, 50, 200);
+  const filter = songStateFilter(host, args);
+  const songs = host.listSongs().sort(byTitle);
+  const decorate = songStateDecorator(
+    host,
+    filter.leaderId,
+    songs.map((song) => song.id)
+  );
 
   const matches: { song: McpSongInfo; matched?: string[] }[] = [];
-  for (const info of host.listSongs().sort(byTitle)) {
+  for (const candidate of songs) {
+    const info = decorate(candidate);
+    if (!matchesSongState(info, filter)) continue;
     if (language && info.language.toLowerCase() !== language) continue;
     if (kind && info.kind !== kind) continue;
     if (typeof args.hasKey === "boolean" && !!info.key !== args.hasKey) continue;
@@ -1014,7 +1437,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_app_status",
       title: "Application status",
       description:
-        "Overview of the running PraiseProjector: version, UI language, signed-in account, selected leader, size of the song database and the playlist, what this connection is allowed to do. Call it first.",
+        "Overview for troubleshooting: version, UI language, signed-in account, selected leader, database and playlist sizes, local changes pending synchronization, and what this connection can do.",
       inputSchema: NO_ARGS,
       access: "read",
       run: (_args, host) => {
@@ -1034,6 +1457,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
             readOnly: playlist.readOnly,
           },
           lastSync: settings?.lastSyncDate ?? null,
+          syncPending: host.getSyncPending(),
           permissions: {
             changes: settings?.mcpAllowChanges === true,
             liveControl: settings?.mcpAllowLiveControl === true,
@@ -1086,7 +1510,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "list_settings",
       title: "List settings",
       description:
-        "Settings with their current value, allowed values, and the page and label under which the user finds them in the Settings dialog. Filter by page or search text; without a filter every setting is returned.",
+        "Settings with their current value, allowed values, and the location and label of the associated app control. Filter by page or search text; without a filter every setting is returned.",
       inputSchema: object({
         page: { type: "string", description: "Settings page id, e.g. general, webserver, netdisplay, projecting, sections, clients, client-view." },
         search: { type: "string", description: "Text to look for in keys, labels and descriptions." },
@@ -1108,8 +1532,9 @@ export function createMcpTools(content: McpContent): McpTool[] {
       ),
       access: "write",
       confirmation: (args, host) => {
+        const patch = validateSettingsPatch(changes(args));
         const labels = new Map(describeSettings(null, strings(host)).map((item) => [item.key, `${item.pageLabel} → ${item.label}`]));
-        const lines = Object.entries(changes(args)).map(([key, value]) => `${labels.get(key) ?? key}: ${JSON.stringify(value)}`);
+        const lines = Object.entries(patch).map(([key, value]) => `${labels.get(key) ?? key}: ${JSON.stringify(value)}`);
         return `Change these settings?\n\n${lines.join("\n")}`;
       },
       run: async (args, host) => {
@@ -1123,15 +1548,29 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "search_songs",
       title: "Search songs",
       description:
-        "The application's own song search (titles and lyrics, tolerant of typos, ranked best first). Best when you know words of the title or the text. For a description of the content use find_songs with several alternative words. Page through long results with offset.",
+        "Find a known title or lyric fragment, tolerant of typos and ranked best first. The app's song-language setting applies, and the tool takes explicit preference and mark filters independently of the song-tree preference toggle. Use find_songs for lyric patterns and query_songs for metadata or preferences alone. Page with offset.",
       inputSchema: object(
-        { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100, description: "Default 20." }, offset: OFFSET_SCHEMA },
+        {
+          query: { type: "string" },
+          ...PREFERENCE_FILTER_FIELDS,
+          limit: { type: "integer", minimum: 1, maximum: 100, description: "Default 20." },
+          offset: OFFSET_SCHEMA,
+        },
         ["query"]
       ),
       access: "read",
       run: async (args, host) => {
         const { offset, limit } = pagingArgs(args, 20, 100);
-        const page = pageOf(await host.searchSongs(text(args, "query")), offset, limit);
+        const query = text(args, "query");
+        const database = host.databaseIdentity();
+        const filter = songStateFilter(host, args);
+        const songIds = matchingSongIds(host, filter);
+        const hits = songIds?.length === 0 ? [] : await host.searchSongs(query, filter.leaderId, songIds);
+        if (host.databaseIdentity() !== database) {
+          throw new McpToolError("The active song catalogue changed. Search for the songs again.", "CONTEXT_CHANGED");
+        }
+        const matches = withSongStates(host, filter.leaderId, hits).filter(({ song }) => matchesSongState(song, filter));
+        const page = pageOf(matches, offset, limit);
         return { ...page.paging, songs: page.items };
       },
     },
@@ -1139,7 +1578,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "find_songs",
       title: "Find songs by pattern",
       description:
-        "Regular-expression search over every song, line by line. Use it to find songs from a description of their content: combine word stems and synonyms with |, e.g. 'pászt|nyáj|juh' or 'shepherd|flock|sheep'. Returns the matching lines so you can judge the songs; read the best candidates with get_song. Matching ignores case, and accents by default (write the pattern without accents or with them, both work). Songs come in title order; page with offset.",
+        "Search lyrics, titles or ChordPro lines by pattern. Use stems and synonyms with |, e.g. 'pászt|nyáj|juh' or 'shepherd|flock|sheep'. Matches ignore case and usually accents. Give explicit preference or mark filters to narrow the scan independently of the song tree. Results are in title order; page with offset.",
       inputSchema: object(
         {
           pattern: { type: "string", description: "JavaScript regular expression (Unicode). No nested repetitions like (a+)+." },
@@ -1150,6 +1589,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
               "lyrics (default): text without chords. title: titles only. chordpro: raw source lines, e.g. to find a chord '\\[F#m\\]' or a directive.",
           },
           ignoreAccents: { type: "boolean", description: "Default true: á matches a, ő matches o." },
+          ...PREFERENCE_FILTER_FIELDS,
           limit: { type: "integer", minimum: 1, maximum: 100, description: "Songs to return. Default 30." },
           offset: OFFSET_SCHEMA,
         },
@@ -1162,15 +1602,16 @@ export function createMcpTools(content: McpContent): McpTool[] {
           pattern: text(args, "pattern"),
           scope,
           ignoreAccents: args.ignoreAccents !== false && scope !== "chordpro",
+          stateFilter: songStateFilter(host, args),
           ...pagingArgs(args, 30, 100),
         });
       },
     },
     {
       name: "query_songs",
-      title: "Filter songs by metadata",
+      title: "Filter songs by metadata or state",
       description:
-        "Lists songs by what is recorded in them rather than by their lyrics: author, artist, composer, copyright and any other {name: value} line of the song, language, kind, key. Example: songs by Hillsong or Pintér Béla → meta 'hillsong|pinter bela'. All given filters must match. Songs come in title order; page with offset. Upload dates and uploaders are kept in the cloud, not in the song: ask get_upload_info for the songs found.",
+        "List songs by metadata (author, artist, composer, copyright, language, kind, key), leader preference, note marker, or local changes. Example: {preference:'preferred'} finds the selected leader's preferred songs; {changedLocally:true} finds songs awaiting sync. Filters combine and are independent of the song-tree toggles. Results are in title order; page with offset. Use get_upload_info for cloud upload facts.",
       inputSchema: object({
         meta: {
           type: "string",
@@ -1181,6 +1622,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
         language: { type: "string", description: "Song language code, e.g. hu, en." },
         kind: { type: "string", enum: ["text", "music", "score"] },
         hasKey: { type: "boolean", description: "true: only songs that state a key; false: only songs that do not." },
+        ...PREFERENCE_FILTER_FIELDS,
         limit: { type: "integer", minimum: 1, maximum: 200, description: "Default 50." },
         offset: OFFSET_SCHEMA,
       }),
@@ -1191,20 +1633,24 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_song",
       title: "Read a song",
       description:
-        "A song in ChordPro (chords in square brackets inside the lyrics) with its title, language, key (the one its {key} line states), 'keyEstimate' (the key estimated from its chords, see estimate_song_keys), chord system, parsed metadata (authors, copyright, …), first lyric lines, the other versions of the same song (translations: 'related') and its upload facts from the cloud ('upload': when and by whom the newest version was uploaded, the first upload, and how the copy on this computer relates to them; 'note' says why something is missing). The metadata and first line are what you need to look the song up elsewhere, e.g. to find a recording; a related version in another language often carries the original title. For playlist instructions it gives 'sections' (the names instructions use), 'defaultInstructions' (the song's own order), 'repeatedSections' (sections written out twice that instructions should repeat instead) and 'selectedLeaderItem' (title, transposition, capo and instructions the selected leader's new playlist item gets).",
-      inputSchema: object({ songId: { type: "string" } }, ["songId"]),
+        "Read a song by ID. Returns ChordPro, metadata, first lyric lines, stated and estimated keys, sections, default instructions, repeated sections, related versions, and cloud upload facts. 'state' reports note marks, local changes and the leader's preference. 'selectedLeaderItem' gives the selected leader's playlist defaults. Pass leader to also get that profile's defaults in 'leaderItem' and its preference in 'state'.",
+      inputSchema: object({ songId: { type: "string" }, leader: LEADER_SCHEMA }, ["songId"]),
       access: "read",
       run: async (args, host) => {
         const song = requireSong(host, text(args, "songId"));
-        const { version: _version, ...visible } = song;
         const leaderId = workingLeaderId(host);
+        const explicitLeaderId = args.leader === undefined ? undefined : resolveLeader(host, leaderArgument(args), "unique").id;
+        const decorate = songStateDecorator(host, explicitLeaderId ?? leaderId ?? undefined, [song.id, ...song.related.map(({ id }) => id)]);
+        const { version: _version, ...visible } = decorate(song);
         return {
           ...visible,
+          related: song.related.map(decorate),
           metadata: songMetadata(song.text),
           firstLines: lyricsOf(song.text).slice(0, 2),
           ...host.songStructure(song.id),
           keyEstimate: host.songKeyEstimate(song.id),
           ...(leaderId ? { selectedLeaderItem: host.newPlaylistItem(leaderId, song.id) } : {}),
+          ...(explicitLeaderId ? { leaderItem: host.newPlaylistItem(explicitLeaderId, song.id) } : {}),
           upload: describeUpload(song, await history(host, song)),
         };
       },
@@ -1221,10 +1667,12 @@ export function createMcpTools(content: McpContent): McpTool[] {
         if (!Array.isArray(ids) || !ids.length || !ids.every((id) => typeof id === "string"))
           throw new McpToolError("'songIds' must be a list of song ids.");
         if (ids.length > MAX_KEY_SONGS) throw new McpToolError(`At most ${MAX_KEY_SONGS} songs at once.`);
+        const songIds = [...new Set(ids as string[])];
+        const decorate = songStateDecorator(host, host.selectedLeader()?.id, songIds);
         return {
-          songs: [...new Set(ids as string[])].map((id) => {
-            const song = requireSong(host, id);
-            return { songId: song.id, title: song.title, ...host.songKeyEstimate(song.id) };
+          songs: songIds.map((id) => {
+            const song = decorate(requireSong(host, id));
+            return { songId: song.id, title: song.title, state: song.state, ...host.songKeyEstimate(song.id) };
           }),
         };
       },
@@ -1474,7 +1922,8 @@ export function createMcpTools(content: McpContent): McpTool[] {
         const wanted = Array.isArray(args.problems)
           ? (args.problems as unknown[]).filter((kind): kind is SongProblem => SONG_PROBLEMS.includes(kind as SongProblem))
           : [];
-        return findSongProblems(host, wanted.length ? wanted : SONG_PROBLEMS, pagingArgs(args, 40, 200), Date.now, problemCache);
+        const result = findSongProblems(host, wanted.length ? wanted : SONG_PROBLEMS, pagingArgs(args, 40, 200), Date.now, problemCache);
+        return { ...result, songs: withSongStates(host, host.selectedLeader()?.id, result.songs) };
       },
     },
     {
@@ -1513,6 +1962,27 @@ export function createMcpTools(content: McpContent): McpTool[] {
       run: (_args, host) => ({ selected: host.selectedLeader()?.name ?? null, leaders: host.listLeaders() }),
     },
     {
+      name: "list_song_preferences",
+      title: "Read a leader's saved song preferences",
+      description:
+        "List the selected or named leader's preferred songs, ignored songs and active song overrides. For 'my favorite songs' use {type:'preferred'}. 'neutral' includes songs with saved performance overrides and no preference type. Use query_songs for all neutral songs or to combine preference with metadata filters. Use get_song with leader for full instructions.",
+      inputSchema: object(PREFERENCE_LIST_FIELDS),
+      outputSchema: PREFERENCE_LIST_OUTPUT,
+      access: "read",
+      run: listSongPreferences,
+    },
+    {
+      name: "set_song_preference",
+      title: "Set a song preference for one or more songs",
+      description:
+        "Set an own leader profile's preferred, ignored or neutral state for 1–50 songs in one call. Use actual song IDs and one type, for example {songIds:['s1','s2'],type:'preferred'}. Use neutral to clear the preference type. The leader's other performance defaults stay intact.",
+      inputSchema: object(PREFERENCE_SET_FIELDS, ["songIds", "type"]),
+      outputSchema: PREFERENCE_SET_OUTPUT,
+      access: "write",
+      serialize: () => "song-preferences",
+      prepare: prepareSongPreference,
+    },
+    {
       name: "select_leader",
       title: "Select the leader",
       description: "Makes a leader profile the active one (its song preferences and calendar are used).",
@@ -1546,7 +2016,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
           leader: leader.name,
           playlistsCounted: leader.scheduledDates.filter((date) => !since || date >= since).length,
           ...page.paging,
-          songs: page.items,
+          songs: withSongStates(host, leader.id, page.items),
         };
       },
     },
@@ -1554,16 +2024,27 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_playlist",
       title: "Read the working playlist",
       description:
-        "The working list: the playlist loaded in the app, which joined tablets see, with the selected item. It is a copy: stored playlists (a leader's calendar days and favorites) and playlist files are loaded into it and saved from it, and changing one never changes the other. 'source' names the stored list it was loaded from or saved to and whether it still equals it (the app reminds the user before synchronizing when it does not). edit_playlist needs the 'revision'.",
+        "Reads the working playlist open in the app and shared with participants in the local session. 'source' identifies its stored origin and whether the content still matches. Use the revision for insert_playlist_items, edit_playlist or replace_playlist. Use get_stored_playlist to read a leader's calendar or favorite playlist.",
       inputSchema: NO_ARGS,
       access: "read",
       run: (_args, host) => workingPlaylistView(host),
     },
     {
+      name: "insert_playlist_items",
+      title: "Insert songs into the working playlist",
+      description:
+        'Inserts an ordered array of 1–50 song items into the working playlist open in the app, using the required revision from get_playlist and each songId from a song lookup. Omit position to append or use a zero-based index through the current length. For five songs at the start, call once with {"revision":"2-1d707a53","position":0,"items":[{"songId":"s1"},{"songId":"s2"},{"songId":"s3"},{"songId":"s4"},{"songId":"s5"}]}, using real IDs and the current revision. Duplicates are kept. Omitted item fields inherit selected-leader defaults. The insertion is one undo step (Ctrl+Z) and keeps the stored origin, selection and projection. Use edit_playlist for moves, removals or updates, and edit_stored_playlist for a stored list.',
+      inputSchema: INSERT_PLAYLIST_SCHEMA,
+      outputSchema: INSERT_PLAYLIST_OUTPUT_SCHEMA,
+      access: "write",
+      serialize: () => "working-playlist",
+      prepare: preparePlaylistInsertion,
+    },
+    {
       name: "replace_playlist",
       title: "Replace the working playlist",
       description:
-        "Replaces the working list with a new one, as loading a playlist file does; the user can undo it with Ctrl+Z in the playlist. Items without title, transpose, capo or instructions get the selected leader's own settings for the song, as when the user adds it. To change some items of the list use edit_playlist; to prepare a list without touching the working list use create_stored_playlist.",
+        "Replaces the entire working playlist with the supplied song items and clears its stored origin. Pass the revision when get_playlist has been read. Items without title, transpose, capo or instructions inherit the selected leader's defaults. The user can undo the replacement with Ctrl+Z. Use insert_playlist_items to add songs, edit_playlist to change rows, or create_stored_playlist to prepare a stored list.",
       inputSchema: object(
         {
           items: { type: "array", items: PLAYLIST_ITEM_SCHEMA },
@@ -1572,6 +2053,8 @@ export function createMcpTools(content: McpContent): McpTool[] {
         ["items"]
       ),
       access: "write",
+      destructiveHint: true,
+      serialize: () => "working-playlist",
       confirmation: (args, host) => {
         const current = assertEditable(host);
         const revision = text(args, "revision", false);
@@ -1600,17 +2083,12 @@ export function createMcpTools(content: McpContent): McpTool[] {
         ["revision", "operations"]
       ),
       access: "write",
+      serialize: () => "working-playlist",
       confirmation: (args, host) => `Change the current playlist like this?\n\n${workingEdit(host, args).summary}`,
       run: async (args, host) => {
         const edit = workingEdit(host, args);
         await host.editPlaylist(edit.items, edit.sources, edit.storeInstructions);
-        const view = workingPlaylistView(host);
-        return view.source && !view.source.unchangedSinceLoaded
-          ? {
-              ...view,
-              note: `The working list now differs from ${describeRef(view.source)} of ${view.source.leader}, which it was loaded from. Tell the user, or save it there with save_playlist if they want.`,
-            }
-          : view;
+        return workingEditView(host);
       },
     },
     {
@@ -1620,6 +2098,8 @@ export function createMcpTools(content: McpContent): McpTool[] {
         "Loads a playlist into the working list, replacing it, as the Load button does: a leader's calendar day (date) or favorite (favorite), public leaders' lists included, or a playlist file the user picks in the app's file dialog (file: true). The user can undo it with Ctrl+Z in the playlist.",
       inputSchema: object({ ...STORED_REF_SCHEMA, file: { type: "boolean", description: "Let the user pick a playlist file." } }),
       access: "write",
+      destructiveHint: true,
+      serialize: (args) => (args.file === true ? undefined : "working-playlist"),
       confirmation: (args, host) => {
         const warning = unsavedWarning(host, assertEditable(host));
         if (args.file === true) return warning ? `Open a playlist file and replace the current playlist?${warning}` : null;
@@ -1780,7 +2260,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "open_view",
       title: "Open a dialog in the app",
       description:
-        "Shows a part of the app to the user: the settings dialog (optionally on a page), sessions, database synchronization, the import wizard, the list of songs waiting for review (song-check), or the built-in tutorial. Changes nothing.",
+        "Opens the requested dialog in the user's app: settings (optionally on a page), sessions, database synchronization, the import wizard, songs waiting for review (song-check), or the tutorial.",
       inputSchema: object(
         {
           target: { type: "string", enum: VIEW_TARGETS },
@@ -1789,6 +2269,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
         ["target"]
       ),
       access: "read",
+      readOnlyHint: false,
       run: (args, host) => {
         const target = text(args, "target") as McpViewTarget;
         if (!VIEW_TARGETS.includes(target)) throw new McpToolError(`'target' must be one of: ${VIEW_TARGETS.join(", ")}.`);
@@ -1800,10 +2281,15 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "get_ui_state",
       title: "What the user sees",
       description:
-        "Where the user is in the app right now: which view (full operator view or the simple client view), which panel is in front, which dialogs are open, whether a song is being edited, the selected song. Call it before giving step-by-step directions, so they start from what is on the screen.",
+        "Read the current view, panel, open dialogs, selected song, and song library query, filters and sort order when the full-view library is available. Use this before giving screen-specific directions.",
       inputSchema: NO_ARGS,
       access: "read",
-      run: (_args, host) => host.getUiState(),
+      run: (_args, host) => {
+        const ui = host.getUiState();
+        if (!ui.selectedSong) return ui;
+        const decorate = songStateDecorator(host, host.selectedLeader()?.id, [ui.selectedSong.id]);
+        return { ...ui, selectedSong: decorate(ui.selectedSong) };
+      },
     },
     {
       name: "show_in_app",
@@ -1812,6 +2298,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
         "Highlights a button or panel on the user's screen for a few seconds and brings its panel forward, so the user sees where it is. The target is a 'targets' id of a help topic (search_help, get_help_topic), e.g. 'full/profile-database'. Prefer this over describing positions in words.",
       inputSchema: object({ target: { type: "string", description: "A target id from a help topic." } }, ["target"]),
       access: "read",
+      readOnlyHint: false,
       run: async (args, host) => {
         switch (await host.showInApp(text(args, "target"))) {
           case "shown":
@@ -1833,7 +2320,7 @@ export function createMcpTools(content: McpContent): McpTool[] {
       name: "diagnose",
       title: "Check for common problems",
       description:
-        "Looks for the usual reasons something does not work (not signed in, database never or long ago synchronized, empty database, no leader selected, web server off so tablets cannot join, no second screen for the projector, update pending) and says how to fix each. Call it when the user says something does not work or does not know where to start.",
+        "Check common installation problems, including local changes pending synchronization and library filters that can hide songs. Gives a suggested app action for each finding.",
       inputSchema: NO_ARGS,
       access: "read",
       run: async (_args, host) => {
@@ -1893,10 +2380,7 @@ export function createMcpResources(content: McpContent): McpResource[] {
     title: language === "hu" ? "PraiseProjector felhasználói útmutató (magyar)" : "PraiseProjector user guide (English)",
     description: "The application's built-in tutorial texts and button descriptions as one document.",
     mimeType: "text/markdown",
-    read: () =>
-      buildHelpTopics(content.help, language)
-        .map((topic) => `## ${topic.title}\n(${topic.area}, id: ${topic.id})\n\n${topic.text}`)
-        .join("\n\n"),
+    read: () => renderHelpMarkdown(buildHelpTopics(content.help, language)),
   });
   return [guide("en"), guide("hu")];
 }

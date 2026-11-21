@@ -36,6 +36,7 @@ const POLL_MS = 3000;
 
 const connectionFile = process.argv[2] || process.env.PRAISEPROJECTOR_MCP_CONNECTION || "";
 let legacyClient = false; // did an `initialize` handshake: may receive notifications
+let negotiatedVersion;
 let offline = false;
 let pollTimer = null;
 
@@ -74,7 +75,16 @@ function post(message) {
     };
     const meta = message && message.params && message.params._meta;
     if (meta && typeof meta[META_VERSION] === "string") headers["MCP-Protocol-Version"] = meta[META_VERSION];
+    else if (message.method !== "initialize" && negotiatedVersion) headers["MCP-Protocol-Version"] = negotiatedVersion;
     if (message && typeof message.method === "string") headers["Mcp-Method"] = message.method;
+    if (headers["MCP-Protocol-Version"] === STATELESS_VERSION) {
+      const params = message.params || {};
+      const name = message.method === "resources/read" ? params.uri : ["tools/call", "prompts/get"].includes(message.method) ? params.name : undefined;
+      if (typeof name === "string") {
+        const plain = /^[!-~](?:[ -~\t]*[!-~])?$/.test(name) && !(name.startsWith("=?base64?") && name.endsWith("?="));
+        headers["Mcp-Name"] = plain ? name : "=?base64?" + Buffer.from(name, "utf8").toString("base64") + "?=";
+      }
+    }
     const request = http.request(connection.url, { method: "POST", headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
@@ -110,7 +120,7 @@ function offlineResult(message) {
         cacheScope: "public",
       });
     case "ping":
-      return {};
+      return params._meta?.[META_VERSION] === STATELESS_VERSION ? complete({}) : {};
     case "tools/list":
       return complete({
         tools: [
@@ -177,13 +187,19 @@ async function handle(line) {
     const response = await post(message);
     if (response.status === 401 || response.status === 403) throw new Error("access denied (HTTP " + response.status + ")");
     setOffline(false);
-    if (isRequest && response.body) write(JSON.parse(response.body));
+    if (isRequest && response.body) {
+      const reply = JSON.parse(response.body);
+      if (message.method === "initialize" && reply.result) negotiatedVersion = reply.result.protocolVersion;
+      write(reply);
+    }
   } catch (error) {
     setOffline(true);
     if (!isRequest) return;
     const result = offlineResult(message);
-    if (result) write({ jsonrpc: "2.0", id: message.id, result });
-    else write({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: OFFLINE_TEXT } });
+    if (result) {
+      if (message.method === "initialize") negotiatedVersion = result.protocolVersion;
+      write({ jsonrpc: "2.0", id: message.id, result });
+    } else write({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: OFFLINE_TEXT } });
     log("not reachable: " + (error && error.message ? error.message : String(error)));
   }
 }

@@ -12,23 +12,32 @@ import type {
   McpPlaylistSource,
   McpSong,
   McpSongHistory,
+  McpSongInfo,
+  McpSongPreference,
+  McpSongPreferenceType,
   McpSongUsage,
   McpStoredPlaylistRef,
+  McpSyncPending,
   McpUiState,
 } from "../types";
+import { McpToolError } from "../types";
 
 export interface FakeState {
   settings: Partial<Settings>;
   songs: McpSong[];
   leaders: McpLeader[];
   selectedLeaderId: string | null;
+  databaseIdentity: object | null;
+  playlistId: string;
   playlist: McpPlaylistItem[];
   /** The working list's source (what the app remembers it was loaded from or saved to). */
   source: McpPlaylistSource | null;
   /** Stored lists by `leaderId/date` or `leaderId/★name`. */
   stored: Map<string, { name: string; items: McpPlaylistItem[] }>;
   /** Leader song preferences by `leaderId/songId`. */
-  preferences: Map<string, Partial<McpPlaylistItem>>;
+  preferences: Map<string, Partial<Omit<McpPlaylistItem, "songId">> & { type?: McpSongPreferenceType }>;
+  preferenceSaveFailures: number;
+  syncPending: McpSyncPending;
   history: Record<string, McpSongHistory>;
   usage: Record<string, McpSongUsage[]>;
   network: McpNetworkStatus;
@@ -52,6 +61,7 @@ export const song = (id: string, title: string, text: string, key = ""): McpSong
   capo: 0,
   version: 7,
   related: [],
+  state: { marked: !!/^# notes:(.*)$/m.exec(text)?.[1].trim(), changedLocally: false, preference: null },
 });
 
 export const storedKey = (leaderId: string, ref: McpStoredPlaylistRef) =>
@@ -77,10 +87,14 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
       { id: "pub1", name: "Lantos András", access: "public", scheduledDates: ["2026-09-06", "2026-09-13"], favorites: [] },
     ],
     selectedLeaderId: "own1",
+    databaseIdentity: {},
+    playlistId: "working",
     playlist: [],
     source: null,
     stored: new Map(),
     preferences: new Map(),
+    preferenceSaveFailures: 0,
+    syncPending: { songs: 0, profiles: 0, needsSync: false },
     history: {},
     usage: {},
     network: {
@@ -103,6 +117,7 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
       openDialogs: [],
       editingSong: false,
       selectedSong: null,
+      songList: null,
       followingSession: false,
       updateAvailable: false,
     },
@@ -117,13 +132,27 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
 }
 
 export function fakeHost(state: FakeState): McpHost {
-  const info = ({ id, title, language, kind, key }: McpSong) => ({ id, title, language, kind, key });
+  const pendingPreferenceSaves = new WeakSet<object>();
+  const info = ({ id, title, language, kind, key, state, version }: McpSong): McpSongInfo => ({
+    id,
+    title,
+    language,
+    kind,
+    key,
+    state: { ...state, changedLocally: version === 0 },
+  });
   const leader = (id: string) => state.leaders.find((candidate) => candidate.id === id);
   const newPlaylistItem = (leaderId: string | null, songId: string): McpPlaylistItem | null => {
     const found = state.songs.find((candidate) => candidate.id === songId);
     if (!found) return null;
     const preference = leaderId ? state.preferences.get(`${leaderId}/${songId}`) : undefined;
-    return { songId, title: found.title, transpose: 0, capo: -1, instructions: "", ...preference };
+    return {
+      songId,
+      title: preference?.title || found.title,
+      transpose: preference?.transpose ?? 0,
+      capo: preference?.capo ?? -1,
+      instructions: preference?.instructions ?? "",
+    };
   };
   return {
     appVersion: () => "9.9.9",
@@ -135,16 +164,24 @@ export function fakeHost(state: FakeState): McpHost {
       Object.assign(state.settings, patch);
     },
     songCount: () => state.songs.length,
+    getSyncPending: () => (state.databaseIdentity ? state.syncPending : null),
     listSongs: () => state.songs.map(info),
-    getSong: (id) => state.songs.find((candidate) => candidate.id === id) ?? null,
+    getSong: (id) => {
+      const found = state.songs.find((candidate) => candidate.id === id);
+      return found ? { ...found, ...info(found) } : null;
+    },
     getSongHistory: async (id) => {
       state.calls.push(`history:${id}`);
       return state.history[id] ?? { versions: [] };
     },
-    searchSongs: async (query) =>
-      state.songs
-        .filter((candidate) => candidate.title.toLowerCase().includes(query.toLowerCase()))
-        .map((candidate) => ({ song: info(candidate), reason: "TITLE" })),
+    searchSongs: async (query, _leaderId, songIds) => {
+      const eligible = songIds ? new Set(songIds) : null;
+      const matched = state.songs.filter(
+        (candidate) => (!eligible || eligible.has(candidate.id)) && candidate.title.toLowerCase().includes(query.toLowerCase())
+      );
+      const limit = state.settings.searchMaxResults ?? 0;
+      return (limit > 0 ? matched.slice(0, limit) : matched).map((candidate) => ({ song: info(candidate), reason: "TITLE" }));
+    },
     analyzeChordPro: (text, system) => ({
       title: "",
       kind: "music",
@@ -181,6 +218,35 @@ export function fakeHost(state: FakeState): McpHost {
     selectLeader: (id) => {
       state.selectedLeaderId = id;
     },
+    getSongPreferences: (leaderId, songIds) => {
+      const preferences: Record<string, McpSongPreference> = Object.create(null);
+      for (const songId of songIds) {
+        const entry = state.preferences.get(`${leaderId}/${songId}`);
+        if (!entry) continue;
+        const { title = "", transpose = 0, capo = -1, type = "neutral", instructions = "" } = entry;
+        if (type !== "neutral" || title || transpose || capo >= 0 || instructions) {
+          preferences[songId] = { title, transpose, capo, type, hasInstructions: !!instructions };
+        }
+      }
+      return preferences;
+    },
+    setSongPreferences: async (leaderId, changedIds, type) => {
+      const db = state.databaseIdentity;
+      if (!db || (!changedIds.length && !pendingPreferenceSaves.has(db))) return;
+      for (const id of changedIds) {
+        const key = `${leaderId}/${id}`;
+        const { type: _oldType, ...overrides } = state.preferences.get(key) ?? {};
+        if (type === "neutral" && !Object.keys(overrides).length) state.preferences.delete(key);
+        else state.preferences.set(key, { ...overrides, ...(type === "neutral" ? {} : { type }) });
+      }
+      state.calls.push("preferences:save");
+      if (state.preferenceSaveFailures > 0) {
+        state.preferenceSaveFailures--;
+        pendingPreferenceSaves.add(db);
+        throw new McpToolError("Saving failed; retry the same set_song_preference request.", "SAVE_FAILED");
+      }
+      pendingPreferenceSaves.delete(db);
+    },
     getSongUsage: (leaderId) => state.usage[leaderId] ?? [],
     songKey: (songId, transpose) => {
       const key = state.songs.find((candidate) => candidate.id === songId)?.key ?? "";
@@ -196,11 +262,19 @@ export function fakeHost(state: FakeState): McpHost {
       state.stored.set(key, { name: "date" in ref ? ref.date.replace(/-/g, ".") : ref.favorite, items });
       return "saved";
     },
-    getPlaylist: () => ({ items: state.playlist, selectedIndex: -1, source: state.source, readOnly: state.ui.followingSession }),
+    databaseIdentity: () => state.databaseIdentity,
+    getPlaylist: () => ({
+      items: state.playlist,
+      selectedIndex: -1,
+      source: state.source,
+      readOnly: state.ui.followingSession,
+      editContext: { panel: state, leader: state.selectedLeaderId, playlistId: state.playlistId, origin: JSON.stringify(state.source) },
+    }),
     replacePlaylist: async (items) => {
       state.calls.push("replace");
       state.playlist = items;
       state.source = null;
+      state.playlistId += "!";
     },
     editPlaylist: async (items, sources, storeInstructions = []) => {
       state.calls.push(`edit:${sources.map((source) => (source === null ? "new" : source)).join(",")}`);
@@ -215,6 +289,7 @@ export function fakeHost(state: FakeState): McpHost {
       if (!stored) return false;
       state.playlist = stored.items.map((item) => ({ ...item }));
       state.source = { leaderId, leader: leader(leaderId)!.name, ...ref };
+      state.playlistId += "!";
       return true;
     },
     saveWorkingPlaylist: (leaderId, ref) => {

@@ -7,9 +7,22 @@
  * database code (type imports aside).
  */
 import type { Settings } from "../../types";
+import type { SongListViewState } from "../../components/SongListPanel";
 
 /** read: look only. write: changes the user confirms. control: live projection. */
 export type McpAccess = "read" | "write" | "control";
+
+export const MCP_SONG_PREFERENCE_TYPES = ["preferred", "ignored", "neutral"] as const;
+export type McpSongPreferenceType = (typeof MCP_SONG_PREFERENCE_TYPES)[number];
+
+/** Active overrides in one leader profile. Empty values use the song's defaults. */
+export interface McpSongPreference {
+  type: McpSongPreferenceType;
+  title: string;
+  transpose: number;
+  capo: number;
+  hasInstructions: boolean;
+}
 
 export interface McpSongInfo {
   id: string;
@@ -19,6 +32,12 @@ export interface McpSongInfo {
   kind: string;
   /** Key from the song's {key: …} line; empty when the song does not state one. */
   key: string;
+  state: {
+    marked: boolean;
+    changedLocally: boolean;
+    /** Null when a tool has no leader context. */
+    preference: { leaderId: string; type: McpSongPreferenceType } | null;
+  };
 }
 
 export interface McpSongUsage {
@@ -102,6 +121,13 @@ export interface McpPlaylistState {
   source: McpPlaylistSource | null;
   /** True while following another session: the list cannot be edited. */
   readOnly: boolean;
+  /** Renderer-only identities used to check that an approved edit still targets the same list. */
+  editContext: {
+    panel: object | null;
+    leader: object | string | null;
+    playlistId: string | null;
+    origin: string;
+  };
 }
 
 export interface McpLeader {
@@ -251,8 +277,15 @@ export interface McpUiState {
   openDialogs: string[];
   editingSong: boolean;
   selectedSong: McpSongInfo | null;
+  songList: SongListViewState | null;
   followingSession: boolean;
   updateAvailable: boolean;
+}
+
+export interface McpSyncPending {
+  songs: number;
+  profiles: number;
+  needsSync: boolean;
 }
 
 export interface McpDisplayInfo {
@@ -268,6 +301,7 @@ export type McpShowResult = "shown" | "not-visible" | "other-view" | "unknown";
 export type McpViewTarget = "settings" | "sessions" | "sync" | "import" | "song-check" | "tutorial";
 
 export interface McpHost {
+  databaseIdentity(): object | null;
   appVersion(): string;
   platform(): string;
   /** UI language in effect. */
@@ -279,12 +313,13 @@ export interface McpHost {
   updateSettings(patch: Partial<Settings>): Promise<void>;
 
   songCount(): number;
+  getSyncPending(): McpSyncPending | null;
   listSongs(): McpSongInfo[];
   getSong(songId: string): McpSong | null;
   /** Every version the cloud has of the song that this account may see, newest first. */
   getSongHistory(songId: string): Promise<McpSongHistory>;
   /** All hits of the app's own song search, best first. */
-  searchSongs(query: string): Promise<McpSearchHit[]>;
+  searchSongs(query: string, leaderId?: string, songIds?: readonly string[]): Promise<McpSearchHit[]>;
   analyzeChordPro(text: string, system: string): McpChordProReport;
   /** The sections instructions can name, and the song's own order. Null: no such song. */
   songStructure(songId: string): McpSongStructure | null;
@@ -318,6 +353,10 @@ export interface McpHost {
   listLeaders(): McpLeader[];
   selectedLeader(): { id: string; name: string } | null;
   selectLeader(leaderId: string): void;
+  /** Only active overrides of the requested songs, indexed by song ID. */
+  getSongPreferences(leaderId: string, songIds: readonly string[]): Record<string, McpSongPreference>;
+  /** Apply the validated changes and persist, including a pending save after a previous failure. */
+  setSongPreferences(leaderId: string, changedIds: readonly string[], type: McpSongPreferenceType): Promise<void>;
   /** How often each song occurs in the leader's dated playlists, most used first. */
   getSongUsage(leaderId: string, since?: string): McpSongUsage[];
   /** The song's key after transposing; empty when the song states no key. */
@@ -380,19 +419,63 @@ export interface McpHost {
   confirm(title: string, message: string): Promise<boolean>;
 }
 
-/** Thrown by a tool to report a problem to the model (not a protocol error). */
-export class McpToolError extends Error {}
+export type McpToolErrorCode =
+  | "INVALID_ARGUMENT"
+  | "SONG_NOT_FOUND"
+  | "REVISION_CONFLICT"
+  | "CONTEXT_CHANGED"
+  | "NO_LEADER"
+  | "LEADER_NOT_FOUND"
+  | "LEADER_AMBIGUOUS"
+  | "READ_ONLY"
+  | "PERMISSION_DENIED"
+  | "USER_DECLINED"
+  | "SAVE_FAILED";
 
-export interface McpTool {
+/** Thrown by a tool to report a problem to the model (not a protocol error). */
+export class McpToolError extends Error {
+  constructor(
+    message: string,
+    readonly code?: McpToolErrorCode,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+  }
+}
+
+/** The exact change presented for approval, with live preconditions checked again in commit. */
+export interface McpPreparedChange {
+  confirmation: string | null;
+  commit: () => unknown | Promise<unknown>;
+}
+
+interface McpToolDefinition {
   name: string;
   title: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   access: McpAccess;
-  /** Text of the in-app confirmation; null skips it. Only asked for write tools. */
-  confirmation?: (args: Record<string, unknown>, host: McpHost) => string | null;
-  run: (args: Record<string, unknown>, host: McpHost) => unknown | Promise<unknown>;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  /** Commits sharing the same queue run in order after confirmation. */
+  serialize?: (args: Record<string, unknown>) => "working-playlist" | "song-preferences" | undefined;
 }
+
+export type McpTool = McpToolDefinition &
+  (
+    | {
+        /** Text of the in-app confirmation; null skips it. Only asked for write tools. */
+        confirmation?: (args: Record<string, unknown>, host: McpHost) => string | null;
+        run: (args: Record<string, unknown>, host: McpHost) => unknown | Promise<unknown>;
+        prepare?: never;
+      }
+    | {
+        prepare: (args: Record<string, unknown>, host: McpHost) => McpPreparedChange;
+        confirmation?: never;
+        run?: never;
+      }
+  );
 
 type Localized = { en: string; hu: string };
 

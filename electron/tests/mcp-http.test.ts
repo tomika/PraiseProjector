@@ -6,16 +6,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { JsonRpcRequest, JsonRpcResponse } from "../../common/mcp-bridge";
+import { MCP_META_PROTOCOL_VERSION, MCP_STATELESS_PROTOCOL_VERSION, type JsonRpcRequest, type JsonRpcResponse } from "../../common/mcp-bridge";
 import { McpHttpServer, checkMcpAccess } from "../mcp-http";
 
 const TOKEN = "t".repeat(43);
 const seen: JsonRpcRequest[] = [];
+let lastVersion: string | undefined;
 const server = new McpHttpServer({
   port: 0,
   getToken: () => TOKEN,
-  forward: async (message): Promise<JsonRpcResponse | null> => {
+  forward: async (message, protocolVersion): Promise<JsonRpcResponse | null> => {
     seen.push(message);
+    lastVersion = protocolVersion;
     if (message.id === undefined) return null;
     if (message.method === "boom") throw new Error("window not ready");
     if (message.method === "no/such") return { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } };
@@ -37,6 +39,7 @@ const post = (body: unknown, headers: Record<string, string> = {}, target = url)
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 
+const modernMeta = { [MCP_META_PROTOCOL_VERSION]: MCP_STATELESS_PROTOCOL_VERSION };
 test("only loopback requests with the token get in", () => {
   const ok = { remoteAddress: "127.0.0.1", host: "127.0.0.1:19741", origin: undefined, authorization: `Bearer ${TOKEN}` };
   assert.equal(checkMcpAccess(ok, TOKEN), 0);
@@ -90,15 +93,39 @@ test("the stateless revision gets header checks and HTTP statuses, older clients
   assert.equal(error.code, -32022);
   assert.ok((error.data as { supported: string[] }).supported.includes("2026-07-28"));
 
-  const mismatch = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call" });
+  const mismatch = await post(
+    { jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: modernMeta } },
+    { "MCP-Protocol-Version": MCP_STATELESS_PROTOCOL_VERSION, "Mcp-Method": "tools/call" }
+  );
   assert.equal(mismatch.status, 400);
   assert.equal(((await mismatch.json()) as JsonRpcResponse).error?.code, -32020);
 
-  const modern = await post({ jsonrpc: "2.0", id: 1, method: "no/such" }, { "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "no/such" });
+  const modern = await post(
+    { jsonrpc: "2.0", id: 1, method: "no/such", params: { _meta: modernMeta } },
+    { "MCP-Protocol-Version": MCP_STATELESS_PROTOCOL_VERSION, "Mcp-Method": "no/such" }
+  );
   assert.equal(modern.status, 404);
+  assert.equal(lastVersion, "2026-07-28");
   const legacy = await post({ jsonrpc: "2.0", id: 1, method: "no/such" }, { "MCP-Protocol-Version": "2025-06-18" });
   assert.equal(legacy.status, 200);
   assert.equal(((await legacy.json()) as JsonRpcResponse).error?.code, -32601);
+  assert.equal(lastVersion, "2025-06-18");
+});
+
+test("modern requests require matching protocol version, method, and name before reaching the renderer", async () => {
+  const request = { jsonrpc: "2.0", id: 5, method: "tools/call", params: { _meta: modernMeta, name: "insert_playlist_items" } };
+  const headers = { "MCP-Protocol-Version": MCP_STATELESS_PROTOCOL_VERSION, "Mcp-Method": "tools/call" };
+  const before = seen.length;
+  for (const badHeaders of [{ ...headers }, { ...headers, "Mcp-Name": "get_playlist" }, { "Mcp-Method": "tools/call" }]) {
+    const response = await post(request, badHeaders);
+    assert.equal(response.status, 400);
+    assert.equal(((await response.json()) as JsonRpcResponse).error?.code, -32020);
+  }
+  assert.equal((await post([request], headers)).status, 400);
+  assert.equal(seen.length, before);
+  const value = Buffer.from(request.params.name, "utf8").toString("base64");
+  assert.equal((await post(request, { ...headers, "Mcp-Name": `=?base64?${value}?=` })).status, 200);
+  assert.equal(seen.at(-1)?.params?.name, request.params.name);
 });
 
 test("a 2025-03-26 batch is answered as a batch", async () => {
@@ -151,10 +178,14 @@ test("the stdio bridge relays to the running app", async () => {
   try {
     client.send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } });
     assert.deepEqual(await client.next((line) => line.id === 1), { jsonrpc: "2.0", id: 1, result: { echo: "tools/list" } });
+    assert.equal(lastVersion, "2026-07-28");
     client.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     client.send({ jsonrpc: "2.0", id: 2, method: "ping" });
     assert.equal((await client.next((line) => line.id === 2)).id, 2);
     assert.ok(seen.some((message) => message.method === "notifications/initialized"));
+    client.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_playlist", _meta: modernMeta } });
+    assert.deepEqual((await client.next((line) => line.id === 3)).result, { echo: "tools/call" });
+    assert.equal(lastVersion, MCP_STATELESS_PROTOCOL_VERSION);
   } finally {
     client.stop();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -189,6 +220,7 @@ test("while the app is not running the bridge stays up, explains, and announces 
     assert.ok(await client.next((line) => line.method === "notifications/tools/list_changed"));
     client.send({ jsonrpc: "2.0", id: 5, method: "tools/list" });
     assert.deepEqual((await client.next((line) => line.id === 5)).result, { echo: "tools/list" });
+    assert.equal(lastVersion, "2025-06-18");
   } finally {
     client.stop();
     fs.rmSync(dir, { recursive: true, force: true });

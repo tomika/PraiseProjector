@@ -74,6 +74,7 @@ export function isJsonRpcNotification(message: JsonRpcRequest): boolean {
 export interface McpBridgeRequest {
   requestId: string;
   message: JsonRpcRequest;
+  protocolVersion?: string;
 }
 
 /** Renderer → main. `message` is null for a notification. */

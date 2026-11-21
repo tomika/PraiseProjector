@@ -78,6 +78,10 @@ export function buildHelpTopics(sources: HelpSources, language: HelpLanguage): H
   return topics;
 }
 
+export function renderHelpMarkdown(topics: readonly HelpTopic[]): string {
+  return topics.map((topic) => `## ${topic.title}\n(${topic.area}, id: ${topic.id})\n\n${topic.text}`).join("\n\n");
+}
+
 /** The tutorial steps behind a target id ("full/step" or "full/step/detail"), outermost first. */
 export function findTutorialSteps(tutorials: readonly TutorialDefinition[], id: string): { view: string; steps: TutorialStep[] } | null {
   const [view, stepId, detailId] = id.split("/");
@@ -93,13 +97,19 @@ export function foldText(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase();
 }
 
+const SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  "full/song-tree": ["favorite song", "favorite songs", "preferred song", "preferred songs", "kedvelt dal", "kedvelt dalok", "sziv ikon"],
+  "full/playlist": ["favorite playlist", "favorite playlists", "kedvenc musortar", "kedvenc musortarak"],
+};
+
 /** Topics that contain the query words, best match first. An empty query returns none. */
 export function searchHelp(topics: readonly HelpTopic[], query: string, limit: number): HelpTopic[] {
   const words = foldText(query)
     .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word.length > 1);
   if (!words.length) return [];
-  const scored: { topic: HelpTopic; score: number; order: number }[] = [];
+  const phrase = ` ${words.join(" ")} `;
+  const scored: { topic: HelpTopic; score: number; alias: boolean; order: number }[] = [];
   topics.forEach((topic, order) => {
     const title = foldText(topic.title);
     const text = foldText(topic.text);
@@ -111,11 +121,12 @@ export function searchHelp(topics: readonly HelpTopic[], query: string, limit: n
       if (inTitle || occurrences) matched++;
       score += (inTitle ? 5 : 0) + Math.min(occurrences, 4);
     }
+    const alias = SEARCH_ALIASES[topic.id]?.some((term) => phrase.includes(` ${term} `)) ?? false;
     // Topics matching every word come before partial matches.
-    if (matched) scored.push({ topic, score: score + (matched === words.length ? 100 : 0), order });
+    if (alias || matched) scored.push({ topic, score: score + (matched === words.length ? 100 : 0), alias, order });
   });
   return scored
-    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .sort((a, b) => Number(b.alias) - Number(a.alias) || b.score - a.score || a.order - b.order)
     .slice(0, Math.max(1, limit))
     .map((entry) => entry.topic);
 }

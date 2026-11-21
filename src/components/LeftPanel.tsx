@@ -36,6 +36,7 @@ export interface LeftPanelMethods {
   updatePlaylistItemPreferences: (songId: string, transpose?: number, capo?: number, instructions?: string) => Playlist | null;
   getScheduleDate: () => Date | null;
   getPlaylistOrigin: () => PlaylistOrigin | null;
+  getPlaylistPanelIdentity: () => object | null;
   getCurrentPlaylist: () => Playlist;
   /** Entries for changes made outside the playlist panel (the MCP assistant); see PlaylistPanel. */
   replacePlaylist: (items: PlaylistEntryData[]) => Promise<void>;
@@ -45,6 +46,7 @@ export interface LeftPanelMethods {
   loadPlaylistFromFile: () => Promise<PlaylistFileResult>;
   // Song tree methods
   getSelectedSongId: () => string | null;
+  getSongListState: SongListPanelMethods["getSongListState"];
   setSelectedSongId: (songId: string | null) => void;
   getAdjacentSong: (delta: 1 | -1) => Song | null;
   refreshLayout: () => void;
@@ -197,6 +199,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
           playlistPanelRef.current?.updatePlaylistItemPreferences(songId, transpose, capo, instructions) ?? null,
         getScheduleDate: () => playlistPanelRef.current?.getScheduleDate() ?? null,
         getPlaylistOrigin: () => playlistPanelRef.current?.getPlaylistOrigin() ?? null,
+        getPlaylistPanelIdentity: () => playlistPanelRef.current,
         getCurrentPlaylist: () => playlistPanelRef.current?.getCurrentPlaylist() ?? new Playlist("CurrentPlaylist", []),
         replacePlaylist: (items: PlaylistEntryData[]) => playlistPanelRef.current?.replacePlaylist(items) ?? Promise.reject(new Error(PANEL_MISSING)),
         applyPlaylistEdit: (items: PlaylistEntryData[], sources: readonly (number | null)[], storeInstructions?: readonly number[]) =>
@@ -207,6 +210,7 @@ const LeftPanel = forwardRef<LeftPanelMethods, LeftPanelProps>(
         loadPlaylistFromFile: () => playlistPanelRef.current?.loadPlaylistFromFile() ?? Promise.resolve({ status: "failed", error: PANEL_MISSING }),
         // Song tree methods
         getSelectedSongId: () => songListPanelRef.current?.getSelectedSongId() ?? null,
+        getSongListState: () => songListPanelRef.current?.getSongListState() ?? null,
         setSelectedSongId: (songId: string | null) => songListPanelRef.current?.setSelectedSongId(songId),
         getAdjacentSong: (delta: 1 | -1) => songListPanelRef.current?.getAdjacentSong(delta) ?? null,
         refreshLayout: () => songListPanelRef.current?.refreshLayout(),

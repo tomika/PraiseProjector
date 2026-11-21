@@ -160,6 +160,16 @@ export const fullViewTutorial: TutorialDefinition = {
             )
           ),
           s(
+            "song-preference-status",
+            [".song-heart", ".song-list-panel"],
+            tx(
+              "Kedvelt dal megjelölése",
+              "Válassz vezetői profilt. A dal melletti szívvel Kedvelt állapotot adhatsz a dalnak, a telt szívre kattintva pedig Semlegesre válthatsz. A dal helyi menüjének Preferencia sorában a Semleges, a Kedvelt és a Figyelmen kívül hagyott állapot is választható. A keresőmező melletti szűrő üres szívvel a figyelmen kívül hagyottakat rejti el, telt szívvel csak a kedvelteket mutatja, szem ikonnal a figyelmen kívül hagyottakat is megjeleníti.",
+              "Mark a song as preferred",
+              "Select a leader profile. Click the heart next to a song to mark it Preferred, or click a filled heart to make the song Neutral. The song's context menu has a Preference row with Neutral, Preferred and Ignored. The filter beside the search box hides ignored songs with the empty heart, shows only preferred songs with the filled heart, and includes ignored songs with the eye icon."
+            )
+          ),
+          s(
             "song-search",
             ".song-filter-input",
             tx(

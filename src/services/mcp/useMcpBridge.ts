@@ -31,15 +31,13 @@ import type { SectionListCommand } from "../../components/preview/sectionControl
 import { buildLocalUrl } from "../../hooks/useSessionUrl";
 import enStrings from "../../localization/strings.en.json";
 import huStrings from "../../localization/strings.hu.json";
-import enTooltips from "../../localization/tooltips.en.json";
-import huTooltips from "../../localization/tooltips.hu.json";
 import { getCurrentDisplay } from "../../state/CurrentSongStore";
-import { getTutorialDefinition } from "../../tutorial/tutorialDefinitions";
 import type { Settings } from "../../types";
 import { getLocalNetworkAddresses } from "../hostDevicePpd";
 import { getWebServerInterface, isWebServerRuntimeAvailable } from "../webServerBridge";
 import { chordStatus, gridChords, importerChord, importerConventions, knownChordTypes } from "./appChords";
 import { findTutorialSteps } from "./help";
+import { appHelpSources } from "./helpSources";
 import { createMcpPrompts } from "./prompts";
 import { createMcpDispatcher } from "./protocol";
 import { songKeyDirective } from "./songMeta";
@@ -47,6 +45,7 @@ import { estimateSongKey } from "./songKey";
 import { analyzeInstructions, songStructure } from "./songStructure";
 import { McpContent, createMcpResources, createMcpTools } from "./tools";
 import type { PlaylistOrigin } from "../playlistOrigin";
+import { McpToolError } from "./types";
 import type {
   McpHost,
   McpLeader,
@@ -55,6 +54,8 @@ import type {
   McpShowResult,
   McpSong,
   McpSongInfo,
+  McpSongPreference,
+  McpSongPreferenceType,
   McpSongUsage,
   McpStoredPlaylistRef,
   McpViewTarget,
@@ -133,13 +134,14 @@ async function spotlight(targetId: string): Promise<McpShowResult> {
 
 const content: McpContent = {
   strings: { en: enStrings as Record<string, string>, hu: huStrings as Record<string, string> },
-  help: {
-    tutorials: [getTutorialDefinition("full"), getTutorialDefinition("client")],
-    tooltips: { en: enTooltips as Record<string, string>, hu: huTooltips as Record<string, string> },
-  },
+  help: appHelpSources,
 };
 
 const database = (): Database | null => (Database.isReady() ? Database.getInstance() : null);
+
+const PREFERENCE_TYPES = { preferred: "Preferred", ignored: "Ignore", neutral: "" } as const;
+const preferenceTypeOf = (type: string | undefined): McpSongPreferenceType =>
+  type === PREFERENCE_TYPES.preferred ? "preferred" : type === PREFERENCE_TYPES.ignored ? "ignored" : "neutral";
 
 const dateOf = (key: string): Date => parseScheduleDate(key) ?? new Date(NaN);
 
@@ -155,6 +157,7 @@ const songInfo = (song: Song): McpSongInfo => ({
   language: song.Language,
   kind: song.ContentKind,
   key: songKeyOf(song, 0),
+  state: { marked: !!song.Notes, changedLocally: song.version === 0, preference: null },
 });
 
 const toItem = (entry: PlaylistEntry, db: Database | null): McpPlaylistItem => ({
@@ -217,8 +220,10 @@ function storageDate(leader: Leader, ref: McpStoredPlaylistRef): Date {
 
 export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, appVersion: () => string): McpHost {
   const app = () => bindings.current;
+  const pendingPreferenceSaves = new WeakSet<Database>();
   return {
     appVersion,
+    databaseIdentity: database,
     platform: () => navigator.platform || "unknown",
     language: () => app().language,
     account: () => app().account,
@@ -231,6 +236,10 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
     },
 
     songCount: () => database()?.getSongs().length ?? 0,
+    getSyncPending: () => {
+      const db = database();
+      return db ? { songs: db.countUpdatedSongs(), profiles: db.countUpdatedProfiles(), needsSync: db.needsSync() } : null;
+    },
     listSongs: () => (database()?.getSongs() ?? []).map(songInfo),
     getSong: (songId): McpSong | null => {
       const song = database()?.getSongById(songId);
@@ -255,10 +264,11 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
         return { error: error instanceof Error ? error.message : String(error) };
       }
     },
-    searchSongs: async (query) => {
+    searchSongs: async (query, leaderId, songIds) => {
       const db = database();
       if (!db) return [];
-      const results = await db.filter(query, app().selectedLeader, true, true, true, true, SongOrder.LessCostMatch, app().settings ?? undefined);
+      const leader = leaderId === undefined ? app().selectedLeader : (findLeader(db, leaderId)?.leader ?? null);
+      const results = await db.filter(query, leader, true, true, true, true, SongOrder.LessCostMatch, app().settings ?? undefined, songIds);
       return results.map((found) => ({ song: songInfo(found.song), reason: FormatFoundReason(found.reason), snippet: found.snippet || undefined }));
     },
     analyzeChordPro: (text, system) => {
@@ -306,6 +316,42 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
       return leader ? { id: leader.id, name: leader.name } : null;
     },
     selectLeader: (leaderId) => app().selectLeader(leaderId),
+    getSongPreferences: (leaderId, songIds) => {
+      const db = database();
+      const leader = db && findLeader(db, leaderId)?.leader;
+      const preferences: Record<string, McpSongPreference> = Object.create(null);
+      for (const songId of songIds) {
+        const preference = leader && leader.getPreference(songId);
+        if (preference?.isActive) {
+          preferences[songId] = {
+            type: preferenceTypeOf(preference.type),
+            title: preference.title,
+            transpose: preference.transpose,
+            capo: preference.capo,
+            hasInstructions: !!preference.instructions,
+          };
+        }
+      }
+      return preferences;
+    },
+    setSongPreferences: async (leaderId, changedIds, type) => {
+      const db = database();
+      const found = db && findLeader(db, leaderId);
+      if (!db || !found) throw new McpToolError("The profile is no longer available. Read list_leaders and try again.", "CONTEXT_CHANGED");
+      if (!found.own) throw new McpToolError("This leader profile is read-only.", "READ_ONLY");
+      if (!changedIds.length && !pendingPreferenceSaves.has(db)) return;
+      for (const id of changedIds) found.leader.updatePreference(id, { type: PREFERENCE_TYPES[type] }, db);
+      try {
+        await db.forceSaveAsync();
+      } catch {
+        pendingPreferenceSaves.add(db);
+        throw new McpToolError(
+          "The preference changes may be present in memory. Saving failed; retry the same set_song_preference request to save them.",
+          "SAVE_FAILED"
+        );
+      }
+      pendingPreferenceSaves.delete(db);
+    },
     getSongUsage: (leaderId, since) => {
       const db = database();
       const leader = db && findLeader(db, leaderId)?.leader;
@@ -378,13 +424,21 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
     getPlaylist: () => {
       const db = database();
       const panel = app().leftPanel.current;
-      const items = (panel?.getCurrentPlaylist().items ?? []).map((entry) => toItem(entry, db));
+      const playlist = panel?.getCurrentPlaylist();
+      const origin = panel?.getPlaylistOrigin() ?? null;
+      const items = (playlist?.items ?? []).map((entry) => toItem(entry, db));
       const current = getCurrentDisplay().songId;
       return {
         items,
         selectedIndex: current ? items.findIndex((item) => item.songId === current) : -1,
-        source: playlistSource(db, panel?.getPlaylistOrigin() ?? null),
+        source: playlistSource(db, origin),
         readOnly: app().following,
+        editContext: {
+          panel: panel?.getPlaylistPanelIdentity() ?? null,
+          leader: app().selectedLeader,
+          playlistId: playlist?.id ?? null,
+          origin: JSON.stringify(origin),
+        },
       };
     },
     replacePlaylist: async (items) => {
@@ -395,8 +449,17 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
     editPlaylist: async (items, sources, storeInstructions) => {
       const panel = app().leftPanel.current;
       if (!panel) throw new Error("The playlist panel is not available");
+      const db = database();
+      const current = panel.getCurrentPlaylist().items;
       await panel.applyPlaylistEdit(
-        items.map((item) => toEntry(item).toJSON()),
+        items.map((item, index) => {
+          const source = sources[index];
+          const previous = source === null ? undefined : current[source];
+          // Reading resolves untitled legacy rows to the song title. Do not save
+          // that display fallback as a leader preference when keeping the row.
+          const title = previous && toItem(previous, db).title === item.title ? previous.title : item.title;
+          return toEntry({ ...item, title }).toJSON();
+        }),
         sources,
         storeInstructions
       );
@@ -507,12 +570,14 @@ export function createAppMcpHost(bindings: MutableRefObject<McpAppBindings>, app
     },
     openView: (target, page) => app().openView(target, page),
     getUiState: () => {
+      const view = currentView();
       const selectedId = app().leftPanel.current?.getSelectedSongId() ?? null;
       const selected = selectedId ? database()?.getSongById(selectedId) : undefined;
       return {
-        view: currentView(),
+        view,
         ...app().ui,
         selectedSong: selected ? songInfo(selected) : null,
+        songList: view === "full" ? (app().leftPanel.current?.getSongListState() ?? null) : null,
         followingSession: app().following,
       };
     },
@@ -558,7 +623,7 @@ export function useMcpBridge(bindings: McpAppBindings): void {
       },
     });
     return api.onMcpRequest((request) => {
-      void handle(request.message).then((message) => api.sendMcpResponse?.({ requestId: request.requestId, message }));
+      void handle(request.message, request.protocolVersion).then((message) => api.sendMcpResponse?.({ requestId: request.requestId, message }));
     });
   }, []);
 }

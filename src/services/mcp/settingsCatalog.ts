@@ -24,6 +24,8 @@ export interface SettingDescriptor {
   min?: number;
   max?: number;
   integer?: boolean;
+  writable?: false;
+  nullable?: true;
   /** The value is never returned and cannot be set. */
   secret?: boolean;
 }
@@ -49,6 +51,7 @@ const PAGE_LABEL_KEYS: Record<string, string> = {
 const PAGE_LABELS: Record<string, string> = {
   preview: "Preview panel → Format tab",
   sessions: "Sessions dialog",
+  "song-tree": "Song library → filter beside the search box",
 };
 
 /** Settings dialog tabs an assistant can ask the app to open. */
@@ -85,6 +88,17 @@ export const SETTINGS_CATALOG: readonly SettingDescriptor[] = [
   bool("fullscreen", "general", "SettingsFullscreen"),
   bool("hideChordsInReadonlyEditor", "general", "SettingsHideChordsInEditor"),
   bool("showTooltips", "general", "SettingsShowTooltips"),
+  { ...choice("language", "general", "Language", ["en", "hu", "auto"]), writable: false },
+  { ...choice("theme", "general", "Theme", ["light", "dark", "auto"]), writable: false },
+  { key: "songLanguageFilter", page: "general", labelKey: "SongLanguageFilter", type: "stringList", nullable: true, writable: false },
+  {
+    key: "preferenceFilter",
+    page: "song-tree",
+    label: "Preference filter",
+    type: "enum",
+    values: ["all", "preferred-only", "show-ignored"],
+    writable: false,
+  },
   choice("defaultChordSystem", "general", "SettingsChordSystem", ["G", "S"]),
   { key: "defaultSongLanguage", page: "general", labelKey: "DefaultSongLanguage", type: "string" },
   int("serverPeekIntervalMinutes", "general", "SettingsPeekIntervalMinutes", 1, 1440),
@@ -212,6 +226,7 @@ export interface DescribedSetting {
   max?: number;
   value?: unknown;
   writable: boolean;
+  nullable?: true;
 }
 
 const HELP_SUFFIXES = ["Description", "Help", "Hint"];
@@ -229,8 +244,9 @@ export function describeSetting(descriptor: SettingDescriptor, settings: Partial
     pageLabel: pageLabel(descriptor.page, strings),
     label: (descriptor.labelKey && strings[descriptor.labelKey]) || descriptor.label || descriptor.key,
     type: descriptor.type,
-    writable: !descriptor.secret,
+    writable: !descriptor.secret && descriptor.writable !== false,
   };
+  if (descriptor.nullable) described.nullable = true;
   if (help) described.help = help;
   if (descriptor.values) described.values = descriptor.values;
   if (descriptor.min !== undefined) described.min = descriptor.min;
@@ -286,6 +302,10 @@ export function validateSettingsPatch(changes: Record<string, unknown>): Partial
     }
     if (descriptor.secret) {
       problems.push(`${key}: secrets can only be entered in the application`);
+      continue;
+    }
+    if (descriptor.writable === false) {
+      problems.push(`${key}: read-only here; change it in the application (see list_settings for its location)`);
       continue;
     }
     const problem = checkValue(descriptor, value);
