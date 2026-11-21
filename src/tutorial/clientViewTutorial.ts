@@ -112,9 +112,9 @@ export const clientViewTutorial: TutorialDefinition = {
             ".cv-navigation-mode",
             tx(
               "Navigáció forrása",
-              "Az ikon az adatbázis-, keresési vagy műsortári lapozási sorrendet jelzi. A vezérlővel a műsortár nézet állítható vissza.",
+              "A lapozási ikon az adatbázis, a keresési találatok, az aktuális műsortár vagy egy mentett vezetői lista sorrendjét jelzi. Ha vezérelheted a kijelzőt és az aktuális műsortárban van dal, az ikonra koppintva visszatérhetsz a műsortári lapozáshoz.",
               "Navigation source",
-              "The icon identifies database, search or playlist order. Use it to return to the playlist view mode."
+              "The navigation icon shows whether paging follows the database, search results, the current playlist or a saved leader playlist. If you can control the display and the working playlist contains a song, tap the icon to return to playlist navigation."
             )
           ),
           s(
@@ -324,9 +324,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#listModeToggle",
             tx(
               "Listamód",
-              "A gomb az adatbázis, az aktuális műsortár és a vezetők dátumozott listái között léptet. Az ikon az aktuális módot mutatja.",
+              "Ha szerkesztheted az aktuális műsortárat, a gomb a daladatbázis, az aktuális műsortár és a vezetői listák között vált. Az ikon az aktuális módot mutatja.",
               "List mode",
-              "Cycle among database, current playlist and dated leader lists. The icon shows the current mode."
+              "If you can edit the working playlist, the button cycles through the song database, the current playlist and leader lists. The icon shows the current mode."
             )
           ),
           s(
@@ -356,9 +356,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#options[data-list-mode='leaderlists'] .cv-leaderlists-controls",
             tx(
               "Vezetői listák",
-              "A vezető és a dátum kiválasztása után a vezető listáiban is kereshető a kívánt tartalom. A Csere gomb csak a helyi műsortárat módosítja, a forráslistát nem.",
+              "Válassz vezetőt, majd egy dátumozott vagy névvel mentett kedvenc listát. A Search lists mező a kiválasztott vezető összes listájában dalcímre keres. A találat mellett látszik a forráslista, a találatra koppintva ezt a listát választod ki. A := gomb megerősítés után a teljes kiválasztott listát bemásolja az aktuális munkalistába, a mentett lista érintetlen marad.",
               "Leader lists",
-              "Choose a leader and date or search their lists. Replace updates the local working playlist without changing the source."
+              "Choose a leader, then a dated or named favorite playlist. Search lists matches song titles across all lists for that leader. Each result shows its source list. Tap a result to select that list. After confirmation, := replaces the working playlist with the entire selected list, leaving the saved list intact."
             ),
             { prepare: leaderLists }
           ),
@@ -401,10 +401,10 @@ export const clientViewTutorial: TutorialDefinition = {
             "list-play",
             ["#options[data-list-mode='database'] #list .cv-play-btn", "#options[data-list-mode='database'] #list"],
             tx(
-              "Azonnali lejátszás",
-              "Szükség esetén hozzáadja a dalt, megjeleníti és műsortári navigációra vált.",
-              "Play now",
-              "Add the song if needed, display it and switch to playlist navigation."
+              "Dal azonnali megjelenítése",
+              "A dal melletti ▶ gomb szükség esetén az aktuális műsortárhoz adja a dalt, megjeleníti, és műsortári sorrendre váltja a lapozást. A kotta MIDI-lejátszását magára a kottára duplán kattintva vagy koppintva indíthatod.",
+              "Show song now",
+              "The ▶ button beside a song adds it to the current playlist if needed, displays it and switches paging to playlist order. Double-click or double-tap the displayed notation to start its MIDI playback."
             )
           ),
           s(
@@ -552,9 +552,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-auto-tone']",
             tx(
               "Automatikus hangnem",
-              "Az akkordokat a dal megadott hangneméhez igazítja.",
+              "Az Ab kapcsoló az akkordok hangneveit a hangnemhez igazítja, például ugyanazt a hangot G♯ vagy A♭ néven írja ki. Ha a dal hangneme nincs megadva, a megjelenítéshez a program az akkordmenetből következtethet rá. Más hangmagasság választásához használd a Transzponálás vezérlőt.",
               "Automatic key",
-              "Transpose chord display to the song's declared key."
+              "The Ab switch spells chord notes for the key, for example G♯ or A♭ for the same pitch. If the song has no declared key, the app can infer one for display from the chord progression. Use Transpose to change pitch."
             )
           ),
           s(
@@ -729,9 +729,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-more-home']",
             tx(
               "Vissza a teljes nézetre",
-              "Visszavált a teljes szerkesztői felületre, átadja az aktuális dalkijelölést, és a lenti gombbal ott folytatja a bemutatót.",
+              "Nyisd meg a kliensnézet More menüjét, majd válaszd a Switch UI lehetőséget, ha elérhető. A kiválasztott dalt átveszi a teljes nézet. A beépített bemutató Visszatérés a teljes nézetre gombja ott folytatja a bemutatót.",
               "Back to full view",
-              "Return to the full editor, carry over the current song selection, and continue the tutorial there with the action below."
+              "Open More in client view and choose Switch UI, where available. The full view takes over the selected song. In the built-in tutorial, Return to full view continues the tour there."
             ),
             {
               prepare: openClientMoreMenu,

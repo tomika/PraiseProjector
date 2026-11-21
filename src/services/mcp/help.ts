@@ -28,6 +28,10 @@ const TOOLTIP_GROUPS: Record<string, Record<HelpLanguage, string>> = {
   toolbar: { en: "Toolbar buttons", hu: "Eszköztár gombjai" },
   playlist: { en: "Playlist buttons", hu: "Lejátszási lista gombjai" },
   format: { en: "Format tab buttons", hu: "Formázás fül gombjai" },
+  song: { en: "Song filters and preferences", hu: "Dalszűrés és kedveltség" },
+  songtree: { en: "Using the song library", hu: "Dalkönyvtár használata" },
+  sectionlist: { en: "Using the section list", hu: "Szakaszlista használata" },
+  dbsync: { en: "Resolving sync differences", hu: "Szinkronizálási eltérések feloldása" },
 };
 
 function stepLines(step: TutorialStep, language: HelpLanguage, depth: number): string[] {

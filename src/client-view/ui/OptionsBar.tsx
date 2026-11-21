@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useLocalization } from "../../localization/LocalizationContext";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { canUseHighlightLamp, type ChordBoxKind, type DarkMode, type DisplaySettings } from "../controller/ClientViewStore";
 import { HighlightOpacityDialog } from "./HighlightOpacityDialog";
@@ -44,6 +45,7 @@ const CHORD_MODES: Array<{ value: DisplaySettings["chordMode"]; label: string }>
 ];
 
 export function OptionsBar({ onHome }: { onHome?: () => void }) {
+  const { t } = useLocalization();
   const store = useClientViewStore();
   const state = useClientViewState();
   const s = state.displaySettings;
@@ -217,11 +219,7 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
           </span>
         </label>
 
-        <label
-          className={`cv-opt${hotkeyClass("auto-tone")}`}
-          title="Auto key (transpose chords into the song key)"
-          data-tutorial-id="client-auto-tone"
-        >
+        <label className={`cv-opt${hotkeyClass("auto-tone")}`} title={t("ClientViewChordSpellingForKey")} data-tutorial-id="client-auto-tone">
           <input type="checkbox" checked={s.autoTone} onChange={(e) => store.setDisplaySetting("autoTone", e.target.checked)} />
           <span>Ab</span>
         </label>

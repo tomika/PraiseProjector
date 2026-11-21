@@ -57,9 +57,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-sync-group .user-sync-main-btn",
             tx(
               "Szinkronizálás indítása",
-              "A főgomb elindítja az egyeztetést. Nem mentett dalszerkesztés esetén az alkalmazás előbb megerősítést kér.",
+              "A szinkronizálás főgombja elindítja az egyeztetést. Ha mentetlen dalszerkesztés van folyamatban, az Elvetés és szinkronizálás eldobja ezeket a módosításokat. Ha meg szeretnéd tartani őket, zárd be a kérdést, mentsd el a dalt, majd indítsd újra a szinkronizálást. Vendégmódban a Publikus dalok letöltése a letöltést indítja el.",
               "Start synchronization",
-              "The main button starts synchronization. If a song has unsaved edits, the app asks for confirmation first."
+              "The main Sync button starts synchronization. If you have unsaved song edits, Discard & Sync drops those edits. To keep them, dismiss the prompt, save the song, and start Sync again. In guest mode, Download Public Songs starts the download."
             ),
             { actions: [{ id: "sync-now", label: tl("Szinkronizálás most", "Synchronize now"), command: "sync-now" }] }
           ),
@@ -88,9 +88,9 @@ export const fullViewTutorial: TutorialDefinition = {
             [".sync-dropdown-menu", ".sync-menu-toggle"],
             tx(
               "Szinkronizálási menü",
-              "A menüben dalellenőrzés, exportálás, importálás és teljes adatbáziscsere is található.",
+              "A szinkronizálás mellett a menüben az Adatbázis exportálása, az Adatbázis importálása és az Adatbázis cseréje online-ra művelet érhető el. Bejelentkezve itt nyithatod meg az Ellenőrizendő dalok ablakát. Egy dal vagy kotta importálásához használd a dalkezelő eszköztár importálásgombját.",
               "Synchronization menu",
-              "The menu also contains song review, export, import and complete database replacement."
+              "The Sync menu also offers Export database, Import database and Replace database with online. When signed in, open Songs to Review here. To import a song or score, use the import button on the song toolbar."
             ),
             { prepare: () => clickVisible(".sync-menu-toggle") }
           ),
@@ -154,9 +154,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".preferred-filter-btn",
             tx(
               "Kedveltségi szűrő",
-              "Ez a vezérlő az összes dal, a kedvelt dalok és a figyelmen kívül hagyott dalokat is megjelenítő nézet között vált.",
+              "Ha kiválasztasz egy dicsőítésvezetőt, a kereső melletti szív gomb három nézet között vált. Az alapnézet a kedvelt és a semleges dalokat mutatja. A második nézetben csak a kedvelt dalok jelennek meg. A harmadik a figyelmen kívül hagyott dalokat is megjeleníti. A többi aktív szűrő mindhárom nézetben érvényben marad.",
               "Preference filter",
-              "Switch between all songs, preferred songs and a view that also includes ignored songs."
+              "With a worship leader selected, the heart button next to Search cycles through three views. The default view shows preferred and neutral songs. The second shows preferred songs only. The third also includes ignored songs. Other active filters apply in all three views."
             )
           ),
           s(
@@ -194,9 +194,9 @@ export const fullViewTutorial: TutorialDefinition = {
             [".song-tree-filter-watermark", ".song-list-panel"],
             tx(
               "Aktív szűrés jelzése",
-              "A dalkönyvtárban látható tölcsér akkor jelenik meg, ha egy tartalmi, kedveltségi vagy nyelvi szűrő dalokat rejthet el. A keresőmező kiürítése ezeket nem kapcsolja ki; a megfelelő menüben vagy beállításban állíthatók vissza.",
+              "A tölcsér akkor jelenik meg, ha ki van kapcsolva valamelyik tartalmi szűrőbeállítás, aktív a dalnyelvi szűrő, vagy a kedveltségi nézet csak a kedvelt dalokat mutatja. Ha egy figyelmen kívül hagyott dalt keresel, a szív gombbal válts arra a nézetre, amely ezeket a dalokat is megjeleníti. A keresőmező törlése egyik szűrőbeállítást sem módosítja.",
               "Active filter indicator",
-              "A funnel appears in the library when a content, preference or language filter can hide songs. Clearing the search field does not clear these restrictions; restore them in the corresponding menu or settings page."
+              "The funnel appears when a content category is turned off, the song-language filter is set, or the preference view shows only preferred songs. To find an ignored song, use the heart button to switch to the view that includes ignored songs. Clearing the search field leaves these filter settings in place."
             )
           ),
           s(
@@ -214,9 +214,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".song-list-panel",
             tx(
               "Áthúzás és fájlimportálás",
-              "A dal Műsortárba húzásával a kívánt pozícióba a listához adható. Külső fájl is behúzható a Dalkönyvtárba: az importáló a .chp, .abc, .txt, .pdf, .docx, .htm és .html formátumokat támogatja. Dalok egymásra vagy csoportmappára húzásával csoportok is létrehozhatók.",
+              "Húzd a dalt a Műsortár kívánt helyére. Dalokat úgy csoportosíthatsz, hogy egy dalt egy másik dalra vagy egy csoportmappára húzol. A Dalkönyvtárba húzott külső fájl megnyitja az importálót. Támogatott kiterjesztések a .chp, .abc, .musicxml, .xml, .mxl, .txt, .pdf, .docx, .htm és .html.",
               "Drag and drop",
-              "Drag a song to the playlist to add it quickly. You can also drop external files into the song library: the importer supports .chp, .abc, .txt, .pdf, .docx, .htm and .html files. Drag songs onto another song or a group folder to group them."
+              "Drag a song to the desired position in the playlist. To group songs, drop a song onto another song or a group folder. Dropping an external file into the song library opens the importer. It supports .chp, .abc, .musicxml, .xml, .mxl, .txt, .pdf, .docx, .htm and .html."
             )
           ),
           s(
@@ -224,9 +224,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".song-list-panel",
             tx(
               "Helyi menü",
-              "A helyi menüben verzióelőzmények, csoportbontás, törlés, megosztás és vágólapos importálás érhető el.",
+              "Nyisd meg a dal helyi menüjét jobb kattintással vagy hosszan nyomva. Kiválasztott dalnál itt érhető el a megosztás. Vendégmódban itt törölheted a dalt, fiókkal pedig a verzióelőzményeket nézheted meg. A csoportbontás csoportba tartozó dalnál jelenik meg. A vágólapos importálás akkor választható, ha a vágólap olvasható, importálható tartalmat ad.",
               "Context menu",
-              "The context menu provides version history, ungrouping, deletion, sharing and clipboard import."
+              "Right-click or press and hold a song to open its context menu. Use it to share the selected song. In guest mode you can delete the song here. With an account you can open its version history. Ungroup appears for songs in a group. Import from clipboard is available when the app can read importable clipboard content."
             )
           ),
           s(
@@ -234,9 +234,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".song-list-panel",
             tx(
               "Billentyűzet",
-              "A nyilak, Page Up/Down, Szóköz, Home és End navigálnak. Enter megnyitja az alapértelmezett dalműveletet, Delete csoportot bont, Ctrl+V pedig vágólapról importál.",
+              "Ha a dalkönyvtár listája van fókuszban, a Fel és Le nyíl egy dallal, a Page Up, Page Down és Szóköz egy oldalnyival léptet. A Shift+Szóköz visszafelé léptet. A Home az első, az End az utolsó dalra ugrik. Az Enter a dupla kattintáshoz hasonlóan a műsortárhoz adja a kijelölt dalt. A Delete a kijelölt dalt kiveszi a csoportjából. A Ctrl+V vagy a Shift+Insert a vágólapról importál.",
               "Keyboard",
-              "Use the arrows, Page Up/Down, Space, Home and End to navigate. Enter opens the default song action, Delete ungroups and Ctrl+V imports from the clipboard."
+              "With the song library list focused, Up and Down move by one song. Page Up, Page Down and Space move by a page. Shift+Space moves back a page. Home and End go to the first and last songs. Enter adds the selected song to the playlist, just like double-clicking. Delete removes the selected song from its group. Ctrl+V or Shift+Insert imports from the clipboard."
             )
           ),
         ],
@@ -347,9 +347,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-items-container",
             tx(
               "Cím és instrukciók",
-              "A műsortétel saját címet és előadási instrukciót kaphat az adatbázisban lévő dal átírása nélkül. Az instrukciók szerkesztése sorvégi dupla kattintással is megnyitható.",
+              "A műsortétel saját címet és előadási instrukciót kaphat. A cím szerkesztéséhez kattints duplán a címre. Az instrukciószerkesztőt a sor jobb szélén lévő instrukciócellában nyithatod meg dupla kattintással, érintőképernyőn egy koppintással. Ezek a beállítások a műsortételhez tartoznak.",
               "Title and instructions",
-              "A playlist entry can have its own title and performance instructions without changing the database song. The instructions editor can be opened by double-clicking at the end of lines."
+              "Each playlist entry can have its own title and performance instructions. Double-click the title to edit it. Open the instructions editor in the rightmost cell with a double-click, or with one tap on a touchscreen. These settings belong to the playlist entry."
             )
           ),
           s(
@@ -434,12 +434,12 @@ export const fullViewTutorial: TutorialDefinition = {
           ),
           s(
             "toolbar-import",
-            ".btn-toolbar button[aria-label='Import from Word']",
+            "[data-tutorial-id='full-toolbar-import']",
             tx(
               "Importálás",
-              "Szöveg-, ChordPro-, ABC-kotta-, Word- vagy PDF-forrást dolgoz fel. A .chp és .abc fájl közvetlenül a szerkesztési folyamatba kerül; a beillesztett ABC-szöveg felismerésekor az alkalmazás rákérdez a kottaként importálásra.",
+              "Az importálót a dalkezelő eszköztár importálásgombjával nyithatod meg. A ChordPro- és ABC-fájl közvetlenül a szerkesztési lépésre kerül, a MusicXML-fájl ABC-kottává alakul. A felismert, beillesztett ABC-szöveg importálása előtt az alkalmazás megerősítést kér.",
               "Import",
-              "Import text, ChordPro, ABC notation, Word or PDF sources. Files ending in .chp or .abc go directly to the editing flow; when pasted text is recognized as ABC, the app asks whether to import it as notation."
+              "Open the importer from the song toolbar. ChordPro and ABC files go straight to the editing step. MusicXML files are converted to ABC notation. When pasted text is recognized as ABC, the app asks before importing it as notation."
             )
           ),
           s(
@@ -452,9 +452,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Mobile View']",
             tx(
               "Kliens nézet",
-              "Az előadás közbeni használatra készült, egyszerűsített kliens nézetre vált. A lenti gombbal a bemutató közvetlenül ott folytatódik.",
+              "A teljes nézet eszköztárán a Mobil nézetre váltás gomb nyitja meg az előadáshoz készült kliensnézetet. A beépített bemutató Kliens nézetre váltás gombjával ott folytathatod a bemutatót.",
               "Client view",
-              "Switch to the streamlined client view for use during a performance. The action below continues the tutorial there."
+              "In the full-view toolbar, Switch to mobile view opens the streamlined client view for performances. In the built-in tutorial, use Switch to client view to continue the tour there."
             ),
             { actions: [{ id: "switch-client", label: tl("Kliens nézetre váltás", "Switch to client view"), command: "switch-client" }] }
           ),
@@ -463,9 +463,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Settings']",
             tx(
               "Beállítások",
-              "A keresés, dalnyelvek, vetítés, kotta, hardveres vezérlés, vezetők, stílusok, kliensjogosultságok és hálózati funkciók itt szabhatók személyre. Az áttekintésnél külön részletek mutatják be az új beállítási lapokat.",
+              "A Beállítások gomb nyitja meg a keresés, a dalnyelvek, a vetítés, a kotta, a hardveres vezérlés, a vezetők, a stílusok, a kliensjogosultságok és a hálózati funkciók beállításait. A dalnyelvhez az Általános, a billentyű- és MIDI-kiosztáshoz a Hardveres vezérlés, a kotta alapbeállításaihoz a Kotta lapot válaszd.",
               "Settings",
-              "Customize search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and network features. A separate branch from the overview introduces the new settings pages."
+              "Open Settings to configure search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and networking. Use General for song language, Hardware control for keyboard and MIDI mappings, and Score for notation defaults."
             )
           ),
         ],

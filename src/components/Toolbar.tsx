@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { Icon, IconType } from "../services/IconService";
 import { useTooltips } from "../localization/TooltipContext";
+import { useLocalization } from "../localization/LocalizationContext";
 import { useUpdate } from "../contexts/UpdateContext";
 
 interface ToolbarProps {
@@ -27,6 +28,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   canSaveSong,
 }) => {
   const { tt } = useTooltips();
+  const { t } = useLocalization();
   const { hasUpdate } = useUpdate();
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const loadDisabled = canLoadSong === false;
@@ -61,7 +63,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <button className="btn btn-light" aria-label="New Song" title={tt("toolbar_new_song")} onClick={onNewSong}>
         <Icon type={IconType.NEW} />
       </button>
-      <button className="btn btn-light" aria-label="Import from Word" title={tt("toolbar_import_word")} onClick={onImport}>
+      <button
+        className="btn btn-light"
+        data-tutorial-id="full-toolbar-import"
+        aria-label={t("ImportSong")}
+        title={tt("toolbar_import_word")}
+        onClick={onImport}
+      >
         <Icon type={IconType.IMPORT} />
       </button>
       <button className="btn btn-light" aria-label="Print" title={tt("toolbar_print")} onClick={onPrint}>

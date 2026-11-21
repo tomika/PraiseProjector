@@ -4,7 +4,7 @@
   "toolbar_delete_song": "Delete song from database",
   "toolbar_reload_song": "Reload song from database",
   "toolbar_save_song": "Save song to database",
-  "toolbar_import_word": "Import a song from text file",
+  "toolbar_import_word": "Import song",
   "toolbar_import_folder": "Import multiple songs from folder",
   "toolbar_print": "Print actual song",
   "toolbar_settings": "Settings",
@@ -63,7 +63,7 @@
   "instructions_store_profile": "Store instructions in leader profile",
 
   "song_filter": "Filter songs by title or content",
-  "song_filter_show_all": "Show all songs",
+  "song_filter_show_all": "Showing preferred and neutral songs",
   "song_filter_show_preferred_only": "Showing preferred only",
   "song_filter_show_all_including_ignored": "Showing all including ignored",
   "song_filter_clear": "Clear filter",

@@ -1155,6 +1155,7 @@
   "HardwareFamilyOmitRepeatedChords": "Omit repeated section chords",
   "HardwareFamilySuperscript": "Chord modifiers as superscript",
   "HardwareFamilyAutoTone": "Automatic key handling",
+  "ClientViewChordSpellingForKey": "Spell chord notes for the key",
   "HardwareFamilyNoteNames": "Note name system",
   "HardwareFamilyTranspose": "Transpose",
   "HardwareFamilyCapoUse": "Use capo",

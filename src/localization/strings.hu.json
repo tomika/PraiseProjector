@@ -1156,6 +1156,7 @@
   "HardwareFamilyOmitRepeatedChords": "Ismétlődő szakaszakkordok elhagyása",
   "HardwareFamilySuperscript": "Akkordmódosítók felső indexben",
   "HardwareFamilyAutoTone": "Automatikus hangnemkezelés",
+  "ClientViewChordSpellingForKey": "Hangnemhez illő hangnevek megjelenítése",
   "HardwareFamilyNoteNames": "Hangnevek rendszere",
   "HardwareFamilyTranspose": "Transzponálás",
   "HardwareFamilyCapoUse": "Capohasználat",
