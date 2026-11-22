@@ -22,10 +22,12 @@ const SECOND_PROJECTION = { songId: "second", transpose: 2, capo: 1, instruction
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-function fixture(context: TestContext, options: { playlist?: PlaylistEntry[] } = {}) {
+function fixture(context: TestContext, options: { playlist?: PlaylistEntry[]; storageScope?: "local" | "remote" } = {}) {
   const env = installFakeWindow({ storage: { "pp-settings": JSON.stringify({ clientViewAutoScanSessions: "off" }) } });
   const fake = createFakeClientApi({
     capabilities: { canControlDisplay: true, canEditWorkingPlaylist: true },
+    // The shared-link page runs on the cloud (Rest) adapter.
+    storageScope: options.storageScope ?? "remote",
     playlist: options.playlist ?? [],
     leaderProfiles: PROFILES,
     // Like RestCore, a projection comes back through the display subscription.
@@ -90,4 +92,13 @@ test("an existing working list is never replaced by a shared list", async (conte
   assert.equal(state.navigationMode, "archive");
   assert.equal(state.display.songId, "second");
   assert.deepEqual(fake.callsTo("playlist.setPlaylist"), []);
+});
+
+test("an in-process client never opens a shared list as its working list", async (context) => {
+  const { store, fake } = fixture(context, { storageScope: "local" });
+  await store.init(SHARED_LINK);
+  await settle();
+  assert.equal(store.getSnapshot().navigationMode, "archive");
+  assert.deepEqual(fake.callsTo("playlist.setPlaylist"), [], "the host's list and projection stay untouched");
+  assert.deepEqual(fake.callsTo("display.project"), []);
 });

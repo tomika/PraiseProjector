@@ -105,6 +105,8 @@ export class RestCore {
   private display: Display = getEmptyDisplay();
   private playlist: PlaylistEntry[] = [];
   private unpublished = false;
+  private unpublishedRevision = 0;
+  private pendingPublish: Promise<void> | null = null;
 
   private followToken = 0;
   private followAbort: AbortController | null = null;
@@ -312,15 +314,32 @@ export class RestCore {
    *  the backend. The next published push sends both in full first (restPorts). */
   markUnpublished(): void {
     this.unpublished = true;
+    this.unpublishedRevision++;
   }
 
   hasUnpublishedState(): boolean {
     return this.unpublished;
   }
 
-  /** The full working list and current song just went out. */
-  clearUnpublished(): void {
-    this.unpublished = false;
+  /** Run the pending-state publish once for all concurrent callers, so the pushes
+   *  waiting on it go out in their original order. `send` reports whether the
+   *  backend took the state; only then — and only if no newer unpublished write
+   *  landed meanwhile — is it no longer pending. */
+  publishPending(send: () => Promise<boolean>): Promise<void> {
+    const revision = this.unpublishedRevision;
+    this.pendingPublish ??= send()
+      .then((published) => {
+        if (published && revision === this.unpublishedRevision) this.unpublished = false;
+      })
+      .finally(() => {
+        this.pendingPublish = null;
+      });
+    return this.pendingPublish;
+  }
+
+  /** Watching a cloud or PPD session: the display and working list mirror it. */
+  isFollowing(): boolean {
+    return this.lastFollow !== null;
   }
 
   getCapabilities(): ClientCapabilities {

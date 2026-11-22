@@ -133,9 +133,10 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
  *  neither). */
 async function pushPreference(core: RestCore, pref: { transpose?: number; capo?: number }): Promise<void> {
   if (!core.canControlDisplay()) return;
+  // The song this preference was set for, even if a step lands while waiting.
+  const display = core.getDisplay();
   await publishPendingState(core);
   if (core.isFollowingPpd()) {
-    const display = core.getDisplay();
     await core.sendPpdDisplayUpdate({
       command: "song_update",
       id: display.songId,
@@ -146,7 +147,7 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  await cloudApi.sendDisplayPreference({ id: core.getDisplay().songId, ...pref }, leaderId ? { leaderId } : undefined);
+  await cloudApi.sendDisplayPreference({ id: display.songId, ...pref }, leaderId ? { leaderId } : undefined);
 }
 
 /** Push the working playlist as a playlist-only update (legacy
@@ -156,6 +157,10 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
 async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructions?: string): Promise<DisplayUpdateResult | undefined> {
   if (!core.canControlDisplay()) return;
   const display = core.getDisplay();
+  const pending = core.hasUnpublishedState();
+  await publishPendingState(core);
+  // The pending publish just carried this very list (and the current song).
+  if (pending && !core.hasUnpublishedState() && instructions === undefined && playlist === core.getPlaylist()) return "DONE";
   if (core.isFollowingPpd()) {
     await core.sendPpdDisplayUpdate({
       command: "display_update",
@@ -167,11 +172,10 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
       transpose: display.transpose,
       playlist,
     });
-    core.clearUnpublished();
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  const result = await cloudApi.sendDisplayUpdate(
+  return cloudApi.sendDisplayUpdate(
     {
       songId: display.songId,
       from: display.from,
@@ -185,19 +189,57 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
     },
     leaderId ? { leaderId } : undefined
   );
-  // It carried the whole list and the current song: nothing stays unpublished.
-  core.clearUnpublished();
-  return result;
 }
 
-/** Before a partial push (song step, highlight, preference, instructions), send
- *  the working list and current song that a `publish: false` write kept on this
- *  client. Alone, a partial push would land on what the session showed before:
- *  the backend takes a new song's transpose/capo/instructions from ITS playlist,
- *  and a highlight or preference targets the song it already projects. */
+/** Before any push, send the working list and the complete current song that a
+ *  `publish: false` write kept on this client. Alone, a push would land on what
+ *  the session showed before: the backend takes a new song's transpose, capo and
+ *  instructions from ITS playlist, keeps them for a song it already shows, and a
+ *  highlight or preference targets the song it projects.
+ *
+ *  It stays pending until the account's own session takes it: not while this
+ *  client watches another session (its state then mirrors that session), nor
+ *  after a failed or rejected send — which never stops the caller's own push
+ *  either. Without an own leader id the backend resolves the target itself: the
+ *  account behind the browser's cookie (a page that did not sign in itself), or
+ *  NO_SESSION for an anonymous visitor, who then stays pending — so whenever an
+ *  account becomes reachable, its session gets the list first. Concurrent pushes
+ *  share one send and keep their order. */
 async function publishPendingState(core: RestCore): Promise<void> {
-  if (!core.hasUnpublishedState() || !core.canControlDisplay()) return;
-  await pushPlaylist(core, core.getPlaylist());
+  if (!core.hasUnpublishedState() || !core.canControlDisplay() || core.isFollowing()) return;
+  const leaderId = displayUpdateLeaderId(core);
+  const target = leaderId ? { leaderId } : {};
+  try {
+    await core.publishPending(async () => {
+      const display = core.getDisplay();
+      const playlist = core.getPlaylist();
+      // With no song shown only the list goes out: the backend keeps its song for
+      // an empty id, and explicit values would retune that song.
+      const result = display.songId
+        ? await cloudApi.sendDisplayUpdate(
+            {
+              songId: display.songId,
+              from: display.from,
+              to: display.to,
+              section: display.section,
+              abcRange: display.abcRange,
+              sectionRepeatCounts: display.sectionRepeatCounts,
+              sectionRepeatNonce: display.sectionRepeatNonce,
+              transpose: display.transpose,
+              capo: display.capo ?? -1,
+              playlist,
+              song: display.song,
+              message: display.message,
+              instructions: display.instructions ?? "",
+            },
+            { ...target, force: true, complete: true }
+          )
+        : await cloudApi.sendDisplayUpdate({ songId: "", from: 0, to: 0, playlist, song: "" }, { ...target, force: true });
+      return result === "DONE" || result === "SKIPPED";
+    });
+  } catch (error) {
+    console.warn("restPorts", "Publishing the pending working list failed; it stays pending", error);
+  }
 }
 
 export function createSongApi(core: RestCore): SongApi {
@@ -403,10 +445,13 @@ export function createSessionApi(core: RestCore): SessionApi {
       // Online hosting is always owned by the authenticated user's default leader;
       // the leader currently selected for editing must not retarget the session.
       if (!core.leader?.id) throw new Error("A default leader is required for online projection");
+      const pending = core.hasUnpublishedState();
       await pushDisplay(core, core.getDisplay());
       // Seed the freshly-registered cloud session with the working playlist so
-      // followers see it immediately (pushDisplay no longer carries the list).
-      if (core.getPlaylist().length) await pushPlaylist(core, core.getPlaylist());
+      // followers see it immediately (pushDisplay no longer carries the list),
+      // unless pushDisplay's pending-state publish has just sent it.
+      const listJustSent = pending && !core.hasUnpublishedState();
+      if (core.getPlaylist().length && !listJustSent) await pushPlaylist(core, core.getPlaylist());
       core.setNetworkState({ status: "leading", transport: "web" });
     },
     watch: (session) => core.watch(session),

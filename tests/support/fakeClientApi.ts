@@ -10,6 +10,7 @@ import {
   type ClientApi,
   type ClientCapabilities,
   type ClientMode,
+  type ClientStorageScope,
   type NetworkState,
   type Unsubscribe,
 } from "../../src/client-view/api/ClientApi";
@@ -21,6 +22,8 @@ export interface RecordedCall {
 
 export interface FakeClientApiOptions {
   mode?: ClientMode;
+  /** Defaults to "local" (the in-process adapter's data world). */
+  storageScope?: ClientStorageScope;
   capabilities?: Partial<ClientCapabilities>;
   /** The backend's projected display (what `display.getCurrent()` returns). */
   display?: Partial<Display>;
@@ -104,7 +107,7 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
 
   const api: ClientApi = {
     mode: options.mode ?? "App",
-    storageScope: "local",
+    storageScope: options.storageScope ?? "local",
     init: async (config) => record("init", config),
     dispose: () => record("dispose"),
     getCapabilities: () => capabilities,

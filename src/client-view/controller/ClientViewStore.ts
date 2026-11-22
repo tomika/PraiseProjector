@@ -2182,11 +2182,14 @@ export class ClientViewStore {
   /** A shared list link opens as the working list where that list is this
    *  client's own and still empty — a fresh standalone App document, whose
    *  working list starts empty every time. Never for a follower or a watching
-   *  App (their list mirrors the leader's), and never over an existing list. */
+   *  App (their list mirrors the leader's), never over an existing list, and
+   *  never in-process: the Direct adapter's list and display are its host's, so
+   *  it cannot keep the opened list off the live projection. */
   private opensInitialPlaylistAsWorkingList(config: ClientConfig): boolean {
     const { canControlDisplay, canEditWorkingPlaylist } = this.state.capabilities;
     return (
       this.api.mode === "App" &&
+      this.api.storageScope === "remote" &&
       !config.follow &&
       !isAppFollowingSession(this.state) &&
       canControlDisplay &&

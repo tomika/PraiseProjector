@@ -1012,6 +1012,8 @@ export class CloudApiService {
   /**
    * Send display update to cloud server (matching C# UpdateWebDisplay)
    * The publishing target is kept out of the body and sent as a query parameter.
+   * Transpose 0, capo and empty instructions are normally left out, so the server
+   * keeps its own values for a song it already shows; `complete` sends them too.
    */
   async sendDisplayUpdate(
     data: {
@@ -1023,13 +1025,16 @@ export class CloudApiService {
       sectionRepeatCounts?: Display["sectionRepeatCounts"];
       sectionRepeatNonce?: number;
       transpose?: number;
+      /** Sent only with `complete` (-1 = no capo). */
+      capo?: number;
       playlist?: PlaylistEntry[];
       song: string;
       message?: string;
       instructions?: string;
     },
-    options?: Partial<DisplaySessionTarget> & { force?: boolean }
+    options?: Partial<DisplaySessionTarget> & { force?: boolean; complete?: boolean }
   ): Promise<DisplayUpdateResult> {
+    const complete = !!options?.complete;
     // Build values to send (matching C# values dictionary)
     const values: Record<string, string> = {
       ppu: "true",
@@ -1040,8 +1045,11 @@ export class CloudApiService {
       abcRange: JSON.stringify(data.abcRange ?? null),
     };
 
-    if (data.transpose !== undefined && data.transpose !== 0) {
+    if (data.transpose !== undefined && (data.transpose !== 0 || complete)) {
       values.transpose = data.transpose.toString();
+    }
+    if (complete && data.capo !== undefined) {
+      values.capo = data.capo.toString();
     }
     if (data.section !== undefined) {
       values.section = data.section.toString();
@@ -1058,7 +1066,7 @@ export class CloudApiService {
     if (data.message) {
       values.message = data.message;
     }
-    if (data.instructions) {
+    if (data.instructions || (complete && data.instructions !== undefined)) {
       values.instructions = data.instructions;
     }
 
