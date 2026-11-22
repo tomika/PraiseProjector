@@ -54,9 +54,9 @@ export function rankChordTransitions(
   targetKey: string,
   sourceChord: string,
   targetChord: string,
-  options: ChordTransitionOptions & { limit?: number } = {}
+  options: ChordTransitionOptions & { limit?: number; order?: "quality" | "steps" } = {}
 ): RankedChordTransition[] {
-  const { steps, style = "cadential", noteSystem = "S", limit = 5 } = options;
+  const { steps, style = "cadential", noteSystem = "S", limit = 5, order = "quality" } = options;
   if (steps !== undefined && (options.minSteps !== undefined || options.maxSteps !== undefined))
     throw new RangeError("Use either steps or minSteps/maxSteps");
   const min = steps ?? options.minSteps ?? 0;
@@ -111,10 +111,10 @@ export function rankChordTransitions(
           winners.push({ path, steps: length, score });
         }
       }
-      winners.sort((a, b) => b.score - a.score || a.steps - b.steps);
+      winners.sort((a, b) => (order === "steps" ? a.steps - b.steps : 0) || b.score - a.score || a.steps - b.steps);
       winners.splice(limit);
     }
-    if (length === max) break;
+    if (length === max || (order === "steps" && winners.length === limit)) break;
     groups = candidates.flatMap((chord) => {
       const byPredecessor = new Map<string, Path[]>();
       for (const group of groups) {

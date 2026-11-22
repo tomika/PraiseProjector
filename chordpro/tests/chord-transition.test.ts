@@ -26,3 +26,10 @@ test("direct transitions and inclusive bounds", () => {
   assert.throws(() => rankChordTransitions(...endpoints, { minSteps: 4, maxSteps: 3 }), RangeError);
   assert.throws(() => rankChordTransitions(...endpoints, { steps: 2, minSteps: 1 }), RangeError);
 });
+
+test("ranking by steps fills the limit with the shortest available bridges", () => {
+  const options = { style: "cadential", limit: 5 } as const;
+  const shortest = rankChordTransitions(...endpoints, { ...options, minSteps: 0, maxSteps: 4, order: "steps" });
+  const fixed = [0, 1, 2, 3, 4].flatMap((steps) => rankChordTransitions(...endpoints, { ...options, steps }));
+  assert.deepEqual(shortest, fixed.slice(0, options.limit));
+});
