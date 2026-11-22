@@ -2,7 +2,8 @@ import express from "express";
 import { parseAbcRange } from "../common/abc-range";
 import cors from "cors";
 import { Display, NetDisplayData } from "../common/pp-types";
-import { compareDisplays, deserializePlaylist } from "../common/pp-utils";
+import { compareDisplays } from "../common/pp-utils";
+import { parseRemoteDisplayUpdate } from "./remote-display-update";
 import type { ChordProStylesSettings } from "../common/chordpro-styles";
 import * as fs from "fs";
 import * as path from "path";
@@ -827,71 +828,13 @@ export class WebServer {
       if (!(await this.authorizeControlRequest(req, res))) return;
 
       const command = req.path.includes("/display_update") ? "display_update" : "song_update";
-      const params = (req.body ?? {}) as Record<string, unknown>;
-      const abcRange = parseAbcRange(params.abcRange);
-      const id = (params.id as string) || "";
-      const from = parseInt((params.from as string) || "0", 10);
-      const to = parseInt((params.to as string) || "0", 10);
-      const sectionStr = params.section as string;
-      const parsedSection = sectionStr !== undefined && sectionStr !== "" ? parseInt(sectionStr, 10) : undefined;
-      const section = parsedSection !== undefined && !isNaN(parsedSection) ? parsedSection : undefined;
-      const sectionRepeatNonceRaw = params.sectionRepeatNonce;
-      const parsedSectionRepeatNonce =
-        sectionRepeatNonceRaw !== undefined && sectionRepeatNonceRaw !== "" ? parseInt(sectionRepeatNonceRaw as string, 10) : undefined;
-      const sectionRepeatNonce = parsedSectionRepeatNonce !== undefined && !isNaN(parsedSectionRepeatNonce) ? parsedSectionRepeatNonce : undefined;
-      let sectionRepeatCounts: Display["sectionRepeatCounts"];
-      if (Array.isArray(params.sectionRepeatCounts)) {
-        sectionRepeatCounts = params.sectionRepeatCounts as Display["sectionRepeatCounts"];
-      } else if (typeof params.sectionRepeatCounts === "string" && params.sectionRepeatCounts) {
-        try {
-          sectionRepeatCounts = JSON.parse(params.sectionRepeatCounts) as Display["sectionRepeatCounts"];
-        } catch {
-          sectionRepeatCounts = undefined;
-        }
-      }
-      // Use undefined as default to indicate "no change" for transpose/capo
-      const transposeStr = params.transpose as string;
-      const capoStr = params.capo as string;
-      const transpose = transposeStr !== undefined && transposeStr !== "" ? parseInt(transposeStr, 10) : undefined;
-      const capo = capoStr !== undefined && capoStr !== "" ? parseInt(capoStr, 10) : undefined;
-      const instructions = (params.instructions as string) || "";
-      const title = (params.title as string) || "";
-      const playlist = deserializePlaylist(params.playlist);
-
-      console.debug("[WebServer] display_update:", {
-        method: req.method,
-        id,
-        from,
-        to,
-        section,
-        sectionRepeatNonce,
-        sectionRepeatCounts,
-        transpose,
-        capo,
-        instructions,
-        title,
-        playlist,
-      });
+      const update = parseRemoteDisplayUpdate(command, (req.body ?? {}) as Record<string, unknown>);
+      const id = update.id;
+      console.debug("[WebServer] display_update:", { method: req.method, ...update });
 
       // Notify main window about song change (matching C# SongChanged delegate)
       const mainWindow = getMainWindow();
-      if (mainWindow) {
-        mainWindow.webContents.send("remote-display-update", {
-          command,
-          abcRange,
-          id,
-          from,
-          to,
-          section,
-          sectionRepeatNonce,
-          sectionRepeatCounts,
-          transpose,
-          capo,
-          instructions,
-          title,
-          playlist,
-        });
-      }
+      if (mainWindow) mainWindow.webContents.send("remote-display-update", update);
 
       let remainingTime = 3000;
       let currentDisplay = getCurrentDisplay();

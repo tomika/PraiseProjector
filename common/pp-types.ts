@@ -130,8 +130,10 @@ export type DisplayStylesQueryResponse = t.TypeOf<typeof displayStylesQueryRespo
 export type DisplayUpdateRequest = {
   command: "song_update" | "display_update";
   id: string;
-  from: number;
-  to: number;
+  /** Absent in an id-only update (a preference, a legacy song selection): the
+   *  song shown keeps its highlight. */
+  from?: number;
+  to?: number;
   section?: number;
   abcRange?: AbcRange;
   sectionRepeatCounts?: Display["sectionRepeatCounts"];

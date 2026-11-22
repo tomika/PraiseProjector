@@ -4,8 +4,9 @@ import { ApiResponse } from "./ipc-types";
 export type WebServerRemoteDisplayUpdate = {
   command: "song_update" | "display_update";
   id: string;
-  from: number;
-  to: number;
+  /** Absent in an id-only update: the song shown keeps its highlight. */
+  from?: number;
+  to?: number;
   section?: number;
   abcRange?: Display["abcRange"];
   sectionRepeatCounts?: Display["sectionRepeatCounts"];
