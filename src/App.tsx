@@ -1054,6 +1054,12 @@ const AppContent: React.FC = () => {
   // withheld until this request returns DONE.
   useEffect(() => {
     if (!settings?.externalWebDisplayEnabled || isAuthLoading) return;
+    // A stored account is still being verified: its database is open (so auth no
+    // longer reports loading) but the status reads "guest" until the session is
+    // restored. Starting now would open a guest session, which the account's
+    // cookie makes the backend reject (UNAUTHORIZED) — and that switches online
+    // sharing off on every restart. The status change re-runs this effect.
+    if (authStatus === "guest" && !isGuest) return;
     let cancelled = false;
 
     if (authStatus === "authenticated" && !user?.leaderId) {
@@ -1088,6 +1094,7 @@ const AppContent: React.FC = () => {
     settings?.externalWebDisplayEnabled,
     isAuthLoading,
     authStatus,
+    isGuest,
     user?.leaderId,
     guestSessionId,
     cloudDisplayTarget,
