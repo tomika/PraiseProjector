@@ -35,6 +35,7 @@ function restFixture(
   } = {}
 ) {
   let current = display("projected");
+  let publishedSongId: string | null = "projected";
   const ppd: unknown[] = [];
   const preferences: unknown[][] = [];
   const updates: unknown[][] = [];
@@ -58,6 +59,12 @@ function restFixture(
     // Nothing was written with `publish: false`, so no pending state goes out first.
     markUnpublished: () => undefined,
     hasUnpublishedState: () => false,
+    isFollowing: () => !!options.ppd,
+    // The session starts on the projected song, as this client shows it.
+    getPublishedSongId: () => publishedSongId,
+    setPublishedSongId: (songId: string | null) => {
+      publishedSongId = songId;
+    },
   } as unknown as RestCore;
   const api = cloudApi as unknown as Record<string, unknown>;
   const original = { sendDisplayPreference: api.sendDisplayPreference, sendDisplayUpdate: api.sendDisplayUpdate };
@@ -210,8 +217,9 @@ test("REST: a projection superseded while its song loads changes neither the dis
     loaded.get("p2")!();
     await slow;
     assert.equal(f.current().songId, "p3", "the newer selection stays");
+    // p3's push and the update that settles its values after the song switch.
     assert.deepEqual(
-      f.updates.map(([update]) => (update as { songId: string }).songId),
+      [...new Set(f.updates.map(([update]) => (update as { songId: string }).songId))],
       ["p3"],
       "the superseded projection is never pushed"
     );

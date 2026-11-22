@@ -20,6 +20,7 @@ test("a normal display update leaves transpose 0, capo and empty instructions to
   assert.equal("transpose" in bodies[0], false);
   assert.equal("capo" in bodies[0], false);
   assert.equal("instructions" in bodies[0], false);
+  assert.equal("sectionRepeatCounts" in bodies[0], false);
 });
 
 test("a complete display update sends transpose 0, capo and empty instructions too", async (context) => {
@@ -28,5 +29,6 @@ test("a complete display update sends transpose 0, capo and empty instructions t
   assert.equal(bodies[0].transpose, "0");
   assert.equal(bodies[0].capo, "2");
   assert.equal(bodies[0].instructions, "");
+  assert.equal(bodies[0].sectionRepeatCounts, "[]", "the server keeps missing repeats, even across a song change");
   assert.equal(bodies[0].ppu, "true", "a complete update still never writes the profile's preferences");
 });

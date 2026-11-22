@@ -106,7 +106,8 @@ export class RestCore {
   private playlist: PlaylistEntry[] = [];
   private unpublished = false;
   private unpublishedRevision = 0;
-  private pendingPublish: Promise<void> | null = null;
+  private pendingPublish: Promise<PlaylistEntry[] | null> | null = null;
+  private publishedSongId: string | null = null;
 
   private followToken = 0;
   private followAbort: AbortController | null = null;
@@ -322,19 +323,31 @@ export class RestCore {
   }
 
   /** Run the pending-state publish once for all concurrent callers, so the pushes
-   *  waiting on it go out in their original order. `send` reports whether the
-   *  backend took the state; only then — and only if no newer unpublished write
-   *  landed meanwhile — is it no longer pending. */
-  publishPending(send: () => Promise<boolean>): Promise<void> {
+   *  waiting on it go out in their original order. `send` returns the list the
+   *  backend took (null when it did not); only then — and only if no newer
+   *  unpublished write landed meanwhile — is it no longer pending. Every caller
+   *  gets that list, to tell whether its own, maybe newer, list went out with it. */
+  publishPending(send: () => Promise<PlaylistEntry[] | null>): Promise<PlaylistEntry[] | null> {
     const revision = this.unpublishedRevision;
     this.pendingPublish ??= send()
       .then((published) => {
         if (published && revision === this.unpublishedRevision) this.unpublished = false;
+        return published;
       })
       .finally(() => {
         this.pendingPublish = null;
       });
     return this.pendingPublish;
+  }
+
+  /** The song the own cloud session is known to show with this client's values,
+   *  or null when unknown (never published, or the last attempt failed). */
+  getPublishedSongId(): string | null {
+    return this.publishedSongId;
+  }
+
+  setPublishedSongId(songId: string | null): void {
+    this.publishedSongId = songId;
   }
 
   /** Watching a cloud or PPD session: the display and working list mirror it. */

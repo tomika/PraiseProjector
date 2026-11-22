@@ -1012,8 +1012,9 @@ export class CloudApiService {
   /**
    * Send display update to cloud server (matching C# UpdateWebDisplay)
    * The publishing target is kept out of the body and sent as a query parameter.
-   * Transpose 0, capo and empty instructions are normally left out, so the server
-   * keeps its own values for a song it already shows; `complete` sends them too.
+   * Transpose 0, capo, empty instructions and empty section repeats are normally
+   * left out, so the server keeps its own values (repeats even across a song
+   * change); `complete` sends them too.
    */
   async sendDisplayUpdate(
     data: {
@@ -1054,8 +1055,8 @@ export class CloudApiService {
     if (data.section !== undefined) {
       values.section = data.section.toString();
     }
-    if (data.sectionRepeatCounts?.length) {
-      values.sectionRepeatCounts = JSON.stringify(data.sectionRepeatCounts);
+    if (data.sectionRepeatCounts?.length || complete) {
+      values.sectionRepeatCounts = JSON.stringify(data.sectionRepeatCounts ?? []);
     }
     if (data.sectionRepeatNonce != null) {
       values.sectionRepeatNonce = data.sectionRepeatNonce.toString();

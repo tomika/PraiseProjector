@@ -107,7 +107,8 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  await cloudApi.sendDisplayUpdate(
+  await sendDisplayAndSettle(
+    core,
     {
       songId: display.songId,
       from: display.from,
@@ -123,6 +124,75 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
     },
     leaderId ? { leaderId } : undefined
   );
+}
+
+type DisplayUpdateData = Parameters<typeof cloudApi.sendDisplayUpdate>[0];
+type DisplayUpdateOptions = Parameters<typeof cloudApi.sendDisplayUpdate>[1];
+
+/** This App publishes to its own cloud session: not a host-served Client (the
+ *  host applies its own rules) and not while it watches another session. */
+function publishesOwnCloudSession(core: RestCore): boolean {
+  return core.mode === "App" && !core.isFollowing();
+}
+
+/** Partial updates (highlight, preference) land on the song the session shows,
+ *  so they may go out only while that is known to be this client's song. */
+function sessionShowsSong(core: RestCore, songId: string): boolean {
+  return !publishesOwnCloudSession(core) || !songId || core.getPublishedSongId() === songId;
+}
+
+/** Send a display update and keep the own cloud session on this client's values.
+ *  When the update moved the session to another song, the backend ignored the
+ *  sent transpose, capo and instructions (it applies the account's saved song
+ *  preferences, then the values the list row defines) and kept the previous
+ *  song's section repeats. A same-song complete update, which never writes the
+ *  profile's preferences, then sets them as this client shows them. Records
+ *  which song the session is known to show; a failure leaves it unknown. */
+async function sendDisplayAndSettle(core: RestCore, data: DisplayUpdateData, options: DisplayUpdateOptions): Promise<DisplayUpdateResult> {
+  const own = publishesOwnCloudSession(core) && !!data.songId;
+  const previous = core.getPublishedSongId();
+  let result: DisplayUpdateResult;
+  try {
+    result = await cloudApi.sendDisplayUpdate(data, options);
+  } catch (error) {
+    if (own) core.setPublishedSongId(null);
+    throw error;
+  }
+  if (!own || result === "SKIPPED") return result;
+  if (result !== "DONE") {
+    core.setPublishedSongId(null);
+    return result;
+  }
+  if (previous === data.songId) {
+    core.setPublishedSongId(data.songId);
+    return result;
+  }
+  // A later step owns the session by now: settling this song would move it back.
+  const display = core.getDisplay();
+  if (display.songId !== data.songId) return result;
+  try {
+    const settled = await cloudApi.sendDisplayUpdate(
+      {
+        songId: data.songId,
+        from: data.from,
+        to: data.to,
+        section: data.section,
+        abcRange: data.abcRange,
+        sectionRepeatCounts: data.sectionRepeatCounts ?? display.sectionRepeatCounts,
+        sectionRepeatNonce: data.sectionRepeatNonce ?? display.sectionRepeatNonce,
+        transpose: data.transpose ?? display.transpose,
+        capo: display.capo ?? -1,
+        song: "",
+        instructions: data.instructions ?? display.instructions ?? "",
+      },
+      { ...options, force: true, complete: true }
+    );
+    core.setPublishedSongId(settled === "DONE" || settled === "SKIPPED" ? data.songId : null);
+  } catch (error) {
+    core.setPublishedSongId(null);
+    console.warn("restPorts", "Could not set the song's values on the session", error);
+  }
+  return result;
 }
 
 /** Push a single changed transpose/capo preference as a MINIMAL id+value
@@ -146,6 +216,9 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
     });
     return;
   }
+  // Not on a song the session is not known to show: it would move the session
+  // there with other values. The next display push carries the preference.
+  if (!sessionShowsSong(core, display.songId)) return;
   const leaderId = displayUpdateLeaderId(core);
   await cloudApi.sendDisplayPreference({ id: display.songId, ...pref }, leaderId ? { leaderId } : undefined);
 }
@@ -157,10 +230,10 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
 async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructions?: string): Promise<DisplayUpdateResult | undefined> {
   if (!core.canControlDisplay()) return;
   const display = core.getDisplay();
-  const pending = core.hasUnpublishedState();
-  await publishPendingState(core);
-  // The pending publish just carried this very list (and the current song).
-  if (pending && !core.hasUnpublishedState() && instructions === undefined && playlist === core.getPlaylist()) return "DONE";
+  // Skip only what the pending publish really carried: a list changed while it
+  // was in flight (e.g. a reorder) still goes out.
+  const published = await publishPendingState(core);
+  if (published === playlist && instructions === undefined) return "DONE";
   if (core.isFollowingPpd()) {
     await core.sendPpdDisplayUpdate({
       command: "display_update",
@@ -175,7 +248,8 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  return cloudApi.sendDisplayUpdate(
+  return sendDisplayAndSettle(
+    core,
     {
       songId: display.songId,
       from: display.from,
@@ -204,19 +278,21 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
  *  account behind the browser's cookie (a page that did not sign in itself), or
  *  NO_SESSION for an anonymous visitor, who then stays pending — so whenever an
  *  account becomes reachable, its session gets the list first. Concurrent pushes
- *  share one send and keep their order. */
-async function publishPendingState(core: RestCore): Promise<void> {
-  if (!core.hasUnpublishedState() || !core.canControlDisplay() || core.isFollowing()) return;
+ *  share one send and keep their order. Resolves to the list the backend took
+ *  (null when nothing went out now). */
+async function publishPendingState(core: RestCore): Promise<PlaylistEntry[] | null> {
+  if (!core.hasUnpublishedState() || !core.canControlDisplay() || core.isFollowing()) return null;
   const leaderId = displayUpdateLeaderId(core);
   const target = leaderId ? { leaderId } : {};
   try {
-    await core.publishPending(async () => {
+    return await core.publishPending(async () => {
       const display = core.getDisplay();
       const playlist = core.getPlaylist();
       // With no song shown only the list goes out: the backend keeps its song for
       // an empty id, and explicit values would retune that song.
       const result = display.songId
-        ? await cloudApi.sendDisplayUpdate(
+        ? await sendDisplayAndSettle(
+            core,
             {
               songId: display.songId,
               from: display.from,
@@ -235,10 +311,11 @@ async function publishPendingState(core: RestCore): Promise<void> {
             { ...target, force: true, complete: true }
           )
         : await cloudApi.sendDisplayUpdate({ songId: "", from: 0, to: 0, playlist, song: "" }, { ...target, force: true });
-      return result === "DONE" || result === "SKIPPED";
+      return result === "DONE" || result === "SKIPPED" ? playlist : null;
     });
   } catch (error) {
     console.warn("restPorts", "Publishing the pending working list failed; it stays pending", error);
+    return null;
   }
 }
 
@@ -353,6 +430,9 @@ export function createDisplayApi(core: RestCore): DisplayApi {
       // Reflect the highlight locally so this client's own song view updates.
       core.patchDisplay({ from, to, section, abcRange });
       await publishPendingState(core);
+      // A highlight carries no song: on a session that is not known to show this
+      // client's song it would mark lines of another song. It stays local then.
+      if (!sessionShowsSong(core, core.getDisplay().songId)) return;
       if (core.isFollowingPpd()) {
         await core.sendPpdHighlight(from, to, section, abcRange);
         return;
@@ -445,13 +525,12 @@ export function createSessionApi(core: RestCore): SessionApi {
       // Online hosting is always owned by the authenticated user's default leader;
       // the leader currently selected for editing must not retarget the session.
       if (!core.leader?.id) throw new Error("A default leader is required for online projection");
-      const pending = core.hasUnpublishedState();
+      const published = await publishPendingState(core);
       await pushDisplay(core, core.getDisplay());
       // Seed the freshly-registered cloud session with the working playlist so
       // followers see it immediately (pushDisplay no longer carries the list),
-      // unless pushDisplay's pending-state publish has just sent it.
-      const listJustSent = pending && !core.hasUnpublishedState();
-      if (core.getPlaylist().length && !listJustSent) await pushPlaylist(core, core.getPlaylist());
+      // unless the pending-state publish has just sent this very list.
+      if (core.getPlaylist().length && published !== core.getPlaylist()) await pushPlaylist(core, core.getPlaylist());
       core.setNetworkState({ status: "leading", transport: "web" });
     },
     watch: (session) => core.watch(session),
