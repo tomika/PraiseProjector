@@ -53,7 +53,7 @@ test("favorite names are validated", () => {
   assert.equal(sameFavoriteName("Húsvét", "Karácsony"), false);
 });
 
-test("favorite dates are allocated on a free local day from a random start", () => {
+test("each favorite gets a free 1980s day; the search starts at a random day", () => {
   const first = () => 0;
   assert.equal(allocateFavoriteDate([], first).getTime(), new Date(1980, 0, 1).getTime());
   const used = [new Date(1980, 0, 1), new Date(1980, 0, 2), new Date(2026, 0, 3), new Date(1980, 0, 4)];
@@ -72,6 +72,16 @@ test("favorite dates are allocated on a free local day from a random start", () 
       used.some((date) => date.getTime() === allocated.getTime()),
       false
     );
+  }
+});
+
+test("every allocated favorite day starts at local midnight", () => {
+  // In some time zones a daylight saving change skips 0:00 on a few 1980s days
+  // (Europe/Budapest: 1980-04-06, 1981-03-29, 1982-03-28, 1983-03-27).
+  for (let slot = 0; slot < 3650; slot++) {
+    const allocated = allocateFavoriteDate([], () => (slot + 0.5) / 3650);
+    assert.equal(allocated.getHours(), 0, allocated.toString());
+    assert.equal(allocated.getMinutes(), 0, allocated.toString());
   }
 });
 

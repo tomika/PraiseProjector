@@ -84,10 +84,13 @@ function localDayKey(date: Date): string {
 }
 
 /**
- * A free favorite day (local midnight) that none of the given dates occupies.
- * The search starts at a random slot, so that favorites created on two devices
- * before they sync are unlikely to get the same date (the same date would make
- * them one playlist in the merge). Throws when every slot is taken.
+ * A free favorite day (local midnight, 1980–1989) that none of the given dates
+ * occupies. Playlists are keyed by their date, so every favorite needs a day of
+ * its own. The search starts at a random day, so that favorites created on two
+ * devices before they sync are unlikely to get the same date (the same date
+ * would make them one playlist in the merge). Days without a local midnight (a
+ * daylight saving change at 0:00, e.g. Hungary 1980–1983) are skipped. Throws
+ * when every slot is taken.
  */
 export function allocateFavoriteDate(existing: Iterable<Date>, random: () => number = Math.random): Date {
   const used = new Set<string>();
@@ -97,6 +100,7 @@ export function allocateFavoriteDate(existing: Iterable<Date>, random: () => num
   const start = Math.min(FAVORITE_SLOT_COUNT - 1, Math.max(0, Math.floor(random() * FAVORITE_SLOT_COUNT)));
   for (let step = 0; step < FAVORITE_SLOT_COUNT; step++) {
     const candidate = new Date(FIRST_FAVORITE_YEAR, 0, 1 + ((start + step) % FAVORITE_SLOT_COUNT));
+    if (candidate.getHours() !== 0 || candidate.getMinutes() !== 0) continue;
     if (isFavoriteScheduleDate(candidate) && !used.has(localDayKey(candidate))) return candidate;
   }
   throw new Error("No free favorite playlist slot");
