@@ -1006,7 +1006,8 @@ const AppContent: React.FC = () => {
         message: display.message,
         instructions: display.instructions,
       },
-      { ...target, force }
+      // Numbered, so an update reaching the server late never undoes a newer one.
+      { ...target, force, ordered: true }
     );
   }, []);
 

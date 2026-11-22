@@ -216,6 +216,10 @@ export class CloudApiService {
   private authToken: string | null = null;
   private accessTokenExp: number = 0; // unix seconds
   private clientId: string = "";
+  /** Numbers this page's ordered session writes ("<writer>:<seq>"): the server
+   *  ignores one that reaches it after a newer one. A new page is a new writer. */
+  private readonly writerId = Math.random().toString(36).slice(2, 14) || "writer";
+  private writeSeq = 0;
   private refreshPromise: Promise<boolean> | null = null;
   private authGeneration = 0;
   private tokenRevision = 0;
@@ -358,6 +362,10 @@ export class CloudApiService {
 
   setClientId(id: string): void {
     this.clientId = id;
+  }
+
+  private nextWriteSeq(): string {
+    return `${this.writerId}:${++this.writeSeq}`;
   }
 
   /** True when the access token is expired or will expire within 2 minutes. */
@@ -1014,13 +1022,14 @@ export class CloudApiService {
    * The publishing target is kept out of the body and sent as a query parameter.
    * Transpose 0, capo, empty instructions and empty section repeats are normally
    * left out, so the server keeps its own values (repeats even across a song
-   * change); `complete` sends them too.
+   * change); `complete` sends them too. Without `from` and `to` a current server
+   * keeps the highlight of the song it shows (an older one clears it).
    */
   async sendDisplayUpdate(
     data: {
       songId: string;
-      from: number;
-      to: number;
+      from?: number;
+      to?: number;
       section?: number;
       abcRange?: Display["abcRange"];
       sectionRepeatCounts?: Display["sectionRepeatCounts"];
@@ -1033,18 +1042,24 @@ export class CloudApiService {
       message?: string;
       instructions?: string;
     },
-    options?: Partial<DisplaySessionTarget> & { force?: boolean; complete?: boolean }
+    options?: Partial<DisplaySessionTarget> & {
+      force?: boolean;
+      complete?: boolean;
+      timeoutMs?: number;
+      /** Number the write so it never undoes a newer one (the cloud's own session). */
+      ordered?: boolean;
+    }
   ): Promise<DisplayUpdateResult> {
     const complete = !!options?.complete;
     // Build values to send (matching C# values dictionary)
     const values: Record<string, string> = {
       ppu: "true",
       id: data.songId,
-      from: data.from.toString(),
-      to: data.to.toString(),
       song: data.song,
       abcRange: JSON.stringify(data.abcRange ?? null),
     };
+    if (data.from !== undefined) values.from = data.from.toString();
+    if (data.to !== undefined) values.to = data.to.toString();
 
     if (data.transpose !== undefined && (data.transpose !== 0 || complete)) {
       values.transpose = data.transpose.toString();
@@ -1081,9 +1096,12 @@ export class CloudApiService {
     try {
       console.info("Sync", "Sending display update");
 
-      const response = await this.apiCall<unknown>(endpoint, values, {
+      // Numbered after the duplicate check, so a repeat is still recognized.
+      const body = options?.ordered ? { ...values, writeSeq: this.nextWriteSeq() } : values;
+      const response = await this.apiCall<unknown>(endpoint, body, {
         responseType: "text",
         headers: { "X-PP-Intent": "control-update" },
+        timeoutMs: options?.timeoutMs,
       });
       const normalized = String(response).trim().toUpperCase() as DisplayUpdateResult;
       const result = DISPLAY_UPDATE_RESULTS.has(normalized) ? normalized : "ERROR";
@@ -1106,10 +1124,17 @@ export class CloudApiService {
    *  even when it is 0 (so a value can be reset to zero) and can send capo at all
    *  (sendDisplayUpdate carries neither reliably). No dedup — a repeat of the same
    *  value is harmless and legacy preference updates were never deduped either. */
-  async sendDisplayPreference(fields: { id: string; transpose?: number; capo?: number }, target?: Partial<DisplaySessionTarget>): Promise<string> {
+  async sendDisplayPreference(
+    fields: { id: string; transpose?: number; capo?: number },
+    target?: Partial<DisplaySessionTarget>,
+    options?: { ordered?: boolean }
+  ): Promise<string> {
     const values: Record<string, string | number> = { id: fields.id };
     if (fields.transpose !== undefined) values.transpose = fields.transpose.toString();
     if (fields.capo !== undefined) values.capo = fields.capo.toString();
+    // A current server never switches songs for it: STALE when it shows another one.
+    values.preference = "true";
+    if (options?.ordered) values.writeSeq = this.nextWriteSeq();
     return this.sendPost(appendDisplayTarget("/display_update", target), values, { "X-PP-Intent": "control-update" });
   }
 
@@ -1216,7 +1241,9 @@ export class CloudApiService {
     return this.apiCall<string>(`/highlight?permission=${mode}&leader=${encodeURIComponent(leader)}&deviceId=${encodeURIComponent(deviceId)}`);
   }
 
-  /** Send highlight to server (lyrics line selection) */
+  /** Send highlight to server (lyrics line selection). `songId` names the song the
+   *  lines belong to: a server that knows it answers STALE when the session shows
+   *  another one. Resolves to the server's answer ("" when it sent none). */
   async sendHighlight(params: {
     line?: number;
     from?: number;
@@ -1226,7 +1253,10 @@ export class CloudApiService {
     leader: string;
     deviceId?: string;
     message?: string;
-  }): Promise<void> {
+    songId?: string;
+    /** Number the write so it never undoes a newer one (the cloud's own session). */
+    ordered?: boolean;
+  }): Promise<string> {
     let endpoint = "/highlight?";
     if (params.line !== undefined) endpoint += `line=${params.line}&`;
     if (params.from !== undefined) endpoint += `from=${params.from}&`;
@@ -1236,7 +1266,10 @@ export class CloudApiService {
     endpoint += `leader=${encodeURIComponent(params.leader)}`;
     if (params.deviceId) endpoint += `&deviceId=${encodeURIComponent(params.deviceId)}`;
     if (params.message) endpoint += `&message=${encodeURIComponent(params.message)}`;
-    await this.apiCall<unknown>(endpoint, undefined, { allowEmpty: true });
+    if (params.songId) endpoint += `&songId=${encodeURIComponent(params.songId)}`;
+    if (params.ordered) endpoint += `&writeSeq=${encodeURIComponent(this.nextWriteSeq())}`;
+    const result = await this.apiCall<unknown>(endpoint, undefined, { allowEmpty: true });
+    return typeof result === "string" ? result : "";
   }
 }
 
