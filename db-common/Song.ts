@@ -554,6 +554,7 @@ export class Song {
 
     const list = new Instructions();
     list.parse(source, this.doc);
+    if (list.hasOnlyTransitionAnnotations) return this.Sections;
     for (let i = 0; i < list.items.length; ++i) {
       const item = list.items[i];
       // Free-form comment lines (no resolved section info) do not appear in

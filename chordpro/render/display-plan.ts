@@ -15,6 +15,7 @@ import {
   fixChordProText,
 } from "../chordpro_base";
 import { Instructions, lazyAbcExpansion, type InstructionItem } from "../chordpro_instructions";
+import { parseTransitionInstruction, transitionInstructionLabel } from "../transition-instruction";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { buildChordVisualModel, CHORDFORMAT_NOCHORDS, CHORDFORMAT_NOSECTIONDUP, CHORDFORMAT_SIMPLIFIED, type ChordVisualModel } from "./chord-visual";
 import {
@@ -493,7 +494,11 @@ function projectInstructedSequence(options: ProjectDisplaySequenceOptions, instr
     groups[i] = i;
     labels[i] = (item.value ?? "").trim();
     if (item.multiplier == null) {
-      const line = genInstructionComment(document, item.value, "italic");
+      const transition = parseTransitionInstruction(item.value);
+      if (transition && instructions.transitionVisible?.(transition) === false) continue;
+      const label = transition ? transitionInstructionLabel(transition.chords) : item.value;
+      labels[i] = label.trim();
+      const line = genInstructionComment(document, label, "italic");
       line.instructedSectionIndex = i;
       lines.push({ line, origin: null, item, instructionIndex: i, role: "label" });
       continue;
@@ -596,6 +601,7 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
   });
   const finish = (sequence: DisplaySequence): DisplaySequence => (document === options.document ? sequence : { ...sequence, document });
 
+  let transitionComments: DisplaySequence | undefined;
   if (options.instructionsMode) {
     if (!instructions) {
       // With no explicit instructions bound, fall back to the song's built-in
@@ -607,7 +613,12 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
         instructions.parse(defaultStr, document);
       }
     }
-    if (instructions) return finish(projectInstructedSequence({ ...options, document }, instructions, abcMode));
+    if (instructions) {
+      const sequence = projectInstructedSequence({ ...options, document }, instructions, abcMode);
+      if (!instructions.hasOnlyTransitionAnnotations) return finish(sequence);
+      // Adding an annotation to an unsectioned song must keep its raw rows.
+      transitionComments = sequence;
+    }
   }
 
   let mutated = false;
@@ -640,6 +651,11 @@ export function projectDisplaySequence(options: ProjectDisplaySequenceOptions): 
     labelAbcClone(line);
     mutated = true;
     lines.push({ line, origin, item: null, role: "document" });
+  }
+  if (transitionComments?.lines.length) {
+    const before = transitionComments.lines.filter(({ item }) => parseTransitionInstruction(item?.value ?? "")?.placement === "next");
+    const after = transitionComments.lines.filter(({ item }) => parseTransitionInstruction(item?.value ?? "")?.placement === "previous");
+    return finish({ ...transitionComments, lines: [...before, ...lines, ...after] });
   }
   return finish(mutated ? { lines, instructed: false } : rawSequence());
 }

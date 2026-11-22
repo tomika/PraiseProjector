@@ -3,6 +3,7 @@ import test from "node:test";
 import { Song } from "../../db-common/Song";
 import { ChordProDocument, getChordSystem } from "../chordpro_base";
 import { Instructions } from "../chordpro_instructions";
+import { insertTransitionInstruction } from "../transition-instruction";
 
 const songText = `{title:Jézus véred megtisztít}
 {start_of_verse}
@@ -30,6 +31,22 @@ test("unlabelled standard section remains projectable through instructed section
   assert.equal(instructed.length, 1);
   assert.equal(instructed[0].tag, "Verse");
   assert.match(instructed[0].text, /Jézus véred megtisztít/);
+});
+
+test("a transition annotation alone leaves an unsectioned song projectable", () => {
+  const song = new Song("[D]Plain song", "S");
+  const instructions = insertTransitionInstruction("", {
+    from: "before",
+    to: "after",
+    placement: "next",
+    sourceKey: "C",
+    targetKey: "D",
+    chords: ["C", "A7", "D"],
+    style: "cadential",
+    rating: 5,
+  });
+  assert.ok(song.Sections.length);
+  assert.deepEqual(song.ProjectionSections(`\n${instructions}\n`), song.Sections);
 });
 
 test("getSections retains authored modifiers and the legacy unlabelled grid name", () => {

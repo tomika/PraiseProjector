@@ -334,9 +334,9 @@ function bindEditor(editorDiv: HTMLDivElement) {
     /** Set the song's display-instructions TEXT on the editor (legacy
      *  applyInstructions). Whether/how it is drawn is controlled separately by
      *  enableInstructionRendering. */
-    applyInstructions: (instructions: string, draw = true) => {
+    applyInstructions: (instructions: string, draw = true, transitionVisible?: Parameters<ChordProEditor["applyInstructions"]>[2]) => {
       const instance = getBoundEditor();
-      if (instance) instance.applyInstructions(instructions, draw);
+      if (instance) instance.applyInstructions(instructions, draw, transitionVisible);
     },
     /** Toggle how the instructions overlay is rendered: "FULL" / "FIRST_LINE" /
      *  "" (off) — mirrors the legacy chkInstructions toggle (praiseprojector.ts

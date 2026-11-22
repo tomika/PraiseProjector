@@ -5,6 +5,7 @@
 
 import { ChordProAbc, ChordProDocument, ChordProLine, ChordProSectionInfo } from "./chordpro_base";
 import { isAbcjsLoaded } from "./abcjs-lazy";
+import { parseTransitionInstruction, splitInstructionLines, type TransitionInstruction } from "./transition-instruction";
 
 export type InstructionItem = {
   value: string;
@@ -41,6 +42,12 @@ export function lazyAbcExpansion(doc: ChordProDocument): () => ChordProDocument 
 
 export class Instructions {
   constructor(readonly items: InstructionItem[] = []) {}
+  transitionVisible?: (item: TransitionInstruction) => boolean;
+
+  get hasOnlyTransitionAnnotations(): boolean {
+    const nonempty = this.items.filter((item) => item.value.trim());
+    return nonempty.length > 0 && nonempty.every((item) => parseTransitionInstruction(item.value));
+  }
 
   private static itemKey(item: InstructionItem) {
     return item.info ? item.info.instructionName() : item.value;
@@ -84,7 +91,7 @@ export class Instructions {
    * instruction objects keep their identity for highlighting and DOM reuse. */
   resolveAbcSections(doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)) {
     for (const item of this.items) {
-      if (item.multiplier != null || !item.value.trim()) continue;
+      if (item.multiplier != null || !item.value.trim() || parseTransitionInstruction(item.value)) continue;
       const probe = new ChordProSectionInfo("start_of_chorus:" + item.value.trim());
       const info = Instructions.findSection(doc, probe.instructionName(), abcExpansion);
       if (!info) continue;
@@ -168,7 +175,7 @@ export class Instructions {
   static parseItem(line: string, doc: ChordProDocument, abcExpansion = lazyAbcExpansion(doc)): InstructionItem {
     const trimmedLine = line.trim();
     const item: InstructionItem = { value: trimmedLine };
-    if (!trimmedLine) return item;
+    if (!trimmedLine || parseTransitionInstruction(trimmedLine)) return item;
     const probe = new ChordProSectionInfo("start_of_chorus:" + trimmedLine);
     const canonical = probe.instructionName();
     const section = Instructions.findSection(doc, canonical || trimmedLine, abcExpansion);
@@ -239,14 +246,9 @@ export class Instructions {
   }
 
   parse(data: string, doc: ChordProDocument) {
-    try {
-      data = JSON.parse('"' + data + '"');
-    } catch {
-      // ignore parse errors
-    }
     this.items.splice(0, this.items.length);
     const abcExpansion = lazyAbcExpansion(doc);
-    for (const line of data.split("\n")) this.items.push(Instructions.parseItem(line, doc, abcExpansion));
+    for (const line of splitInstructionLines(data)) this.items.push(Instructions.parseItem(line, doc, abcExpansion));
     this.normalize();
   }
   normalize(index?: number) {

@@ -13,6 +13,7 @@ import {
 import { getKeyCodeString } from "./keycodes";
 import { ChordSelector } from "./chord_selector";
 import { Instrument, playChord } from "./midi";
+import { parseTransitionInstruction, transitionInstructionLabel } from "./transition-instruction";
 import type { AbcWysiwygEditor } from "./abc_editor";
 import type { NoteTimingEvent, SynthOptions, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
@@ -6105,11 +6106,14 @@ export class ChordProEditor extends ChordDrawer {
 
       const content = createDivElement({ className: "instructions-content", parent: div });
       content.id = instructionsEditor.id + ".ppc-" + itemIndex;
-      content.innerText =
-        item.value +
-        ((item.multiplier ?? 0) > 1 ? " " + item.multiplier + "x" : "") +
-        (item.transpose ? " " + (item.transpose > 0 ? "#" : "b") + Math.abs(item.transpose) : "");
-      content.contentEditable = item.multiplier == null ? "true" : "false";
+      const transition = parseTransitionInstruction(item.value);
+      const editable = item.multiplier == null && !transition;
+      content.innerText = transition
+        ? transitionInstructionLabel(transition.chords)
+        : item.value +
+          ((item.multiplier ?? 0) > 1 ? " " + item.multiplier + "x" : "") +
+          (item.transpose ? " " + (item.transpose > 0 ? "#" : "b") + Math.abs(item.transpose) : "");
+      content.contentEditable = String(editable);
       content.tabIndex = itemIndex;
 
       const addItem = (e: MouseEvent, after: boolean, newItem: InstructionItem = { value: "" }) => {
@@ -6182,14 +6186,14 @@ export class ChordProEditor extends ChordDrawer {
 
       content.onclick = (e) => {
         e.stopPropagation();
-        if (item.multiplier == null) content.focus();
+        if (editable) content.focus();
       };
       content.addEventListener("keydown", (e) => {
         e.stopPropagation();
         switch (getKeyCodeString(e)) {
           case "ENTER":
             e.preventDefault();
-            if (item.multiplier == null) {
+            if (editable) {
               item.value = content.innerText;
               this.buildInstructions(instructionsEditor, onChange);
             }
@@ -6462,11 +6466,12 @@ export class ChordProEditor extends ChordDrawer {
     return cleanup;
   }
 
-  applyInstructions(instructions: string, draw = true) {
+  applyInstructions(instructions: string, draw = true, transitionVisible?: Instructions["transitionVisible"]) {
     if (this.chordPro) {
       if (instructions) {
         if (!this.instructions) this.instructions = new Instructions();
         this.instructions.parse(instructions, this.getInstructionsDocument()!);
+        this.instructions.transitionVisible = transitionVisible;
         if (this.instructionEditorActive) this.instructions.expandAbcSections(this.getInstructionsDocument()!);
       } else this.instructions = undefined;
       // The DOM renderer keys commits by semantic revisions. Dropping only
