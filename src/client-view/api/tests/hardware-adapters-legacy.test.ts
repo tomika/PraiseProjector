@@ -14,7 +14,7 @@ import { cloudApi } from "../../../../common/cloudApi";
 import type { Display } from "../../../../common/pp-types";
 import type { DisplayApi } from "../ClientApi";
 import { createDisplayApi } from "../rest/restPorts";
-import type { RestCore } from "../rest/RestCore";
+import { OwnSessionSong, type RestCore } from "../rest/RestCore";
 
 const display = (songId: string, extra: Partial<Display> = {}): Display => ({
   songId,
@@ -35,7 +35,6 @@ function restFixture(
   } = {}
 ) {
   let current = display("projected");
-  let publishedSongId: string | null = "projected";
   const ppd: unknown[] = [];
   const preferences: unknown[][] = [];
   const updates: unknown[][] = [];
@@ -61,10 +60,7 @@ function restFixture(
     hasUnpublishedState: () => false,
     isFollowing: () => !!options.ppd,
     // The session starts on the projected song, as this client shows it.
-    getPublishedSongId: () => publishedSongId,
-    setPublishedSongId: (songId: string | null) => {
-      publishedSongId = songId;
-    },
+    ownSession: new OwnSessionSong("projected"),
   } as unknown as RestCore;
   const api = cloudApi as unknown as Record<string, unknown>;
   const original = { sendDisplayPreference: api.sendDisplayPreference, sendDisplayUpdate: api.sendDisplayUpdate };
@@ -96,9 +92,10 @@ test("REST: preview patches only the local display, commit pushes a minimal pref
     assert.deepEqual(f.preferences, []);
     await f.display.setTranspose(0, true);
     await f.display.setCapo(-1, true);
+    // Numbered (`ordered`): the App publishes to its own cloud session.
     assert.deepEqual(f.preferences, [
-      [{ id: "projected", transpose: 0 }, { leaderId: "leader-1" }],
-      [{ id: "projected", capo: -1 }, { leaderId: "leader-1" }],
+      [{ id: "projected", transpose: 0 }, { leaderId: "leader-1" }, { ordered: true }],
+      [{ id: "projected", capo: -1 }, { leaderId: "leader-1" }, { ordered: true }],
     ]);
     assert.deepEqual(f.updates, [], "no full display_update for a preference");
   } finally {

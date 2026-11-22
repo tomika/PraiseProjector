@@ -44,7 +44,7 @@ test("an unpublished working-list write stays on this client", async (t) => {
   // No song is shown: only the list goes out, never explicit values for the
   // song the session shows.
   assert.equal(sent(send, 0)?.songId, "");
-  assert.deepEqual(optionsOf(send, 0), { leaderId: "leader", force: true });
+  assert.deepEqual(optionsOf(send, 0), { leaderId: "leader", force: true, ordered: true });
   await playlist.setPlaylist(ENTRIES);
   assert.equal(send.mock.callCount(), 2, "later writes go out as usual");
 });
@@ -82,7 +82,7 @@ test("the first song step after an unpublished open sends the list with the comp
   assert.equal(sent(send, 0)?.songId, "next");
   assert.equal(sent(send, 0)?.capo, -1, "no capo is sent explicitly");
   assert.equal(sent(send, 0)?.instructions, "", "no instructions is sent explicitly");
-  assert.deepEqual(optionsOf(send, 0), { leaderId: "leader", force: true, complete: true });
+  assert.deepEqual(optionsOf(send, 0), { leaderId: "leader", force: true, complete: true, timeoutMs: 15_000, ordered: true });
   assert.deepEqual(songIds(send), ["next", "next", "next"], "pending state, its settle, then the step");
   assert.equal(sent(send, 2)?.playlist, undefined);
   await display.project({ songId: "song" });
@@ -107,7 +107,7 @@ test("a song switch is settled to this client's values, not the account's saved 
     song: "",
     instructions: "",
   });
-  assert.deepEqual(optionsOf(send, 1), { leaderId: "leader", force: true, complete: true });
+  assert.deepEqual(optionsOf(send, 1), { leaderId: "leader", force: true, complete: true, timeoutMs: 15_000, ordered: true });
   send.mock.resetCalls();
   await display.project({ songId: "song", transpose: 2, capo: 1, instructions: "Verse" });
   assert.deepEqual(songIds(send), ["song", "song"], "every later switch is settled too");
@@ -156,7 +156,7 @@ test("a page that did not sign in itself publishes to the account the backend re
   core.leader = null;
   await display.project({ songId: "next" });
   // The backend publishes to the account behind the browser's cookie.
-  assert.deepEqual(optionsOf(send, 0), { force: true, complete: true });
+  assert.deepEqual(optionsOf(send, 0), { force: true, complete: true, timeoutMs: 15_000, ordered: true });
   assert.deepEqual(sent(send, 0)?.playlist, SHARED);
   assert.equal(core.hasUnpublishedState(), false);
 });
@@ -267,4 +267,210 @@ test("an unpublished write during a pending publish stays pending", async (t) =>
   release();
   await stepped;
   assert.equal(core.hasUnpublishedState(), true, "the newer list was not in the publish that finished");
+});
+
+/** Hold the `onCall`-th `sendDisplayUpdate` reply until `release()`. */
+function holdSend(send: Send, onCall: number, reply: DisplayUpdateResult = "DONE") {
+  let release = () => {};
+  send.mock.mockImplementationOnce(() => new Promise<DisplayUpdateResult>((resolve) => (release = () => resolve(reply))), onCall);
+  return () => release();
+}
+const last = (send: Send) => sent(send, send.mock.callCount() - 1);
+
+/** A signed-in client whose own session shows `song` with this client's values. */
+async function settledOn(t: TestContext, request: Parameters<ReturnType<typeof createDisplayApi>["project"]>[0] = { songId: "song" }) {
+  const mocks = signedInCore(t);
+  const display = createDisplayApi(mocks.core);
+  await display.project(request);
+  assert.equal(mocks.core.ownSession.shownSongId(), request.songId);
+  mocks.send.mock.resetCalls();
+  return { ...mocks, display };
+}
+
+test("a failed settle keeps the state pending and the next highlight sends the client's values again", async (t) => {
+  const { core, send, highlight, display } = await openedUnpublished(t);
+  // The pending publish switches the session to the song; setting its values fails.
+  send.mock.mockImplementationOnce(async (): Promise<DisplayUpdateResult> => "ERROR", 1);
+  await display.highlight(6, 9, 2);
+  assert.equal(core.hasUnpublishedState(), true, "the session may still show the profile's values");
+  assert.equal(highlight.mock.callCount(), 0, "the session is not known to show the client's values");
+  assert.ok(send.mock.callCount() > 2, "the values are sent again");
+  assert.equal(last(send)?.songId, "song");
+  assert.equal(last(send)?.transpose, 2);
+  assert.equal(last(send)?.capo, 1);
+  assert.equal(last(send)?.instructions, "Verse");
+  assert.equal(last(send)?.from, 6);
+  assert.equal(last(send)?.to, 9);
+  assert.equal(core.ownSession.shownSongId(), "song");
+  await display.highlight(1, 2, 0);
+  assert.equal(highlight.mock.callCount(), 1, "once the values are set, highlights go out again");
+});
+
+test("a highlight and a transpose made during a song switch reach the session", async (t) => {
+  const { core, send, highlight, preference, display } = await settledOn(t);
+  const releaseSwitch = holdSend(send, 0);
+  const releaseSettle = holdSend(send, 1);
+  const stepped = display.project({ songId: "next" });
+  await tick();
+  const committed = display.setTranspose(5, true);
+  await tick();
+  releaseSwitch();
+  await tick();
+  assert.equal(send.mock.callCount(), 2, "the update setting the song's values is on its way");
+  assert.equal(sent(send, 1)?.transpose, 5, "it carries the transpose set during the switch");
+  // A highlight made while those values are being set follows them.
+  await display.highlight(6, 9, 1);
+  releaseSettle();
+  await Promise.all([stepped, committed]);
+  assert.equal(highlight.mock.callCount(), 0);
+  // The complete updates set the value; only the minimal update saves it as the
+  // account's preference, once the session shows the song.
+  assert.deepEqual(
+    preference.mock.calls.map((call) => call.arguments[0]),
+    [{ id: "next", transpose: 5 }]
+  );
+  assert.equal(send.mock.callCount(), 3);
+  assert.equal(last(send)?.songId, "next");
+  assert.equal(last(send)?.transpose, 5);
+  assert.equal(last(send)?.from, 6);
+  assert.equal(last(send)?.to, 9);
+  assert.equal(last(send)?.section, 1);
+  assert.equal(core.ownSession.shownSongId(), "next");
+});
+
+test("a late reply to an earlier song switch never stops the highlights of the later song", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  // B's switch lands at once, the reply setting its values comes last.
+  const releaseB = holdSend(send, 1);
+  const toB = display.project({ songId: "next" });
+  await tick();
+  await display.project({ songId: "third" });
+  releaseB();
+  await toB;
+  assert.equal(core.ownSession.shownSongId(), "third");
+  await display.highlight(6, 9, 0);
+  assert.equal(highlight.mock.callCount(), 1);
+});
+
+test("selecting another list row of the song the session shows sends every value of the row", async (t) => {
+  const { send, display } = await settledOn(t, { songId: "song", transpose: 3, capo: 2, instructions: "Verse" });
+  await display.project({ songId: "song", transpose: 0 });
+  assert.equal(send.mock.callCount(), 1, "the session shows the song: it takes the values at once");
+  assert.equal(sent(send, 0)?.transpose, 0);
+  assert.equal(sent(send, 0)?.capo, -1);
+  assert.equal(sent(send, 0)?.instructions, "");
+  assert.equal(optionsOf(send, 0)?.complete, true);
+});
+
+test("after an account switch a highlight never lands on what the other account's session shows", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  // Capabilities read browser globals that Node lacks; they play no part here.
+  t.mock.method(core as unknown as { emitCapabilities(): void }, "emitCapabilities", () => undefined);
+  core.setAuthed(true, { id: "other", name: "Other" });
+  await display.highlight(6, 9, 0);
+  assert.equal(highlight.mock.callCount(), 0);
+  assert.equal(last(send)?.songId, "song", "the song this client shows goes to the new session");
+  assert.equal(last(send)?.from, 6);
+  assert.equal(optionsOf(send, send.mock.callCount() - 1)?.leaderId, "other");
+  assert.equal(core.ownSession.shownSongId(), "song");
+});
+
+test("a page that did not sign in itself carries a highlight to the account the backend resolves", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  core.leader = null;
+  // A current backend resolves the account behind the browser's cookie itself.
+  highlight.mock.mockImplementation(async () => "UPDATED");
+  await display.highlight(6, 9, 1);
+  assert.equal(highlight.mock.callCount(), 1);
+  assert.equal(highlight.mock.calls[0].arguments[0]?.songId, "song", "the lines name their song");
+  assert.equal(send.mock.callCount(), 0);
+  // An older backend reaches only a named session: a display update carries it.
+  highlight.mock.mockImplementation(async () => "NOPE");
+  await display.highlight(2, 4, 0);
+  assert.equal(send.mock.callCount(), 1, "the session shows the song: one update carries the highlight");
+  assert.equal(sent(send, 0)?.songId, "song");
+  assert.equal(sent(send, 0)?.from, 2);
+  assert.equal(sent(send, 0)?.to, 4);
+  assert.equal(optionsOf(send, 0)?.leaderId, undefined);
+});
+
+test("after another device moved the session a highlight neither marks its song nor takes it back", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  highlight.mock.mockImplementation(async () => "STALE");
+  await display.highlight(6, 9, 0);
+  assert.equal(core.ownSession.shownSongId(), null);
+  assert.equal(core.ownSession.isReleased(), true);
+  highlight.mock.mockImplementation(async () => "UPDATED");
+  await display.highlight(1, 2, 0);
+  assert.equal(send.mock.callCount(), 0, "a tap sends no song of this client's own");
+  // Selecting a song takes the session again.
+  await display.project({ songId: "next" });
+  assert.equal(core.ownSession.shownSongId(), "next");
+  assert.equal(core.ownSession.isReleased(), false);
+});
+
+test("own-session writes are numbered so a late one never undoes a newer one", async (t) => {
+  const { send, highlight, preference, display } = await settledOn(t);
+  await display.project({ songId: "next" });
+  await display.highlight(1, 2, 0);
+  await display.setTranspose(3, true);
+  assert.ok(send.mock.calls.every((call) => call.arguments[1]?.ordered === true));
+  assert.equal(highlight.mock.calls[0].arguments[0]?.ordered, true);
+  assert.deepEqual(preference.mock.calls[0].arguments[2], { ordered: true });
+});
+
+test("a preference the backend refuses for another song releases the session", async (t) => {
+  const { core, preference, display } = await settledOn(t);
+  preference.mock.mockImplementation(async () => "STALE");
+  await display.setTranspose(3, true);
+  assert.equal(core.ownSession.isReleased(), true);
+});
+
+test("saved list instructions stay saved when only setting the song's values fails", async (t) => {
+  const { core, send, display } = await settledOn(t);
+  core.setPlaylist(ENTRIES);
+  // Another device of the account may have moved the session meanwhile.
+  core.ownSession.reset();
+  t.mock.method(console, "warn", () => undefined);
+  send.mock.mockImplementationOnce(async (): Promise<DisplayUpdateResult> => {
+    throw new Error("network down");
+  }, 1);
+  await createPlaylistApi(core).setEntryInstructions("song", "Chorus", () => true);
+  assert.equal(sent(send, 0)?.instructions, "Chorus", "the list and the session took the instructions");
+  assert.equal(core.getDisplay().instructions, "Chorus");
+  assert.equal(core.ownSession.shownSongId(), null, "the next highlight sends the values again");
+  await display.highlight(1, 2, 0);
+  assert.equal(last(send)?.instructions, "Chorus");
+});
+
+test("without control a highlight sends no display update to a session it does not know", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  core.ownSession.reset();
+  t.mock.method(core, "canControlDisplay", () => false);
+  await display.highlight(6, 9, 0);
+  assert.equal(send.mock.callCount(), 0);
+  assert.equal(highlight.mock.callCount(), 0);
+});
+
+test("a preference for a session not known to show the song saves it once the values are sent", async (t) => {
+  const { core, send, preference, display } = await settledOn(t);
+  core.ownSession.reset();
+  await display.setTranspose(3, true);
+  assert.equal(last(send)?.transpose, 3, "a complete update sets the value");
+  assert.deepEqual(
+    preference.mock.calls.map((call) => call.arguments[0]),
+    [{ id: "song", transpose: 3 }]
+  );
+});
+
+test("after another device took the session a list edit sends only the list", async (t) => {
+  const { core, send, highlight, display } = await settledOn(t);
+  highlight.mock.mockImplementation(async () => "STALE");
+  await display.highlight(6, 9, 0);
+  await createPlaylistApi(core).setPlaylist([...ENTRIES, { songId: "next", title: "Next" }]);
+  assert.equal(send.mock.callCount(), 1);
+  assert.equal(sent(send, 0)?.songId, "", "no song of this client's own");
+  assert.equal(sent(send, 0)?.from, undefined, "the other device's highlight stays");
+  assert.equal(optionsOf(send, 0)?.ordered, true);
+  assert.equal(core.ownSession.isReleased(), true);
 });

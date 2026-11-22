@@ -135,64 +135,156 @@ function publishesOwnCloudSession(core: RestCore): boolean {
   return core.mode === "App" && !core.isFollowing();
 }
 
-/** Partial updates (highlight, preference) land on the song the session shows,
- *  so they may go out only while that is known to be this client's song. */
-function sessionShowsSong(core: RestCore, songId: string): boolean {
-  return !publishesOwnCloudSession(core) || !songId || core.getPublishedSongId() === songId;
+type SongValues = Pick<
+  DisplayUpdateData,
+  "from" | "to" | "section" | "abcRange" | "sectionRepeatCounts" | "sectionRepeatNonce" | "transpose" | "capo" | "instructions"
+>;
+
+/** Every value of the song `display` shows, as a complete update sends them.
+ *  `explicit` values win (an instructions save the display does not show yet). */
+function songValuesOf(display: Display, explicit?: Partial<SongValues>): SongValues {
+  return {
+    from: display.from,
+    to: display.to,
+    section: display.section,
+    abcRange: display.abcRange,
+    sectionRepeatCounts: display.sectionRepeatCounts,
+    sectionRepeatNonce: display.sectionRepeatNonce,
+    transpose: display.transpose,
+    capo: display.capo ?? -1,
+    instructions: display.instructions ?? "",
+    ...explicit,
+  };
+}
+
+/** The values compared as the backend stores them from a complete update. */
+function sameSongValues(a: SongValues, b: SongValues): boolean {
+  const key = (v: SongValues) =>
+    JSON.stringify([
+      v.from,
+      v.to,
+      v.section ?? null,
+      v.abcRange ?? null,
+      v.sectionRepeatCounts ?? [],
+      v.sectionRepeatNonce ?? null,
+      v.transpose ?? 0,
+      v.capo ?? -1,
+      v.instructions ?? "",
+    ]);
+  return key(a) === key(b);
+}
+
+/** Each follow-up update needs a change made while the previous one was on its
+ *  way; past this many the session is left unknown and the next action syncs it. */
+const MAX_SESSION_FOLLOW_UPS = 4;
+const SESSION_UPDATE_TIMEOUT_MS = 15_000;
+
+/** The own session took the values of `songId` too, not only the update: it shows
+ *  them, or a later step owns the session by now and its own push settles it. */
+function sessionTookValues(core: RestCore, songId: string): boolean {
+  return !publishesOwnCloudSession(core) || core.ownSession.shownSongId() === songId || core.getDisplay().songId !== songId;
 }
 
 /** Send a display update and keep the own cloud session on this client's values.
- *  When the update moved the session to another song, the backend ignored the
- *  sent transpose, capo and instructions (it applies the account's saved song
- *  preferences, then the values the list row defines) and kept the previous
- *  song's section repeats. A same-song complete update, which never writes the
- *  profile's preferences, then sets them as this client shows them. Records
- *  which song the session is known to show; a failure leaves it unknown. */
-async function sendDisplayAndSettle(core: RestCore, data: DisplayUpdateData, options: DisplayUpdateOptions): Promise<DisplayUpdateResult> {
-  const own = publishesOwnCloudSession(core) && !!data.songId;
-  const previous = core.getPublishedSongId();
-  let result: DisplayUpdateResult;
-  try {
-    result = await cloudApi.sendDisplayUpdate(data, options);
-  } catch (error) {
-    if (own) core.setPublishedSongId(null);
-    throw error;
+ *
+ *  There every update is complete and carries the values this client shows now:
+ *  for the song the session already shows, the backend keeps any value it is not
+ *  sent (another list row of the same song may have set them). When the update
+ *  moved the session to another song, the backend ignored the sent transpose,
+ *  capo and instructions (it applies the account's saved song preferences, then
+ *  the list row's values) and kept the previous song's section repeats; a
+ *  same-song update, which never writes the profile's preferences, then sets
+ *  them. A highlight or preference made while an update is on its way stays on
+ *  this client ({@link sessionTakesPartialUpdate}), so when the latest update
+ *  lands on values this client no longer shows, the current ones follow.
+ *
+ *  `explicit` values win over the display's. Resolves to the first update's
+ *  result: whether the backend took it (and the list it carried). A follow-up
+ *  that fails leaves the session unknown, so the next highlight or preference
+ *  sends the client's values again (and a pending publish stays pending, see
+ *  {@link sessionTookValues}). */
+async function sendDisplayAndSettle(
+  core: RestCore,
+  data: DisplayUpdateData,
+  options: DisplayUpdateOptions,
+  explicit?: Partial<SongValues>
+): Promise<DisplayUpdateResult> {
+  if (!publishesOwnCloudSession(core)) return cloudApi.sendDisplayUpdate(data, options);
+  if (!data.songId) return cloudApi.sendDisplayUpdate(data, { ...options, ordered: true });
+  const session = core.ownSession;
+  const songId = data.songId;
+  // A step made while this push waited for the pending publish shows another
+  // song: its own push follows, so this one only keeps the order.
+  const current = core.getDisplay().songId === songId;
+  let request: DisplayUpdateData = current ? { ...data, ...songValuesOf(core.getDisplay(), explicit) } : data;
+  // The backend applies the sent values only to the song it already shows.
+  let applies = session.shownSongId() === songId;
+  let first: DisplayUpdateResult | undefined;
+  for (let followUps = 0; ; followUps++) {
+    const update = session.begin();
+    let result: DisplayUpdateResult;
+    try {
+      // Bounded: highlights and preferences wait for it to land.
+      const sendOptions = {
+        ...options,
+        force: true,
+        complete: current || options?.complete,
+        timeoutMs: SESSION_UPDATE_TIMEOUT_MS,
+        ordered: true,
+      };
+      result = await cloudApi.sendDisplayUpdate(request, sendOptions);
+    } catch (error) {
+      session.end(update, null);
+      if (first === undefined) throw error;
+      console.warn("restPorts", "Could not set the song's values on the session", error);
+      return first;
+    }
+    first ??= result;
+    // A newer update decides what the session shows, and its push settles it.
+    if (!session.isLatest(update)) return first;
+    const display = core.getDisplay();
+    // A later step owns the session by now: settling this song would move it back.
+    if (result !== "DONE" || !current || display.songId !== songId) {
+      session.end(update, null);
+      return first;
+    }
+    const wanted = songValuesOf(display, explicit);
+    if (applies && sameSongValues(request, wanted)) {
+      session.end(update, songId);
+      return first;
+    }
+    if (followUps >= MAX_SESSION_FOLLOW_UPS) {
+      session.end(update, null);
+      return first;
+    }
+    // The session shows this song now, so it applies what is sent next.
+    applies = true;
+    request = { songId, song: "", ...wanted };
   }
-  if (!own || result === "SKIPPED") return result;
-  if (result !== "DONE") {
-    core.setPublishedSongId(null);
-    return result;
-  }
-  if (previous === data.songId) {
-    core.setPublishedSongId(data.songId);
-    return result;
-  }
-  // A later step owns the session by now: settling this song would move it back.
+}
+
+/** Whether a highlight or preference for `songId` may go out on its own. On the
+ *  own session it lands on whatever song the session shows, so only while that
+ *  is known to be this song with this client's values. Otherwise it stays on this
+ *  client and a complete update carries it: the one on its way checks the
+ *  client's values when it lands, or one is sent now (a retry after a failure)
+ *  when this client may control the display and no other device took the
+ *  session meanwhile. */
+async function sessionTakesPartialUpdate(core: RestCore, songId: string): Promise<boolean> {
+  if (!publishesOwnCloudSession(core) || !songId) return true;
+  const session = core.ownSession;
   const display = core.getDisplay();
-  if (display.songId !== data.songId) return result;
+  // A later step owns the session by now; its own push follows.
+  if (display.songId !== songId) return false;
+  if (session.shownSongId() === songId) return true;
+  if (session.inFlight() || session.isReleased() || !core.canControlDisplay()) return false;
+  const leaderId = displayUpdateLeaderId(core);
   try {
-    const settled = await cloudApi.sendDisplayUpdate(
-      {
-        songId: data.songId,
-        from: data.from,
-        to: data.to,
-        section: data.section,
-        abcRange: data.abcRange,
-        sectionRepeatCounts: data.sectionRepeatCounts ?? display.sectionRepeatCounts,
-        sectionRepeatNonce: data.sectionRepeatNonce ?? display.sectionRepeatNonce,
-        transpose: data.transpose ?? display.transpose,
-        capo: display.capo ?? -1,
-        song: "",
-        instructions: data.instructions ?? display.instructions ?? "",
-      },
-      { ...options, force: true, complete: true }
-    );
-    core.setPublishedSongId(settled === "DONE" || settled === "SKIPPED" ? data.songId : null);
+    await sendDisplayAndSettle(core, { songId, from: 0, to: 0, song: display.song, message: display.message }, leaderId ? { leaderId } : undefined);
   } catch (error) {
-    core.setPublishedSongId(null);
-    console.warn("restPorts", "Could not set the song's values on the session", error);
+    console.warn("restPorts", "Could not send this client's song to the session", error);
   }
-  return result;
+  return false;
 }
 
 /** Push a single changed transpose/capo preference as a MINIMAL id+value
@@ -217,11 +309,22 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
     return;
   }
   // Not on a song the session is not known to show: it would move the session
-  // there with other values. The next display push carries the preference.
-  if (!sessionShowsSong(core, display.songId)) return;
+  // there with other values. A complete update carries the value then, but never
+  // saves it as the account's preference: once the session shows the song, the
+  // minimal update does.
+  if (!(await sessionTakesPartialUpdate(core, display.songId))) {
+    await core.ownSession.idle();
+    if (core.ownSession.shownSongId() !== display.songId || core.getDisplay().songId !== display.songId) return;
+  }
   const leaderId = displayUpdateLeaderId(core);
-  await cloudApi.sendDisplayPreference({ id: display.songId, ...pref }, leaderId ? { leaderId } : undefined);
+  const own = publishesOwnCloudSession(core);
+  const mark = core.ownSession.mark();
+  const result = await cloudApi.sendDisplayPreference({ id: display.songId, ...pref }, leaderId ? { leaderId } : undefined, { ordered: own });
+  // Another device moved the session to another song; the backend kept it there.
+  if (own && isStale(result)) core.ownSession.release(mark);
 }
+
+const isStale = (result: string) => result.trim().replace(/"/g, "").toUpperCase() === "STALE";
 
 /** Push the working playlist as a playlist-only update (legacy
  *  sendPlaylistUpdateRequest). The current song/section fields are carried along so
@@ -248,6 +351,11 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
+  // Another device took the session: a list edit sends only the list, never
+  // this client's song (only selecting a song takes the session back).
+  if (publishesOwnCloudSession(core) && core.ownSession.isReleased()) {
+    return cloudApi.sendDisplayUpdate({ songId: "", playlist, song: "" }, { ...(leaderId ? { leaderId } : {}), force: true, ordered: true });
+  }
   return sendDisplayAndSettle(
     core,
     {
@@ -261,7 +369,9 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
       song: "",
       instructions,
     },
-    leaderId ? { leaderId } : undefined
+    leaderId ? { leaderId } : undefined,
+    // The display takes the saved instructions only after this push.
+    instructions === undefined ? undefined : transitionInstructionsPatch(instructions)
   );
 }
 
@@ -290,27 +400,34 @@ async function publishPendingState(core: RestCore): Promise<PlaylistEntry[] | nu
       const playlist = core.getPlaylist();
       // With no song shown only the list goes out: the backend keeps its song for
       // an empty id, and explicit values would retune that song.
-      const result = display.songId
-        ? await sendDisplayAndSettle(
-            core,
-            {
-              songId: display.songId,
-              from: display.from,
-              to: display.to,
-              section: display.section,
-              abcRange: display.abcRange,
-              sectionRepeatCounts: display.sectionRepeatCounts,
-              sectionRepeatNonce: display.sectionRepeatNonce,
-              transpose: display.transpose,
-              capo: display.capo ?? -1,
-              playlist,
-              song: display.song,
-              message: display.message,
-              instructions: display.instructions ?? "",
-            },
-            { ...target, force: true, complete: true }
-          )
-        : await cloudApi.sendDisplayUpdate({ songId: "", from: 0, to: 0, playlist, song: "" }, { ...target, force: true });
+      if (display.songId) {
+        const result = await sendDisplayAndSettle(
+          core,
+          {
+            songId: display.songId,
+            from: display.from,
+            to: display.to,
+            section: display.section,
+            abcRange: display.abcRange,
+            sectionRepeatCounts: display.sectionRepeatCounts,
+            sectionRepeatNonce: display.sectionRepeatNonce,
+            transpose: display.transpose,
+            capo: display.capo ?? -1,
+            playlist,
+            song: display.song,
+            message: display.message,
+            instructions: display.instructions ?? "",
+          },
+          { ...target, force: true, complete: true }
+        );
+        // The song's values must have reached the session too, not only the list.
+        return result === "DONE" && sessionTookValues(core, display.songId) ? playlist : null;
+      }
+      // No line range either: the highlight of the song the session keeps stays.
+      const result = await cloudApi.sendDisplayUpdate(
+        { songId: "", playlist, song: "" },
+        { ...target, force: true, ordered: publishesOwnCloudSession(core) }
+      );
       return result === "DONE" || result === "SKIPPED" ? playlist : null;
     });
   } catch (error) {
@@ -429,10 +546,12 @@ export function createDisplayApi(core: RestCore): DisplayApi {
     highlight: async (from, to, section, abcRange) => {
       // Reflect the highlight locally so this client's own song view updates.
       core.patchDisplay({ from, to, section, abcRange });
+      const songId = core.getDisplay().songId;
       await publishPendingState(core);
       // A highlight carries no song: on a session that is not known to show this
-      // client's song it would mark lines of another song. It stays local then.
-      if (!sessionShowsSong(core, core.getDisplay().songId)) return;
+      // client's song it would mark lines of another song. A complete update
+      // carries it then.
+      if (!(await sessionTakesPartialUpdate(core, songId))) return;
       if (core.isFollowingPpd()) {
         await core.sendPpdHighlight(from, to, section, abcRange);
         return;
@@ -444,16 +563,34 @@ export function createDisplayApi(core: RestCore): DisplayApi {
       // changes the projected section. The cloud `/highlight` reads from/to/section
       // (it ignores `line`), so send both forms. Clearing the highlight (0,0) maps
       // to line=-1, mirroring legacy onLineSel(-1).
+      // The song id lets the backend refuse lines meant for another song (another
+      // device may have moved the session).
+      const leader = core.leader?.id ?? core.config.leaderId ?? "";
+      const own = publishesOwnCloudSession(core);
+      const mark = core.ownSession.mark();
       const clearing = from === 0 && to === 0;
-      await cloudApi.sendHighlight({
+      const result = await cloudApi.sendHighlight({
         line: clearing ? -1 : from,
         from,
         to,
         section,
         abcRange,
-        leader: core.leader?.id ?? core.config.leaderId ?? "",
+        leader,
         deviceId: core.clientId,
+        songId,
+        ordered: own,
       });
+      if (!own) return;
+      if (isStale(result)) {
+        core.ownSession.release(mark);
+        return;
+      }
+      // A page that did not sign in itself names no leader. A backend that does
+      // not resolve the account from the browser's cookie then answers NOPE, and
+      // a display update carries the highlight to that account instead.
+      if (!leader && result === "NOPE" && songId && core.canControlDisplay()) {
+        await sendDisplayAndSettle(core, { songId, from, to, song: "" }, undefined);
+      }
     },
     setTranspose: async (value, commit) => {
       // Reflect it locally for a live preview on every detent; only push the
@@ -525,6 +662,8 @@ export function createSessionApi(core: RestCore): SessionApi {
       // Online hosting is always owned by the authenticated user's default leader;
       // the leader currently selected for editing must not retarget the session.
       if (!core.leader?.id) throw new Error("A default leader is required for online projection");
+      // The session may have been registered anew or changed elsewhere meanwhile.
+      core.ownSession.reset();
       const published = await publishPendingState(core);
       await pushDisplay(core, core.getDisplay());
       // Seed the freshly-registered cloud session with the working playlist so

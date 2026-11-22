@@ -57,6 +57,93 @@ export class Emitter<T> {
   }
 }
 
+/** What this App's own cloud session is known to show. Every display update sent
+ *  to it takes the next number and only the latest one's outcome counts: a reply
+ *  to an older update, even one that lands last, says nothing about it. */
+export class OwnSessionSong {
+  private latest = 0;
+  private settled = 0;
+  private songId: string | null;
+  private released = false;
+  private idleWaiters: (() => void)[] = [];
+
+  constructor(songId: string | null = null) {
+    this.songId = songId;
+  }
+
+  /** Number the display update about to be sent. */
+  begin(): number {
+    this.released = false;
+    return ++this.latest;
+  }
+
+  /** The number of the latest update sent so far. */
+  mark(): number {
+    return this.latest;
+  }
+
+  /** The backend says the session shows another song than this client's (another
+   *  device took it). Forget the song; until this client sends a song of its own,
+   *  a highlight or preference does not take the session back. Ignored when an
+   *  update was sent after `mark`. */
+  release(mark: number): void {
+    if (mark !== this.latest || this.inFlight()) return;
+    this.songId = null;
+    this.released = true;
+  }
+
+  /** Another device took the session ({@link release}). */
+  isReleased(): boolean {
+    return this.released;
+  }
+
+  /** No newer display update has been sent since `update`. */
+  isLatest(update: number): boolean {
+    return update === this.latest;
+  }
+
+  /** Record the latest update's outcome: the song the session shows with this
+   *  client's values, or null when that is not known. */
+  end(update: number, songId: string | null): void {
+    if (update !== this.latest) return;
+    this.settled = update;
+    this.songId = songId;
+    this.wakeIdleWaiters();
+  }
+
+  /** Resolves once no update is on its way. */
+  idle(): Promise<void> {
+    if (!this.inFlight()) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  private wakeIdleWaiters(): void {
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const wake of waiters) wake();
+  }
+
+  /** An update is on its way, so what the session shows is about to change. */
+  inFlight(): boolean {
+    return this.settled !== this.latest;
+  }
+
+  /** The song the session shows with this client's values; null while that is
+   *  not known, including while an update is on its way. */
+  shownSongId(): string | null {
+    return this.inFlight() ? null : this.songId;
+  }
+
+  /** Forget the song (another account's session, or one that may have changed
+   *  elsewhere), and ignore the replies still on their way. */
+  reset(): void {
+    this.settled = ++this.latest;
+    this.songId = null;
+    this.released = false;
+    this.wakeIdleWaiters();
+  }
+}
+
 function toOnlineSessionEntry(info: P2PSessionInfo): OnlineSessionEntry {
   return { id: info.id, name: info.name, localUrl: info.url || undefined };
 }
@@ -107,7 +194,8 @@ export class RestCore {
   private unpublished = false;
   private unpublishedRevision = 0;
   private pendingPublish: Promise<PlaylistEntry[] | null> | null = null;
-  private publishedSongId: string | null = null;
+  /** What the own cloud session shows (restPorts sendDisplayAndSettle). */
+  readonly ownSession = new OwnSessionSong();
 
   private followToken = 0;
   private followAbort: AbortController | null = null;
@@ -340,16 +428,6 @@ export class RestCore {
     return this.pendingPublish;
   }
 
-  /** The song the own cloud session is known to show with this client's values,
-   *  or null when unknown (never published, or the last attempt failed). */
-  getPublishedSongId(): string | null {
-    return this.publishedSongId;
-  }
-
-  setPublishedSongId(songId: string | null): void {
-    this.publishedSongId = songId;
-  }
-
   /** Watching a cloud or PPD session: the display and working list mirror it. */
   isFollowing(): boolean {
     return this.lastFollow !== null;
@@ -471,6 +549,8 @@ export class RestCore {
   }
 
   setAuthed(authed: boolean, leader: LeaderIdentity | null): void {
+    // Another account's session: what the previous one showed says nothing about it.
+    if (authed !== this.authed || leader?.id !== this.leader?.id) this.ownSession.reset();
     this.authed = authed;
     this.leader = leader;
     this.authEvents.emit(authed);
@@ -702,6 +782,8 @@ export class RestCore {
     const playlist = this.playlistBeforeFollow ?? [];
     this.playlistBeforeFollow = null;
     this.lastFollow = null;
+    // Other devices of the account may have moved the own session meanwhile.
+    this.ownSession.reset();
     this.setDisplay({ ...getEmptyDisplay(), playlist });
     this.setNetworkState({ status: "online" });
   }
