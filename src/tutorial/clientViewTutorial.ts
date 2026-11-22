@@ -32,7 +32,7 @@ const leaderLists = () => {
 
 export const clientViewTutorial: TutorialDefinition = {
   view: "client",
-  version: 6,
+  version: 13,
   cleanup: closeClientTutorialPopovers,
   steps: [
     s(
@@ -77,6 +77,27 @@ export const clientViewTutorial: TutorialDefinition = {
               "Paging and the toolbar's previous/next buttons start the same page-turn action."
             ),
             { helpIcons: ["images/left.svg", "images/right.svg"] }
+          ),
+          s(
+            "song-chord-transitions",
+            "#swipe-handler",
+            tx(
+              "Átvezető akkordmenetek",
+              "A Kliens nézet beállításainak végén kapcsolhatod be az ajánlót, és megadhatod az ajánlások maximális számát. A fejlécben az elektromos gitár a Pop, a hárfa a Kadenciális stílust kapcsolja az aktuális listához. Legalább az egyik aktív marad. Kikapcsoláskor a felszabaduló helyekre az aktív stílus további találatai kerülnek. A hangjegyek az átvezetés erősségét jelzik a saját stílusán belül. Minden stílus legjobb megjelenő ajánlása öt hangjegyet kap. A háromszög lejátssza a teljes menetet. Az ajánlót egy sor vagy a háttér megérintése, az Esc vagy a lapozógomb megnyomása, illetve a beállított idő letelte zárja be. Saját nézetben, közvetlenül a következő dalra lépve mentheted az átvezetést a két dal valamelyikének instrukcióiba. Ezt a ♪⌒♪ jel mutatja. A mentett átvezetés ugyanennél a dalpárnál kikapcsolt instrukciók mellett egyedül jelenik meg az ajánlóban.",
+              "Chord transitions",
+              "At the end of Client view settings, enable recommendations and set the maximum number to show. In the header, the electric guitar toggles Pop and the harp toggles Cadential for the current list. At least one style stays active. Turning a style off fills its slots with more matches from the active style. The notes show the strength of each transition within its own style. The best displayed recommendation from each style gets five notes. The play button previews the whole progression. Tap a row or the backdrop to close the dialog. Esc, the hardware paging button and the configured timeout also close it. In your own view, moving directly to the next song lets you save a transition to either song’s instructions, marked with ♪⌒♪. With instructions hidden, the saved transition appears on its own for the same pair."
+            ),
+            {
+              helpIcons: [
+                "images/transition-electric-guitar.svg",
+                "images/transition-harp.svg",
+                { label: "♪" },
+                { label: "▶" },
+                "images/save.svg",
+                { label: "♪⌒♪" },
+                { label: "Esc" },
+              ],
+            }
           ),
           s(
             "song-two-finger",

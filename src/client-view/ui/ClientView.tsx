@@ -9,11 +9,12 @@
  * upper-left home button can switch back to the main UI.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
 import { canUseSessions } from "../controller/ClientViewStore";
 import { AboutDialog } from "./AboutDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ChordTransitionDialog } from "./ChordTransitionDialog";
 import { TextConfirmDialog } from "./TextConfirmDialog";
 import { InstructionsEditorDialog } from "./InstructionsEditorDialog";
 import { LoginDialog } from "./LoginDialog";
@@ -34,6 +35,14 @@ import { useLocalization } from "../../localization/LocalizationContext";
 export function ClientView({ onHome }: { onHome?: () => void }) {
   const state = useClientViewState();
   const store = useClientViewStore();
+  const stopTransitionPlayback = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      stopTransitionPlayback.current?.();
+      stopTransitionPlayback.current = null;
+    },
+    [state.display.songId]
+  );
   // The toolbar Prev/Next buttons drive the same animated page-turn as a swipe,
   // which lives in SongView — reached here through an imperative handle.
   const songViewRef = useRef<SongViewHandle>(null);
@@ -180,6 +189,13 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       {state.aboutOpen && <AboutDialog />}
       {state.confirmAnim && <ConfirmDialog />}
       {state.confirmText && <TextConfirmDialog />}
+      {state.transitionDialog && (
+        <ChordTransitionDialog
+          key={JSON.stringify(state.transitionDialog.pair)}
+          dialog={state.transitionDialog}
+          stopPlayback={stopTransitionPlayback}
+        />
+      )}
       {state.startupSessionScan && <StartupScanIndicator address={state.startupSessionScan.address} />}
     </div>
   );

@@ -8,7 +8,7 @@
  * form of the REST behaviour the legacy client already implements.
  */
 
-import { cloudApi, isAccessToken, isCloudApiErrorKind } from "../../../../common/cloudApi";
+import { cloudApi, isAccessToken, isCloudApiErrorKind, type DisplayUpdateResult } from "../../../../common/cloudApi";
 import {
   getLocalBroadcastAddresses,
   getLocalNetworkAddresses,
@@ -25,6 +25,7 @@ import type { RestCore } from "./RestCore";
 import { saveSessionFeatureSetting } from "../sessionFeatureSettings";
 import { filterOwnSessionEntries } from "../../../shared/sessionList";
 import { subscribeProjectionClientPresence } from "../../../services/projectionClientPresence";
+import { transitionInstructionsPatch } from "../../../services/clientViewDisplayUpdate";
 
 const TOKEN_KEY = "sessionId";
 
@@ -150,7 +151,7 @@ async function pushPreference(core: RestCore, pref: { transpose?: number; capo?:
  *  sendPlaylistUpdateRequest). The current song/section fields are carried along so
  *  the cloud session keeps its highlight, but a served host treats it purely as a
  *  playlist change. */
-async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<void> {
+async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructions?: string): Promise<DisplayUpdateResult | undefined> {
   if (!core.canControlDisplay()) return;
   const display = core.getDisplay();
   if (core.isFollowingPpd()) {
@@ -167,16 +168,17 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[]): Promise<
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  await cloudApi.sendDisplayUpdate(
+  return cloudApi.sendDisplayUpdate(
     {
       songId: display.songId,
       from: display.from,
       to: display.to,
-      section: display.section,
+      section: instructions === undefined ? display.section : undefined,
       abcRange: display.abcRange,
       transpose: display.transpose,
       playlist,
       song: "",
+      instructions,
     },
     leaderId ? { leaderId } : undefined
   );
@@ -227,6 +229,23 @@ export function createPlaylistApi(core: RestCore): PlaylistApi {
   return {
     getPlaylist: () => core.getPlaylist(),
     setPlaylist: async (entries) => applyPlaylist(entries),
+    setEntryInstructions: async (songId, instructions, isCurrent) => {
+      if (!isCurrent()) return;
+      const entries = core.getPlaylist();
+      const index = entries.findIndex((entry) => entry.songId === songId);
+      if (index < 0) throw new Error("Playlist song is no longer available");
+      const playlist = entries.slice();
+      playlist[index] = { ...playlist[index], instructions };
+      if (displayUpdateLeaderId(core)) {
+        const result = await pushPlaylist(core, playlist, core.getDisplay().songId === songId ? instructions : undefined);
+        if (result && result !== "DONE" && result !== "SKIPPED" && result !== "NO_SESSION") {
+          throw new Error(`Could not publish playlist instructions (${result})`);
+        }
+      }
+      if (!isCurrent()) return;
+      const currentPlaylist = core.getPlaylist().map((entry) => (entry.songId === songId ? { ...entry, instructions } : entry));
+      core.patchDisplay({ playlist: currentPlaylist, ...(core.getDisplay().songId === songId ? transitionInstructionsPatch(instructions) : {}) });
+    },
     clear: async () => applyPlaylist([]),
     getLeaderPlaylists: () => cloudApi.fetchLeadersProfiles(undefined, { fresh: true }),
     selectLeaderPlaylist: (leaderId, label) => entriesForLeader(leaderId, label),

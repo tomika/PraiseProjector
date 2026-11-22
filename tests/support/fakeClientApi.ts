@@ -86,6 +86,7 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
     if (holding) await holding;
   };
   const songs = options.songs ?? [];
+  const preferences = new Map(Object.entries(options.preferences ?? {}));
   let playlist = options.playlist ?? [];
   // Like the real adapters, a written playlist comes back through the subscription.
   const playlistChannel = new Channel<PlaylistEntry[]>();
@@ -119,6 +120,13 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
         record("playlist.setPlaylist", entries);
         playlist = entries;
         playlistChannel.emit(entries);
+      },
+      setEntryInstructions: async (songId, instructions, isCurrent) => {
+        if (!isCurrent()) return;
+        record("playlist.setEntryInstructions", songId, instructions);
+        playlist = playlist.map((entry) => (entry.songId === songId ? { ...entry, instructions } : entry));
+        playlistChannel.emit(playlist);
+        if (fake.projected.songId === songId) emitHostDisplay({ ...fake.projected, instructions });
       },
       clear: async () => record("playlist.clear"),
       getLeaderPlaylists: async () => [],
@@ -192,8 +200,11 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
         return fullScreen;
       },
       keepScreenOn: () => undefined,
-      getPreference: (key) => options.preferences?.[key],
-      setPreference: (key, value) => record("device.setPreference", key, value),
+      getPreference: (key) => preferences.get(key),
+      setPreference: (key, value) => {
+        record("device.setPreference", key, value);
+        preferences.set(key, value);
+      },
       share: () => false,
       openExternal: (url) => record("device.openExternal", url),
       getThirdPartyLicenseSections: async () => [],

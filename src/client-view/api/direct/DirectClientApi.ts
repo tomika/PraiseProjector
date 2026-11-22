@@ -528,6 +528,12 @@ export class DirectClientApi implements ClientApi {
     return {
       getPlaylist: () => this.displaySource.getCurrent().playlist ?? [],
       setPlaylist: async (entries) => applyPlaylist(entries),
+      setEntryInstructions: async (songId, instructions, isCurrent) => {
+        if (this.isFollowingPpd() || !isCurrent()) return;
+        await dispatchClientViewDisplayUpdate({ command: "song_update", id: songId, instructions, playlistInstructionsOnly: true }, true, isCurrent);
+        if (isCurrent() && !this.displaySource.getCurrent().playlist?.some((entry) => entry.songId === songId && entry.instructions === instructions))
+          throw new Error("Playlist instructions were not applied");
+      },
       clear: async () => applyPlaylist([]),
       getLeaderPlaylists: async () => {
         const db = Database.getInstance();

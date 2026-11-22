@@ -15,9 +15,13 @@ const MODAL_SELECTOR = [
   ".songlist-context-menu-overlay",
 ].join(", ");
 
-export function isAppModalOpen(root: Pick<Document, "querySelectorAll"> | null = typeof document !== "undefined" ? document : null): boolean {
+export function isAppModalOpen(
+  root: Pick<Document, "querySelectorAll"> | null = typeof document !== "undefined" ? document : null,
+  ignoredSelector?: string
+): boolean {
   if (!root) return false;
   for (const element of Array.from(root.querySelectorAll(MODAL_SELECTOR))) {
+    if (ignoredSelector && element.matches?.(ignoredSelector)) continue;
     if ((element as HTMLElement).getClientRects?.().length !== 0) return true;
   }
   return false;

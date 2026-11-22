@@ -2145,6 +2145,295 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   filter: var(--cv-icon-invert);
 }
 
+.cv-dialog.cv-chord-transition-modal {
+  width: min(680px, calc(100vw - 24px));
+  max-width: none;
+  max-height: 85vh;
+  max-height: 85dvh;
+  margin: auto;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+}
+
+.cv-chord-transition-modal:not([open]) {
+  display: none;
+}
+
+.cv-chord-transition-modal::backdrop {
+  background: rgba(0, 0, 0, 0.52);
+}
+
+.cv-chord-transition-content {
+  overflow: auto;
+  padding: clamp(12px, 3vw, 24px);
+  scrollbar-color: var(--cv-scroll-thumb) var(--cv-scroll-track);
+}
+
+.cv-chord-transition-header {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
+  align-items: center;
+  gap: clamp(3px, 1vw, 16px);
+  margin-bottom: 8px;
+}
+
+.cv-chord-transition-header h2 {
+  justify-self: start;
+  margin: 0;
+  font-size: clamp(15px, 4.5vw, 25px);
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.cv-chord-transition-keys {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cv-selected-fg);
+  font-size: clamp(12px, 3.7vw, 19px);
+  font-weight: 650;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-chord-transition-controls {
+  justify-self: end;
+  display: flex;
+  gap: 4px;
+}
+
+.cv-chord-transition-filters {
+  display: flex;
+  gap: 4px;
+}
+
+.cv-chord-transition-filters button {
+  display: inline-grid;
+  place-items: center;
+  width: clamp(32px, 9.5vw, 40px);
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 6px;
+  background: transparent;
+}
+
+.cv-chord-transition-filters img {
+  filter: var(--cv-icon-invert);
+}
+
+.cv-chord-transition-filters button[aria-pressed="true"] {
+  border-color: var(--cv-selected-fg);
+  background: var(--cv-panel-btn-bg);
+}
+
+.cv-chord-transition-filters button:not(:disabled) {
+  cursor: pointer;
+}
+
+.cv-chord-transition-filters button:not(:disabled):hover {
+  background: var(--cv-panel-hover);
+}
+
+.cv-chord-transition-empty {
+  margin: 0;
+  padding: 8px 0;
+  font-size: 0.875rem;
+}
+
+.cv-chord-transition-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv-chord-transition-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 54px;
+  border-top: 1px solid var(--cv-panel-border);
+}
+
+.cv-chord-transition-recommendation {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, auto) auto;
+  align-items: center;
+  gap: 6px 12px;
+  align-self: stretch;
+  min-width: 0;
+  padding: 9px 6px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: default;
+}
+
+.cv-chord-transition-action:hover {
+  background: var(--cv-panel-hover);
+}
+
+.cv-chord-transition-chords {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.cv-chord-transition-chords > span {
+  white-space: nowrap;
+}
+
+.cv-chord-transition-source {
+  font-size: 0.8em;
+}
+
+.cv-chord-transition-target {
+  font-size: 1.17em;
+}
+
+.cv-chord-transition-arrow {
+  margin: 0 0.29em;
+  font-size: 0.78em;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.cv-chord-transition-style {
+  font-size: 0.85rem;
+  opacity: 0.78;
+}
+
+.cv-chord-transition-rating {
+  display: inline-flex;
+  gap: 4px;
+  color: color-mix(in srgb, var(--cv-panel-fg) 47%, var(--cv-panel-solid));
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.cv-chord-transition-rating .active {
+  color: var(--cv-selected-fg);
+}
+
+.cv-chord-transition-action {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 27px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Invisible placeholder where the close button used to be. */
+.cv-chord-transition-close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 40px;
+}
+
+.cv-chord-transition-action:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.cv-chord-transition-action[aria-pressed="true"] {
+  color: var(--cv-selected-fg);
+  background: var(--cv-panel-btn-bg);
+}
+
+.cv-chord-transition-action img {
+  width: 18px;
+  height: 18px;
+  filter: var(--cv-icon-invert);
+}
+
+.cv-chord-transition-play {
+  width: 0;
+  height: 0;
+  border-block: 7px solid transparent;
+  border-left: 11px solid currentColor;
+}
+
+.cv-chord-transition-stop {
+  width: 11px;
+  height: 11px;
+  background: currentColor;
+}
+
+.cv-chord-transition-timer {
+  flex: 0 0 4px;
+  background: var(--cv-panel-btn-bg);
+}
+
+.cv-chord-transition-timer > div {
+  height: 100%;
+  background: var(--cv-selected-fg);
+  transform-origin: left;
+  animation: cv-chord-transition-countdown var(--cv-transition-duration) linear forwards;
+}
+
+@keyframes cv-chord-transition-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.cv-chord-transition-error {
+  margin: 8px 0 0;
+  color: var(--cv-panel-fg);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 520px) {
+  .cv-chord-transition-recommendation {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cv-chord-transition-chords {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 360px) {
+  .cv-chord-transition-controls,
+  .cv-chord-transition-filters {
+    gap: 2px;
+  }
+
+  .cv-chord-transition-filters button {
+    width: 28px;
+  }
+
+  .cv-chord-transition-close {
+    width: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-chord-transition-timer > div {
+    animation: none;
+  }
+}
+
 .cv-dialog-title {
   margin: 0;
   font-size: 20px;

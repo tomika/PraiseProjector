@@ -40,6 +40,7 @@ import {
   CHORDFORMAT_SUBSCRIPT,
 } from "../../../chordpro/chord_drawer";
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
+import { parseTransitionInstruction, splitInstructionLines, TRANSITION_INSTRUCTION_PREFIX } from "../../../chordpro/transition-instruction";
 import type { ChordProStylesSettings } from "../../../chordpro/chordpro_styles";
 import type { AbcDisplayMode, CommentDisplayMode } from "../../../chordpro/render/display-plan";
 import type { Display } from "../api/ClientApi";
@@ -487,6 +488,14 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const pageTurnEnabled = resolvePerformanceFeature(performancePreferences.clientViewPageTurnMode, performanceProfile.chordProSlow);
   const neighbourPreloadingEnabled = pageTurnEnabled;
   const { optionsOpen, showInstructions, showSongComments, highlightOn, highlightControl, highlightOpacity } = state;
+  const visibleTransitionLines = display.instructions?.includes(TRANSITION_INSTRUCTION_PREFIX)
+    ? splitInstructionLines(display.instructions)
+        .filter((line) => {
+          const transition = parseTransitionInstruction(line.trim());
+          return transition && store.transitionInstructionVisible(transition);
+        })
+        .join("\n")
+    : undefined;
   const commentDisplay = commentDisplayMode(showInstructions, showSongComments);
   const viewingRemoteDisplay = isViewingRemoteDisplay(state);
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
@@ -1199,7 +1208,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // scroll mode, "FIRST_LINE" in fit mode, "" off. Re-applied on every load
     // since api.load() rebuilds the editor instance. fitAndZoom redraws, so
     // draw=false here is enough.
-    api.applyInstructions(display.instructions ?? "", false);
+    api.applyInstructions(display.instructions ?? "", false, (transition) => store.transitionInstructionVisible(transition));
     api.enableInstructionRendering(showInstructions ? (scrollMode ? "FULL" : "FIRST_LINE") : "", false);
     api.setCommentDisplay(commentDisplay, false);
     api.setSectionRepeatCounts(sectionRepeatCounts, false);
@@ -1255,6 +1264,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     display.song,
     display.songId,
     display.transpose,
+    visibleTransitionLines,
     sectionRepeatCounts,
     chordProStyles,
     settings,

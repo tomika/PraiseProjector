@@ -1,4 +1,5 @@
 import type { ChordProStylesSettings } from "../common/chordpro-styles";
+import type { ChordTransitionSettings } from "../common/chord-transition-settings";
 import type { ClientViewInputProfile } from "../common/client-view-input";
 import type { HardwareInputSettings } from "../common/hardware-input";
 import type { ScoreDefaults } from "../common/score-settings";
@@ -81,6 +82,7 @@ export interface Settings {
   fontSizeMode: "manual" | "auto-resolution" | "auto-resolution-dpi";
   automaticViewSwitch: "none" | "portraitToClient" | "orientation";
   clientViewAutoScanSessions: ClientViewAutoScanMode;
+  clientViewChordTransitions: ChordTransitionSettings;
   clientViewSessionsFoundPopup: ClientViewAutoScanMode;
   /** Seconds without a PPD response before a followed local session is considered disconnected. */
   ppdWatchTimeoutSeconds: number;

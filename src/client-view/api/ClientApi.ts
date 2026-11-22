@@ -354,6 +354,8 @@ export interface PlaylistApi {
   getPlaylist(): PlaylistEntry[];
   /** Replace the working playlist — covers reorder, add, remove and trash. */
   setPlaylist(entries: PlaylistEntry[]): Promise<void>;
+  /** Update one working-list row without replacing the list or selecting the song. */
+  setEntryInstructions(songId: string, instructions: string, isCurrent: () => boolean): Promise<void>;
   /** Empty the working playlist. */
   clear(): Promise<void>;
   /** Leader playlists available from the backend, for the leader/date pickers

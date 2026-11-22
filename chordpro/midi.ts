@@ -25,7 +25,7 @@ function getMidiRoot(): MidiModule {
 export type Instrument = "" | "PIANO" | "GUITAR";
 let initalized = false;
 let initializationInProgress = false;
-const pendingInitCallbacks: Array<() => void> = [];
+const pendingInitCallbacks: Array<{ ready: () => void; failed?: () => void }> = [];
 let midiSoundfontUrl = "./soundfont/";
 
 export function setMidiSoundfontUrl(url: string) {
@@ -47,13 +47,13 @@ function resumeMidiAudioContext() {
   }
 }
 
-function initialize(onsuccess: () => void) {
+function initialize(onsuccess: () => void, onerror?: () => void) {
   if (initalized) {
     onsuccess();
     return;
   }
 
-  pendingInitCallbacks.push(onsuccess);
+  pendingInitCallbacks.push({ ready: onsuccess, failed: onerror });
 
   if (initializationInProgress) return;
 
@@ -84,13 +84,13 @@ function initialize(onsuccess: () => void) {
           }
 
           const callbacks = pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
-          callbacks.forEach((cb) => cb());
+          callbacks.forEach((cb) => cb.ready());
         },
         onerror: (error?: unknown) => {
           initializationInProgress = false;
           initalized = false;
           console.error("Load MIDI Plugin error", error);
-          pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
+          pendingInitCallbacks.splice(0).forEach((cb) => cb.failed?.());
         },
       });
     })
@@ -98,7 +98,7 @@ function initialize(onsuccess: () => void) {
       initializationInProgress = false;
       initalized = false;
       console.error("Load MIDI module error", error);
-      pendingInitCallbacks.splice(0, pendingInitCallbacks.length);
+      pendingInitCallbacks.splice(0).forEach((cb) => cb.failed?.());
     });
 }
 export function playNote(instrument: Instrument, note: number, length: number = 1) {
@@ -148,6 +148,47 @@ export function playChord(instrument: Instrument, chord: number[], length: numbe
   };
   if (!initalized) initialize(play);
   else play();
+}
+
+/** Preview a progression on its own piano channel. A stop also cancels a
+ * preview waiting for the soundfont to finish loading. */
+export function playPianoChordSequence(chords: number[][], onFinish: (played: boolean) => void): () => void {
+  const channel = 2;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let release: (() => void) | undefined;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    clearTimeout(timer);
+    release?.();
+    release = undefined;
+  };
+  const play = () => {
+    if (stopped) return;
+    resumeMidiAudioContext();
+    const root = getMidiRoot();
+    if (typeof root.chordOn !== "function" || typeof root.chordOff !== "function") {
+      onFinish(false);
+      return;
+    }
+    const next = (index: number) => {
+      release?.();
+      const notes = chords[index]?.map((note) => note + 45);
+      if (!notes) {
+        release = undefined;
+        onFinish(true);
+        return;
+      }
+      root.chordOn(channel, notes, 48, 0);
+      release = () => root.chordOff(channel, notes, 0);
+      timer = setTimeout(() => next(index + 1), index === chords.length - 1 ? 1000 : 620);
+    };
+    next(0);
+  };
+  initialize(play, () => {
+    if (!stopped) onFinish(false);
+  });
+  return stop;
 }
 
 // midi.js is loaded lazily (Phase C), so the Player object cannot be returned

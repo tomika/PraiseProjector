@@ -19,17 +19,27 @@ import { validateCommand } from "../../../common/hardware-action-catalog";
 import type { PreselectionCommand } from "../../../common/hardware-input";
 import { chordSettings, directCommandChange, type DirectClientCommand } from "./hardwareCommandChanges";
 import { preselectionPlan, selectedLeaderEntriesOf, visibleListRows, type ListRow } from "./preselectionCommands";
-import { readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
+import { readPersistedSettings, readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
+import { CHORD_TRANSITION_STYLES, normalizeChordTransitionSettings, type ChordTransitionStyle } from "../../../common/chord-transition-settings";
+import {
+  insertTransitionInstruction,
+  matchesTransitionPair,
+  type TransitionInstruction,
+  type TransitionRecommendation,
+  type TransitionSongPair,
+} from "../../../chordpro/transition-instruction";
 import { readSongLanguageSettings } from "../../../common/song-language-settings";
 import { EMPTY_SYNC_STATUS, todoBadgeKind, type SyncStatus, type TodoBadgeKind } from "../../state/syncStatusStore";
 import type { StringKey } from "../../localization/LocalizationContext";
 import { requestOwnClientViewOnHome } from "../../services/clientViewHandoff";
+import { transitionInstructionsPatch } from "../../services/clientViewDisplayUpdate";
 import { hasUnsavedChanges } from "../../services/unsavedChangesReport";
 import type { LicenseSection } from "../../about-licenses";
 import { shouldUsePagingLayout } from "../../utils/viewLayout";
 import { NO_CAPABILITIES } from "../api/ClientApi";
 import { autoScanExternalMode, readClientViewAutoScanSessions } from "../api/sessionFeatureSettings";
 import { canRestoreLocalSong, hasPersistedViewMode, shouldAcceptDisplayUpdate, shouldUseClientPlaylistFallback } from "./clientViewRestore";
+import { defaultTransitionInstructions, recommendSongTransition, type SongHighlight, type SongTransitionDialog } from "./songTransitions";
 import type {
   ClientApi,
   ClientCapabilities,
@@ -253,6 +263,8 @@ export interface ClientViewState {
   /** True once {@link ClientViewStore.init} has finished wiring the backend. */
   ready: boolean;
   display: Display;
+  transitionDialog: SongTransitionDialog | null;
+  incomingTransition: (TransitionSongPair & { list: string }) | null;
   songs: SongEntry[];
   searchText: string;
   playlistFilterText: string;
@@ -386,6 +398,17 @@ export function isFollowerView(state: ClientViewState): boolean {
   return state.mode === "Client" && !state.capabilities.canControlDisplay;
 }
 
+export function clientModalOpen(state: ClientViewState): boolean {
+  return (
+    !!state.confirmText ||
+    state.loginDialogOpen ||
+    (state.sessionsDialogOpen && !state.sessionsDialogStartupHidden) ||
+    state.instructionsEditorOpen ||
+    state.aboutOpen ||
+    !!state.confirmAnim
+  );
+}
+
 // ── mode-derived UI selectors ────────────────────────────────────────────────
 // The UI layers gate affordances off these named intents rather than branching on
 // `state.mode` directly, so the mode → intent mapping lives in exactly one place
@@ -463,6 +486,8 @@ function initialState(): ClientViewState {
     mode: "App",
     ready: false,
     display: getEmptyDisplay(),
+    transitionDialog: null,
+    incomingTransition: null,
     songs: [],
     searchText: "",
     playlistFilterText: "",
@@ -532,6 +557,12 @@ export class ClientViewStore {
   private lifecycleToken = 0;
   /** Bumped by every song selection; see {@link loadLocalEntry}. */
   private songSelectionRevision = 0;
+  private lastSongHighlight: SongHighlight | undefined;
+  private transitionRevision = 0;
+  private transitionPending = false;
+  private transitionSaving = false;
+  private awaitingFollowDisplay = false;
+  private transitionSource: Display | undefined;
   /** Where "open full editor" navigates; captured from init config. */
   private fullEditorUrl = "index.html";
   /** Whether the viewport uses the wide two-pane client layout. In that layout
@@ -583,7 +614,13 @@ export class ClientViewStore {
   readonly getSnapshot = (): ClientViewState => this.state;
 
   private set(patch: Partial<ClientViewState>): void {
+    const previous = this.state;
     this.state = { ...this.state, ...patch };
+    if (patch.display) this.trackSongTransition(previous);
+    const dialog = this.state.transitionDialog;
+    if (dialog && (clientModalOpen(this.state) || (dialog.saved && this.state.showInstructions))) {
+      this.state = { ...this.state, transitionDialog: null };
+    }
     for (const listener of [...this.listeners]) listener();
     this.schedulePersist();
   }
@@ -595,6 +632,12 @@ export class ClientViewStore {
     this.disposed = false;
     this.persistenceReady = false;
     this.startupSelectionSettled = false;
+    this.lastSongHighlight = undefined;
+    this.transitionSource = undefined;
+    this.transitionPending = false;
+    this.awaitingFollowDisplay = false;
+    this.transitionRevision++;
+    this.set({ transitionDialog: null, incomingTransition: null });
     this.provisionalStartupSong = null;
     this.lastPersistedJson = "";
     this.pendingLocalRestore = null;
@@ -727,6 +770,9 @@ export class ClientViewStore {
     // (`storage`), so the two views never diverge.
     if (typeof window !== "undefined") {
       const onThemeChange = () => this.syncTheme();
+      const onTransitionSettingsChanged = () => {
+        if (readPersistedSettings().clientViewChordTransitions?.enabled !== true) this.dismissChordTransition();
+      };
       let languageFilter = JSON.stringify(readSongLanguageSettings().songLanguageFilter);
       const onSongLanguagesChanged = () => {
         if (this.api.storageScope !== "local") return;
@@ -737,12 +783,16 @@ export class ClientViewStore {
         void this.runSearch(this.state.searchText);
       };
       window.addEventListener("pp-settings-changed", onThemeChange);
+      window.addEventListener("pp-settings-changed", onTransitionSettingsChanged);
+      window.addEventListener("storage", onTransitionSettingsChanged);
       window.addEventListener("pp-settings-changed", onSongLanguagesChanged);
       window.addEventListener("storage", onSongLanguagesChanged);
       window.addEventListener("pp-theme-changed", onThemeChange);
       window.addEventListener("storage", onThemeChange);
       this.unsubscribes.push(() => {
         window.removeEventListener("pp-settings-changed", onThemeChange);
+        window.removeEventListener("pp-settings-changed", onTransitionSettingsChanged);
+        window.removeEventListener("storage", onTransitionSettingsChanged);
         window.removeEventListener("pp-settings-changed", onSongLanguagesChanged);
         window.removeEventListener("storage", onSongLanguagesChanged);
         window.removeEventListener("pp-theme-changed", onThemeChange);
@@ -805,6 +855,7 @@ export class ClientViewStore {
     // Idempotent: the embedded ClientViewApp and the provider may both clean up.
     if (this.disposed) return;
     this.lifecycleToken++;
+    this.transitionRevision++;
     // Reject any in-flight confirmation so its awaiter doesn't hang on teardown.
     this.confirmResolver?.(false);
     this.confirmResolver = null;
@@ -1035,13 +1086,22 @@ export class ClientViewStore {
         // leader-shared setting and the transpose control is hidden for followers.
         const songChanged = display.songId !== this.state.display.songId;
         const capo = songChanged ? (display.capo ?? 0) : this.state.capo;
+        const viewed = songChanged ? display : { ...display, capo };
+        const localInstructions = this.localTransitionInstructions(display.songId);
         this.set({
-          display: songChanged ? display : { ...display, capo },
+          display: localInstructions == null ? viewed : { ...viewed, instructions: localInstructions },
           transpose: display.transpose ?? 0,
           capo,
         });
       }),
-      this.api.session.subscribeNetworkState((network) => this.set({ network })),
+      this.api.session.subscribeNetworkState((network) => {
+        if (network.status === "startup" && network.transport) {
+          this.awaitingFollowDisplay = true;
+          this.lastSongHighlight = undefined;
+          this.dismissChordTransition();
+        } else if (!network.transport) this.awaitingFollowDisplay = false;
+        this.set({ network });
+      }),
       this.api.session.subscribeConnectedClients((hasConnectedClients) => this.set({ hasConnectedClients })),
       // This port is the LOCAL discovery channel; replacing the whole list here would
       // drop the cloud rows, which refresh on their own (slower) schedule.
@@ -1308,7 +1368,7 @@ export class ClientViewStore {
         abcRange: undefined,
         transpose,
         capo,
-        instructions: entry.instructions,
+        instructions: this.localTransitionInstructions(entry.songId) ?? entry.instructions,
       },
       transpose,
       capo: capo ?? 0,
@@ -1620,7 +1680,8 @@ export class ClientViewStore {
     // Display writes always target the projected song. A song opened locally
     // from the database/archive must keep its changes in this view instead.
     // Send an empty string explicitly: undefined means "no change" to the host.
-    if (this.viewingProjectedSong()) await this.api.display.setInstructions(text);
+    if (this.localTransitionInstructions(songId) != null) this.writeLocalTransitionInstructions(songId, text);
+    else if (this.viewingProjectedSong()) await this.api.display.setInstructions(text);
     if (!this.isLifecycleActive(lifecycle) || selectionRevision !== this.songSelectionRevision || this.state.display.songId !== songId) return;
     // DirectClientApi dispatches asynchronously; applying locally must not
     // depend on the timing (or presence) of the backend's display echo.
@@ -1640,6 +1701,177 @@ export class ClientViewStore {
       case "database":
       default:
         return this.state.songs;
+    }
+  }
+
+  private transitionListKey(state = this.state): string {
+    if (state.mode === "Client" || isAppFollowingSession(state) || state.navigationMode === "playlist") return "playlist";
+    if (state.navigationMode === "archive") return JSON.stringify(["archive", state.selectedLeaderId, state.selectedPlaylistLabel]);
+    return state.navigationMode;
+  }
+
+  private transitionPreferenceKey(songId: string): string {
+    return `${this.persistKey}-transition-instructions-${JSON.stringify([this.transitionListKey(), songId])}`;
+  }
+
+  private localTransitionInstructions(songId: string): string | null {
+    if (!songId || this.transitionListKey() === "playlist") return null;
+    return this.api.device.getPreference(this.transitionPreferenceKey(songId)) ?? null;
+  }
+
+  private writeLocalTransitionInstructions(songId: string, text: string): void {
+    const key = this.transitionPreferenceKey(songId);
+    this.api.device.setPreference(key, text);
+    if (this.api.device.getPreference(key) !== text) throw new Error("Local transition instructions were not saved");
+  }
+
+  private transitionList(): readonly NavEntry[] {
+    if (this.transitionListKey() !== "playlist") return this.navList();
+    if (this.state.mode === "Client" || isAppFollowingSession(this.state)) return this.state.display.playlist ?? this.state.playlist;
+    return this.state.playlist;
+  }
+
+  private isForwardTransition(pair: TransitionSongPair): boolean {
+    const list = this.transitionList();
+    const from = list.findIndex((entry) => entry.songId === pair.from);
+    return (
+      from >= 0 &&
+      list[from + 1]?.songId === pair.to &&
+      !list.slice(from + 2).some(({ songId }) => songId === pair.from || songId === pair.to) &&
+      !list.slice(0, from).some(({ songId }) => songId === pair.to)
+    );
+  }
+
+  private trackSongTransition(previous: ClientViewState): void {
+    const { display } = this.state;
+    const startsFollowing = this.awaitingFollowDisplay && !!display.songId && !!display.song;
+    if (startsFollowing) {
+      this.awaitingFollowDisplay = false;
+      this.lastSongHighlight = undefined;
+      this.state = { ...this.state, incomingTransition: null };
+    }
+    const lastHighlight = this.lastSongHighlight;
+    if (previous.display.songId !== display.songId || previous.display.song !== display.song) this.lastSongHighlight = undefined;
+    if (display.songId && display.song && (display.to > display.from || display.abcRange)) this.lastSongHighlight = display;
+    if (previous.display.songId === display.songId) return;
+
+    const revision = ++this.transitionRevision;
+    const pair = { from: previous.display.songId, to: display.songId };
+    const list = this.transitionListKey();
+    const adjacent = !startsFollowing && !!pair.from && !!pair.to && this.isForwardTransition(pair);
+    this.state = { ...this.state, incomingTransition: adjacent ? { ...pair, list } : null, transitionDialog: null };
+    this.transitionSource = previous.display;
+    this.transitionPending = false;
+    const settings = normalizeChordTransitionSettings(readPersistedSettings().clientViewChordTransitions);
+    if (
+      startsFollowing ||
+      !this.startupSelectionSettled ||
+      clientModalOpen(this.state) ||
+      !settings.enabled ||
+      !pair.from ||
+      !pair.to ||
+      !previous.display.song ||
+      !display.song
+    )
+      return;
+
+    const withListedInstructions = (song: Display) => ({
+      ...song,
+      instructions: song.instructions ?? this.transitionList().find((entry) => entry.songId === song.songId)?.instructions,
+    });
+    this.transitionPending = true;
+    void recommendSongTransition(withListedInstructions(previous.display), withListedInstructions(display), lastHighlight, settings, adjacent)
+      .then((dialog) => {
+        if (revision !== this.transitionRevision || this.disposed) return;
+        this.transitionPending = false;
+        if (dialog && (!dialog.saved || (!this.state.showInstructions && this.isForwardTransition(pair)))) this.set({ transitionDialog: dialog });
+      })
+      .catch((error: unknown) => {
+        if (revision !== this.transitionRevision || this.disposed) return;
+        this.transitionPending = false;
+        console.warn("ClientView", "Could not calculate chord transitions", error);
+      });
+  }
+
+  dismissChordTransition(): boolean {
+    if (!this.state.transitionDialog && !this.transitionPending) return false;
+    this.transitionRevision++;
+    this.transitionPending = false;
+    this.set({ transitionDialog: null });
+    return true;
+  }
+
+  toggleChordTransitionStyle(style: ChordTransitionStyle): void {
+    const dialog = this.state.transitionDialog;
+    if (!dialog || dialog.saved || this.transitionSaving) return;
+    const active = dialog.styles.includes(style);
+    if (active && dialog.styles.length === 1) return;
+    const styles = CHORD_TRANSITION_STYLES.filter((candidate) => (candidate === style ? !active : dialog.styles.includes(candidate)));
+    this.set({ transitionDialog: { ...dialog, styles, recommendations: dialog.recommendForStyles(styles) } });
+  }
+
+  /** Display a prepended bridge only after this exact forward turn. An appended
+   *  bridge belongs at the end of the outgoing song when its neighbour matches. */
+  transitionInstructionVisible(instruction: TransitionInstruction): boolean {
+    const { display, incomingTransition } = this.state;
+    if (!this.isForwardTransition(instruction)) return false;
+    if (instruction.placement === "previous") return display.songId === instruction.from;
+    return (
+      display.songId === instruction.to &&
+      incomingTransition?.list === this.transitionListKey() &&
+      matchesTransitionPair(instruction, incomingTransition)
+    );
+  }
+
+  canSaveChordTransition(dialog: SongTransitionDialog): boolean {
+    const { display, incomingTransition, mode, capabilities } = this.state;
+    return (
+      !dialog.saved &&
+      mode === "App" &&
+      !isAppFollowingSession(this.state) &&
+      !this.state.lockedToSession &&
+      display.songId === dialog.pair.to &&
+      incomingTransition?.list === this.transitionListKey() &&
+      matchesTransitionPair(dialog.pair, incomingTransition) &&
+      this.isForwardTransition(dialog.pair) &&
+      (this.transitionListKey() !== "playlist" || capabilities.canEditWorkingPlaylist)
+    );
+  }
+
+  async saveChordTransition(dialog: SongTransitionDialog, recommendation: TransitionRecommendation): Promise<void> {
+    const previous = this.transitionSource;
+    if (
+      !previous ||
+      this.transitionSaving ||
+      this.state.transitionDialog !== dialog ||
+      !dialog.recommendations.includes(recommendation) ||
+      !this.canSaveChordTransition(dialog)
+    )
+      return;
+    const { placement } = normalizeChordTransitionSettings(readPersistedSettings().clientViewChordTransitions);
+    const current = this.state.display;
+    const owner = placement === "previous" ? previous : current;
+    const instruction = { ...recommendation, ...dialog.pair, sourceKey: dialog.sourceKey, targetKey: dialog.targetKey, placement };
+    const list = this.transitionListKey();
+    const entry = this.transitionList().find((item) => item.songId === owner.songId);
+    const base = placement === "previous" && list === "playlist" ? (entry?.instructions ?? owner.instructions) : owner.instructions;
+    const text = insertTransitionInstruction(base?.trim() ? base : defaultTransitionInstructions(owner), instruction);
+    const incoming = this.state.incomingTransition;
+    const isCurrent = () => {
+      if (this.disposed || this.state.incomingTransition !== incoming || !this.canSaveChordTransition(dialog)) return false;
+      if (list !== "playlist") return true;
+      const currentEntry = this.transitionList().find((item) => item.songId === owner.songId);
+      return !!currentEntry && (currentEntry.instructions === entry?.instructions || currentEntry.instructions === text);
+    };
+    this.transitionSaving = true;
+    try {
+      if (list === "playlist") await this.api.playlist.setEntryInstructions(owner.songId, text, isCurrent);
+      else this.writeLocalTransitionInstructions(owner.songId, text);
+      if (!isCurrent()) return;
+      if (owner.songId === current.songId) this.set({ display: { ...this.state.display, ...transitionInstructionsPatch(text) } });
+      if (this.state.transitionDialog === dialog) this.dismissChordTransition();
+    } finally {
+      this.transitionSaving = false;
     }
   }
 

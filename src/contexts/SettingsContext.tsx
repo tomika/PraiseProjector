@@ -11,6 +11,7 @@ import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } fr
 import { defaultHardwareInputSettings } from "../../common/hardware-input";
 import { hardwareInputForLoadedSettings } from "../hardware-input/hardwareInputSettings";
 import { createDefaultScoreDefaults, normalizeScoreDefaults } from "../../common/score-settings";
+import { normalizeChordTransitionSettings } from "../../common/chord-transition-settings";
 import { DEFAULT_SONG_LANGUAGE, DEFAULT_SONG_LANGUAGE_FILTER, normalizeSongLanguage, normalizeSongLanguageFilter } from "../../common/song-language";
 
 const storeApi = {
@@ -135,6 +136,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       fontSizeMode: "auto-resolution-dpi", // Default to auto-resolution-dpi for better scaling on high-DPI displays
       automaticViewSwitch: "none",
       clientViewAutoScanSessions: "both",
+      clientViewChordTransitions: normalizeChordTransitionSettings(),
       clientViewSessionsFoundPopup: "local",
       ppdWatchTimeoutSeconds: PPD_DEFAULT_WATCH_TIMEOUT_SECONDS,
       clientViewActiveInputProfileId: "factory",
@@ -225,6 +227,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         merged.defaultSongLanguage = normalizeSongLanguage(loaded.defaultSongLanguage);
         merged.songLanguageFilter = normalizeSongLanguageFilter(loaded.songLanguageFilter);
         merged.scoreDefaults = normalizeScoreDefaults(loaded.scoreDefaults);
+        merged.clientViewChordTransitions = normalizeChordTransitionSettings(loaded.clientViewChordTransitions);
         merged.ppdWatchTimeoutSeconds = normalizePpdWatchTimeoutSeconds(loaded.ppdWatchTimeoutSeconds);
         merged.chordProStyles = normalizeChordProStyles(loaded.chordProStyles, (key) => t(key as never));
         // Hardware profiles migrate from the RAW object: the default value merged in

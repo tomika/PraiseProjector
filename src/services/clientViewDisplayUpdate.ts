@@ -4,9 +4,17 @@
  * be absent during teardown, and a missing listener must never strand a caller.
  */
 
+import type { Display } from "../../common/pp-types";
+
 export const CLIENT_VIEW_DISPLAY_UPDATE_EVENT = "pp-cv-display-update";
 
 const APPLY_TIMEOUT_MS = 2500;
+
+/** A prepended transition moves instruction indices. Keep the source range,
+ * which remains valid across instruction edits, and discard the old indices. */
+export function transitionInstructionsPatch(instructions: string): Partial<Display> {
+  return { instructions, section: undefined, sectionRepeatCounts: undefined, sectionRepeatNonce: undefined };
+}
 
 export type ClientViewDisplayUpdateEnvelope = {
   update: Record<string, unknown>;

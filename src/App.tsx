@@ -105,7 +105,11 @@ import {
 import type { PpdSessionAccess, PpdWatchEndReason } from "../common/ppd-control";
 import type { WebServerApiRequest } from "../common/webserver-interface";
 import { getWebServerInterface, syncAndroidServedClientAssets } from "./services/webServerBridge";
-import { CLIENT_VIEW_DISPLAY_UPDATE_EVENT, createClientViewDisplayUpdateListener } from "./services/clientViewDisplayUpdate";
+import {
+  CLIENT_VIEW_DISPLAY_UPDATE_EVENT,
+  createClientViewDisplayUpdateListener,
+  transitionInstructionsPatch,
+} from "./services/clientViewDisplayUpdate";
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 import { TutorialHost } from "./tutorial/TutorialHost";
@@ -1380,7 +1384,7 @@ const AppContent: React.FC = () => {
     initializeAndLoad();
   }, [isAuthLoading]);
 
-  const remoteDisplayUpdateHandler = async (data: DisplayUpdateRequest) => {
+  const remoteDisplayUpdateHandler = async (data: DisplayUpdateRequest & { playlistInstructionsOnly?: boolean }) => {
     console.info("App", "Received remote display update", data);
     const db = Database.getInstance();
     const leader = selectedLeaderRef.current;
@@ -1452,6 +1456,21 @@ const AppContent: React.FC = () => {
 
     const currentDisplay = getCurrentDisplay();
     if (data.command === "song_update") {
+      if (data.playlistInstructionsOnly) {
+        const panel = leftPanelRef.current;
+        if (!panel || data.instructions === undefined) return;
+        const items = panel.getCurrentPlaylist().items;
+        const index = items.findIndex((item) => item.songId === data.id);
+        if (index < 0) return;
+        const edited = items.map((item) => item.toJSON());
+        edited[index].instructions = data.instructions;
+        await panel.applyPlaylistEdit(
+          edited,
+          items.map((_, i) => i)
+        );
+        if (data.id === getCurrentDisplay().songId) updateCurrentDisplay(transitionInstructionsPatch(data.instructions));
+        return;
+      }
       updateLeaderPreferenceFromRequest(data);
       const playlist = leftPanelRef.current?.updatePlaylistItemPreferences(data.id, data.transpose, data.capo, data.instructions);
       updateCurrentDisplay({

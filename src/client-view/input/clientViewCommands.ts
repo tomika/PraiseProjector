@@ -7,26 +7,13 @@ import type { ClientViewInputAction, ClientViewInputContext } from "../../../com
 import { clientRowContexts, isPreselectionCommand, type ClientCommand, type HardwareActionRow } from "../../../common/hardware-input";
 import type { ExecutionContext, InputSource, TargetDecision } from "../../hardware-input/hardwareInputRuntime";
 import { isAppModalOpen } from "../../hardware-input/modalGuard";
-import { isFollowerView, isViewingRemoteDisplay, type ClientViewState, type ClientViewStore } from "../controller/ClientViewStore";
+import { clientModalOpen, isFollowerView, isViewingRemoteDisplay, type ClientViewState, type ClientViewStore } from "../controller/ClientViewStore";
 import type { DirectClientCommand } from "../controller/hardwareCommandChanges";
 import { preselectionPlan } from "../controller/preselectionCommands";
 
 export interface ClientCommandDeps {
   store: ClientViewStore;
   navigateSong(next: boolean): void;
-}
-
-/** Real modal UI: login, confirmations, the sessions dialog, the instructions
- *  editor and the about box own every input while they are open. */
-export function clientModalOpen(state: ClientViewState): boolean {
-  return (
-    !!state.confirmText ||
-    state.loginDialogOpen ||
-    (state.sessionsDialogOpen && !state.sessionsDialogStartupHidden) ||
-    state.instructionsEditorOpen ||
-    state.aboutOpen ||
-    !!state.confirmAnim
-  );
 }
 
 /** The zoom / highlight-strength panels block the legacy navigation rows. */
@@ -55,6 +42,7 @@ const LEGACY_ACTIONS = new Set<string>([
 ]);
 
 const SONG_NAVIGATION_ACTIONS = new Set<string>(["show-previous-song", "show-next-song"]);
+const TRANSITION_DISMISS_ACTIONS = new Set([...SONG_NAVIGATION_ACTIONS, "select-previous-visible-song", "select-next-visible-song"]);
 
 export function isLegacyClientRow(row: HardwareActionRow<ClientCommand>): boolean {
   return LEGACY_ACTIONS.has(row.command.action);
@@ -66,9 +54,10 @@ export function decideClientRow(
   state: ClientViewState,
   row: HardwareActionRow<ClientCommand>,
   _source: InputSource,
-  appModalOpen = isAppModalOpen()
+  appModalOpen = isAppModalOpen(undefined, "dialog.cv-chord-transition-modal")
 ): TargetDecision {
   if (appModalOpen || clientModalOpen(state)) return "protected";
+  if (state.transitionDialog) return TRANSITION_DISMISS_ACTIONS.has(row.command.action) ? "yes" : "protected";
   if (isLegacyClientRow(row)) {
     if (clientSettingPanelOpen(state)) return "protected";
     if (clientRowContexts(row).includes(clientContext(state))) return "yes";
@@ -90,6 +79,12 @@ export function decideClientRow(
 
 export function executeClientRow(deps: ClientCommandDeps, row: HardwareActionRow<ClientCommand>, context: ExecutionContext): void | Promise<unknown> {
   const { store, navigateSong } = deps;
+  // Only a visible recommender consumes the press. One still being calculated
+  // is superseded by the song change the press causes.
+  if (TRANSITION_DISMISS_ACTIONS.has(row.command.action) && store.getSnapshot().transitionDialog) {
+    store.dismissChordTransition();
+    return;
+  }
   if (!isLegacyClientRow(row)) {
     if (decideClientRow(store.getSnapshot(), row, context.source) !== "yes") return;
     if (isPreselectionCommand(row.command)) return store.executePreselectionCommand(row.command, context.isCurrent);
