@@ -55,6 +55,10 @@ function restFixture(
     sendPpdDisplayUpdate: async (update: unknown) => {
       ppd.push(update);
     },
+    // Nothing was written with `publish: false`, so no pending state goes out first.
+    markUnpublished: () => undefined,
+    hasUnpublishedState: () => false,
+    clearUnpublished: () => undefined,
   } as unknown as RestCore;
   const api = cloudApi as unknown as Record<string, unknown>;
   const original = { sendDisplayPreference: api.sendDisplayPreference, sendDisplayUpdate: api.sendDisplayUpdate };

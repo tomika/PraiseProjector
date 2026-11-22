@@ -398,9 +398,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#options[data-list-mode='leaderlists'] .cv-leaderlists-controls",
             tx(
               "Vezetői listák",
-              "Válassz vezetőt, majd egy dátumozott vagy névvel mentett kedvenc listát. A Search lists mező a kiválasztott vezető összes listájában dalcímre keres. A találat mellett látszik a forráslista, a találatra koppintva ezt a listát választod ki. A := gomb megerősítés után a teljes kiválasztott listát bemásolja az aktuális munkalistába, a mentett lista érintetlen marad.",
+              "Válassz vezetőt, majd egy dátumozott vagy névvel mentett kedvenc listát. A Search lists mező a kiválasztott vezető összes listájában dalcímre keres. A találat mellett látszik a forráslista, a találatra koppintva ezt a listát választod ki. A := gomb megerősítés után a teljes kiválasztott listát bemásolja az aktuális munkalistába, a mentett lista érintetlen marad. Ha nem követsz munkamenetet és üres a munkalistád, egy megosztott lista linkje rögtön munkalistaként nyílik meg, itt pedig a forrásvezető és -lista marad kiválasztva; egyébként itt böngészheted.",
               "Leader lists",
-              "Choose a leader, then a dated or named favorite playlist. Search lists matches song titles across all lists for that leader. Each result shows its source list. Tap a result to select that list. After confirmation, := replaces the working playlist with the entire selected list, leaving the saved list intact."
+              "Choose a leader, then a dated or named favorite playlist. Search lists matches song titles across all lists for that leader. Each result shows its source list. Tap a result to select that list. After confirmation, := replaces the working playlist with the entire selected list, leaving the saved list intact. When you are not following a session and your working playlist is empty, a shared list link opens straight as the working playlist, with its source leader and list selected here; otherwise you browse it here."
             ),
             { helpIcons: [{ label: ":=" }], prepare: leaderLists }
           ),

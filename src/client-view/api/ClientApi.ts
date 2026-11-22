@@ -192,7 +192,9 @@ export interface ClientConfig {
   leaderId?: string;
   /** Song to open on launch (parsed from the entry URL), if any. */
   initialSongId?: string;
-  /** Playlist to open on launch (parsed from the entry URL), if any. */
+  /** Playlist to open on launch (parsed from the entry URL), if any. An App with
+   *  an empty working list of its own opens it AS that list (a shared list link);
+   *  otherwise it is shown as a leader list to browse. */
   initialPlaylistId?: string;
   /** Optional zero-based row index inside the initial playlist. */
   initialPlaylistIndex?: number;
@@ -353,7 +355,7 @@ export interface PlaylistApi {
   /** The current working playlist (synchronous snapshot). */
   getPlaylist(): PlaylistEntry[];
   /** Replace the working playlist — covers reorder, add, remove and trash. */
-  setPlaylist(entries: PlaylistEntry[]): Promise<void>;
+  setPlaylist(entries: PlaylistEntry[], options?: PublishOptions): Promise<void>;
   /** Update one working-list row without replacing the list or selecting the song. */
   setEntryInstructions(songId: string, instructions: string, isCurrent: () => boolean): Promise<void>;
   /** Empty the working playlist. */
@@ -404,7 +406,20 @@ export interface ProjectRequest {
   instructions?: string;
 }
 
-export interface ProjectOptions {
+/** How far a working-list or display write reaches. */
+export interface PublishOptions {
+  /**
+   * `false`: a remote-backed adapter (Rest) applies the change on this client only
+   * and sends nothing to the backend or to a session; its next published push
+   * (song, highlight, preference or list change) sends the full working list and
+   * current song first. Used where opening something must not take over a live
+   * session of the signed-in account. The in-process Direct adapter's display and
+   * working list ARE its host's, so it applies the change normally. Default true.
+   */
+  publish?: boolean;
+}
+
+export interface ProjectOptions extends PublishOptions {
   /** Checked right before the display changes (after any loading): false drops a
    *  projection that a newer one superseded, so a slow request never lands last. */
   isCurrent?: () => boolean;

@@ -104,6 +104,7 @@ export class RestCore {
 
   private display: Display = getEmptyDisplay();
   private playlist: PlaylistEntry[] = [];
+  private unpublished = false;
 
   private followToken = 0;
   private followAbort: AbortController | null = null;
@@ -305,6 +306,21 @@ export class RestCore {
   setPlaylist(entries: PlaylistEntry[]): void {
     this.playlist = entries;
     this.playlistEvents.emit(entries);
+  }
+
+  /** A `publish: false` write left this client's working list and display ahead of
+   *  the backend. The next published push sends both in full first (restPorts). */
+  markUnpublished(): void {
+    this.unpublished = true;
+  }
+
+  hasUnpublishedState(): boolean {
+    return this.unpublished;
+  }
+
+  /** The full working list and current song just went out. */
+  clearUnpublished(): void {
+    this.unpublished = false;
   }
 
   getCapabilities(): ClientCapabilities {

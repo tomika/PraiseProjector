@@ -89,6 +89,7 @@ function readTokenLogin(token: string): string {
  *  updates as separate POSTs. */
 async function pushDisplay(core: RestCore, display: Display): Promise<void> {
   if (!core.canControlDisplay()) return;
+  await publishPendingState(core);
   if (core.isFollowingPpd()) {
     await core.sendPpdDisplayUpdate({
       command: "display_update",
@@ -132,6 +133,7 @@ async function pushDisplay(core: RestCore, display: Display): Promise<void> {
  *  neither). */
 async function pushPreference(core: RestCore, pref: { transpose?: number; capo?: number }): Promise<void> {
   if (!core.canControlDisplay()) return;
+  await publishPendingState(core);
   if (core.isFollowingPpd()) {
     const display = core.getDisplay();
     await core.sendPpdDisplayUpdate({
@@ -165,10 +167,11 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
       transpose: display.transpose,
       playlist,
     });
+    core.clearUnpublished();
     return;
   }
   const leaderId = displayUpdateLeaderId(core);
-  return cloudApi.sendDisplayUpdate(
+  const result = await cloudApi.sendDisplayUpdate(
     {
       songId: display.songId,
       from: display.from,
@@ -182,6 +185,19 @@ async function pushPlaylist(core: RestCore, playlist: PlaylistEntry[], instructi
     },
     leaderId ? { leaderId } : undefined
   );
+  // It carried the whole list and the current song: nothing stays unpublished.
+  core.clearUnpublished();
+  return result;
+}
+
+/** Before a partial push (song step, highlight, preference, instructions), send
+ *  the working list and current song that a `publish: false` write kept on this
+ *  client. Alone, a partial push would land on what the session showed before:
+ *  the backend takes a new song's transpose/capo/instructions from ITS playlist,
+ *  and a highlight or preference targets the song it already projects. */
+async function publishPendingState(core: RestCore): Promise<void> {
+  if (!core.hasUnpublishedState() || !core.canControlDisplay()) return;
+  await pushPlaylist(core, core.getPlaylist());
 }
 
 export function createSongApi(core: RestCore): SongApi {
@@ -215,10 +231,11 @@ export function createSongApi(core: RestCore): SongApi {
 }
 
 export function createPlaylistApi(core: RestCore): PlaylistApi {
-  const applyPlaylist = async (entries: PlaylistEntry[]) => {
+  const applyPlaylist = async (entries: PlaylistEntry[], publish = true) => {
     core.setPlaylist(entries);
     core.patchDisplay({ playlist: entries });
-    await pushPlaylist(core, entries);
+    if (publish) await pushPlaylist(core, entries);
+    else core.markUnpublished();
   };
   const entriesForLeader = async (leaderId: string, label?: string) => {
     const profiles = await cloudApi.fetchLeadersProfiles(undefined, { fresh: true });
@@ -228,7 +245,7 @@ export function createPlaylistApi(core: RestCore): PlaylistApi {
   };
   return {
     getPlaylist: () => core.getPlaylist(),
-    setPlaylist: async (entries) => applyPlaylist(entries),
+    setPlaylist: async (entries, options) => applyPlaylist(entries, options?.publish !== false),
     setEntryInstructions: async (songId, instructions, isCurrent) => {
       if (!isCurrent()) return;
       const entries = core.getPlaylist();
@@ -287,11 +304,13 @@ export function createDisplayApi(core: RestCore): DisplayApi {
         capo: request.capo,
         instructions: request.instructions,
       });
-      await pushCurrent();
+      if (options?.publish !== false) await pushCurrent();
+      else core.markUnpublished();
     },
     highlight: async (from, to, section, abcRange) => {
       // Reflect the highlight locally so this client's own song view updates.
       core.patchDisplay({ from, to, section, abcRange });
+      await publishPendingState(core);
       if (core.isFollowingPpd()) {
         await core.sendPpdHighlight(from, to, section, abcRange);
         return;

@@ -4,7 +4,7 @@
  * driven from the test, and promises can be held back to simulate slow replies.
  */
 import { getEmptyDisplay } from "../../common/pp-utils";
-import type { Display, PlaylistEntry, SongEntry } from "../../common/pp-types";
+import type { Display, LeaderDBProfile, PlaylistEntry, SongEntry } from "../../common/pp-types";
 import {
   NO_CAPABILITIES,
   type ClientApi,
@@ -26,6 +26,8 @@ export interface FakeClientApiOptions {
   display?: Partial<Display>;
   songs?: SongEntry[];
   playlist?: PlaylistEntry[];
+  /** What `playlist.getLeaderPlaylists()` returns. */
+  leaderProfiles?: LeaderDBProfile[];
   /** Whether the device adapter reports full screen after a toggle. */
   fullScreenResult?: boolean;
   preferences?: Record<string, string>;
@@ -74,6 +76,9 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
   const record = (method: string, ...args: unknown[]): void => {
     calls.push({ method, args });
   };
+  // A write kept on this client is recorded with a trailing `{ publish: false }`;
+  // a normal (published) write records only its arguments.
+  const unpublished = (publish: boolean | undefined): unknown[] => (publish === false ? [{ publish: false }] : []);
   let capabilities: ClientCapabilities = { ...NO_CAPABILITIES, ...options.capabilities };
   const fake = {
     projected: { ...getEmptyDisplay(), ...options.display } as Display,
@@ -116,8 +121,8 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
     },
     playlist: {
       getPlaylist: () => playlist,
-      setPlaylist: async (entries) => {
-        record("playlist.setPlaylist", entries);
+      setPlaylist: async (entries, writeOptions) => {
+        record("playlist.setPlaylist", entries, ...unpublished(writeOptions?.publish));
         playlist = entries;
         playlistChannel.emit(entries);
       },
@@ -129,7 +134,7 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
         if (fake.projected.songId === songId) emitHostDisplay({ ...fake.projected, instructions });
       },
       clear: async () => record("playlist.clear"),
-      getLeaderPlaylists: async () => [],
+      getLeaderPlaylists: async () => options.leaderProfiles ?? [],
       selectLeaderPlaylist: async () => [],
       replaceCurrentWithSelected: async () => undefined,
       upload: async () => "",
@@ -140,7 +145,7 @@ export function createFakeClientApi(options: FakeClientApiOptions = {}): FakeCli
       project: async (request, projectOptions) => {
         // Like the adapters: a superseded projection changes nothing.
         if (projectOptions?.isCurrent?.() === false) return;
-        record("display.project", request);
+        record("display.project", request, ...unpublished(projectOptions?.publish));
         const apply = () => ({ ...fake.projected, songId: request.songId, transpose: request.transpose ?? 0, capo: request.capo });
         if (options.hostEcho) {
           // The host applies it from its update queue, re-checking the sender's

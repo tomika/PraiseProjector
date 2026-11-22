@@ -1378,7 +1378,7 @@ export class ClientViewStore {
 
   /** The adapter checks the selection right before the display changes, so a slow
    *  projection never lands over a newer selection (see {@link loadLocalEntry}). */
-  private async projectEntry(entry: NavEntry, shouldApply: () => boolean = () => true): Promise<boolean> {
+  private async projectEntry(entry: NavEntry, shouldApply: () => boolean = () => true, publish = true): Promise<boolean> {
     const revision = ++this.songSelectionRevision;
     const lands = () => this.selectionLands(revision, shouldApply);
     await this.api.display.project(
@@ -1388,7 +1388,7 @@ export class ClientViewStore {
         capo: entry.capo,
         instructions: entry.instructions,
       },
-      { isCurrent: lands }
+      { isCurrent: lands, ...(publish ? {} : { publish: false }) }
     );
     // A newer selection owns the options panel by now.
     if (!lands()) return false;
@@ -2149,21 +2149,50 @@ export class ClientViewStore {
       return;
     }
 
+    const asWorkingList = this.opensInitialPlaylistAsWorkingList(config);
+    const entries = asWorkingList ? ref.entries.map(toPlaylistEntry) : ref.entries;
     this.set({
-      listMode: "leaderlists",
-      navigationMode: "archive",
+      listMode: asWorkingList ? "playlist" : "leaderlists",
+      navigationMode: asWorkingList ? "playlist" : "archive",
+      // Also as the working list: the leader-lists picker then shows the source.
       selectedLeaderId: ref.leaderId,
       selectedPlaylistLabel: ref.label,
       optionsOpen: true,
     });
 
     const byIndex =
-      typeof config.initialPlaylistIndex === "number" && config.initialPlaylistIndex >= 0 && config.initialPlaylistIndex < ref.entries.length
-        ? ref.entries[config.initialPlaylistIndex]
+      typeof config.initialPlaylistIndex === "number" && config.initialPlaylistIndex >= 0 && config.initialPlaylistIndex < entries.length
+        ? entries[config.initialPlaylistIndex]
         : undefined;
-    const bySong = config.initialSongId ? ref.entries.find((entry) => entry.songId === config.initialSongId) : undefined;
-    const entry = bySong ?? byIndex ?? ref.entries[0];
-    if (entry) await this.selectArchiveEntry(entry);
+    const bySong = config.initialSongId ? entries.find((entry) => entry.songId === config.initialSongId) : undefined;
+    const entry = bySong ?? byIndex ?? entries[0];
+    if (!asWorkingList) {
+      if (entry) await this.selectArchiveEntry(entry);
+      return;
+    }
+    // Opening a link must not take over a live session of the signed-in account
+    // (Rest pushes working-list and song changes to it): the list and the linked
+    // song stay on this client until the user's own next change publishes them.
+    await this.api.playlist.setPlaylist(entries, { publish: false });
+    if (!entry) return;
+    this.set({ hotkeySongId: null });
+    await this.projectEntry(entry, undefined, false);
+  }
+
+  /** A shared list link opens as the working list where that list is this
+   *  client's own and still empty — a fresh standalone App document, whose
+   *  working list starts empty every time. Never for a follower or a watching
+   *  App (their list mirrors the leader's), and never over an existing list. */
+  private opensInitialPlaylistAsWorkingList(config: ClientConfig): boolean {
+    const { canControlDisplay, canEditWorkingPlaylist } = this.state.capabilities;
+    return (
+      this.api.mode === "App" &&
+      !config.follow &&
+      !isAppFollowingSession(this.state) &&
+      canControlDisplay &&
+      canEditWorkingPlaylist &&
+      this.state.playlist.length === 0
+    );
   }
 
   /** Replace the working playlist wholesale with the selected leader playlist
