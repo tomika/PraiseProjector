@@ -86,6 +86,14 @@ test("malformed bodies and a renderer that cannot answer become JSON-RPC errors"
   assert.match(unavailable.error?.message ?? "", /window not ready/);
 });
 
+test("an oversized body is answered with 413, not a reset connection", async () => {
+  const oversized = await post(" ".repeat(9 * 1024 * 1024));
+  assert.equal(oversized.status, 413);
+  assert.match(((await oversized.json()) as JsonRpcResponse).error?.message ?? "", /too large/);
+  // The connection stays usable for the next request.
+  assert.equal((await post({ jsonrpc: "2.0", id: 2, method: "tools/list" })).status, 200);
+});
+
 test("the stateless revision gets header checks and HTTP statuses, older clients plain 200s", async () => {
   const unsupported = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { "MCP-Protocol-Version": "1900-01-01" });
   assert.equal(unsupported.status, 400);

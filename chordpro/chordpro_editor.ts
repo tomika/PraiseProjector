@@ -3929,7 +3929,11 @@ export class ChordProEditor extends ChordDrawer {
                 const newLine = pastedLines[i].clone();
                 newLine.doc = this.chordPro;
                 if (mode === "lyrics") newLine.chords = [];
-                if (mode !== "directives") newLine.styles = line_obj.styles.clone();
+                if (mode !== "directives") {
+                  // The line joins the target's section, so it cannot open a new one.
+                  newLine.styles = line_obj.styles.clone();
+                  newLine.startsSection = undefined;
+                }
                 this.chordPro.lines.splice(insertIdx + i, 0, newLine);
               }
               // Move cursor to end of last inserted line

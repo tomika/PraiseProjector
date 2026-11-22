@@ -521,7 +521,7 @@ export const fullViewTutorial: TutorialDefinition = {
         branches: [
           {
             id: "application-settings",
-            label: tl("Nyelv, hardver és kotta", "Language, hardware and scores"),
+            label: tl("Nyelv, hardver, kotta és MI-asszisztens", "Language, hardware, scores and AI assistant"),
             steps: [
               s(
                 "settings-song-language",
@@ -575,6 +575,17 @@ export const fullViewTutorial: TutorialDefinition = {
                   "A Beállítások Kotta lapján a lejátszás hangszerei, kísérete és a kotta megjelenésének alapértékei állíthatók. A kotta saját beállításai elsőbbséget élveznek az alapértékekkel szemben. A változások a Beállítások mentése után érvényesek.",
                   "Score defaults",
                   "Settings → Score sets default playback instruments, accompaniment and notation appearance. A score's own options take priority over these defaults. Changes take effect after saving Settings."
+                ),
+                { helpIcons: [IconType.SETTINGS] }
+              ),
+              s(
+                "settings-mcp",
+                ".btn-toolbar button[aria-label='Settings']",
+                tx(
+                  "MI-asszisztens (MCP)",
+                  "Az asztali alkalmazásban a Beállítások MI-asszisztens (MCP) lapján kapcsolható be a beépített MCP-szerver. Rajta keresztül egy általad választott MI-asszisztens a beépített útmutató alapján válaszol, dalokat keres és lejátszási listát készít elő. A kapcsolat csak ezen a számítógépen működik, és a lapon látható hozzáférési kulcs kell hozzá; az Új kulcs gomb minden korábban beállított asszisztens hozzáférését megszünteti. Alapból az asszisztens csak olvas: a Módosítások engedélyezése és az Élő vezérlés engedélyezése ad neki több jogot, és kérheted, hogy minden módosítás előtt rákérdezzen. A Csatlakozás módja szerinti beállítást a Másolás gombbal viheted át az asszisztens konfigurációjába. A változások a Beállítások mentése után érvényesek.",
+                  "AI assistant (MCP)",
+                  "In the desktop app, Settings → AI assistant (MCP) turns on the built-in MCP server. Through it an AI assistant of your choice answers from the built-in guide, searches songs and prepares playlists. The connection works only on this computer and needs the access token shown on the page; Regenerate revokes every assistant set up earlier. By default the assistant can only read: Allow changes and Allow live control give it more, and you can have the app ask before each change. Copy the setup for the method chosen under Connect with into the assistant's configuration. Changes take effect after saving Settings."
                 ),
                 { helpIcons: [IconType.SETTINGS] }
               ),

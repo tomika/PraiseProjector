@@ -210,6 +210,7 @@ export class McpHttpServer {
     return new Promise((resolve) => {
       const chunks: Buffer[] = [];
       let size = 0;
+      let tooLarge = false;
       let done = false;
       const finish = (value: string | null) => {
         if (done) return;
@@ -217,15 +218,18 @@ export class McpHttpServer {
         resolve(value);
       };
       req.on("data", (chunk: Buffer) => {
+        if (tooLarge) return;
         size += chunk.length;
         if (size > MAX_BODY_BYTES) {
-          finish(null);
-          req.destroy();
+          // The rest is read and dropped: closing on unread data resets the
+          // connection, and the client would never see the 413.
+          tooLarge = true;
+          chunks.length = 0;
           return;
         }
         chunks.push(chunk);
       });
-      req.on("end", () => finish(Buffer.concat(chunks).toString("utf8")));
+      req.on("end", () => finish(tooLarge ? null : Buffer.concat(chunks).toString("utf8")));
       req.on("error", () => finish(null));
     });
   }

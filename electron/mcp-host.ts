@@ -30,7 +30,10 @@ const STDIO_SCRIPT = "praiseprojector-mcp-stdio.cjs";
 
 let getWindow: () => BrowserWindow | null = () => null;
 let server: McpHttpServer | null = null;
+/** The configuration the transport runs with. */
 let config: McpServerConfig = { enabled: false, port: normalizeMcpPort(undefined) };
+/** The latest one asked for; queued applies may not have reached it yet. */
+let requested: McpServerConfig = config;
 let token = "";
 let applying: Promise<void> = Promise.resolve();
 const pending = new Map<string, (response: JsonRpcResponse | null) => void>();
@@ -137,7 +140,8 @@ function forwardToRenderer(message: JsonRpcRequest, protocolVersion?: string): P
 async function apply(next: McpServerConfig): Promise<void> {
   const portChanged = next.port !== config.port;
   config = next;
-  if (server && (!config.enabled || portChanged)) {
+  // A server that failed to start (e.g. its port was taken) is replaced as well.
+  if (server && (!config.enabled || portChanged || !server.running)) {
     await server.stop();
     server = null;
   }
@@ -156,7 +160,10 @@ async function apply(next: McpServerConfig): Promise<void> {
 /** Called with every settings sync; only an actual change restarts the transport. */
 export function applyMcpSettings(settings: { mcpEnabled?: unknown; mcpPort?: unknown }): void {
   const next: McpServerConfig = { enabled: settings.mcpEnabled === true, port: normalizeMcpPort(settings.mcpPort) };
-  if (next.enabled === config.enabled && next.port === config.port) return;
+  const unchanged = next.enabled === requested.enabled && next.port === requested.port;
+  // Saving the same settings again retries a server that could not start.
+  if (unchanged && !(next.enabled && server && !server.running)) return;
+  requested = next;
   applying = applying.then(() => apply(next)).catch((error) => console.error("[MCP] could not apply settings", error));
 }
 

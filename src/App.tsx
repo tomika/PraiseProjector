@@ -2387,7 +2387,17 @@ const AppContent: React.FC = () => {
         // A favorite deleted meanwhile (e.g. on another device) is recreated with
         // the name it was loaded with; an existing one keeps its current name.
         const favoriteName = isFavoriteScheduleDate(scheduleDate) && !savedPlaylist ? favoriteNameFromLabel(origin.label) || undefined : undefined;
-        Database.getInstance().schedule(sourceLeader, scheduleDate, currentPlaylist, favoriteName);
+        const db = Database.getInstance();
+        db.schedule(sourceLeader, scheduleDate, currentPlaylist, favoriteName);
+        if (exit) {
+          // The window may close only once the playlist is stored. A failed save
+          // (already reported to the user) keeps it open.
+          try {
+            await db.forceSaveAsync();
+          } catch {
+            return false;
+          }
+        }
       }
       return result !== "cancel";
     },

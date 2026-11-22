@@ -109,6 +109,16 @@ let closeGuardRegistered = false;
 let closeQuestionPending = false;
 let closeApproved = false;
 let quitRequested = false;
+let rendererUnresponsive = false;
+
+/** Every new main window and page load starts without a guard or an earlier answer. */
+function resetCloseGuard(): void {
+  closeGuardRegistered = false;
+  closeQuestionPending = false;
+  closeApproved = false;
+  quitRequested = false;
+  rendererUnresponsive = false;
+}
 
 type NetDisplayEncodeSettings = {
   jpegQuality?: number;
@@ -1051,6 +1061,7 @@ ipcMain.handle("print:open-window", () => {
 });
 
 const createWindow = () => {
+  resetCloseGuard();
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 1024,
@@ -1121,14 +1132,14 @@ const createWindow = () => {
     event.preventDefault();
     askToClose();
   });
-  // A hung page could never answer: let the window close then.
+  // A hung page could never answer: let the window close while it does not respond.
   mainWindow.on("unresponsive", () => {
-    closeGuardRegistered = false;
+    rendererUnresponsive = true;
   });
-  mainWindow.webContents.on("did-start-loading", () => {
-    closeGuardRegistered = false;
-    closeQuestionPending = false;
+  mainWindow.on("responsive", () => {
+    rendererUnresponsive = false;
   });
+  mainWindow.webContents.on("did-start-loading", resetCloseGuard);
 
   mainWindow.on("closed", () => {
     // Close the log viewer window when main window closes
@@ -1268,7 +1279,7 @@ app.on("will-quit", () => {
   shutdownMcpHost();
 });
 
-const closeNeedsQuestion = () => !!mainWindow && closeGuardRegistered && !closeApproved && !quittingForUpdate;
+const closeNeedsQuestion = () => !!mainWindow && closeGuardRegistered && !closeApproved && !rendererUnresponsive && !quittingForUpdate;
 
 function askToClose(): void {
   if (closeQuestionPending) return;

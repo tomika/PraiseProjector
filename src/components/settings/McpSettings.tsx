@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import type { McpServerStatus } from "../../../common/mcp-bridge";
-import { MCP_DEFAULT_PORT } from "../../../common/mcp-bridge";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { Settings } from "../../types";
 
@@ -10,6 +9,13 @@ interface McpSettingsProps {
 }
 
 type SnippetKind = "stdio" | "http";
+
+/** Ports the main process accepts as they are (see `normalizeMcpPort`). */
+function parsePort(text: string): number | null {
+  if (!/^\d+$/.test(text.trim())) return null;
+  const port = Number(text);
+  return port >= 1024 && port <= 65535 ? port : null;
+}
 
 /** True where the Electron main process hosts the MCP endpoint. */
 export const isMcpRuntimeAvailable = (): boolean => typeof window !== "undefined" && !!window.electronAPI?.getMcpStatus;
@@ -29,6 +35,11 @@ const McpSettings: React.FC<McpSettingsProps> = ({ settings, updateSetting }) =>
   const [showToken, setShowToken] = useState(false);
   const [kind, setKind] = useState<SnippetKind>("stdio");
   const [copied, setCopied] = useState("");
+  // The field may be empty or out of range while it is being typed; only a valid
+  // port reaches the settings, and leaving the field shows the stored one again.
+  const [portDraft, setPortDraft] = useState<string | null>(null);
+  const portText = portDraft ?? String(settings.mcpPort);
+  const portInvalid = parsePort(portText) === null;
 
   const refresh = useCallback(() => {
     void window.electronAPI
@@ -88,14 +99,19 @@ const McpSettings: React.FC<McpSettingsProps> = ({ settings, updateSetting }) =>
         </label>
         <input
           type="number"
-          className="form-control form-control-sm"
+          className={`form-control form-control-sm${portInvalid ? " is-invalid" : ""}`}
           style={{ width: "7em" }}
           id="mcpPort"
           min={1024}
           max={65535}
           disabled={!settings.mcpEnabled}
-          value={settings.mcpPort}
-          onChange={(e) => updateSetting("mcpPort", Number.parseInt(e.target.value, 10) || MCP_DEFAULT_PORT)}
+          value={portText}
+          onChange={(e) => {
+            setPortDraft(e.target.value);
+            const port = parsePort(e.target.value);
+            if (port !== null) updateSetting("mcpPort", port);
+          }}
+          onBlur={() => setPortDraft(null)}
         />
         <span className={`small ${status?.error && !pendingRestart ? "text-danger" : "text-muted"}`}>{statusText}</span>
       </div>
