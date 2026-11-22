@@ -293,20 +293,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
 
     // Replace local playlist with remote playlist when watching another session
     if (this.props.remotePlaylist && prevProps.remotePlaylist !== this.props.remotePlaylist) {
-      this.setState(
-        {
-          currentPlaylist: this.props.remotePlaylist,
-          playlistOrigin: null,
-          selectedItems: new Set<number>(),
-          focusedIndex: -1,
-          selectionAnchor: -1,
-          showInstructionsEditor: false,
-          editingInstructions: null,
-        },
-        () => {
-          this.updatePlaylistItemStates();
-        }
-      );
+      this.showRemotePlaylist(this.props.remotePlaylist);
     }
 
     // Restore local playlist when exiting watch mode (remotePlaylist becomes null)
@@ -839,15 +826,44 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     this.updatePlaylistItemStates();
   };
 
+  /** Show a watched session's list in place of the local one (never published). */
+  private showRemotePlaylist(remotePlaylist: Playlist) {
+    this.setState(
+      {
+        currentPlaylist: remotePlaylist,
+        playlistOrigin: null,
+        selectedItems: new Set<number>(),
+        focusedIndex: -1,
+        selectionAnchor: -1,
+        showInstructionsEditor: false,
+        editingInstructions: null,
+      },
+      () => {
+        this.updatePlaylistItemStates();
+      }
+    );
+  }
+
   loadPlaylist() {
+    // Mounted while a session is watched (e.g. a layout switch remounts the panel):
+    // show the watched list. Publishing the local one would overwrite the watched
+    // display; leaving watch mode loads it (componentDidUpdate).
+    if (this.props.remotePlaylist) {
+      this.showRemotePlaylist(this.props.remotePlaylist);
+      this.props.onPlaylistLoaded?.(this.props.remotePlaylist.items.length);
+      return;
+    }
     try {
       const savedPlaylistJson = localStorage.getItem("pp-playlist");
       if (savedPlaylistJson) {
         const savedPlaylist = Playlist.fromJSON(JSON.parse(savedPlaylistJson));
         void this.updatePlaylist(savedPlaylist.items || [], savedPlaylist.name, savedPlaylist.id, this.loadPlaylistOrigin());
       } else {
-        // No saved playlist - still notify parent that loading is complete
-        this.props.onPlaylistLoaded?.(0);
+        // No saved playlist: publish the empty list like a loaded one (this also
+        // notifies the parent). An absent display playlist is never sent, so a
+        // cloud session would otherwise keep showing a list another document put
+        // there — e.g. a shared list browsed from a link before this reload.
+        void this.updatePlaylist([]);
       }
     } catch (error) {
       console.error("Playlist", "Error loading playlist from localStorage", error);
