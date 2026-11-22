@@ -438,12 +438,12 @@ const UserPanel: React.FC<UserPanelProps> = ({
               <Icon type={IconType.SYNC} />
               {localChangeCount && isAuthenticated ? (
                 <span className="pending-badge-abs sync-version-indicator-topleft" aria-hidden="true">
-                  {localChangeCount ? localChangeCount + "↑" : ""}
+                  ↑
                 </span>
               ) : null}
               {remoteChangeCount ? (
                 <span className="pending-badge-abs sync-version-indicator-bottomleft" aria-hidden="true">
-                  {remoteChangeCount ? remoteChangeCount + "↓" : ""}
+                  ↓
                 </span>
               ) : null}
             </button>
