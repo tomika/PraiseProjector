@@ -208,6 +208,17 @@
   line-height: 1;
 }
 
+/* the bare arrows on the sync button: larger and thickened so they stay visible */
+.sync-version-indicator-topleft,
+.sync-version-indicator-bottomleft {
+  font-weight: 900;
+  padding: 0;
+  -webkit-text-stroke: 1.2px currentColor;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 2px #fff;
+}
+
 /* top-right (default) */
 .sync-version-indicator {
   color: #c71e00;
