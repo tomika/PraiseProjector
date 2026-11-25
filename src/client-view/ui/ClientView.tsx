@@ -28,7 +28,8 @@ import { usePullToRefresh } from "../../shared/usePullToRefresh";
 import { UNIFORM_BUTTON_BORDERS } from "./uiConfig";
 import { useClientViewHardwareTarget } from "../input/useClientViewHardwareTarget";
 import { TutorialHost } from "../../tutorial/TutorialHost";
-import type { TutorialCommand } from "../../tutorial/tutorialTypes";
+import { registerTutorialDetailSurfaceOpener } from "../../tutorial/tutorialDetailSurfaces";
+import type { TutorialCommand, TutorialDetailSurface } from "../../tutorial/tutorialTypes";
 import { catalogFamily } from "../../../common/hardware-action-catalog";
 import { useLocalization } from "../../localization/LocalizationContext";
 
@@ -152,6 +153,22 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
       }
     },
     [onHome, store]
+  );
+  // Detail surfaces the tutorial (and the MCP spotlight) opens to point at their
+  // controls. showSessionsDialog() is used instead of openSessionsDialog() on
+  // purpose: the Sessions menu item stops following first, but explaining the
+  // dialog must never end a followed session. Without sessions support nothing
+  // opens, and the tutorial skips the then-missing targets. The returned cleanup
+  // closes the dialog again when the tour leaves the step's details.
+  useEffect(
+    () =>
+      registerTutorialDetailSurfaceOpener("client", (surface: TutorialDetailSurface) => {
+        if (surface === "sessions" && canUseSessions(store.getSnapshot())) {
+          store.showSessionsDialog();
+          return () => store.closeSessionsDialog();
+        }
+      }),
+    [store]
   );
   // Pull-down-from-the-toolbar refresh: a released pull just reloads the page
   // (database synchronization is a full-view-only concern now — see ClientViewStore

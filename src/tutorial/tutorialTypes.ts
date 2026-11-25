@@ -2,6 +2,7 @@ import type { Language } from "../localization/LocalizationContext";
 import type { IconType } from "../services/IconService";
 
 export type TutorialView = "full" | "client";
+export type TutorialDetailSurface = "sessions";
 
 export interface TutorialText {
   title: string;
@@ -37,6 +38,8 @@ export interface TutorialStep {
   /** Additional targets that share one tutorial spotlight with the primary target. */
   highlightTargets?: readonly string[];
   prepare?: () => void | TutorialCleanup;
+  /** Application surface kept open while visiting this step's details. */
+  detailSurface?: TutorialDetailSurface;
   details?: readonly TutorialStep[];
   branches?: readonly TutorialBranch[];
   actions?: readonly TutorialAction[];

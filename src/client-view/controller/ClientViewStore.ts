@@ -2737,7 +2737,10 @@ export class ClientViewStore {
     this.showSessionsDialog();
   }
 
-  private showSessionsDialog(): void {
+  /** Open the dialog without changing the session currently being followed.
+   *  Public for the tutorial / MCP spotlight, which only explain the dialog; user
+   *  actions go through {@link openSessionsDialog}, which leaves follow mode first. */
+  showSessionsDialog(): void {
     this.set({
       sessionsDialogOpen: true,
       sessionsDialogStartupHidden: false,

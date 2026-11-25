@@ -203,7 +203,7 @@ export function SessionsForm({
             </div>
           ) : null}
 
-          <div className="sessions-list-row">
+          <div className="sessions-list-row" data-tutorial-id="sessions-results">
             <div className={`sessions-scan${scanning ? " is-scanning" : ""}`}>
               <img src={scanIcon} alt="Scanning…" title="Scanning…" />
             </div>
@@ -260,7 +260,7 @@ export function SessionsForm({
 
           {details ? (
             <div className="details-section">
-              <div className="sessions-addr-row">
+              <div className="sessions-addr-row" data-tutorial-id="sessions-broadcast-address">
                 <label htmlFor="broadcast-address" className="sessions-addr-label">
                   {details.addressLabel}
                 </label>
@@ -325,6 +325,7 @@ export function SessionsForm({
                   <button
                     key={toggle.id}
                     type="button"
+                    data-tutorial-id={toggle.id}
                     className={`session-toggle-card${toggle.isFeatureEnabled ? " is-enabled" : ""}${toggle.statusTone === "error" ? " has-error" : ""}`}
                     aria-pressed={toggle.isFeatureEnabled}
                     disabled={toggle.isControlDisabled}

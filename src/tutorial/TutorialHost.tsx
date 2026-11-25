@@ -11,6 +11,7 @@ import {
   type TutorialStartDetail,
 } from "./tutorialEvents";
 import { getTutorialDefinition } from "./tutorialDefinitions";
+import { openTutorialDetailSurface } from "./tutorialDetailSurfaces";
 import {
   firstBranchCursor,
   firstDetailCursor,
@@ -286,6 +287,13 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
   );
   const localized = resolved?.step.text[language];
   const activeStepId = phase === "tour" ? resolved?.step.id : undefined;
+  const detailSurface = phase === "tour" && cursor?.detailId && !cursor.branchId ? resolved?.primary.detailSurface : undefined;
+
+  // The surface stays open while the cursor moves between the primary step's
+  // details and closes when the tour leaves them (or ends).
+  useEffect(() => {
+    if (detailSurface) return openTutorialDetailSurface(view, detailSurface);
+  }, [detailSurface, view]);
 
   useLayoutEffect(() => {
     if (!activeStepId) return;
@@ -602,7 +610,7 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       targetRecoveryUsedRef.current = false;
       setMissingTarget(false);
       setTargetRect(null);
-      registerCleanup(resolved.primary.prepare?.());
+      if (!detailSurface) registerCleanup(resolved.primary.prepare?.());
       await nextFrame();
       if (cancelled) return;
       if (resolved.detailIndex !== null) registerCleanup(resolved.step.prepare?.());
@@ -628,7 +636,7 @@ export function TutorialHost({ view, onBeforeStart, onCommand }: TutorialHostPro
       targetAbort.abort();
       cleanupPreparedStep();
     };
-  }, [cleanupPreparedStep, cursor, definition, phase, resolved]);
+  }, [cleanupPreparedStep, cursor, definition, detailSurface, phase, resolved]);
 
   useEffect(() => {
     if (phase !== "tour" || !missingTarget || !resolved) return;

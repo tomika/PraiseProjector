@@ -1,4 +1,5 @@
 import { IconType } from "../services/IconService";
+import { sessionsTutorial } from "./sessionsTutorial";
 import type { TutorialDefinition } from "./tutorialTypes";
 import {
   activateEditorTab,
@@ -125,9 +126,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".user-session-btn",
             tx(
               "Munkamenetek",
-              "Ez a vezérlő helyi, webes és felhős kapcsolatok más eszközökkel való indítására és követésére szolgál.",
+              "Ezzel a gombbal nyithatod meg a Munkamenetek ablakot, ahol saját vetítést oszthatsz meg, vagy más eszköz vetítéséhez csatlakozhatsz.",
               "Sessions",
-              "Start or follow local, web and cloud sessions with other devices."
+              "This button opens the Sessions window, where you can share your projection or join one from another device."
             ),
             { helpIcons: [IconType.SESSIONS] }
           ),
@@ -145,6 +146,7 @@ export const fullViewTutorial: TutorialDefinition = {
         ],
       }
     ),
+    sessionsTutorial(".user-session-btn", IconType.SESSIONS, side),
     s(
       "song-tree",
       ".song-list-panel",

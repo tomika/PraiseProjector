@@ -113,8 +113,9 @@ import {
 import { shouldSuppressCloudNetworkToast, suppressCloudNetworkToast } from "./utils/cloudNetworkToastSuppression";
 import { shouldUsePagingLayoutForOrientation } from "./utils/viewLayout";
 import { TutorialHost } from "./tutorial/TutorialHost";
+import { registerTutorialDetailSurfaceOpener } from "./tutorial/tutorialDetailSurfaces";
 import { requestTutorialContinueWhenUnblocked, requestVisibleTutorialStart } from "./tutorial/tutorialEvents";
-import type { TutorialCommand } from "./tutorial/tutorialTypes";
+import type { TutorialCommand, TutorialDetailSurface } from "./tutorial/tutorialTypes";
 import { PullRefreshSpinner } from "./shared/PullRefreshSpinner";
 import { SyncTodoBadge } from "./shared/TodoBadge";
 import { usePullToRefresh } from "./shared/usePullToRefresh";
@@ -3260,6 +3261,22 @@ const AppContent: React.FC = () => {
       if (command === "switch-client") handleSwitchToMobileView();
     },
     [continueTutorialAfterSyncFlow, handleSwitchToMobileView, handleSyncRequest]
+  );
+
+  // Detail surfaces the tutorial (and the MCP spotlight) opens to point at their
+  // controls. The Sessions form is shown for display only: unlike the Sessions
+  // button (handleLaunchViewer) it deliberately does NOT exit watch mode, so
+  // explaining the dialog never ends a followed session. The returned cleanup
+  // closes it again when the tour leaves the step's details.
+  useEffect(
+    () =>
+      registerTutorialDetailSurfaceOpener("full", (surface: TutorialDetailSurface) => {
+        if (surface === "sessions") {
+          setShowSessionsForm(true);
+          return () => setShowSessionsForm(false);
+        }
+      }),
+    []
   );
 
   // Built-in MCP server: lends the app's own entry points to the assistant tools.

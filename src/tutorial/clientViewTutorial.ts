@@ -1,3 +1,4 @@
+import { sessionsTutorial } from "./sessionsTutorial";
 import type { TutorialDefinition } from "./tutorialTypes";
 import {
   closeClientTutorialPopovers,
@@ -790,9 +791,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-more-sessions']",
             tx(
               "Munkamenetek és kapcsolat",
-              "A kapcsolatok keresésére, indítására és követésére szolgáló dialógust nyitja meg. Itt helyi, közeli és felhős munkamenetek kezelhetők, megosztási QR-kód kérhető, követéskor pedig vissza lehet térni a helyi listákhoz. A fő vezérlősáv hálózati jelzője az aktuális kapcsolati állapotot mutatja.",
+              "A Több menü Sessions pontja nyitja meg a Munkamenetek ablakot. Itt megoszthatod a saját vetítésedet, vagy csatlakozhatsz más eszköz vetítéséhez. A fő vezérlősáv hálózati jelzője az aktuális kapcsolati állapotot mutatja.",
               "Sessions and connection",
-              "Open the hub for discovering, starting and following connections. It manages local, nearby and cloud sessions, can provide a sharing QR code, and lets you return to your own lists while following. The main toolbar network indicator shows the current connection state."
+              "Choose Sessions in the More menu to open the window for sharing your projection or joining one from another device. The main toolbar network indicator shows the current connection state."
             ),
             { helpIcons: ["images/wifi.svg"], prepare: openClientMoreMenu }
           ),
@@ -831,5 +832,10 @@ export const clientViewTutorial: TutorialDefinition = {
         ],
       }
     ),
+    sessionsTutorial("[data-tutorial-id='client-more-sessions']", "images/wifi.svg", () => {
+      options();
+      openClientMoreMenu();
+      return closeClientTutorialPopovers;
+    }),
   ],
 };
