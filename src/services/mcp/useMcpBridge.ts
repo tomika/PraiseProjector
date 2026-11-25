@@ -33,6 +33,7 @@ import enStrings from "../../localization/strings.en.json";
 import huStrings from "../../localization/strings.hu.json";
 import { getCurrentDisplay } from "../../state/CurrentSongStore";
 import type { Settings } from "../../types";
+import { openTutorialDetailSurface } from "../../tutorial/tutorialDetailSurfaces";
 import { getLocalNetworkAddresses } from "../hostDevicePpd";
 import { getWebServerInterface, isWebServerRuntimeAvailable } from "../webServerBridge";
 import { chordStatus, gridChords, importerChord, importerConventions, knownChordTypes } from "./appChords";
@@ -83,6 +84,8 @@ export interface McpAppBindings {
 
 const SPOTLIGHT_CLASS = "pp-mcp-spotlight";
 const SPOTLIGHT_MS = 6000;
+/** How long a spotlight waits for its target to appear after the preparation. */
+const SPOTLIGHT_TARGET_WAIT_MS = 2000;
 
 const currentView = (): "full" | "client" => {
   try {
@@ -106,18 +109,33 @@ function ensureSpotlightStyle(): void {
 async function spotlight(targetId: string): Promise<McpShowResult> {
   const found = findTutorialSteps(content.help.tutorials, targetId);
   if (!found) return "unknown";
-  if (found.view !== currentView()) return "other-view";
+  const view = currentView();
+  if (found.view !== view) return "other-view";
   const cleanups: (() => void)[] = [];
-  for (const step of found.steps) {
-    const cleanup = step.prepare?.();
+  const keep = (cleanup: void | (() => void)) => {
     if (typeof cleanup === "function") cleanups.push(cleanup);
-  }
-  // The preparation switches panels through React state: wait for the render.
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  };
+  // Same preparation as the tutorial host: a detail of a step with a detail
+  // surface (e.g. a control inside the Sessions dialog) opens that surface
+  // instead of running the primary step's own preparation.
+  const [primary, ...details] = found.steps;
+  const detailSurface = details.length ? primary.detailSurface : undefined;
+  if (detailSurface) keep(openTutorialDetailSurface(view, detailSurface));
+  else keep(primary.prepare?.());
+  for (const step of details) keep(step.prepare?.());
+  // The preparation switches panels through React state, and a surface can be
+  // a lazily loaded dialog: wait for the render, then poll briefly for the target.
   const target = found.steps[found.steps.length - 1].target;
-  const element = (typeof target === "string" ? [target] : [...target])
-    .flatMap((selector) => Array.from(document.querySelectorAll<HTMLElement>(selector)))
-    .find((candidate) => candidate.getClientRects().length > 0);
+  const findElement = () =>
+    (typeof target === "string" ? [target] : [...target])
+      .flatMap((selector) => Array.from(document.querySelectorAll<HTMLElement>(selector)))
+      .find((candidate) => candidate.getClientRects().length > 0);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  let element = findElement();
+  for (let waited = 250; !element && waited < SPOTLIGHT_TARGET_WAIT_MS; waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    element = findElement();
+  }
   if (!element) {
     cleanups.forEach((cleanup) => cleanup());
     return "not-visible";
