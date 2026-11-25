@@ -1,5 +1,5 @@
 /** abcjs adaptation of xml2abc's one-measure-per-line output. Based on the
- * project's pic2abc/abcconv.py: use one L:, align all voices' systems, and keep
+ * project's pic2mxl/pic2mxl_core/abcconv.py: use one L:, align all voices' systems, and keep
  * each lyric verse attached to exactly the same measures as its notes. */
 interface Voice {
   head: string;

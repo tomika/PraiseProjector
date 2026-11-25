@@ -20,6 +20,6 @@ PraiseProjector modifications:
 
 The adjacent TypeScript files implement input validation, MusicXML timewise
 normalization, MXL extraction and abcjs output adaptation. The measure reflow and
-rest adaptation follow the project's pic2abc implementation. Keep this readable
+rest adaptation follow the project's pic2mxl implementation. Keep this readable
 source and the license texts available when distributing the application. Vite
 also emits this complete directory to `third-party/musicxml/` in every build.

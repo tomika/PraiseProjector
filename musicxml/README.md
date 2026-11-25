@@ -6,7 +6,7 @@ The UI calls the byte API in a dedicated worker with a 30-second limit and then
 uses the existing ABC-to-ChordPro import path. Conversion stays offline.
 
 The core is xml2abc-js 122 (LGPL), with a small XML query adapter instead of
-jQuery. Its one-measure-per-line output is adapted using the project's pic2abc
+jQuery. Its one-measure-per-line output is adapted using the project's pic2mxl
 approach: a shared `L:1/8`, synchronized systems across voices, matching lyric
 verse rows, repeat/volta continuation and exact-duration gap rests. Unsupported
 cross-staff placement, stemless styling and pedals are omitted with notices;
@@ -24,7 +24,7 @@ beyond seven sharps/flats are rejected explicitly. abcjs parser warnings are
 returned for review; successful conversion is not a promise of lossless engraving
 of every MusicXML feature.
 
-The adapter follows `pic2abc/pic2abc_core/abcconv.py` but deliberately does not
+The adapter follows `pic2mxl/pic2mxl_core/abcconv.py` but deliberately does not
 apply OCR guesses to authored scores (chord-name repairs or deleting lyrics that
 look like page footers). All converter code in this directory is distributed
 under the GNU Lesser General Public License; see `vendor/COPYING.LESSER` and
