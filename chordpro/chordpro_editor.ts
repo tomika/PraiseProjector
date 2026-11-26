@@ -18,6 +18,7 @@ import type { AbcWysiwygEditor } from "./abc_editor";
 import type { NoteTimingEvent, SynthOptions, TimingCallbacks, TuneObject, TuneObjectArray } from "abcjs";
 import { abcjs, isAbcjsLoaded, loadAbcjs } from "./abcjs-lazy";
 import { trackAbcPlayback } from "./abc-playback-registry";
+import { abcEventAt, abcScorePoint, abcStartMilliseconds } from "./abc-playback-position";
 import { lineAbcRange, matchesAbcRange } from "./abc-range";
 import { sameAbcRange } from "../common/abc-range";
 import type { AbcRange, SectionRepeatCount as SharedSectionRepeatCount } from "../common/pp-types";
@@ -125,19 +126,28 @@ export type AbcPlaybackEngine = {
   TimingCallbacks: typeof import("abcjs").TimingCallbacks;
 };
 
-/**
- * Plays an ABC score and marks the notes being played. `playbackVisual` is the
- * tune object on screen, or a function returning the CURRENT one: re-rendering
- * the score (e.g. after the zoom view showed it as lyrics in between) replaces
- * its SVG, and the marker then follows the new rendering while the audio plays on.
- */
-export function playAbcWithSynth(
-  abcSource: string,
-  options: SynthOptions,
-  onError?: (error?: unknown) => void,
-  playbackVisual?: TuneObject | (() => TuneObject | undefined),
-  engine?: AbcPlaybackEngine
-): MidiPlaybackState {
+export interface AbcPlaybackOptions {
+  onError?: (error?: unknown) => void;
+  /**
+   * The tune object on screen, or a function returning the CURRENT one:
+   * re-rendering the score (a window resize, or the zoom view showing it as
+   * lyrics in between) replaces its SVG, and the marker then follows the new
+   * rendering while the audio plays on.
+   */
+  visual?: TuneObject | (() => TuneObject | undefined);
+  /** Chooses the starting position (ms) from the score's note timings; the whole score plays without it. */
+  startAt?: (timings: readonly NoteTimingEvent[]) => number;
+  /**
+   * Subscribes to the host's re-renders and returns the unsubscribe call. Each
+   * one moves the marker to the current tune at once, not only at the next note.
+   */
+  watchScore?: (listener: () => void) => () => void;
+  engine?: AbcPlaybackEngine;
+}
+
+/** Plays an ABC score and marks the notes being played. */
+export function playAbcWithSynth(abcSource: string, options: SynthOptions, playback: AbcPlaybackOptions = {}): MidiPlaybackState {
+  const { onError, visual: playbackVisual, startAt, watchScore, engine } = playback;
   const state: MidiPlaybackState = {
     stop: () => {
       // Replaced after synth initialization.
@@ -161,11 +171,14 @@ export function playAbcWithSynth(
   let timingCallbacks: TimingCallbacks | null = null;
   let activeElements: Element[] = [];
   let startTime = 0;
+  let unwatchScore: (() => void) | null = null;
   const stopTimer = () => {
     if (progressTimer) {
       clearInterval(progressTimer);
       progressTimer = null;
     }
+    unwatchScore?.();
+    unwatchScore = null;
   };
 
   const clearPlaybackMarker = () => {
@@ -217,10 +230,47 @@ export function playAbcWithSynth(
     }
 
     const { CreateSynth, TimingCallbacks } = engine ?? { CreateSynth: abcjs().synth.CreateSynth, TimingCallbacks: abcjs().TimingCallbacks };
+    const audioSeconds = () => Math.max(0, (performance.now() - startTime) / 1000);
 
-    // Detached marker targets mean the score was re-rendered: restart the
-    // animation on the current tune object at the audio's position. Deferred,
-    // because the timing loop is still iterating the old event list.
+    // Starts a note animation at `seconds` of the audio. Seeking makes abcjs
+    // announce the NEXT note, so the one sounding now is marked explicitly.
+    const startAnimation = (timing: TimingCallbacks, seconds: number) => {
+      if (seconds <= 0) {
+        timing.start();
+        return;
+      }
+      timing.start(seconds, "seconds");
+      const sounding = abcEventAt(timing.noteTimings ?? [], seconds * 1000 + 1);
+      if (sounding) applyPlaybackMarker(sounding);
+    };
+
+    // Moves the animation to the current tune object at the audio's position.
+    // A tune that cannot be animated leaves the running animation untouched.
+    const retarget = (current: TuneObject) => {
+      try {
+        const next = new TimingCallbacks(current, timingOptions);
+        // Not engraved: no timings, and abcjs would throw while seeking in them.
+        if (next.noteTimings?.length === 0) return;
+        timingCallbacks?.stop();
+        clearPlaybackMarker();
+        visualObj = current;
+        timingCallbacks = next;
+        startAnimation(next, audioSeconds());
+      } catch (error) {
+        console.warn("ABC playback marker could not follow the re-rendered score", error);
+      }
+    };
+
+    // A re-render of the host (e.g. a window resize) replaces the tune object.
+    const followScore = () => {
+      if (stopped || !state.playing || !resolveVisual) return;
+      const current = resolveVisual();
+      if (current && current !== visualObj) retarget(current);
+    };
+
+    // Fallback for hosts that do not report re-renders: detached marker targets
+    // mean the score was re-rendered. Deferred, because the timing loop is still
+    // iterating the old event list.
     let retargeting = false;
     const followRenderedScore = (event: NoteTimingEvent) => {
       if (retargeting || !resolveVisual) return false;
@@ -231,12 +281,8 @@ export function playAbcWithSynth(
       retargeting = true;
       setTimeout(() => {
         retargeting = false;
-        if (stopped || !state.playing) return;
-        timingCallbacks?.stop();
-        clearPlaybackMarker();
-        visualObj = current;
-        timingCallbacks = new TimingCallbacks(current, timingOptions);
-        timingCallbacks.start(Math.max(0, (performance.now() - startTime) / 1000), "seconds");
+        if (stopped || !state.playing || current === visualObj) return;
+        retarget(current);
       }, 0);
       return true;
     };
@@ -248,6 +294,7 @@ export function playAbcWithSynth(
       },
     };
     timingCallbacks = new TimingCallbacks(visualObj, timingOptions);
+    const startMilliseconds = startAt ? startAt(timingCallbacks.noteTimings ?? []) : 0;
 
     const midiBuffer = new CreateSynth();
     const untrack = trackAbcPlayback(() => state.stop());
@@ -284,11 +331,15 @@ export function playAbcWithSynth(
       .then((primed) => {
         if (stopped || !primed) return;
         state.endTime = primed.duration;
-        state.currentTime = 0;
-        startTime = performance.now();
+        const offset = startMilliseconds > 0 && startMilliseconds / 1000 < primed.duration ? startMilliseconds / 1000 : 0;
+        state.currentTime = offset;
+        startTime = performance.now() - offset * 1000;
         state.playing = true;
+        // Not running yet: the seek only sets where start() begins.
+        if (offset > 0) midiBuffer.seek(offset, "seconds");
         midiBuffer.start();
-        timingCallbacks?.start();
+        if (timingCallbacks) startAnimation(timingCallbacks, offset);
+        if (watchScore && resolveVisual) unwatchScore = watchScore(followScore);
 
         progressTimer = setInterval(() => {
           if (!state.playing) return;
@@ -2859,19 +2910,22 @@ export class ChordProEditor extends ChordDrawer {
   /**
    * Toggle ABC MIDI playback for a read-only ABC block (start if stopped or
    * finished, stop otherwise). Shared by the mouse double-click and the mobile
-   * double-tap paths so both gestures behave identically.
+   * double-tap paths so both gestures behave identically. Playback starts at
+   * the note nearest to the gesture's client point.
    */
-  private toggleAbcMidiPlayback(line_obj: ChordProAbc) {
+  private toggleAbcMidiPlayback(line_obj: ChordProAbc, clientX: number, clientY: number) {
     if (!this.midiPlayer?.playing || this.midiPlayer?.currentTime >= this.midiPlayer.endTime - 1) {
       // A previous playback may still be loading (not yet playing): it must not
       // start alongside this one.
       this.midiPlayer?.stop();
       const source = resolveAbcOptions(line_obj.getAbc(true, false), line_obj.doc.getMeta("tempo"));
-      const anchor = this.domRenderer?.getAbcPlaybackAnchor(line_obj);
-      this.midiPlayer = playAbcWithSynth(
-        source.abc,
-        source.synth,
-        (error) => {
+      const renderer = this.domRenderer;
+      const anchor = renderer?.getAbcPlaybackAnchor(line_obj);
+      // Read now: the timings come from the tune rendered into this same SVG.
+      const svg = anchor ? renderer?.getAbcScoreSvgForAnchor(anchor) : undefined;
+      const point = svg ? abcScorePoint(svg, clientX, clientY) : null;
+      this.midiPlayer = playAbcWithSynth(source.abc, source.synth, {
+        onError: (error) => {
           console.error("Midifile playing error: " + error);
           this.midiPlayer = undefined;
         },
@@ -2879,9 +2933,11 @@ export class ChordProEditor extends ChordDrawer {
         // rendered them, so it must come from the backend that owns the VISIBLE
         // staff — otherwise playback re-renders the tune into a detached
         // container and highlights nothing on screen. Resolved on demand: a
-        // re-render (zoom view showing lyrics, then notation again) replaces it.
-        () => (anchor ? this.domRenderer?.getAbcVisualObjectForAnchor(anchor) : this.domRenderer?.getAbcVisualObject(line_obj))
-      );
+        // re-render (resize, zoom view showing lyrics then notation) replaces it.
+        visual: () => (anchor ? this.domRenderer?.getAbcVisualObjectForAnchor(anchor) : this.domRenderer?.getAbcVisualObject(line_obj)),
+        startAt: point ? (timings) => abcStartMilliseconds(timings, point) : undefined,
+        watchScore: (listener) => this.domRenderer?.subscribeLayout(listener) ?? (() => {}),
+      });
     } else {
       this.midiPlayer.stop();
       this.midiPlayer = undefined;
@@ -2901,7 +2957,7 @@ export class ChordProEditor extends ChordDrawer {
     if (this.readOnly) {
       const line_obj = this.HitTestLine(e);
       if (line_obj) {
-        if (line_obj instanceof ChordProAbc) this.toggleAbcMidiPlayback(line_obj);
+        if (line_obj instanceof ChordProAbc) this.toggleAbcMidiPlayback(line_obj, e.clientX, e.clientY);
         else if (this.onLineDblclk && line_obj.sourceLineNumber >= 0) this.onLineDblclk(line_obj.sourceLineNumber);
       }
       return;

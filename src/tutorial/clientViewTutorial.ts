@@ -63,9 +63,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "#editor",
             tx(
               "Kotta és lejátszás",
-              "A látható ABC-kottára dupla kattintva vagy duplán koppintva a MIDI-lejátszás elindul, újabb dupla kattintásra leáll. A Nagyítás panelen a kottanézet dalszöveg és akkordok megjelenítésére váltható; ez az eredeti dalt nem írja át.",
+              "A látható ABC-kottára dupla kattintva vagy duplán koppintva a MIDI-lejátszás a megérintett hangnál indul (a kotta címére kattintva az elejéről), újabb dupla kattintásra leáll. A Nagyítás panelen a kottanézet dalszöveg és akkordok megjelenítésére váltható; ez az eredeti dalt nem írja át.",
               "Notation and playback",
-              "Double-click or double-tap visible ABC notation to start MIDI playback, and repeat to stop. The Zoom panel can show lyrics and chords in place of notation without changing the original song."
+              "Double-click or double-tap visible ABC notation to start MIDI playback at the note you touched (on the score's title, from the beginning), and repeat to stop. The Zoom panel can show lyrics and chords in place of notation without changing the original song."
             )
           ),
           s(

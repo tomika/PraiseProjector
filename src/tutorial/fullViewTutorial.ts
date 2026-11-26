@@ -681,9 +681,9 @@ export const fullViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='full-editor-abc']",
             tx(
               "ABC-kotta",
-              "Szerkesztési módban a kurzornál új ABC-kottablokkot szúr be; meglévő kottára dupla kattintva a kottaszerkesztő nyílik meg. Olvasási módban a dupla kattintás vagy dupla koppintás ehelyett a kotta MIDI-lejátszását indítja vagy állítja le.",
+              "Szerkesztési módban a kurzornál új ABC-kottablokkot szúr be; meglévő kottára dupla kattintva a kottaszerkesztő nyílik meg. Olvasási módban a dupla kattintás vagy dupla koppintás ehelyett a kotta MIDI-lejátszását indítja a megérintett hangtól (a kotta címén az elejétől), vagy leállítja.",
               "ABC notation",
-              "In edit mode, insert a new ABC block at the caret or double-click existing notation to open the score editor. In read mode, double-clicking or double-tapping notation instead starts or stops its MIDI playback."
+              "In edit mode, insert a new ABC block at the caret or double-click existing notation to open the score editor. In read mode, double-clicking or double-tapping notation instead starts its MIDI playback from the note you touched (from the beginning on the score's title), or stops it."
             ),
             { helpIcons: [IconType.NOTATION] }
           ),
