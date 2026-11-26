@@ -205,7 +205,7 @@ test("a playback anchor finds its score again after the zoom view showed it as l
   const clicked = origin.clone(true);
   harness.renderAbcBlocks(abcPlan(clicked, "e1:l0|repeat:0", origin), layout, input);
   const anchor = harness.getAbcPlaybackAnchor(clicked);
-  assert.deepEqual(anchor, { occurrenceId: "e1:l0|repeat:0", origin });
+  assert.deepEqual(anchor, { occurrenceId: "e1:l0|repeat:0", origin, text: clicked.getAbc() });
   assert.equal(harness.getAbcVisualObjectForAnchor(anchor!), harness.getAbcVisualObject(clicked));
 
   // Expanded to lyrics: the notation is gone, and with it every rendered tune.
@@ -216,4 +216,22 @@ test("a playback anchor finds its score again after the zoom view showed it as l
   harness.renderAbcBlocks(abcPlan(origin.clone(true), "e3:l0|repeat:0", origin), layout, input);
   assert.equal(rendered.length, 2);
   assert.deepEqual(harness.getAbcVisualObjectForAnchor(anchor!), { rendered: 2 });
+});
+
+test("a playback anchor finds the same notation after its document was reloaded", () => {
+  const { harness } = abcCacheHarness();
+  const layout = { width: 300 } as SongLayoutResult;
+  const input = { system: { systemCode: "G" }, isDark: false, chordFormat: 0 } as unknown as DomSongRendererInput;
+
+  const before = new ChordProDocument(getChordSystem("G"), SONG).lines[0] as ChordProAbc;
+  harness.renderAbcBlocks(abcPlan(before, "e1:l0", before), layout, input);
+  const anchor = harness.getAbcPlaybackAnchor(before);
+
+  const after = new ChordProDocument(getChordSystem("G"), SONG).lines[0] as ChordProAbc;
+  harness.renderAbcBlocks(abcPlan(after, "e2:l0", after), layout, input);
+  assert.equal(harness.getAbcVisualObjectForAnchor(anchor!), harness.getAbcVisualObject(after));
+
+  const edited = new ChordProDocument(getChordSystem("G"), SONG.replace("GABc", "GABd")).lines[0] as ChordProAbc;
+  harness.renderAbcBlocks(abcPlan(edited, "e3:l0", edited), layout, input);
+  assert.equal(harness.getAbcVisualObjectForAnchor(anchor!), undefined, "edited notation is another score");
 });

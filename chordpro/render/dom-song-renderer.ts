@@ -44,6 +44,8 @@ export type InvalidationCategory = "structure" | "metrics" | "layout" | "decorat
 export interface AbcPlaybackAnchor {
   readonly occurrenceId: string;
   readonly origin: ChordProLine;
+  /** The rendered notation; identifies the score after its document was reloaded. */
+  readonly text?: string;
 }
 
 export interface DiagramPlacement {
@@ -659,6 +661,8 @@ export class DomSongRenderer {
       source: ChordProAbc;
       /** The persistent document score; `source` may be a per-projection clone. */
       origin: ChordProLine | null;
+      /** The notation text the tune was rendered from. */
+      text: string;
       visual?: TuneObject;
       /** The first key the rendered score names, when its chords are shown in Roman notation. */
       scoreKey?: string;
@@ -1157,6 +1161,7 @@ export class DomSongRenderer {
         width: ABC_SCALE * measured.width,
         source: abc,
         origin: occurrence.origin,
+        text: occurrence.text,
         visual,
         scoreKey,
       });
@@ -1215,7 +1220,8 @@ export class DomSongRenderer {
    * object, e.g. when the zoom view showed it as lyrics in between).
    */
   getAbcPlaybackAnchor(abc: ChordProAbc): AbcPlaybackAnchor | undefined {
-    for (const [occurrenceId, entry] of this.abcNodes) if (entry.source === abc) return { occurrenceId, origin: entry.origin ?? abc };
+    for (const [occurrenceId, entry] of this.abcNodes)
+      if (entry.source === abc) return { occurrenceId, origin: entry.origin ?? abc, text: entry.text };
     return undefined;
   }
 
@@ -1225,9 +1231,22 @@ export class DomSongRenderer {
    * ids are renumbered when the projection switches documents (ABC expansion).
    */
   getAbcVisualObjectForAnchor(anchor: AbcPlaybackAnchor): TuneObject | undefined {
+    return this.abcEntryForAnchor(anchor)?.visual;
+  }
+
+  /** The visible `<svg>` of `anchor`'s score, in which its tune reports note positions. */
+  getAbcScoreSvgForAnchor(anchor: AbcPlaybackAnchor): SVGSVGElement | undefined {
+    return this.abcEntryForAnchor(anchor)?.node.querySelector?.("svg") ?? undefined;
+  }
+
+  private abcEntryForAnchor(anchor: AbcPlaybackAnchor) {
     const same = this.abcNodes.get(anchor.occurrenceId);
-    if (same && (same.origin ?? same.source) === anchor.origin) return same.visual;
-    for (const entry of this.abcNodes.values()) if ((entry.origin ?? entry.source) === anchor.origin) return entry.visual;
+    if (same && (same.origin ?? same.source) === anchor.origin) return same;
+    for (const entry of this.abcNodes.values()) if ((entry.origin ?? entry.source) === anchor.origin) return entry;
+    // A reloaded document has new line objects: the same notation is the same score.
+    if (anchor.text === undefined) return undefined;
+    if (same?.text === anchor.text) return same;
+    for (const entry of this.abcNodes.values()) if (entry.text === anchor.text) return entry;
     return undefined;
   }
 
