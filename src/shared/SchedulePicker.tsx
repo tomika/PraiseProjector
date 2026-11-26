@@ -56,6 +56,18 @@ export interface ScheduleShareAction {
   onShare: (date: Date) => void | Promise<void>;
 }
 
+/** Load mode: shows whether each listed playlist is public in the cloud and
+ *  switches it. Hosts pass it only for leaders the user may edit. */
+export interface SchedulePublicAction {
+  icon: string;
+  isPublic: (date: Date) => boolean;
+  /** Title of a public row's button (clicking makes the list private). */
+  publicTitle: string;
+  /** Title of a private row's button (clicking makes the list public). */
+  privateTitle: string;
+  onToggle: (date: Date, makePublic: boolean) => void | Promise<void>;
+}
+
 export interface ScheduleDeleteAction {
   icon: string;
   title: string;
@@ -127,6 +139,8 @@ export interface SchedulePickerProps {
   action: ScheduleAction;
   /** Optional playlist sharing controls for load rows and save confirmation. */
   shareAction?: ScheduleShareAction;
+  /** Optional public/private switch on the listed playlists (load mode). */
+  publicAction?: SchedulePublicAction;
   /** Optional delete button on the listed playlists (dates in load mode and favorites). */
   deleteAction?: ScheduleDeleteAction;
   /** Optional favorites tab. */
@@ -183,6 +197,7 @@ export function SchedulePicker({
   locale,
   action,
   shareAction,
+  publicAction,
   deleteAction,
   favorites,
   initialTab,
@@ -391,6 +406,28 @@ export function SchedulePicker({
       </button>
     );
 
+  const renderPublicButton = (date: Date) => {
+    if (!publicAction || mode !== "load") return null;
+    const isPublic = publicAction.isPublic(date);
+    const title = isPublic ? publicAction.publicTitle : publicAction.privateTitle;
+    return (
+      <button
+        type="button"
+        className={`schedule-share-btn schedule-public-btn${isPublic ? " is-public" : ""}`}
+        title={title}
+        aria-label={title}
+        aria-pressed={isPublic}
+        onClick={(event) => {
+          event.stopPropagation();
+          void publicAction.onToggle(date, !isPublic);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <img src={publicAction.icon} alt="" aria-hidden="true" />
+      </button>
+    );
+  };
+
   const renderDeleteButton = (date: Date) =>
     deleteAction && (
       <button
@@ -501,6 +538,7 @@ export function SchedulePicker({
                   }}
                 >
                   <span className="date-item-label">{date.toLocaleDateString(locale)}</span>
+                  {renderPublicButton(date)}
                   {renderShareButton(date)}
                   {renderDeleteButton(date)}
                 </li>
@@ -586,6 +624,7 @@ export function SchedulePicker({
         }}
       >
         <span className="date-item-label">{item.name}</span>
+        {renderPublicButton(item.date)}
         {mode === "load" && renderShareButton(item.date)}
         {favorites.onRename && (
           <button

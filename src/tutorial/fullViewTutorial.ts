@@ -297,12 +297,12 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-buttons button[aria-label='Load Playlist'], .playlist-buttons button[aria-label='Save Playlist']",
             tx(
               "Műsortár betöltése és mentése",
-              "Ha van kiválasztott vezető, a Betöltés és a Mentés a naptárával és a kedvenceivel dolgozik (betöltéskor a többi saját és a nyilvános vezető listái is választhatók); vezető nélkül fájlba ment és fájlból tölt be. A munkalista másolat: amíg vissza nem mented, a módosítása nem változtatja meg a tárolt listát.",
+              "Ha van kiválasztott vezető, a Betöltés és a Mentés a naptárával és a kedvenceivel dolgozik; vezető nélkül fájlba ment és fájlból tölt be. Betöltéskor a vezetőválasztó három csoportja: a saját vezetők; a Csoportom, vagyis a csoportodban és az alatta levő csoportokban (adminként az általad kezelt csoportok alatt) levő vezetők, akiknek minden listája látszik, de csak olvasható; végül más vezetők nyilvános listái. A választó melletti fa gombbal az utóbbi két csoport a csoportfa szerint rendezve látszik (a csoportnevek nem választhatók; a Csoportom csak akkor, ha a vezetői nem mind ugyanabban a csoportban vannak); a beállítás megmarad. A munkalista másolat: amíg vissza nem mented, a módosítása nem változtatja meg a tárolt listát. Betöltéskor a saját listák sorában a földgömb mutatja, hogy a lista nyilvános-e: halványan privát, kiemelve nyilvános; rákattintva átállíthatod. A nyilvános listát mások is látják és megnyithatják a linkjét; privát csoport vezetőjénél ez csak a csoport tagjaira érvényes. A megosztás gomb nyilvánossá teszi a listát és linket ad hozzá, a kuka törli a listát.",
               "Load and save playlists",
-              "With a leader selected, Load and Save work with the leader's calendar and favorites (Load also offers the other own and the public leaders' lists); with no leader selected, they use a playlist file. The working list is a copy: changing it does not change the stored list until you save it there."
+              "With a leader selected, Load and Save work with the leader's calendar and favorites; with no leader selected, they use a playlist file. When loading, the leader select has three groups: your own leaders; My group, the leaders in your group and the groups below it (as an admin, below the groups you administer), whose every list is shown read-only; and other leaders' public lists. The tree button next to the select arranges the last two groups by the group tree (group names cannot be selected; My group only when its leaders are not all in the same group); the choice is kept. The working list is a copy: changing it does not change the stored list until you save it there. When loading, the globe in an own list's row shows whether the list is public: faint is private, highlighted is public; click it to switch. Others can see a public list and open its link; for a leader in a private group, this applies to the group's members only. The share button makes the list public and gives a link to it; the trash can deletes the list."
             ),
             {
-              helpIcons: [IconType.LOAD, IconType.SAVE],
+              helpIcons: [IconType.LOAD, IconType.SAVE, "images/group-tree.svg", "images/public-list.svg", "images/share.svg", "images/trashcan.svg"],
               highlightTargets: [".playlist-buttons button[aria-label='Load Playlist']", ".playlist-buttons button[aria-label='Save Playlist']"],
             }
           ),
@@ -397,9 +397,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".playlist-items-container",
             tx(
               "Helyi menü és előzmények",
-              "A jobb gombos menü transzponálást, capo-választást, kijelölést, visszavonást, ismétlést és – mentett listánál – megosztást kínál.",
+              "A jobb gombos menü transzponálást, capo-választást, kijelölést, visszavonást, ismétlést és – mentett listánál – megosztást kínál. A megosztás nyilvánossá teszi a saját vezető listáját.",
               "Context menu and history",
-              "The context menu offers transpose, capo, selection, undo, redo and sharing for saved lists."
+              "The context menu offers transpose, capo, selection, undo, redo and sharing for saved lists. Sharing makes an own leader's list public."
             ),
             { helpIcons: ["fa fa-undo", "fa fa-repeat", "fa fa-share-alt"] }
           ),

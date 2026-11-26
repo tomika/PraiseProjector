@@ -1762,8 +1762,32 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     });
   }
 
+  private confirmAsync(title: string, message: string, options?: ConfirmOptions): Promise<boolean> {
+    const { showConfirm } = this.props;
+    if (!showConfirm) return Promise.resolve(true);
+    return new Promise((resolve) =>
+      showConfirm(
+        title,
+        message,
+        () => resolve(true),
+        () => resolve(false),
+        options
+      )
+    );
+  }
+
+  /** Asks before a list becomes public (sharing does that); a public one needs no answer. */
+  private confirmMakePublic(playlist: Playlist): Promise<boolean> {
+    if (playlist.isPublic) return Promise.resolve(true);
+    const { t } = this.props;
+    return this.confirmAsync(t("MakePlaylistPublicTitle"), t("AskMakePlaylistPublic").replace("{0}", playlist.name), {
+      confirmText: t("MakePlaylistPublicConfirm"),
+    });
+  }
+
   // Share the exact leader playlist this working copy came from. Content equality only
   // validates that the working copy still represents that source; it never selects a source.
+  // Stores the list and makes it public: a shared link opens only a public list.
   private publishPlaylistForShare = async (leaderId: string, date: Date, playlist: Playlist): Promise<boolean> => {
     try {
       const result = await cloudApi.storeList(
@@ -1773,10 +1797,18 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
           scheduled: date.getTime(),
           songs: playlist.items.map((item) => item.toJSON()),
         },
-        leaderId
+        leaderId,
+        { makePublic: true }
       );
-      if (result === "OK") return true;
-      this.props.onError?.("SaveFailed", result || "The playlist could not be published before sharing.");
+      if (result === "OK") {
+        const leader = Database.getInstance().getLeaderById(leaderId);
+        if (leader) Database.getInstance().setPlaylistPublic(leader, date, true);
+        return true;
+      }
+      this.props.onError?.(
+        "SaveFailed",
+        result === "EXPIRED" ? this.props.t("PlaylistTooOldToStore") : result || "The playlist could not be published before sharing."
+      );
     } catch (error) {
       const details = error instanceof Error ? error.message : String(error);
       this.props.onError?.("SaveFailed", details);
@@ -1784,20 +1816,64 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
     return false;
   };
 
+  /** The load dialog's public switch of an own leader's stored list. It changes
+   *  only the visibility of the list the cloud holds, never its songs (another
+   *  device may have changed them meanwhile). A list the cloud does not have yet
+   *  is uploaded as public, but never over a list stored there for that date. */
+  private handleTogglePlaylistPublic = async (date: Date, leader: Leader, makePublic: boolean): Promise<void> => {
+    const playlist = leader.getPlaylist(date);
+    if (!playlist) return;
+    if (makePublic && !(await this.confirmMakePublic(playlist))) return;
+    const { t } = this.props;
+    try {
+      let result = await cloudApi.setPlaylistPublic(leader.id, playlist.name, makePublic);
+      if (result === "NOT_FOUND" && makePublic) {
+        result = await cloudApi.storeList(
+          false,
+          { label: playlist.name, scheduled: date.getTime(), songs: playlist.items.map((item) => item.toJSON()) },
+          leader.id,
+          { makePublic: true }
+        );
+        if (result === "OVERWRITE" || result === "EXPIRED") {
+          this.props.onError?.("SaveFailed", t(result === "EXPIRED" ? "PlaylistTooOldToStore" : "PlaylistPublicSyncFirst"));
+          return;
+        }
+      }
+      // Making a list private that the cloud does not have: it is private there too.
+      if (result === "OK" || (result === "NOT_FOUND" && !makePublic)) Database.getInstance().setPlaylistPublic(leader, date, makePublic);
+      else this.props.onError?.("SaveFailed", result || t("PlaylistPublicChangeFailed"));
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      this.props.onError?.("SaveFailed", details);
+    }
+  };
+
   private handleSharePlaylist = async () => {
     const resolved = this.resolveCurrentPlaylistOrigin();
     if (!resolved) return;
     const { leaderId, label } = resolved.origin;
-    const isOwnLeader = Database.getInstance().getLeaderById(leaderId) !== undefined;
-    if (isOwnLeader && !(await this.publishPlaylistForShare(leaderId, resolved.date, resolved.playlist))) return;
+    if (!(await this.prepareListForShare(leaderId, resolved.date, resolved.playlist))) return;
     await sharePublicLink(buildPlaylistShareUrl(leaderId, label), label, this.props.t("ShareLinkCopied"));
   };
+
+  /** An own leader's list is stored and made public before its link is shared.
+   *  Another leader's list can only be shared when it is public already: a link
+   *  to a list seen through the group circle would not open for the recipient. */
+  private async prepareListForShare(leaderId: string, date: Date, playlist: Playlist): Promise<boolean> {
+    if (Database.getInstance().getLeaderById(leaderId)) {
+      if (!(await this.confirmMakePublic(playlist))) return false;
+      return this.publishPlaylistForShare(leaderId, date, playlist);
+    }
+    if (playlist.isPublic) return true;
+    this.props.onError?.("SaveFailed", this.props.t("PlaylistNotPublicCannotShare"));
+    return false;
+  }
 
   private handleShareScheduledPlaylist = async (date: Date, leader: Leader): Promise<void> => {
     const scheduled = findScheduledPlaylist(leader, date);
     if (!scheduled) return;
     const label = scheduled.playlist.name;
-    if (!(await this.publishPlaylistForShare(leader.id, scheduled.date, scheduled.playlist))) return;
+    if (!(await this.prepareListForShare(leader.id, scheduled.date, scheduled.playlist))) return;
     await sharePublicLink(buildPlaylistShareUrl(leader.id, label), label, this.props.t("ShareLinkCopied"));
   };
 
@@ -1937,6 +2013,7 @@ class PlaylistPanel extends React.Component<PlaylistPanelProps, PlaylistPanelSta
         onConfirm={this.handleScheduleDateSelected}
         onDeletePlaylist={this.handleDeleteScheduledPlaylist}
         onRenameFavorite={this.handleRenameFavorite}
+        onTogglePublic={this.handleTogglePlaylistPublic}
         onShare={this.handleShareScheduledPlaylist}
         onCancel={this.handleScheduleDialogCancel}
         initialDate={this.getScheduleDate() ?? this.legacyScheduleDate}

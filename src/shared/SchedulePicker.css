@@ -252,6 +252,20 @@
   border-color: rgba(255, 255, 255, 0.8);
 }
 
+/* Private list: a faint globe; public: full globe on a highlighted button. */
+.schedule-public-btn img {
+  opacity: 0.3;
+}
+
+.schedule-public-btn.is-public {
+  border-color: #198754;
+  background: rgba(25, 135, 84, 0.18);
+}
+
+.schedule-public-btn.is-public img {
+  opacity: 1;
+}
+
 .date-item.selected .schedule-share-btn img {
   filter: invert(1);
 }
@@ -601,4 +615,26 @@
 .schedule-refresh-btn {
   flex: none;
   line-height: 1;
+}
+
+/* Group-tree switch of the leader select: highlighted while on. */
+.schedule-tree-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.schedule-tree-btn img {
+  width: 16px;
+  height: 16px;
+}
+
+.schedule-tree-btn.active {
+  border-color: #198754;
+  background: rgba(25, 135, 84, 0.18);
+}
+
+[data-theme="dark"] .schedule-tree-btn img {
+  filter: invert(1);
 }

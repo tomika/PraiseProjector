@@ -5,6 +5,8 @@ import { FAVORITE_NAME_MAX_LENGTH, favoriteNameFromLabel, isFavoriteScheduleDate
 import { useMessageBox } from "../contexts/MessageBoxContext";
 import { useLocalization } from "../localization/LocalizationContext";
 import { SchedulePicker, type ScheduleFavoriteItem } from "../shared/SchedulePicker";
+import { buildLeaderGroupTree, leaderTreeOptionText, sharesOneGroupPath } from "../shared/leaderGroupTree";
+import { useLeaderTreeView } from "../hooks/useLeaderTreeView";
 import { getAssetPath } from "../utils/assetPath";
 
 interface ScheduleDialogProps {
@@ -16,6 +18,8 @@ interface ScheduleDialogProps {
   onDeletePlaylist?: (date: Date, leader: Leader) => void;
   /** Renames a favorite of an own leader. */
   onRenameFavorite?: (date: Date, leader: Leader, name: string) => void;
+  /** Makes a stored playlist of an own leader public or private in the cloud. */
+  onTogglePublic?: (date: Date, leader: Leader, makePublic: boolean) => Promise<void>;
   onShare: (date: Date, leader: Leader) => void | Promise<void>;
   onCancel: () => void;
   initialDate?: Date | null;
@@ -43,6 +47,7 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
   onConfirm,
   onDeletePlaylist,
   onRenameFavorite,
+  onTogglePublic,
   onShare,
   onCancel,
   initialDate,
@@ -102,10 +107,20 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
     setRevision((value) => value + 1);
   };
 
+  const handleTogglePublic = async (date: Date, makePublic: boolean) => {
+    if (!onTogglePublic) return;
+    await onTogglePublic(date, activeLeader, makePublic);
+    setRevision((value) => value + 1);
+  };
+
   const showSwitcher = mode === "load" && ownLeaders.length + publicLeaders.length > 0;
-  // The public mirror follows server/database order. Keep its dropdown group
-  // predictable and easy to scan without mutating the source list.
+  const [treeView, setTreeView] = useLeaderTreeView();
+  // The cloud mirror follows server/database order. Keep its dropdown groups
+  // predictable and easy to scan without mutating the source list: the group
+  // circle's leaders (every list) first, then the other leaders' public lists.
   const sortedPublicLeaders = [...publicLeaders].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  const groupCircleLeaders = sortedPublicLeaders.filter((l) => l.visibility === "group");
+  const otherPublicLeaders = sortedPublicLeaders.filter((l) => l.visibility !== "group");
 
   const leaderOptions = (list: Leader[]) =>
     list.map((l) => (
@@ -113,6 +128,25 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
         {l.name}
       </option>
     ));
+
+  // The cloud-listed leaders (group circle and public), flat or by group tree.
+  // "My group" stays flat when all its leaders are in the same group.
+  const treeItems = (list: Leader[]) => list.map((l) => ({ id: l.id, name: l.name, groupPath: l.groupPath }));
+  const listedLeaderOptions = (list: Leader[], flatWhenOnePath = false) =>
+    treeView && !(flatWhenOnePath && sharesOneGroupPath(treeItems(list)))
+      ? buildLeaderGroupTree(treeItems(list)).map((row) =>
+          row.kind === "group" ? (
+            <option key={row.key} value="" disabled>
+              {leaderTreeOptionText(row)}
+            </option>
+          ) : (
+            <option key={row.id} value={row.id}>
+              {leaderTreeOptionText(row)}
+            </option>
+          )
+        )
+      : leaderOptions(list);
+  const hasListedLeaders = groupCircleLeaders.length + otherPublicLeaders.length > 0;
 
   const headerSlot = showSwitcher ? (
     <div className="schedule-leader-row">
@@ -126,8 +160,21 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
         }}
       >
         {ownLeaders.length > 0 && <optgroup label={t("MyLeaders")}>{leaderOptions(ownLeaders)}</optgroup>}
-        {sortedPublicLeaders.length > 0 && <optgroup label={t("PublicLeaders")}>{leaderOptions(sortedPublicLeaders)}</optgroup>}
+        {groupCircleLeaders.length > 0 && <optgroup label={t("GroupLeaders")}>{listedLeaderOptions(groupCircleLeaders, true)}</optgroup>}
+        {otherPublicLeaders.length > 0 && <optgroup label={t("PublicLeaders")}>{listedLeaderOptions(otherPublicLeaders)}</optgroup>}
       </select>
+      {hasListedLeaders && (
+        <button
+          type="button"
+          className={`btn btn-sm btn-outline-secondary schedule-tree-btn${treeView ? " active" : ""}`}
+          title={t("LeaderTreeView")}
+          aria-label={t("LeaderTreeView")}
+          aria-pressed={treeView}
+          onClick={() => setTreeView(!treeView)}
+        >
+          <img src={getAssetPath("images/group-tree.svg")} alt="" aria-hidden="true" />
+        </button>
+      )}
       {onRefreshPublic && (
         <button
           type="button"
@@ -164,6 +211,17 @@ export const ScheduleDialog: React.FC<ScheduleDialogProps> = ({
         afterSaveLabel: t("ShareAfterSave"),
         onShare: (date) => onShare(date, activeLeader),
       }}
+      publicAction={
+        canEdit && onTogglePublic
+          ? {
+              icon: getAssetPath("images/public-list.svg"),
+              isPublic: (date) => !!activeLeader.getPlaylist(date)?.isPublic,
+              publicTitle: t("PlaylistPublicMakePrivate"),
+              privateTitle: t("PlaylistPrivateMakePublic"),
+              onToggle: handleTogglePublic,
+            }
+          : undefined
+      }
       deleteAction={
         canEdit && onDeletePlaylist
           ? { icon: getAssetPath("images/trashcan.svg"), title: t("DeletePlaylistTitle"), onDelete: handleDelete }
