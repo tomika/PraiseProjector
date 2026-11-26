@@ -5,7 +5,7 @@ import { MCP_DEFAULT_PORT } from "../../common/mcp-bridge";
 import { createDefaultChordProStylesSettings, normalizeChordProStyles } from "../../chordpro/chordpro_styles";
 import { useLocalization } from "../localization/LocalizationContext";
 import { syncSettingsToBackend } from "../services/settingsSync";
-import { readPersistedSettings, SESSION_TOGGLE_KEYS } from "../services/settingsStore";
+import { readPersistedSettings, EXTERNALLY_WRITTEN_BOOLEAN_KEYS } from "../services/settingsStore";
 import { normalizePerformancePreferences } from "../shared/performanceSettings";
 import { PPD_DEFAULT_WATCH_TIMEOUT_SECONDS, normalizePpdWatchTimeoutSeconds } from "../../common/ppd-control";
 import { defaultHardwareInputSettings } from "../../common/hardware-input";
@@ -256,9 +256,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
   }, [createDefaultSettings, t]);
 
-  // Stay in sync when the session feature toggles are written from OUTSIDE this
-  // context — the client view's saveSessionFeatureSetting (which has no
-  // SettingsContext when booted standalone) writes pp-settings directly. Re-read
+  // Stay in sync when the session feature toggles (and the leader pickers'
+  // group-tree switch) are written from OUTSIDE this context — the client view's
+  // saveSessionFeatureSetting (which has no SettingsContext when booted
+  // standalone) and useLeaderTreeView write pp-settings directly. Re-read
   // only those keys so an in-progress SettingsForm draft of other fields is kept,
   // and so a later full-view save doesn't clobber a client-view toggle.
   useEffect(() => {
@@ -268,7 +269,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!prev) return prev;
         let changed = false;
         const nextSettings = { ...prev };
-        for (const key of SESSION_TOGGLE_KEYS) {
+        for (const key of EXTERNALLY_WRITTEN_BOOLEAN_KEYS) {
           const value = persisted[key];
           if (typeof value === "boolean" && value !== prev[key]) {
             nextSettings[key] = value;

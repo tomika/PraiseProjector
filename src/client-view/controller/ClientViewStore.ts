@@ -2078,12 +2078,18 @@ export class ClientViewStore {
   }
 
   /** The picker's leader options grouped for the select: the user's own synced
-   *  leaders first, other ("public") leaders in a separate group sorted by name.
-   *  An untagged profile (cloud /leaders sends no `access`) counts as public. */
-  groupedLeaderProfiles(): { own: LeaderDBProfile[]; public: LeaderDBProfile[] } {
-    const own = this.state.leaderProfiles.filter((p) => p.access === "own");
-    const pub = this.state.leaderProfiles.filter((p) => p.access !== "own").sort((a, b) => a.leaderName.localeCompare(b.leaderName));
-    return { own, public: pub };
+   *  leaders first, then the leaders of the user's group circle (every list,
+   *  read-only), then the other leaders' public lists; the last two sorted by
+   *  name. The cloud tags the latter two with `visibility`; an untagged
+   *  profile that is not `access: "own"` counts as public. */
+  groupedLeaderProfiles(): { own: LeaderDBProfile[]; group: LeaderDBProfile[]; public: LeaderDBProfile[] } {
+    const byName = (a: LeaderDBProfile, b: LeaderDBProfile) => a.leaderName.localeCompare(b.leaderName);
+    const others = this.state.leaderProfiles.filter((p) => p.access !== "own");
+    return {
+      own: this.state.leaderProfiles.filter((p) => p.access === "own"),
+      group: others.filter((p) => p.visibility === "group").sort(byName),
+      public: others.filter((p) => p.visibility !== "group").sort(byName),
+    };
   }
 
   /** Title matches for the leader filter across the selected leader's ALL dated

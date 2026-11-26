@@ -1744,6 +1744,36 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   opacity: 0.5;
 }
 
+/* Group-tree switch of the leader select: dimmed when off, lit with the blue
+   glow of the other options toggles when on. */
+.cv-leader-tree-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 1px solid var(--cv-panel-border);
+  border-radius: 4px;
+  background: var(--cv-panel-btn-bg);
+  cursor: pointer;
+}
+
+.cv-leader-tree-btn img {
+  width: 18px;
+  height: 18px;
+  opacity: 0.55;
+  filter: var(--cv-icon-invert);
+}
+
+.cv-leader-tree-btn.cv-leader-tree-on {
+  border-color: #6bf;
+}
+
+.cv-leader-tree-btn.cv-leader-tree-on img {
+  opacity: 1;
+  filter: var(--cv-icon-invert) drop-shadow(0 0 0.18em #6bf);
+}
+
 /* The filter takes all space left after the content-sized selectors. */
 .cv-leader-filter {
   flex: 1 1 0;

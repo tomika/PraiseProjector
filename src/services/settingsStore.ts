@@ -20,6 +20,25 @@ export { readPersistedSettingsText };
  *  event so a client-view toggle is not clobbered by a later full-view save. */
 export const SESSION_TOGGLE_KEYS = ["externalWebDisplayEnabled", "iWebEnabled", "ppdSessionEnabled"] as const;
 
+/** Every boolean setting written from outside `SettingsContext`: the session
+ *  toggles and the leader pickers' group-tree switch (both frontends write it
+ *  with {@link writePersistedSettings}). `SettingsContext` re-reads these on the
+ *  change event. */
+export const EXTERNALLY_WRITTEN_BOOLEAN_KEYS = [...SESSION_TOGGLE_KEYS, "leaderTreeView"] as const;
+
+/** Subscribes to one boolean of `pp-settings`, also when another frontend or
+ *  window writes it. Returns an unsubscribe function. */
+export function watchPersistedBoolean(key: (typeof EXTERNALLY_WRITTEN_BOOLEAN_KEYS)[number], onChange: (value: boolean) => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = () => onChange(readPersistedSettings()[key] === true);
+  window.addEventListener("pp-settings-changed", handler);
+  window.addEventListener("storage", handler);
+  return () => {
+    window.removeEventListener("pp-settings-changed", handler);
+    window.removeEventListener("storage", handler);
+  };
+}
+
 /** Read the persisted settings object (raw, NOT merged with defaults). Returns an
  *  empty object when nothing is stored or storage is unavailable (embedded webviews). */
 export function readPersistedSettings(): Partial<Settings> {

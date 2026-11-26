@@ -84,6 +84,10 @@ export interface Settings {
   clientViewAutoScanSessions: ClientViewAutoScanMode;
   clientViewChordTransitions: ChordTransitionSettings;
   clientViewSessionsFoundPopup: ClientViewAutoScanMode;
+  /** Leader pickers (full-view load dialog, client view) arrange the other
+   *  leaders by their group tree instead of a flat list. Toggled in the pickers
+   *  themselves; absent means off. */
+  leaderTreeView?: boolean;
   /** Seconds without a PPD response before a followed local session is considered disconnected. */
   ppdWatchTimeoutSeconds: number;
   /** Legacy (pre-hardware-tab) active client input profile. Migration input only:
