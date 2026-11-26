@@ -7,10 +7,14 @@
  * since it is no longer only chord options.)
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { isAbcjsLoaded, loadAbcjs } from "../../../chordpro/abcjs-lazy";
+import { ChordProAbc, ChordProDocument, getChordSystem } from "../../../chordpro/chordpro_base";
+import { analyzeDocumentKeys } from "../../../chordpro/key-analysis";
+import { CHORDFORMAT_ROMAN_MASK } from "../../../chordpro/render/chord-visual";
 import { useLocalization } from "../../localization/LocalizationContext";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { canUseHighlightLamp, type ChordBoxKind, type DarkMode, type DisplaySettings } from "../controller/ClientViewStore";
+import { canUseHighlightLamp, CHORD_MODES, type ChordBoxKind, type DarkMode } from "../controller/ClientViewStore";
 import { HighlightOpacityDialog } from "./HighlightOpacityDialog";
 import { MoreMenu } from "./MoreMenu";
 import { ZoomPanel } from "./ZoomDialog";
@@ -38,17 +42,40 @@ const DARK_ICON: Record<DarkMode, string> = {
   dark: "night.svg",
 };
 
-const CHORD_MODES: Array<{ value: DisplaySettings["chordMode"]; label: string }> = [
-  { value: 0, label: "Am" },
-  { value: 1, label: "am" },
-  { value: 3, label: "a" },
-];
-
 export function OptionsBar({ onHome }: { onHome?: () => void }) {
   const { t } = useLocalization();
   const store = useClientViewStore();
   const state = useClientViewState();
   const s = state.displaySettings;
+  const { optionsOpen, display } = state;
+  const { song, system } = display;
+  const songWithoutKey = useMemo(() => {
+    if (!optionsOpen || !song) return null;
+    const document = new ChordProDocument(getChordSystem(system), song);
+    return document.system.getKey(document.key) ? null : document;
+  }, [optionsOpen, song, system]);
+  const hasUnkeyedScore = songWithoutKey?.lines.some((line) => line instanceof ChordProAbc) ?? false;
+  const [abcReady, setAbcReady] = useState(isAbcjsLoaded);
+  useEffect(() => {
+    if (!hasUnkeyedScore || abcReady) return;
+    let cancelled = false;
+    void loadAbcjs().then(
+      () => {
+        if (!cancelled) setAbcReady(true);
+      },
+      () => undefined
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [hasUnkeyedScore, abcReady]);
+  const inferredKey = useMemo(() => {
+    if (!songWithoutKey) return false;
+    const document = hasUnkeyedScore && abcReady ? songWithoutKey.expandAbc() : songWithoutKey;
+    return analyzeDocumentKeys(document).key !== null;
+  }, [songWithoutKey, hasUnkeyedScore, abcReady]);
+  const notationLabel = t("ClientViewChordNotation");
+  const notationHint = inferredKey ? `${notationLabel}. ${t("ClientViewEstimatedKeyMarker")}` : notationLabel;
   const hotkeyClass = (control: string) => (state.hotkeyActiveControl === control ? " cv-hotkey-active" : "");
   const [chordBoxMenuOpen, setChordBoxMenuOpen] = useState(false);
   // Narrow panel: shrink the bar (both rows by ONE shared factor, so they keep
@@ -185,13 +212,17 @@ export function OptionsBar({ onHome }: { onHome?: () => void }) {
         <select
           data-tutorial-id="client-chord-mode"
           className={`cv-select${hotkeyClass("chord-mode")}`}
-          title="Minor chord display"
+          title={notationHint}
+          aria-label={notationHint}
           value={s.chordMode}
-          onChange={(e) => store.setDisplaySetting("chordMode", Number(e.target.value) as DisplaySettings["chordMode"])}
+          onChange={(e) => {
+            const mode = CHORD_MODES[e.currentTarget.selectedIndex];
+            if (mode) store.setDisplaySetting("chordMode", mode.value);
+          }}
         >
           {CHORD_MODES.map((mode) => (
             <option key={mode.value} value={mode.value}>
-              {mode.label}
+              {inferredKey && (mode.value & CHORDFORMAT_ROMAN_MASK) !== 0 ? `${mode.label}*` : mode.label}
             </option>
           ))}
         </select>

@@ -16,7 +16,9 @@
 import { getEmptyDisplay } from "../../../common/pp-utils";
 import { hasFavoriteLabel, isFavoritePlaylist } from "../../../common/favorite-playlists";
 import { validateCommand } from "../../../common/hardware-action-catalog";
+import { UnicodeSymbol } from "../../../common/symbols";
 import type { PreselectionCommand } from "../../../common/hardware-input";
+import { CHORDFORMAT_ROMAN, CHORDFORMAT_ROMAN_MAJOR } from "../../../chordpro/render/chord-visual";
 import { chordSettings, directCommandChange, type DirectClientCommand } from "./hardwareCommandChanges";
 import { preselectionPlan, selectedLeaderEntriesOf, visibleListRows, type ListRow } from "./preselectionCommands";
 import { readPersistedSettings, readThemeSetting, writeThemeSetting } from "../../services/settingsStore";
@@ -145,14 +147,22 @@ function foldSearchText(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+export const CHORD_MODES = [
+  { value: 0, label: "Am" },
+  { value: 1, label: "am" },
+  { value: 3, label: "a" },
+  { value: CHORDFORMAT_ROMAN, label: "VI" },
+  { value: CHORDFORMAT_ROMAN_MAJOR, label: `${UnicodeSymbol.flat}VI` },
+] as const;
+
 /**
  * How the current song is rendered. These map 1:1 onto the inputs the legacy
  * `displayChanged()` reads to build the ChordPro `chordFormatFlags` bitmask and
  * call `editor.setDisplayMode(...)`. See SongView for the flag assembly.
  */
 export interface DisplaySettings {
-  /** Base minor-chord display: 0 = Am, 1 = am (LCMOLL), 3 = a (NOMMOL). */
-  chordMode: 0 | 1 | 3;
+  /** Chord naming notation, stored as the base renderer flag. */
+  chordMode: (typeof CHORD_MODES)[number]["value"];
   /** Render chord modifiers as small superscripts (A^m7). */
   subscript: boolean;
   /** Use B / B♭ notation. */
@@ -2389,11 +2399,14 @@ export class ClientViewStore {
         break;
       }
       case "chord-mode": {
-        const order: DisplaySettings["chordMode"][] = [0, 1, 3];
         const step = direction || 1;
-        const currentIndex = Math.max(0, order.indexOf(s.chordMode));
-        const index = direction === 0 ? (currentIndex + 1) % order.length : Math.max(0, Math.min(order.length - 1, currentIndex + step));
-        this.setDisplaySetting("chordMode", order[index]);
+        const currentIndex = Math.max(
+          0,
+          CHORD_MODES.findIndex((mode) => mode.value === s.chordMode)
+        );
+        const lastIndex = CHORD_MODES.length - 1;
+        const index = direction === 0 ? (currentIndex + 1) % CHORD_MODES.length : Math.max(0, Math.min(lastIndex, currentIndex + step));
+        this.setDisplaySetting("chordMode", CHORD_MODES[index].value);
         break;
       }
       case "no-sec-chord-dup":

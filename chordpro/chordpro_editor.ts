@@ -29,6 +29,7 @@ import { analyzeDocumentKeys, type DocumentKeyAnalysis } from "./key-analysis";
 import { Settings } from "../common/settings";
 import { NoteHitBox, Point, Rectangle } from "./ui_base";
 import { ChordBoxType, ChordDrawer, CHORDFORMAT_INKEY, CHORDFORMAT_SUBSCRIPT } from "./chord_drawer";
+import { CHORDFORMAT_ROMAN_MASK } from "./render/chord-visual";
 import { projectDisplaySequence, type AbcDisplayMode, type CommentDisplayMode, type DisplaySequence } from "./render/display-plan";
 import { buildChordVisualModel } from "./render/chord-visual";
 import { collectChordDiagramLabels } from "./render/diagram-chords";
@@ -1620,6 +1621,10 @@ export class ChordProEditor extends ChordDrawer {
     if (draw) this.draw();
   }
 
+  getContentFont() {
+    return this.displayProps.lyricsFont;
+  }
+
   getContentFontSize() {
     return this.contentFontSizePx ?? this.fontSizeFromCssFont(this.displayProps.lyricsFont) ?? 14;
   }
@@ -2218,6 +2223,30 @@ export class ChordProEditor extends ChordDrawer {
 
   getKey() {
     return this.chordPro?.key || this.displayKeyAnalysis()?.key || undefined;
+  }
+
+  getDisplayKey(viewportTop?: number): { name: string; inferred: boolean } | null {
+    const declared = this.system.getKey(this.chordPro?.key ?? "");
+    const analysis = this.displayKeyAnalysis();
+    let key = declared ?? this.system.getKey(analysis?.key ?? "");
+    if (viewportTop !== undefined) {
+      const surface = this.displayScrollSurface();
+      const geometry = this.domRenderer?.getGeometryIndex();
+      if (surface && geometry) {
+        const top = (viewportTop - surface.rect.top) / surface.logicalToDisplay;
+        // Use the uppermost musical row, including lyrics whose repeated chords
+        // are hidden. Keep the last key when scrolling past the music.
+        for (const { occurrence, bottom } of geometry.occurrences) {
+          if (!occurrence.key || occurrence.kind === "comment") continue;
+          if (occurrence.kind === "lyrics" && !occurrence.chords.length && !occurrence.text.trim()) continue;
+          const localKey = this.system.getKey(occurrence.key);
+          if (!localKey) continue;
+          key = localKey;
+          if (bottom > top) break;
+        }
+      }
+    }
+    return key ? { name: key.name, inferred: !declared } : null;
   }
 
   setDisplayMode(
@@ -5038,7 +5067,7 @@ export class ChordProEditor extends ChordDrawer {
    * displayed pixels. The DOM root commits its logical size, so the ratio of the
    * displayed box to that logical height covers any host `transform: scale()`.
    */
-  private highlightScrollSurface(): { rect: DOMRect; logicalToDisplay: number } | null {
+  private displayScrollSurface(): { rect: DOMRect; logicalToDisplay: number } | null {
     const domRenderer = this.domRenderer;
     if (!domRenderer) return null;
     const rect = domRenderer.element.getBoundingClientRect();
@@ -5125,7 +5154,7 @@ export class ChordProEditor extends ChordDrawer {
     // coordinate system: add the offset between the surface top and the scroll
     // target's content top, plus the scroll target's current scrollTop.
     const targetRect = scrollTarget.getBoundingClientRect();
-    const surface = this.highlightScrollSurface();
+    const surface = this.displayScrollSurface();
     if (!surface) return;
     // Pixel offset on the page from the scroll target's content origin to the
     // top of the surface (already includes any current scroll offset).
@@ -5831,7 +5860,9 @@ export class ChordProEditor extends ChordDrawer {
   }
 
   private displayKeyAnalysis() {
-    return this.chordPro && this.chordFormat & CHORDFORMAT_INKEY ? this.analyzeKeys(this.chordPro) : undefined;
+    if (!this.chordPro || !(this.chordFormat & (CHORDFORMAT_INKEY | CHORDFORMAT_ROMAN_MASK))) return undefined;
+    const document = this.chordFormat & CHORDFORMAT_ROMAN_MASK ? (this.getDisplaySequence()?.document ?? this.chordPro) : this.chordPro;
+    return this.analyzeKeys(document);
   }
 
   playChord(box: ChordBoxHitBox) {

@@ -99,7 +99,8 @@ export class ChordDrawer {
 
   drawChordText(chord: string | ChordProChordBase, ctx: DiagramSurface, x?: number, y?: number, actual?: boolean) {
     const chordVersion = this.chordFormat;
-    const chordCacheKey = (typeof chord === "string" ? chord : chord.text) + ":" + ctx.font;
+    const actualKey = this.getKey();
+    const chordCacheKey = `${typeof chord === "string" ? chord : chord.text}:${ctx.font}:${actualKey ?? ""}`;
 
     if (x == null || y == null) {
       const width = this.chordsSizeCache.get(chordVersion, chordCacheKey);
@@ -114,7 +115,7 @@ export class ChordDrawer {
       chordFormat: this.chordFormat,
       readOnly: this.readOnly,
       actual,
-      actualKey: this.getKey(),
+      actualKey,
       chordsInKey: this.chordsInKey,
     });
 

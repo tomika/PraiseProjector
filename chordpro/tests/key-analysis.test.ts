@@ -5,7 +5,7 @@ import { ChordProEditor } from "../chordpro_editor";
 import { Instructions } from "../chordpro_instructions";
 import { defaultDisplayProperties, defaultStyles } from "../chordpro_styles";
 import { analyzeDocumentKeys } from "../key-analysis";
-import { CHORDFORMAT_INKEY, type ChordVisualModel } from "../render/chord-visual";
+import { CHORDFORMAT_INKEY, CHORDFORMAT_ROMAN, CHORDFORMAT_ROMAN_MAJOR, type ChordVisualModel } from "../render/chord-visual";
 import { buildDisplayPlan, DisplayIdentityRegistry } from "../render/display-plan";
 
 const system = getChordSystem("S");
@@ -75,17 +75,17 @@ test("pitch parsing, key inference and transposition agree on Unicode accidental
   assert.equal(german.stringToNote("H"), system.stringToNote("B"));
 });
 
-function display(doc: ChordProDocument, instructionsText?: string) {
+function display(doc: ChordProDocument, instructionsText?: string, chordFormat = CHORDFORMAT_INKEY) {
   const style = defaultDisplayProperties();
   const instructions = new Instructions();
   if (instructionsText) instructions.parse(instructionsText, doc);
   return buildDisplayPlan({
     document: doc,
     identities: new DisplayIdentityRegistry(),
-    system,
+    system: doc.system,
     display: style,
     directives: defaultStyles(style.lyricsFont),
-    chordFormat: CHORDFORMAT_INKEY,
+    chordFormat,
     showTitle: false,
     showMeta: true,
     showTags: true,
@@ -115,22 +115,80 @@ test("raw lyrics, grids and instructed projections spell in their local key, app
   assert.equal(doc.key, "");
 });
 
-test("the editor follows document replacements and transpose without writing the automatic key into the song", () => {
-  const doc = new ChordProDocument(system, verse("V", "C F G C"));
+test("Roman notation distinguishes the song scale from parallel major, preserving chord quality and slash bass", () => {
+  const doc = new ChordProDocument(system, "{key:Am}\n" + verse("V", "Am C F G G#dim7/B Bm7b5 E7#9 Dmin7/F xyz"));
+  const chords = (format: number) => display(doc, undefined, format).occurrences[0].chords.map(({ visual }) => visualText(visual));
+  assert.deepEqual(chords(CHORDFORMAT_ROMAN), ["i", "III", "VI", "VII", "♯vii°7/II", "iiø7", "V7♯9", "iv7/VI", "xyz"]);
+  assert.deepEqual(chords(CHORDFORMAT_ROMAN_MAJOR), ["i", "♭III", "♭VI", "♭VII", "vii°7/II", "iiø7", "V7♯9", "iv7/♭VI", "xyz"]);
+  doc.transpose(5);
+  assert.deepEqual(chords(CHORDFORMAT_ROMAN_MAJOR), ["i", "♭III", "♭VI", "♭VII", "vii°7/II", "iiø7", "V7♯9", "iv7/♭VI", "xyz"]);
+});
+
+test("Roman notation uses the local key in grids and instructed sections after a playback shift", () => {
+  const doc = new ChordProDocument(system, "{key:Am}\n" + verse("V", "Am C F G") + "\n{start_of_grid:Grid +5}\nAm C F G\n{end_of_grid}");
+  const raw = display(doc, undefined, CHORDFORMAT_ROMAN_MAJOR);
+  assert.deepEqual(
+    raw.occurrences.map(({ key }) => key),
+    ["Am", "Dm"]
+  );
+  const grid = raw.occurrences[1].gridRuns.flatMap((run) => (run.kind === "chord" ? [visualText(run.visual)] : []));
+  assert.deepEqual(grid, ["i", "♭III", "♭VI", "♭VII"]);
+  const instructed = display(doc, "V +5", CHORDFORMAT_ROMAN);
+  assert.equal(instructed.occurrences[0].key, "Dm");
+  assert.deepEqual(
+    instructed.occurrences[0].chords.map(({ visual }) => visualText(visual)),
+    ["i", "III", "VI", "VII"]
+  );
+});
+
+test("the visible Roman key follows chord rows in the scaled viewport and keeps the last key below them", () => {
+  const doc = new ChordProDocument(system, verse("V", "Am C F G") + "\n{start_of_grid:Grid +5}\nAm C F G\n{end_of_grid}");
+  const plan = display(doc, undefined, CHORDFORMAT_ROMAN_MAJOR);
   const editor = Object.assign(Object.create(ChordProEditor.prototype), {
     chordPro: doc,
+    chordFormat: CHORDFORMAT_ROMAN_MAJOR,
+    readOnly: true,
     system,
-    chordFormat: CHORDFORMAT_INKEY,
-    currentShift: 0,
-    draw() {},
-    saveState() {},
+    domRenderer: {
+      element: { getBoundingClientRect: () => ({ top: -80, height: 400 }) },
+      getLayoutSnapshot: () => ({ height: 200 }),
+      getGeometryIndex: () => ({ occurrences: plan.occurrences.map((occurrence, index) => ({ occurrence, bottom: (index + 1) * 100 })) }),
+    },
   }) as ChordProEditor;
-  assert.equal(editor.getKey(), "C");
-  editor.transpose(2, false);
-  assert.equal(editor.getKey(), "D");
-  assert.doesNotMatch(editor.chordProCode, /\{key:/);
-  editor.externalUpdate("{key:F}\n[C]word");
-  assert.equal(editor.getKey(), "F");
-  editor.externalUpdate("words");
-  assert.equal(editor.getKey(), undefined);
+
+  assert.deepEqual(editor.getDisplayKey(), { name: "Am", inferred: true });
+  assert.deepEqual(editor.getDisplayKey(20), { name: "Am", inferred: true });
+  assert.deepEqual(editor.getDisplayKey(120), { name: "Dm", inferred: true });
+  assert.deepEqual(editor.getDisplayKey(330), { name: "Dm", inferred: true });
+});
+
+test("Roman notation respects chromatic spelling and German/Hungarian note names", () => {
+  const doc = new ChordProDocument(getChordSystem("G"), "{key:C}\n" + verse("V", "Dm F# Gb B Hdim"));
+  assert.deepEqual(
+    display(doc, undefined, CHORDFORMAT_ROMAN).occurrences[0].chords.map(({ visual }) => visualText(visual)),
+    ["ii", "♯IV", "♭V", "♭VII", "vii°"]
+  );
+});
+
+test("the editor follows document replacements and transpose without writing the automatic key into the song", () => {
+  for (const chordFormat of [CHORDFORMAT_INKEY, CHORDFORMAT_ROMAN, CHORDFORMAT_ROMAN_MAJOR]) {
+    const doc = new ChordProDocument(system, verse("V", "C F G C"));
+    const editor = Object.assign(Object.create(ChordProEditor.prototype), {
+      chordPro: doc,
+      system,
+      chordFormat,
+      readOnly: true,
+      currentShift: 0,
+      draw() {},
+      saveState() {},
+    }) as ChordProEditor;
+    assert.equal(editor.getKey(), "C");
+    editor.transpose(2, false);
+    assert.equal(editor.getKey(), "D");
+    assert.doesNotMatch(editor.chordProCode, /\{key:/);
+    editor.externalUpdate("{key:F}\n[C]word");
+    assert.equal(editor.getKey(), "F");
+    editor.externalUpdate("words");
+    assert.equal(editor.getKey(), undefined);
+  }
 });

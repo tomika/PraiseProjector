@@ -277,6 +277,7 @@ export const chordRegexPattern = (() => {
       bassNote: chord.bassNote,
       suffix: chord.suffix,
       minor: false,
+      hasMinorThird: /-b3(?:-|$)/.test(chord.chordInfo.desc),
     };
     if (retval.normalized && chord.chordInfo) {
       retval.normalized = chord.chordInfo.symbols[0];

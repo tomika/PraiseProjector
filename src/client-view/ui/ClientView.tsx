@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useClientViewState, useClientViewStore } from "../controller/ClientViewContext";
-import { canUseSessions } from "../controller/ClientViewStore";
+import { canUseSessions, CHORD_MODES } from "../controller/ClientViewStore";
 import { AboutDialog } from "./AboutDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ChordTransitionDialog } from "./ChordTransitionDialog";
@@ -84,7 +84,7 @@ export function ClientView({ onHome }: { onHome?: () => void }) {
     simplified: state.displaySettings.simplified,
     "omit-repeated-chords": state.displaySettings.noSecChordDup,
     superscript: state.displaySettings.subscript,
-    "minor-notation": t(({ 0: "HardwareMinorUpper", 1: "HardwareMinorLower", 3: "HardwareMinorLetter" } as const)[state.displaySettings.chordMode]),
+    "minor-notation": CHORD_MODES.find((mode) => mode.value === state.displaySettings.chordMode)?.label,
     "note-names": t(state.displaySettings.bb ? "HardwareNoteNamesEnglish" : "HardwareNoteNamesGerman"),
     "auto-tone": state.displaySettings.autoTone,
     transpose: state.transpose,

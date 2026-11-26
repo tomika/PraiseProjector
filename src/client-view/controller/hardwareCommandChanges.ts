@@ -27,7 +27,10 @@ const boolFields: Partial<Record<ClientToggleFamily, keyof DisplaySettings>> = {
 const toggle = (current: boolean, op: "toggle" | "on" | "off") => (op === "toggle" ? !current : op === "on");
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 function cycle<T>(order: readonly T[], value: T, previous: boolean): T {
-  return order[(Math.max(0, order.indexOf(value)) + (previous ? order.length - 1 : 1)) % order.length];
+  const index = order.indexOf(value);
+  // A value outside the order (e.g. a Roman chord notation) enters it at the matching end.
+  if (index < 0) return order[previous ? order.length - 1 : 0];
+  return order[(index + (previous ? order.length - 1 : 1)) % order.length];
 }
 
 export function directCommandChange(state: ClientViewState, command: DirectClientCommand): DirectChange {

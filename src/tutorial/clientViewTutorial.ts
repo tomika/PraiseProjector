@@ -581,12 +581,12 @@ export const clientViewTutorial: TutorialDefinition = {
             "display-minor",
             "[data-tutorial-id='client-chord-mode']",
             tx(
-              "Moll akkordok írásmódja",
-              "Az Am, am és a rendelkezésre álló jelölési változatok választhatók.",
-              "Minor chord spelling",
-              "Choose among Am, am and the available minor-chord spellings."
+              "Akkordjelölés",
+              "Az „Am”, „am” és „a” jelölés hangneveket használ. A „VI” az aktuális hangnem skálájához, a „♭VI” az azonos alaphangú dúr skálához viszonyít. A-mollban például a C akkord így III, illetve ♭III. Római jelölésnél a hangnem görgetéskor is látható egy kis körben a bal felső sarokban. A csillag becsült hangnemet jelöl.",
+              "Chord notation",
+              "Am, am and a use note names. VI uses the scale of the current key, and ♭VI uses the major scale on the same tonic. For example, a C chord in A minor appears as III or ♭III, respectively. In either Roman mode, the key stays visible in a small circle in the top left while scrolling. An asterisk marks an estimated key."
             ),
-            { helpIcons: [{ label: "Am" }, { label: "am" }, { label: "a" }] }
+            { helpIcons: [{ label: "Am" }, { label: "am" }, { label: "a" }, { label: "VI" }, { label: "♭VI" }, { label: "VI*" }, { label: "♭VI*" }] }
           ),
           s(
             "display-repeat-chords",

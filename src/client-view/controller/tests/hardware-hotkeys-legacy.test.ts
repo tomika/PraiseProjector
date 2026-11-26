@@ -101,11 +101,11 @@ test("chord-mode control: activate cycles, +/- clamp at the ends", async () => {
   f.store.hotkeySelectControl(true);
   assert.equal(f.state().hotkeyActiveControl, "chord-mode");
   const values: number[] = [];
-  for (const direction of [0, 0, 0, 1, 1, 1, -1, -1, -1] as const) {
+  for (const direction of [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1, -1] as const) {
     f.store.hotkeyChangeControl(direction);
     values.push(f.state().displaySettings.chordMode);
   }
-  assert.deepEqual(values, [1, 3, 0, 1, 3, 3, 1, 0, 0]);
+  assert.deepEqual(values, [1, 3, 256, 512, 0, 0, 1, 3, 256, 512, 512, 256]);
 });
 
 test("boolean option controls toggle their display setting only", async () => {

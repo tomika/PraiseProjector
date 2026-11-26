@@ -26,8 +26,10 @@ import {
   useClientViewStore,
 } from "../controller/ClientViewContext";
 import { isViewingRemoteDisplay } from "../controller/ClientViewStore";
+import { useLocalization } from "../../localization/LocalizationContext";
 import { recordChordProRenderDuration } from "../../shared/clientPerformanceProfile";
 import { resolvePerformanceFeature } from "../../shared/performanceSettings";
+import { UnicodeSymbol } from "../../../common/symbols";
 import { chordProAPI } from "../../../chordpro/chordProApi";
 import { findLargestLargerFittingFontSize, scaleFitWidthMetric } from "../../../chordpro/layout/auto-font-size";
 import { PageFlip } from "../../../chordpro/pageFlip";
@@ -42,6 +44,7 @@ import {
 import type { ChordProEditorOptions } from "../../../chordpro/chordpro_editor";
 import { parseTransitionInstruction, splitInstructionLines, TRANSITION_INSTRUCTION_PREFIX } from "../../../chordpro/transition-instruction";
 import type { ChordProStylesSettings } from "../../../chordpro/chordpro_styles";
+import { CHORDFORMAT_ROMAN_MASK } from "../../../chordpro/render/chord-visual";
 import type { AbcDisplayMode, CommentDisplayMode } from "../../../chordpro/render/display-plan";
 import type { Display } from "../api/ClientApi";
 import type { DisplaySettings, NavEntry, NavigationMode, ZoomSizingMode } from "../controller/ClientViewStore";
@@ -141,6 +144,7 @@ const CHORDSEL_MARKUP = `
 `;
 
 function buildChordFlags(s: DisplaySettings): number {
+  if (s.chordBoxType === "NO_CHORDS") return CHORDFORMAT_NOCHORDS | (s.chordMode & CHORDFORMAT_ROMAN_MASK);
   let flags: number = s.chordMode;
   if (s.subscript) flags |= CHORDFORMAT_SUBSCRIPT;
   if (s.bb) flags |= CHORDFORMAT_BB;
@@ -453,7 +457,7 @@ function renderSong(
   const maxText = settings.maxText;
   const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
   const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
-  const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+  const flags = buildChordFlags(settings);
   const autoWrap = maxText && settings.zoomAutoWrap;
   api.setAbcDisplayMode(abcDisplayMode(settings), false);
   api.setDisplayMode(
@@ -481,6 +485,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   { display, settings, dark },
   ref
 ) {
+  const { t } = useLocalization();
   const store = useClientViewStore();
   const state = useClientViewState();
   const performanceProfile = useClientPerformanceProfile();
@@ -501,6 +506,8 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const canUsePlaylistNavigation = store.canUsePlaylistNavigation();
   const canAddCurrentSongToPlaylist = store.currentSongCanBeAddedToPlaylist();
   const hasSongText = !!display.song?.trim();
+  const showRomanKey = hasSongText && (settings.chordMode & CHORDFORMAT_ROMAN_MASK) !== 0;
+  const [romanKey, setRomanKey] = useState("");
   // display_query parses fresh arrays/objects on every response. Derive stable
   // structural values so unchanged repeat/style payloads retain identity.
   const chordProStylesJson = JSON.stringify(getDisplayChordProStyles(display));
@@ -517,6 +524,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       : "Playlist navigation is unavailable";
 
   const swipeRef = useRef<HTMLDivElement>(null);
+  const romanKeyRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef<HTMLDivElement>(null);
   const prevPageRef = useRef<HTMLDivElement>(null);
   const nextPageRef = useRef<HTMLDivElement>(null);
@@ -527,6 +535,18 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
   const apiRef = useRef<BoundEditor | null>(null);
   const prevApiRef = useRef<BoundEditor | null>(null);
   const nextApiRef = useRef<BoundEditor | null>(null);
+
+  const syncRomanKeyFont = useCallback((generation: number | null) => {
+    const badge = romanKeyRef.current;
+    const host = hostRef.current;
+    const api = apiRef.current;
+    if (!badge || !host || !api || generation === null || fitGenerations.get(host) !== generation) return;
+    const size = visualFontSize(host, api);
+    if (size === null) return;
+    badge.style.font = api.getContentFont();
+    badge.style.fontSize = `${size}px`;
+    badge.style.lineHeight = "1";
+  }, []);
 
   const loadedTextRef = useRef<string | null>(null);
   const appliedStylesRef = useRef<ChordProStylesSettings | null | undefined>(undefined);
@@ -726,7 +746,10 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     };
     const touchDistance = (touches: readonly Touch[]) => Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
     const restorePinchPreview = () => {
-      if (pinchPreviewHost) pinchPreviewHost.style.transform = pinchPreviewTransform;
+      if (pinchPreviewHost) {
+        pinchPreviewHost.style.transform = pinchPreviewTransform;
+        if (romanKeyRef.current) romanKeyRef.current.style.transform = "";
+      }
       pinchPreviewHost = null;
       pinchPreviewTransform = "";
     };
@@ -778,6 +801,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         const previewFontSize = Math.max(MIN_MANUAL_FONT_SIZE, Math.min(MAX_MANUAL_FONT_SIZE, pinchBaselineFontSize + fontDelta));
         const scale = previewFontSize / pinchBaselineFontSize;
         pinchPreviewHost.style.transform = `${pinchPreviewTransform} scale(${scale})`;
+        if (romanKeyRef.current) romanKeyRef.current.style.transform = `scale(${scale})`;
       }
       if (steps !== lastPinchSteps) {
         pinchMoved = true;
@@ -1079,7 +1103,9 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       raf = requestAnimationFrame(() => {
         const fitViewport = prevPageRef.current ?? nextPageRef.current ?? pane;
         if (apiRef.current && hostRef.current)
-          void fitAndZoom(hostRef.current, apiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport);
+          void fitAndZoom(hostRef.current, apiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport).then(
+            syncRomanKeyFont
+          );
         if (prevApiRef.current && prevHostRef.current)
           void fitAndZoom(prevHostRef.current, prevApiRef.current, sizingModeRef.current, zoomFontSizeRef.current, autoWrapRef.current, fitViewport);
         if (nextApiRef.current && nextHostRef.current)
@@ -1098,7 +1124,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
       loadedTextRef.current = null;
       appliedStylesRef.current = undefined;
     };
-  }, [store]);
+  }, [store, syncRomanKeyFont]);
 
   // Neighbour editors are an optional visual performance feature. A persisted
   // slow profile skips binding them on startup; a newly slow profile disposes
@@ -1190,7 +1216,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     const tagMode = maxText ? settings.zoomTagMode : "VISIBLE";
     // NO_CHORDS is a pseudo box-type: hide chords entirely with an empty box.
     const boxType = settings.chordBoxType === "NO_CHORDS" ? "" : settings.chordBoxType;
-    const flags = settings.chordBoxType === "NO_CHORDS" ? CHORDFORMAT_NOCHORDS : buildChordFlags(settings);
+    const flags = buildChordFlags(settings);
     api.setAbcDisplayMode(abcDisplayMode(settings), false);
     api.setDisplayMode(
       maxText ? !settings.zoomHideTitle : true,
@@ -1251,6 +1277,7 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     // succeeded, including an attached one-frame retry.
     void settledFit.then((appliedFitGeneration) => {
       if (appliedFitGeneration === null) return;
+      syncRomanKeyFont(appliedFitGeneration);
       recordChordProRenderDuration(performance.now() - renderStartedAt);
       requestAnimationFrame(() => {
         if (fitGenerations.get(host) !== appliedFitGeneration) return;
@@ -1258,6 +1285,30 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
         if (pendingTurnFitRef.current === pendingTurnFit) pendingTurnFitRef.current = null;
       });
     });
+    if (!showRomanKey) return;
+    const page = currentPageRef.current;
+    const updateKey = (viewportTop?: number) => {
+      const key = api.getDisplayKey(viewportTop);
+      const name = key?.name.replace(/[#b]/g, (accidental) => (accidental === "#" ? UnicodeSymbol.sharp : UnicodeSymbol.flat)) ?? "";
+      setRomanKey(key?.inferred ? `${name}*` : name);
+    };
+    updateKey();
+    let keyFrame = 0;
+    const scheduleKeyUpdate = () => {
+      if (keyFrame) return;
+      keyFrame = requestAnimationFrame(() => {
+        keyFrame = 0;
+        updateKey(api.getLayoutSnapshot().settled ? page?.getBoundingClientRect().top : undefined);
+      });
+    };
+    const unsubscribeKey = api.subscribeLayout(scheduleKeyUpdate);
+    page?.addEventListener("scroll", scheduleKeyUpdate, { passive: true });
+    scheduleKeyUpdate();
+    return () => {
+      unsubscribeKey();
+      page?.removeEventListener("scroll", scheduleKeyUpdate);
+      cancelAnimationFrame(keyFrame);
+    };
   }, [
     display.capo,
     display.instructions,
@@ -1271,10 +1322,12 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
     dark,
     scrollMode,
     showInstructions,
+    showRomanKey,
     commentDisplay,
     sizingMode,
     autoWrap,
     store,
+    syncRomanKeyFont,
   ]);
 
   // A highlight response is a decoration update only. The ChordPro renderer
@@ -1370,6 +1423,13 @@ export const SongView = forwardRef<SongViewHandle, { display: Display; settings:
 
   return (
     <div id="swipe-handler" className="pp-flip-perspective" ref={swipeRef}>
+      {showRomanKey && (
+        <div className="cv-song-key" ref={romanKeyRef}>
+          <span className="cv-song-key-description">{t("MetaKey")} </span>
+          <span>{romanKey || "—"}</span>
+          {romanKey.endsWith("*") && <span className="cv-song-key-description"> {t("ClientViewEstimatedKeyMarker")}</span>}
+        </div>
+      )}
       {/* Prev/next pages sit behind the current page and are revealed as it
           rotates away during a page turn (mirrors praiseprojector.ts). */}
       <div className="cv-page cv-page-prev" ref={prevPageRef}>

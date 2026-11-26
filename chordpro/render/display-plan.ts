@@ -138,6 +138,8 @@ export interface DisplayOccurrence {
   /** Canvas-compatible instruction item index, used by highlight/section grouping. */
   readonly instructedSectionIndex?: number;
   readonly kind: DisplayLineKind;
+  /** Effective key used to format the chords in this occurrence. */
+  readonly key?: string;
   readonly style: ResolvedLineVisualStyle;
   readonly tag: DisplayTag | null;
   readonly text: string;
@@ -1011,6 +1013,7 @@ export function buildDisplayPlan(options: BuildDisplayPlanOptions): DisplayPlan 
       origin: projected.origin,
       instructedSectionIndex: line.instructedSectionIndex,
       kind,
+      key: actualKey || undefined,
       style: resolveLineStyle(line, options.display, options.directives),
       tag,
       text,

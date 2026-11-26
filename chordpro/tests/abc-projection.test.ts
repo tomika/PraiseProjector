@@ -284,7 +284,7 @@ test("notation follow resolves the selected verse's music spans to the visible s
     lastHighlightScrollSectionToken: "section:score",
     parent_div: {},
     domRenderer: renderer,
-    highlightScrollSurface: () => ({ rect: { top: 10 }, logicalToDisplay: 2 }),
+    displayScrollSurface: () => ({ rect: { top: 10 }, logicalToDisplay: 2 }),
     findScrollableAncestor: () => scrollTarget,
     animateScrollTo: (_target: unknown, top: number) => {
       targetTop = top;

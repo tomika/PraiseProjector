@@ -1191,6 +1191,8 @@
   "HardwareFamilySuperscript": "Chord modifiers as superscript",
   "HardwareFamilyAutoTone": "Automatic key handling",
   "ClientViewChordSpellingForKey": "Spell chord notes for the key",
+  "ClientViewChordNotation": "Chord notation",
+  "ClientViewEstimatedKeyMarker": "The asterisk marks an estimated key.",
   "HardwareFamilyNoteNames": "Note name system",
   "HardwareFamilyTranspose": "Transpose",
   "HardwareFamilyCapoUse": "Use capo",

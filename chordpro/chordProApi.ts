@@ -405,6 +405,7 @@ function bindEditor(editorDiv: HTMLDivElement) {
       const instance = getBoundEditor();
       if (instance) instance.setContentFontSize(fontSizePx, draw);
     },
+    getContentFont: () => getBoundEditor()?.getContentFont() ?? "",
     getContentFontSize: () => getBoundEditor()?.getContentFontSize() ?? 14,
     setLineWrapping: (autoSplitLines: boolean, shrinkWrappedContent = false, draw = true) => {
       const instance = getBoundEditor();
@@ -438,6 +439,7 @@ function bindEditor(editorDiv: HTMLDivElement) {
     isInMarkingState: () => getBoundEditor(true)?.inMarkingState ?? false,
     hasChordSelectorOpen: () => getBoundEditor(true)?.hasChordSelectorOpen() ?? false,
     getSelectedText: () => getBoundEditor()?.getSelectedText() ?? "",
+    getDisplayKey: (viewportTop?: number) => getBoundEditor()?.getDisplayKey(viewportTop) ?? null,
     getLayoutSnapshot: () => getBoundEditor()?.getLayoutSnapshot() ?? { width: 0, height: 0, revision: 0, settled: false },
     setViewportAlignedTitleGeometry: (width: number, rootOffset: number) => getBoundEditor()?.setViewportAlignedTitleGeometry(width, rootOffset),
     subscribeLayout: (listener: Parameters<ChordProEditor["subscribeLayout"]>[0]) => getBoundEditor()?.subscribeLayout(listener) ?? (() => {}),

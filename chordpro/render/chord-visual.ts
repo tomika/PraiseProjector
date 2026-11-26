@@ -10,9 +10,8 @@
  *
  * Output is plain token data: an ordered array of `{ role, text, subscript,
  * gapBefore }` tokens, never HTML or markup strings. A token's `text` is
- * exactly the chord-derived substring it represents (prefix, a note letter,
- * a modifier run, a suffix, or the whole unknown-chord text) with only the
- * existing flat/sharp glyph substitution applied — arbitrary or
+ * the formatted chord part it represents (prefix, a note or scale degree,
+ * a modifier run, a suffix, or the whole unknown-chord text). Arbitrary or
  * malicious-looking chord text (e.g. containing `<`, `>`, `&`) passes through
  * unchanged as token text. Consumers must render tokens with
  * `document.createTextNode`/`textContent`, never `innerHTML` — this module
@@ -23,8 +22,9 @@
  * token abuts the previous one.
  */
 import { UnicodeSymbol } from "../../common/symbols";
-import { VersionedMap } from "../../common/utils";
+import { romanLower, romanUpper, VersionedMap } from "../../common/utils";
 import { ChordProChordBase, ChordSystem } from "../chordpro_base";
+import type { Key } from "../note_system";
 
 export const CHORDFORMAT_LCMOLL = 1;
 export const CHORDFORMAT_NOMMOL = 3;
@@ -34,6 +34,9 @@ export const CHORDFORMAT_SIMPLIFIED = 16;
 export const CHORDFORMAT_NOSECTIONDUP = 32;
 export const CHORDFORMAT_NOCHORDS = 64;
 export const CHORDFORMAT_INKEY = 128;
+export const CHORDFORMAT_ROMAN = 256;
+export const CHORDFORMAT_ROMAN_MAJOR = 512;
+export const CHORDFORMAT_ROMAN_MASK = CHORDFORMAT_ROMAN | CHORDFORMAT_ROMAN_MAJOR;
 
 export type ChordVisualTokenRole = "prefix" | "base-note" | "modifier" | "bass-separator" | "bass-note" | "bass-modifier" | "suffix" | "unknown-text";
 
@@ -60,9 +63,11 @@ export interface ChordVisualDetails {
   readonly prefix: string;
   readonly baseNote: string;
   readonly modifier: string;
+  readonly normalized: string;
   readonly bassNote: string;
   readonly suffix: string;
   readonly minor: boolean;
+  readonly hasMinorThird: boolean;
 }
 
 export interface BuildChordVisualModelOptions {
@@ -79,7 +84,7 @@ export interface BuildChordVisualModelOptions {
   readonly readOnly: boolean;
   /** Whether to request the "actual chord" underline marker. */
   readonly actual?: boolean;
-  /** The active song key (`ChordDrawer.getKey()`), consulted only when CHORDFORMAT_INKEY is set. */
+  /** The active key for key-aware note spelling and Roman numerals. */
   readonly actualKey?: string;
   /** Optional cache for INKEY note-name resolution, keyed the same way as `ChordDrawer.chordsInKey`. */
   readonly chordsInKey?: VersionedMap<string, string, string>;
@@ -94,11 +99,12 @@ function formatNote(system: ChordSystem, readOnly: boolean, chordFormat: number,
   return !readOnly || !moll || (chordFormat & CHORDFORMAT_LCMOLL) === 0 ? ChordProChordBase.formatSingleNote(note) : note.toLowerCase();
 }
 
-function formatModifierText(text: string, readOnly: boolean, chordFormat: number): { text: string; subscript: boolean } {
+function formatModifierText(text: string, readOnly: boolean, chordFormat: number, roman = false): { text: string; subscript: boolean } {
   const subscript = readOnly && (chordFormat & CHORDFORMAT_SUBSCRIPT) === CHORDFORMAT_SUBSCRIPT;
-  const substituted = subscript
-    ? text.replace(/[#b]/g, (r) => (r === "#" ? UnicodeSymbol.sharp : UnicodeSymbol.flat))
-    : text.replace(/b/g, UnicodeSymbol.flat);
+  const substituted =
+    subscript || roman
+      ? text.replace(/[#b]/g, (r) => (r === "#" ? UnicodeSymbol.sharp : UnicodeSymbol.flat))
+      : text.replace(/b/g, UnicodeSymbol.flat);
   return { text: substituted, subscript };
 }
 
@@ -111,6 +117,40 @@ function resolveInKeyNote(options: BuildChordVisualModelOptions, baseNote: strin
   let resolved = chordsInKey.get(key.name, baseNote);
   if (!resolved) chordsInKey.set(key.name, baseNote, (resolved = key.noteName(baseNote)));
   return resolved;
+}
+
+const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
+const pitchClass = (pitch: number) => ((pitch % 12) + 12) % 12;
+
+function formatRomanDegree(key: Key, note: string, minor: boolean, majorReference: boolean): string {
+  const { system } = key;
+  const pitch = system.stringToNote(note);
+  const tonic = system.stringToNote(key.baseNote);
+  if (pitch === null || tonic === null) return note;
+
+  const interval = pitchClass(pitch - tonic);
+  const scaleIntervals = Array.from(key.notes(), (degree) => pitchClass(system.stringToNote(degree)! - tonic));
+  const reference = majorReference ? majorIntervals : scaleIntervals;
+  let degree = reference.indexOf(interval);
+  // Keep the degree of a note in the song's scale when comparing it to the major scale.
+  if (degree < 0) degree = scaleIntervals.indexOf(interval);
+  if (degree < 0) {
+    // For other chromatic notes, distinguish spellings such as F♯ (♯IV) and G♭ (♭V).
+    // In the German/Hungarian system, both H and B use the seventh letter position.
+    const letters = system.systemCode === "G" ? "CDEFGAH" : "CDEFGAB";
+    const letterIndex = (name: string) => letters.indexOf(system.systemCode === "G" && name[0] === "B" ? "H" : name[0]);
+    degree = (letterIndex(note) - letterIndex(key.baseNote) + 7) % 7;
+  }
+  const accidental = pitchClass(interval - reference[degree] + 6) - 6;
+  const sign = accidental < 0 ? UnicodeSymbol.flat : UnicodeSymbol.sharp;
+  return sign.repeat(Math.abs(accidental)) + (minor ? romanLower : romanUpper)[degree + 1];
+}
+
+function romanModifier(details: ChordVisualDetails, simplified: boolean): string {
+  if (details.normalized === "dim") return "°";
+  if (details.normalized === "o") return simplified ? "°" : "°7";
+  if (details.normalized === "ø") return simplified ? "°" : "ø7";
+  return details.hasMinorThird ? details.modifier.replace(/^(?:min|m(?!aj)|-)/, "") : details.modifier;
 }
 
 /**
@@ -134,25 +174,37 @@ export function buildChordVisualModel(options: BuildChordVisualModelOptions): Ch
 
   if (chordDetails.prefix) tokens.push({ role: "prefix", text: chordDetails.prefix, subscript: false, gapBefore: 0 });
 
-  const baseNote = resolveInKeyNote(options, chordDetails.baseNote);
-  let note = formatNote(system, readOnly, chordFormat, baseNote, chordDetails.minor);
-  tokens.push({ role: "base-note", text: note.substring(0, 1), subscript: false, gapBefore: 0 });
-
-  let modifierText = note.substring(1);
-  if (readOnly && chordDetails.minor && (chordFormat & CHORDFORMAT_NOMMOL) === CHORDFORMAT_NOMMOL) modifierText += chordDetails.modifier.substring(1);
-  else modifierText += chordDetails.modifier;
+  const roman = readOnly && (chordFormat & CHORDFORMAT_ROMAN_MASK) !== 0;
+  const romanKey = roman && options.actualKey ? system.getKey(options.actualKey) : undefined;
+  const majorReference = (chordFormat & CHORDFORMAT_ROMAN_MAJOR) !== 0;
+  const simplified = readOnly && (chordFormat & CHORDFORMAT_SIMPLIFIED) !== 0;
+  let modifierText: string;
+  if (romanKey) {
+    const text = formatRomanDegree(romanKey, chordDetails.baseNote, chordDetails.hasMinorThird, majorReference);
+    tokens.push({ role: "base-note", text, subscript: false, gapBefore: 0 });
+    modifierText = romanModifier(chordDetails, simplified);
+  } else {
+    const baseNote = resolveInKeyNote(options, chordDetails.baseNote);
+    const note = formatNote(system, readOnly, chordFormat, baseNote, chordDetails.minor);
+    tokens.push({ role: "base-note", text: note.substring(0, 1), subscript: false, gapBefore: 0 });
+    const omitMinor = readOnly && chordDetails.minor && (chordFormat & CHORDFORMAT_NOMMOL) === CHORDFORMAT_NOMMOL;
+    modifierText = note.substring(1) + (omitMinor ? chordDetails.modifier.substring(1) : chordDetails.modifier);
+  }
 
   if (modifierText) {
-    const formatted = formatModifierText(modifierText, readOnly, chordFormat);
+    const formatted = formatModifierText(modifierText, readOnly, chordFormat, roman);
     tokens.push({ role: "modifier", text: formatted.text, subscript: formatted.subscript, gapBefore: 1 });
   }
 
-  if (!readOnly || (chordFormat & CHORDFORMAT_SIMPLIFIED) === 0) {
-    if (chordDetails.bassNote) {
-      tokens.push({ role: "bass-separator", text: "/", subscript: false, gapBefore: 0 });
-      note = formatNote(system, readOnly, chordFormat, resolveInKeyNote(options, chordDetails.bassNote), false);
+  if (!simplified && chordDetails.bassNote) {
+    tokens.push({ role: "bass-separator", text: "/", subscript: false, gapBefore: 0 });
+    if (romanKey) {
+      const text = formatRomanDegree(romanKey, chordDetails.bassNote, false, majorReference);
+      tokens.push({ role: "bass-note", text, subscript: false, gapBefore: 0 });
+    } else {
+      const note = formatNote(system, readOnly, chordFormat, resolveInKeyNote(options, chordDetails.bassNote), false);
       tokens.push({ role: "bass-note", text: note.substring(0, 1), subscript: false, gapBefore: 0 });
-      const bassModifier = formatModifierText(note.substring(1), readOnly, chordFormat);
+      const bassModifier = formatModifierText(note.substring(1), readOnly, chordFormat, roman);
       tokens.push({ role: "bass-modifier", text: bassModifier.text, subscript: bassModifier.subscript, gapBefore: 0 });
     }
   }
