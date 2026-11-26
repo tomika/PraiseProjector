@@ -2209,6 +2209,8 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   align-items: center;
   gap: clamp(3px, 1vw, 16px);
   margin-bottom: 8px;
+  /* Keeps the filters clear of the corner close button: the space of the former in-row placeholder (32px + 4px gap). */
+  padding-right: 36px;
 }
 
 .cv-chord-transition-header h2 {
@@ -2373,11 +2375,30 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
   cursor: pointer;
 }
 
-/* Invisible placeholder where the close button used to be. */
+/* Pinned to the dialog's corner (the modal <dialog> is fixed-positioned), outside the scrolling content. */
 .cv-chord-transition-close {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
   width: 32px;
-  height: 40px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 30px;
+  line-height: 1;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.cv-chord-transition-close:hover {
+  background: var(--cv-panel-hover);
+  opacity: 1;
 }
 
 .cv-chord-transition-action:disabled {
@@ -2412,6 +2433,12 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
 .cv-chord-transition-timer {
   flex: 0 0 4px;
   background: var(--cv-panel-btn-bg);
+  transition: opacity 0.25s ease-out;
+}
+
+/* A touch inside stopped the countdown: the bar fades out instead of freezing. */
+.cv-chord-transition-timer.held {
+  opacity: 0;
 }
 
 .cv-chord-transition-timer > div {
@@ -2453,8 +2480,8 @@ body[data-pp-tutorial-step="song-add"] .cv-navigation-tutorial-placeholder {
     width: 28px;
   }
 
-  .cv-chord-transition-close {
-    width: 26px;
+  .cv-chord-transition-header {
+    padding-right: 28px;
   }
 }
 

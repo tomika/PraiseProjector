@@ -26,6 +26,8 @@ export function ChordTransitionDialog({
   const { t } = useLocalization();
   const modal = useRef<HTMLDialogElement>(null);
   const timedOut = useRef(false);
+  // Any touch, click or key inside the dialog keeps it open: the countdown stops for good.
+  const [held, setHeld] = useState(false);
   const [playing, setPlaying] = useState<TransitionRecommendation | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<"play" | "save" | null>(null);
@@ -41,21 +43,30 @@ export function ChordTransitionDialog({
     }
     const element = modal.current;
     element?.showModal();
-    const timer = durationMs
-      ? setTimeout(() => {
-          timedOut.current = true;
-          store.dismissChordTransition();
-        }, durationMs)
-      : undefined;
     return () => {
       element?.close();
-      clearTimeout(timer);
       if (!timedOut.current) {
         stopPlayback.current?.();
         stopPlayback.current = null;
       }
     };
-  }, [durationMs, stopPlayback, store]);
+  }, [stopPlayback, store]);
+
+  useEffect(() => {
+    if (!durationMs || held) return;
+    const timer = setTimeout(() => {
+      timedOut.current = true;
+      store.dismissChordTransition();
+    }, durationMs);
+    return () => clearTimeout(timer);
+  }, [durationMs, held, store]);
+
+  /** The dialog element itself is also the target of backdrop clicks; only its own box counts as inside. */
+  const isInside = (event: { target: EventTarget; currentTarget: HTMLDialogElement; clientX: number; clientY: number }) => {
+    if (event.target !== event.currentTarget) return true;
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  };
 
   const changeStyle = (style: ChordTransitionStyle) => {
     store.toggleChordTransitionStyle(style);
@@ -116,8 +127,14 @@ export function ChordTransitionDialog({
       aria-modal="true"
       aria-labelledby="cv-chord-transition-title"
       aria-describedby="cv-chord-transition-keys"
+      onPointerDown={(event) => {
+        if (isInside(event)) setHeld(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") setHeld(true);
+      }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) store.dismissChordTransition();
+        if (!isInside(event)) store.dismissChordTransition();
       }}
       onCancel={(event) => {
         event.preventDefault();
@@ -152,14 +169,12 @@ export function ChordTransitionDialog({
                 })}
               </div>
             )}
-            {/* The close button is hidden, but its space keeps the header layout stable. */}
-            <span className="cv-chord-transition-close" aria-hidden="true" />
           </div>
         </header>
         <ul className="cv-chord-transition-list">
           {dialog.recommendations.map((recommendation) => (
             <li key={recommendation.chords.join(" ")} className="cv-chord-transition-row">
-              <button type="button" className="cv-chord-transition-recommendation" onClick={() => store.dismissChordTransition()}>
+              <button type="button" className="cv-chord-transition-recommendation" onClick={() => setHeld(true)}>
                 <span className="cv-chord-transition-chords">
                   {recommendation.chords.map((chord, index) => (
                     <span
@@ -228,8 +243,22 @@ export function ChordTransitionDialog({
           </p>
         )}
       </div>
+      {/* Outside the scrolling content, so it stays in the corner; last in DOM order, so it does not take the initial focus. */}
+      <button
+        type="button"
+        className="cv-chord-transition-close"
+        title={t("Close")}
+        aria-label={t("Close")}
+        onClick={() => store.dismissChordTransition()}
+      >
+        &times;
+      </button>
       {durationMs > 0 && (
-        <div className="cv-chord-transition-timer" aria-hidden="true" style={{ "--cv-transition-duration": `${durationMs}ms` } as CSSProperties}>
+        <div
+          className={held ? "cv-chord-transition-timer held" : "cv-chord-transition-timer"}
+          aria-hidden="true"
+          style={{ "--cv-transition-duration": `${durationMs}ms` } as CSSProperties}
+        >
           <div />
         </div>
       )}
