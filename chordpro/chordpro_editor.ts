@@ -1552,6 +1552,7 @@ export class ChordProEditor extends ChordDrawer {
     display.commentBorder = this.scalePxTokens(display.commentBorder, factor);
     display.chordLineHeight = Math.max(1, Math.round(display.chordLineHeight * factor));
     display.lyricsLineHeight = Math.max(1, Math.round(display.lyricsLineHeight * factor));
+    display.tagLyricsGap = Math.max(0, Math.round(display.tagLyricsGap * factor));
     display.chordLyricSep = Math.max(0, Math.round(display.chordLyricSep * factor));
     display.chordBorder = Math.max(0, Math.round(display.chordBorder * factor));
 
@@ -2006,7 +2007,7 @@ export class ChordProEditor extends ChordDrawer {
     for (const entry of geometry.occurrences) {
       if (!entry.tag) continue;
       if (entry.occurrence.source !== line && entry.occurrence.origin !== line) continue;
-      return new ChordProTagHitBox(entry.tag.left, entry.tag.top, entry.tag.width + this.tagHitExtension(), entry.tag.height, line, entry.tag.name);
+      return new ChordProTagHitBox(entry.tag.left, entry.tag.top, entry.tag.hitWidth, entry.tag.height, line, entry.tag.name);
     }
     return null;
   }
@@ -2085,15 +2086,6 @@ export class ChordProEditor extends ChordDrawer {
       },
     };
     return this.domMetaInputHost;
-  }
-
-  /**
-   * Rightward extension of a section label's hit box past its text, into the
-   * tag/lyrics separation gap. Roughly one character at the current size, so
-   * "just after the label" still hits the label's trailing caret position.
-   */
-  private tagHitExtension() {
-    return this.displayProps.lyricsLineHeight / 2;
   }
 
   /**
@@ -4636,10 +4628,10 @@ export class ChordProEditor extends ChordDrawer {
       // Section labels. The box extends past the label into the separation
       // gap, so a click just after the last character still targets the label
       // and reaches its trailing boundary.
-      const tag = hitTestTag(geometry, mp, this.tagHitExtension());
+      const tag = hitTestTag(geometry, mp);
       if (tag) {
         const line = tag.occurrence.occurrence.origin ?? tag.occurrence.occurrence.source;
-        return new ChordProTagHitBox(tag.left, tag.top, tag.width + this.tagHitExtension(), tag.height, line, tag.name);
+        return new ChordProTagHitBox(tag.left, tag.top, tag.hitWidth, tag.height, line, tag.name);
       }
 
       // Lyric caret placement resolves from the renderer's row geometry/caret

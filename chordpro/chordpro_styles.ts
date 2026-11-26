@@ -18,6 +18,12 @@ export type {
 
 type PrefixLocalizer = (key: string) => string;
 
+export const MAX_TAG_LYRICS_GAP = 120;
+
+export function clampTagLyricsGap(value: number): number {
+  return Math.max(0, Math.min(MAX_TAG_LYRICS_GAP, Math.round(value)));
+}
+
 export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayProperties {
   // Read the current UI font size set by ResponsiveFontSizeManager (default is 16px).
   // Prefer computed style so this still works even when font size comes from CSS, not inline style.
@@ -34,6 +40,7 @@ export function defaultDisplayProperties(darkMode?: boolean): ChordProDisplayPro
     verticalMargin: 5,
     tagFont: `bold ${px(14)} arial`,
     tagColor: "black",
+    tagLyricsGap: lineH(8),
     chordFont: `${px(14)} arial`,
     chordLineHeight: lineH(16),
     chordTextColor: "red",
@@ -263,7 +270,8 @@ function normalizeDisplayProperties(value: unknown, fallback: ChordProDisplayPro
 
   for (const [key, defaultValue] of Object.entries(fallback)) {
     if (key === "guitarChordSize" || key === "pianoChordSize") continue;
-    normalized[key] = validValue(source[key], defaultValue) ? source[key] : defaultValue;
+    const fieldValue = validValue(source[key], defaultValue) ? source[key] : defaultValue;
+    normalized[key] = key === "tagLyricsGap" && typeof fieldValue === "number" ? clampTagLyricsGap(fieldValue) : fieldValue;
   }
 
   for (const key of ["guitarChordSize", "pianoChordSize"] as const) {

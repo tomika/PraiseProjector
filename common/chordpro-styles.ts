@@ -16,6 +16,7 @@ export type ChordProDisplayProperties = {
   verticalMargin: number;
   tagFont: string;
   tagColor: string;
+  tagLyricsGap: number;
   chordFont: string;
   chordLineHeight: number;
   chordTextColor: string;

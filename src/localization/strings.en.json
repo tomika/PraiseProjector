@@ -366,6 +366,7 @@
   "ChordProStylesVerticalMargin": "Vertical margin",
   "ChordProStylesChordLineHeight": "Chord line height",
   "ChordProStylesLyricsLineHeight": "Lyrics line height",
+  "ChordProStylesTagLyricsGap": "Section label / lyrics gap",
   "ChordProStylesChordLyricsGap": "Chord / lyrics gap",
   "ChordProStylesChordBorder": "Chord border width",
   "ChordProStylesGuitarWidth": "Guitar diagram width",

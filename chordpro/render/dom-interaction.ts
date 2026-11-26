@@ -65,6 +65,7 @@ export interface TagGeometry {
   readonly left: number;
   readonly top: number;
   readonly width: number;
+  readonly hitWidth: number;
   readonly height: number;
   readonly name: string;
   readonly text: string;
@@ -127,7 +128,10 @@ export interface SongGeometryIndex {
  */
 export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, leftOffset = 0): SongGeometryIndex {
   const metaHeight = layout.meta.reduce((total, entry) => total + entry.height, 0);
-  const contentLeft = leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth + layout.tagGap;
+  const tagBoundary = leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth;
+  const contentLeft = tagBoundary + layout.tagGap;
+  // Keep the trailing label caret reachable without covering lyric clicks.
+  const tagHitExtension = Math.min(layout.tagGap, plan.display.lyricsLineHeight / 2);
   const occurrences: OccurrenceGeometry[] = [];
   const chords: ChordGeometry[] = [];
   const gridChords: GridChordGeometry[] = [];
@@ -228,9 +232,10 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
     const tag =
       plan.showTags && entry.source.tag?.visible
         ? {
-            left: leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth - entry.tagWidth,
+            left: tagBoundary - entry.tagWidth,
             top: top + entry.tagSeparation + (entry.rows?.[0]?.lyricsY ?? entry.blockTextTop ?? 0),
             width: entry.tagWidth,
+            hitWidth: entry.tagWidth + tagHitExtension,
             height: plan.display.lyricsLineHeight,
             name: entry.source.tag.name,
             text: entry.source.tag.text,
@@ -250,12 +255,8 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
     y = bottom;
   }
 
-  // Use the layout's ACTUAL tag gap. `showTags` may be enabled while the song
-  // contains no visible tags; in that case layoutSong reserves neither a tag
-  // lane nor a gap, and the highlight must start with the lyrics instead of
-  // being shifted right by two line heights.
-  const baseHighlightLeft = leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth + layout.tagGap;
   const highlightPadding = Math.max(2, Math.round(plan.display.lyricsLineHeight * 0.2));
+  const leftPadding = layout.tagLaneWidth > 0 ? Math.min(layout.tagGap, highlightPadding) : highlightPadding;
   const width = layout.width + leftOffset;
 
   return {
@@ -263,8 +264,8 @@ export function buildGeometryIndex(plan: DisplayPlan, layout: SongLayoutResult, 
     chords,
     gridChords,
     diagrams: [],
-    tagBoundary: leftOffset + plan.display.horizontalMargin + layout.tagLaneWidth,
-    highlightLeft: Math.max(0, Math.min(baseHighlightLeft - highlightPadding, width)),
+    tagBoundary,
+    highlightLeft: Math.max(0, Math.min(contentLeft - leftPadding, width)),
     songMaxRight,
     highlightPadding,
     stripWidth: leftOffset,
@@ -299,21 +300,14 @@ export function hitTestDiagram(index: SongGeometryIndex, point: Point): DiagramG
 }
 
 /**
- * Resolves the section label under a root-local point.
- *
- * `extension` widens the box to the RIGHT, into the tag/lyrics separation gap:
- * a text-tight box would leave the label's trailing caret position unreachable
- * by mouse.
+ * Resolves the section label under a root-local point, including the space
+ * reserved for its trailing caret. The content column starts at contentLeft.
  */
-export function hitTestTag(
-  index: SongGeometryIndex,
-  point: Point,
-  extension = 0
-): (TagGeometry & { readonly occurrence: OccurrenceGeometry }) | null {
+export function hitTestTag(index: SongGeometryIndex, point: Point): (TagGeometry & { readonly occurrence: OccurrenceGeometry }) | null {
   for (const entry of index.occurrences) {
     const tag = entry.tag;
-    if (!tag) continue;
-    if (contains({ ...tag, width: tag.width + extension }, point)) return { ...tag, occurrence: entry };
+    if (!tag || point.x >= entry.contentLeft) continue;
+    if (contains({ ...tag, width: tag.hitWidth }, point)) return { ...tag, occurrence: entry };
   }
   return null;
 }

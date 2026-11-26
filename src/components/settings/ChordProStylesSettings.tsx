@@ -4,9 +4,12 @@ import {
   ChordProDirectiveStyle,
   ChordProDisplayProperties,
   ChordProThemeStyles,
+  MAX_TAG_LYRICS_GAP,
+  clampTagLyricsGap,
   cloneDirectiveStyles,
   cloneDisplayProperties,
   createDefaultChordProStylesSettings,
+  defaultDisplayProperties,
 } from "../../../chordpro/chordpro_styles";
 import { Settings } from "../../types";
 import { useLocalization } from "../../localization/LocalizationContext";
@@ -575,7 +578,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
   const resetSharedLayoutAndFonts = () => {
     updateBothThemes((light, dark) => {
-      const fallback = defaultStyles.light;
+      const fallback = createDefaultChordProStylesSettings((key) => t(key as never)).light;
       const defaultDisplay = fallback.display;
       light.display.horizontalMargin = defaultDisplay.horizontalMargin;
       dark.display.horizontalMargin = defaultDisplay.horizontalMargin;
@@ -583,6 +586,8 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
       dark.display.verticalMargin = defaultDisplay.verticalMargin;
       light.display.tagFont = defaultDisplay.tagFont;
       dark.display.tagFont = defaultDisplay.tagFont;
+      light.display.tagLyricsGap = defaultDisplay.tagLyricsGap;
+      dark.display.tagLyricsGap = defaultDisplay.tagLyricsGap;
       light.display.chordFont = defaultDisplay.chordFont;
       dark.display.chordFont = defaultDisplay.chordFont;
       light.display.chordLineHeight = defaultDisplay.chordLineHeight;
@@ -623,11 +628,12 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
   const resetSpacingAndMargins = () => {
     updateBothThemes((light, dark) => {
-      const defaultDisplay = defaultStyles.light.display;
+      const defaultDisplay = defaultDisplayProperties();
 
       for (const theme of [light, dark]) {
         theme.display.horizontalMargin = defaultDisplay.horizontalMargin;
         theme.display.verticalMargin = defaultDisplay.verticalMargin;
+        theme.display.tagLyricsGap = defaultDisplay.tagLyricsGap;
         theme.display.chordLineHeight = defaultDisplay.chordLineHeight;
         theme.display.lyricsLineHeight = defaultDisplay.lyricsLineHeight;
         theme.display.chordLyricSep = defaultDisplay.chordLyricSep;
@@ -735,6 +741,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
       theme.display.lyricsFont = rescaleFont(theme.display.lyricsFont) ?? theme.display.lyricsFont;
       theme.display.chordLineHeight = Math.max(1, Math.round(theme.display.chordLineHeight * ratio));
       theme.display.lyricsLineHeight = Math.max(1, Math.round(theme.display.lyricsLineHeight * ratio));
+      theme.display.tagLyricsGap = clampTagLyricsGap(theme.display.tagLyricsGap * ratio);
       theme.display.chordLyricSep = Math.max(0, Math.round(theme.display.chordLyricSep * ratio));
       for (const key of Object.keys(theme.directives)) {
         const d = theme.directives[key];
@@ -918,6 +925,28 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
   const directiveTitleKey = DIRECTIVE_LABELS[selectedDirectiveKey];
   const directiveTitle = directiveTitleKey ? t(directiveTitleKey as never) : humanizeDirectiveName(selectedDirectiveKey);
 
+  const layoutSectionHeader = (
+    <div className="chordpro-styles-section-header">
+      <div>
+        <h6 className="mb-1">{t("ChordProStylesLayoutSection")}</h6>
+        <p className="text-muted mb-0">{t("ChordProStylesLayoutHelp")}</p>
+      </div>
+      <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => confirmFactoryDefaultsReset(resetSpacingAndMargins)}>
+        {t("ChordProStylesResetLayout")}
+      </button>
+    </div>
+  );
+
+  const tagLyricsGapField = (
+    <SliderField
+      label={t("ChordProStylesTagLyricsGap")}
+      value={selectedThemeStyles.display.tagLyricsGap}
+      min={0}
+      max={MAX_TAG_LYRICS_GAP}
+      onChange={(value) => updateDisplayCommon("tagLyricsGap", value)}
+    />
+  );
+
   return (
     <div ref={rootRef} className="chordpro-styles-settings general-settings-root">
       <div className="chordpro-styles-main">
@@ -1076,19 +1105,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
 
               <section className="card chordpro-styles-card">
                 <div className="card-body">
-                  <div className="chordpro-styles-section-header">
-                    <div>
-                      <h6 className="mb-1">{t("ChordProStylesLayoutSection")}</h6>
-                      <p className="text-muted mb-0">{t("ChordProStylesLayoutHelp")}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={() => confirmFactoryDefaultsReset(resetSpacingAndMargins)}
-                    >
-                      {t("ChordProStylesResetLayout")}
-                    </button>
-                  </div>
+                  {layoutSectionHeader}
                   <div className="chordpro-styles-grid">
                     <label className="form-label chordpro-styles-field">
                       <span>{t("ChordProStylesLineSpacing")}</span>
@@ -1099,6 +1116,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                         <option value="relaxed">{t("ChordProStylesLineSpacingRelaxed")}</option>
                       </select>
                     </label>
+                    {tagLyricsGapField}
                     <SliderField
                       label={t("ChordProStylesHorizontalMargin")}
                       value={selectedThemeStyles.display.horizontalMargin}
@@ -1192,7 +1210,12 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                       baseFontSize={uiFontSize}
                     />
                   </div>
+                </div>
+              </section>
 
+              <section className="card chordpro-styles-card">
+                <div className="card-body">
+                  {layoutSectionHeader}
                   <div className="chordpro-styles-grid">
                     <SliderField
                       label={t("ChordProStylesHorizontalMargin")}
@@ -1245,6 +1268,7 @@ const ChordProStylesSettings: React.FC<ChordProStylesSettingsProps> = ({ setting
                       max={30}
                       onChange={(value) => updateDisplayCommon("chordLyricSep", value)}
                     />
+                    {tagLyricsGapField}
                     <SliderField
                       label={t("ChordProStylesChordBorder")}
                       value={selectedThemeStyles.display.chordBorder}

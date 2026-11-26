@@ -366,6 +366,7 @@
   "ChordProStylesVerticalMargin": "Függőleges margó",
   "ChordProStylesChordLineHeight": "Akkordsor magassága",
   "ChordProStylesLyricsLineHeight": "Dalszöveg sor magassága",
+  "ChordProStylesTagLyricsGap": "Szakaszcímke és dalszöveg távolsága",
   "ChordProStylesChordLyricsGap": "Akkord / dalszöveg távolság",
   "ChordProStylesChordBorder": "Akkordkeret vastagsága",
   "ChordProStylesGuitarWidth": "Gitár diagram szélessége",

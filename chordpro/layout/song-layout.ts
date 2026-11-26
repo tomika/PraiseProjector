@@ -427,7 +427,7 @@ export function layoutSong(plan: DisplayPlan, measurer: TextMeasurer, options: S
   const tagLaneWidth = plan.showTags
     ? plan.occurrences.reduce((maximum, occurrence) => Math.max(maximum, lineTagWidth(plan, occurrence, options.tagWidths)), 0)
     : 0;
-  const tagGap = tagLaneWidth > 0 ? 2 * plan.display.lyricsLineHeight : 0;
+  const tagGap = tagLaneWidth > 0 ? Math.max(0, plan.display.tagLyricsGap) : 0;
   const meta: LayoutMeta[] = [];
   let metaHeight = 0;
   let maximumWidth = fillsConstrainedWidth && constrainedWidth > 0 ? constrainedWidth : 2 * plan.display.horizontalMargin;

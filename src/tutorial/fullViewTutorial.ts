@@ -513,9 +513,9 @@ export const fullViewTutorial: TutorialDefinition = {
             ".btn-toolbar button[aria-label='Settings']",
             tx(
               "Beállítások",
-              "A Beállítások gomb nyitja meg a keresés, a dalnyelvek, a vetítés, a kotta, a hardveres vezérlés, a vezetők, a stílusok, a kliensjogosultságok és a hálózati funkciók beállításait. A dalnyelvhez az Általános, a billentyű- és MIDI-kiosztáshoz a Hardveres vezérlés, a kotta alapbeállításaihoz a Kotta lapot válaszd.",
+              "A Beállítások gomb nyitja meg a keresés, a dalnyelvek, a vetítés, a kotta, a hardveres vezérlés, a vezetők, a stílusok, a kliensjogosultságok és a hálózati funkciók beállításait. A dalnyelvhez az Általános, a billentyű- és MIDI-kiosztáshoz a Hardveres vezérlés, a kotta alapbeállításaihoz a Kotta lapot válaszd. A Stílusok lap Térköz és margók részében mindkét módban beállíthatod a szakaszcímke és a dalszöveg közötti vízszintes távolságot. Haladó módban ugyanitt külön állítható az akkord- és a dalszövegsor magassága. A változás rögtön látszik az előnézetben.",
               "Settings",
-              "Open Settings to configure search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and networking. Use General for song language, Hardware control for keyboard and MIDI mappings, and Score for notation defaults."
+              "Open Settings to configure search, song languages, projection, scores, hardware controls, leaders, styles, client permissions and networking. Use General for song language, Hardware control for keyboard and MIDI mappings, and Score for notation defaults. Under Styles → Spacing and margins, adjust the horizontal gap between section labels and lyrics in either mode. In advanced mode, you can also set chord and lyric line heights separately here. The preview updates immediately."
             ),
             { helpIcons: [IconType.SETTINGS] }
           ),

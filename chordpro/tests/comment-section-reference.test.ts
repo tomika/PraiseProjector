@@ -11,7 +11,7 @@ import {
   type CommentDisplayMode,
   type DisplayInstructionsMode,
 } from "../render/display-plan";
-import { buildGeometryIndex } from "../render/dom-interaction";
+import { buildGeometryIndex, hitTestTag, resolveLineCaretHit } from "../render/dom-interaction";
 import type { TextMeasurer } from "../render/text-measurer";
 
 const measurer: TextMeasurer = {
@@ -165,6 +165,42 @@ test("the instructions mode alone decides an instructed display", () => {
 
 test("a reference label is abbreviated like the section labels", () => {
   assert.equal(plan({ abbreviateTags: true }).occurrences[4].tag?.text, "C 2x");
+});
+
+test("section label spacing shifts lyrics and their hit targets only when the tag lane is visible", () => {
+  const result = plan();
+  const options = {
+    tagWidths: new Map(result.occurrences.filter((occurrence) => occurrence.tag?.visible).map((occurrence) => [occurrence.id, 50])),
+    overlayRevMoveCost: 1,
+    overlayFwdMoveCost: 1,
+  };
+  const noGap = { ...result, display: { ...result.display, tagLyricsGap: 0 } };
+  const withGap = { ...result, display: { ...result.display, tagLyricsGap: 24 } };
+  const compact = layoutSong(noGap, measurer, options);
+  const spaced = layoutSong(withGap, measurer, options);
+  assert.equal(compact.tagGap, 0);
+  assert.equal(spaced.tagGap, 24);
+  assert.equal(spaced.width - compact.width, 24);
+
+  const geometry = buildGeometryIndex(withGap, spaced);
+  const first = geometry.occurrences[0];
+  assert.ok(first.tag && first.rows?.length);
+  assert.equal(first.rows[0].left - (first.tag.left + first.tag.width), 24);
+
+  for (const tagLyricsGap of [0, 2]) {
+    const displayPlan = { ...result, display: { ...result.display, tagLyricsGap } };
+    const geometry = buildGeometryIndex(displayPlan, layoutSong(displayPlan, measurer, options));
+    const first = geometry.occurrences[0];
+    assert.ok(first.tag && first.rows?.length);
+    const point = { x: first.rows[0].left, y: first.tag.top + 1 };
+    assert.ok(hitTestTag(geometry, { ...point, x: point.x - 0.5 }));
+    assert.equal(hitTestTag(geometry, point), null);
+    assert.equal(resolveLineCaretHit(geometry, point)?.column, 0);
+    assert.equal(geometry.highlightLeft, geometry.tagBoundary);
+  }
+
+  assert.equal(layoutSong({ ...withGap, showTags: false }, measurer, options).tagGap, 0);
+  assert.equal(layoutSong(plan({ text: "[C]No section label" }), measurer, options).tagGap, 0);
 });
 
 test("a reference label's chip counts in the tag lane; a comment chip hugs its text and is centred", () => {

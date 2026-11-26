@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDefaultChordProStylesSettings, normalizeChordProStyles } from "../chordpro_styles";
+import { createDefaultChordProStylesSettings, MAX_TAG_LYRICS_GAP, normalizeChordProStyles } from "../chordpro_styles";
 
 test("normalizeChordProStyles fills missing nested values without changing valid legacy values", () => {
   const normalized = normalizeChordProStyles({
@@ -53,6 +53,21 @@ test("normalizeChordProStyles is idempotent", () => {
   const once = normalizeChordProStyles(partial);
   const twice = normalizeChordProStyles(once);
   assert.deepEqual(twice, once);
+});
+
+test("section label spacing defaults for older styles and preserves an explicit zero", () => {
+  const normalized = normalizeChordProStyles({ light: { display: { tagLyricsGap: 0 } } });
+  assert.equal(normalized.light.display.tagLyricsGap, 0);
+  assert.equal(normalized.dark.display.tagLyricsGap, 8);
+});
+
+test("saved section label spacing stays within the slider range", () => {
+  const normalized = normalizeChordProStyles({
+    light: { display: { tagLyricsGap: 165 } },
+    dark: { display: { tagLyricsGap: -4 } },
+  });
+  assert.equal(normalized.light.display.tagLyricsGap, MAX_TAG_LYRICS_GAP);
+  assert.equal(normalized.dark.display.tagLyricsGap, 0);
 });
 
 test("normalization keeps the established persisted shape", () => {

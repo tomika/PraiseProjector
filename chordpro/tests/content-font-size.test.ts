@@ -74,3 +74,17 @@ test("diagram placement reserves extra rows and height during larger font trials
   assert.equal(new Set(larger.placements.map((entry) => entry.y)).size, 2);
   assert.ok(larger.height > natural.height);
 });
+
+test("content font size scales the authored section label gap and restores it on reset", () => {
+  const styles = createDefaultChordProStylesSettings();
+  styles.light.display.tagLyricsGap = 12;
+  styles.dark.display.tagLyricsGap = 0;
+  const light = fontSizeHarness(styles);
+  const dark = fontSizeHarness(styles, true);
+  light.editor.setContentFontSize(28, false);
+  dark.editor.setContentFontSize(28, false);
+  assert.equal(light.display().tagLyricsGap, 24);
+  assert.equal(dark.display().tagLyricsGap, 0);
+  light.editor.setContentFontSize(null, false);
+  assert.equal(light.display().tagLyricsGap, 12);
+});
