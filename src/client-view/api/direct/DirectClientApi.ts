@@ -539,7 +539,7 @@ export class DirectClientApi implements ClientApi {
         const db = Database.getInstance();
         return [
           ...db.getLeaders().map((leader) => ({ ...leader.toJSON(), access: "own" as const })),
-          ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const })),
+          ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const, ...leader.listingTags() })),
         ];
       },
       refreshLeaderPlaylists: async () => {

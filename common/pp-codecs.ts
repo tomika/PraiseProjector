@@ -183,8 +183,11 @@ export const playlistEntryListCodec = t.array(playlistEntryCodec);
 /**
  * Wire codec for PlayList.  `scheduled` is a string over the wire; call
  * `verifyPlaylist()` after decoding to convert it to a `Date`.
+ * `public` is server-side state the cloud reports on the lists it sends: the
+ * list is readable by people without access to the leader's profile (within
+ * the leader's nearest private group, if any). Uploads never change it.
  */
-export const playListCodec = uniType({ label: t.string, songs: t.array(playlistEntryCodec) }, { scheduled: scheduleCodec });
+export const playListCodec = uniType({ label: t.string, songs: t.array(playlistEntryCodec) }, { scheduled: scheduleCodec, public: t.boolean });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Leader profile
@@ -199,11 +202,50 @@ export const leaderProfileCodec = t.intersection([t.type({ leaderId: t.string, l
 
 /** Marks whether a profile belongs to the requesting user ("own") or is another
  *  leader's publicly readable profile ("public"). Optional on the wire: the
- *  cloud server never sends it, so an absent value must be treated as "public"
- *  by consumers that care about the distinction. */
+ *  cloud marks only the whole (synchronized) profiles of a /leaders listing
+ *  "own" (older servers send nothing), so an absent value must be treated as
+ *  "public" by consumers that care about the distinction. */
 export const leaderAccessCodec = t.union([t.literal("own"), t.literal("public")]);
 
-export const leaderDBProfileCodec = t.intersection([leaderProfileCodec, t.type({ version: t.number }), t.partial({ access: leaderAccessCodec })]);
+type LeaderVisibility = "group" | "public";
+
+/**
+ * Why the cloud lists another leader's lists (absent: a whole, synchronized
+ * profile): "group" — the leader is in the requester's group or below it, or
+ * below a group the requester administers: every list, read-only; "public" —
+ * only the leader's public lists. Lenient: an unknown value decodes to
+ * `undefined`, so a later server can add values without breaking this client.
+ */
+export const leaderVisibilityCodec = new t.Type<LeaderVisibility | undefined, string | undefined, unknown>(
+  "LeaderVisibility",
+  (u): u is LeaderVisibility | undefined => u === undefined || u === "group" || u === "public",
+  (u) => t.success(u === "group" || u === "public" ? u : undefined),
+  t.identity
+);
+
+type LeaderGroupRef = { id: string; name: string };
+
+const isLeaderGroupRef = (u: unknown): u is LeaderGroupRef =>
+  !!u && typeof u === "object" && typeof (u as LeaderGroupRef).id === "string" && typeof (u as LeaderGroupRef).name === "string";
+
+/**
+ * The groups of a listed leader from the root down to the leader's own group,
+ * which the cloud sends with "group" and "public" entries so that pickers can
+ * arrange the leaders by the group tree. Lenient: anything malformed decodes
+ * to `undefined` (the leader is then shown outside the tree).
+ */
+export const leaderGroupPathCodec = new t.Type<LeaderGroupRef[] | undefined, LeaderGroupRef[] | undefined, unknown>(
+  "LeaderGroupPath",
+  (u): u is LeaderGroupRef[] | undefined => u === undefined || (Array.isArray(u) && u.every(isLeaderGroupRef)),
+  (u) => t.success(Array.isArray(u) && u.every(isLeaderGroupRef) ? u.map(({ id, name }) => ({ id, name })) : undefined),
+  t.identity
+);
+
+export const leaderDBProfileCodec = t.intersection([
+  leaderProfileCodec,
+  t.type({ version: t.number }),
+  t.partial({ access: leaderAccessCodec, visibility: leaderVisibilityCodec, groupPath: leaderGroupPathCodec }),
+]);
 
 export const leadersResponseCodec = t.array(leaderDBProfileCodec);
 

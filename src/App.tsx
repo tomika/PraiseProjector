@@ -1666,7 +1666,7 @@ const AppContent: React.FC = () => {
           // REST clients can group them without a local database.
           const data: LeadersResponse = [
             ...db.getAllLeaders().map((leader) => ({ ...leader.toJSON(), access: "own" as const })),
-            ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const })),
+            ...db.getPublicLeaders().map((leader) => ({ ...leader.toJSON(), access: "public" as const, ...leader.listingTags() })),
           ];
           response = {
             status: 200,

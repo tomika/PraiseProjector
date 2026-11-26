@@ -21,7 +21,7 @@
 export const FAVORITE_PLAYLIST_PREFIX = "★ ";
 
 /** Every playlist dated before this instant is a favorite. */
-const FAVORITE_RANGE_END = Date.UTC(1990, 0, 1);
+export const FAVORITE_RANGE_END = Date.UTC(1990, 0, 1);
 
 /** The first day handed out to a favorite (local midnight). */
 const FIRST_FAVORITE_YEAR = 1980;

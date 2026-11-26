@@ -2171,6 +2171,10 @@ class Database {
     const conflicts: Array<{ serverLeader: Leader; localLeader: Leader }> = [];
 
     for (const serverProfile of serverProfiles) {
+      // Another leader's lists seen through the group circle or as public lists
+      // are partial (no preferences, maybe some lists only): they belong in the
+      // read-only mirror (updatePublicLeaders), never over an own leader.
+      if (serverProfile.visibility) continue;
       const existingLeader = this.leaders.find(serverProfile.leaderId);
       const serverVersion = serverProfile.version;
 
@@ -2246,6 +2250,7 @@ class Database {
         entries.push(entry);
       }
       const pl = new Playlist(playlist.label, entries, playlist.label);
+      pl.isPublic = playlist.public === true;
       if (playlist.scheduled) {
         const scheduledDate = typeof playlist.scheduled === "string" ? parseScheduleDate(playlist.scheduled) : playlist.scheduled;
         if (scheduledDate) {
@@ -2295,6 +2300,7 @@ class Database {
         entries.push(entry);
       }
       const pl = new Playlist(playlist.label, entries, playlist.label);
+      pl.isPublic = playlist.public === true;
       if (playlist.scheduled) {
         const scheduledDate = typeof playlist.scheduled === "string" ? parseScheduleDate(playlist.scheduled) : playlist.scheduled;
         if (scheduledDate) {
@@ -2348,6 +2354,7 @@ class Database {
         const next = new Leaders();
         next.items = profiles.filter((p) => !ownIds.has(p.leaderId)).map((p) => Leader.fromJSON(p));
         this.publicLeaders = next;
+        this.applyCloudPublicFlags(profiles);
         this.forceSave();
         return true;
       } catch (error) {
@@ -2363,6 +2370,24 @@ class Database {
       });
     }
     return refreshPromise;
+  }
+
+  /** The cloud's public flags of the own leaders' lists, from a listing's whole
+   *  profiles. A flag change does not move the cloud profile's version (no sync
+   *  delivers it), so this is how every device of the owner learns it. Server
+   *  state only: the leaders stay as synced, nothing is uploaded. A local list
+   *  the cloud does not hold under its label is not public there. */
+  private applyCloudPublicFlags(profiles: LeaderDBProfile[]): void {
+    for (const profile of profiles) {
+      if (profile.visibility) continue;
+      const leader = this.leaders.find(profile.leaderId);
+      if (!leader) continue;
+      const publicLabels = new Set(profile.playlists.filter((playlist) => playlist.public).map((playlist) => playlist.label));
+      for (const date of leader.getSchedule()) {
+        const playlist = leader.getPlaylist(date);
+        if (playlist) playlist.isPublic = publicLabels.has(playlist.name);
+      }
+    }
   }
 
   public getLeaderByName(leaderName: string): Leader | undefined {
@@ -2404,6 +2429,10 @@ class Database {
       } else {
         playlistToStore.name = formatLocalDateLabel(date); // YYYY.MM.DD format
       }
+      // The cloud keeps a list public while its label stays (whatever list the
+      // working copy came from).
+      const stored = leader.getPlaylist(date);
+      playlistToStore.isPublic = !!stored?.isPublic && stored.name === playlistToStore.name;
       leader.addPlaylist(date, playlistToStore, options.updatePreferences !== false, this);
       this.save();
     }
@@ -2415,7 +2444,20 @@ class Database {
     if (!existing || !isFavoriteScheduleDate(date)) return false;
     const renamed = existing.clone();
     renamed.name = favoriteLabel(favoriteName);
+    // Shared links name the label: the renamed list is a new, private one.
+    if (renamed.name !== existing.name) renamed.isPublic = false;
     leader.addPlaylist(date, renamed, false, this);
+    this.save();
+    return true;
+  }
+
+  /** Records the cloud's public flag of a stored list. Not a change of the
+   *  profile: the leader stays as synced and nothing is uploaded. */
+  public setPlaylistPublic(leader: Leader, date: Date, isPublic: boolean): boolean {
+    const playlist = leader.getPlaylist(date);
+    if (!playlist) return false;
+    if (playlist.isPublic === isPublic) return true;
+    playlist.isPublic = isPublic;
     this.save();
     return true;
   }

@@ -12,7 +12,7 @@ interface Database {
 
 import { Song } from "./Song";
 import { leaderDBProfileCodec } from "../common/pp-codecs";
-import { LeaderDBProfile, PlayList, PreferenceType } from "../common/pp-types";
+import { LeaderDBProfile, LeaderGroupRef, LeaderVisibility, PlayList, PreferenceType } from "../common/pp-types";
 import { decode } from "../common/io-utils";
 import { isFavoriteScheduleDate } from "../common/favorite-playlists";
 import { parseScheduleDate } from "../common/date-only";
@@ -37,6 +37,13 @@ export class Leader {
   // (earlier versions dropped them on the first save).
   private retainedPreferences: unknown[] = [];
   private retainedPlaylists: unknown[] = [];
+  /** Another leader's read-only lists mirrored from the cloud: "group" — every
+   *  list of a leader in the user's group circle; "public" — public lists only.
+   *  Undefined for synchronized leaders. Stored locally, never uploaded. */
+  visibility?: LeaderVisibility;
+  /** Such a leader's groups from the root down (cloud `groupPath`), for the
+   *  pickers' group-tree view. Stored locally, never uploaded. */
+  groupPath?: LeaderGroupRef[];
 
   constructor(id: string, name: string, version: number = 0) {
     this._id = id;
@@ -61,7 +68,19 @@ export class Leader {
   }
 
   clone(): Leader {
-    return this.cloneWithId(this._id);
+    const copy = this.cloneWithId(this._id);
+    copy.visibility = this.visibility;
+    copy.groupPath = this.groupPath?.map((group) => ({ ...group }));
+    return copy;
+  }
+
+  /** The cloud listing tags of a mirrored leader (`visibility`, `groupPath`), to
+   *  pass on wherever the leader is listed again (local webserver, Direct). */
+  listingTags(): Pick<LeaderDBProfile, "visibility" | "groupPath"> {
+    return {
+      ...(this.visibility ? { visibility: this.visibility } : {}),
+      ...(this.groupPath?.length ? { groupPath: this.groupPath.map((group) => ({ ...group })) } : {}),
+    };
   }
 
   cloneWithId(newId: string): Leader {
@@ -320,6 +339,8 @@ export class Leader {
     // copies are the input's own entries, never a normalized re-encoding.
     const raw = input as { preferences?: unknown[]; playlists?: unknown[]; retainedPreferences?: unknown; retainedPlaylists?: unknown };
     const leader = new Leader(data.leaderId, data.leaderName, data.version || 0);
+    if (data.visibility) leader.visibility = data.visibility;
+    if (data.groupPath?.length) leader.groupPath = data.groupPath;
     if (Array.isArray(raw.retainedPreferences)) leader.retainedPreferences.push(...cloneJson(raw.retainedPreferences));
     if (Array.isArray(raw.retainedPlaylists)) leader.retainedPlaylists.push(...cloneJson(raw.retainedPlaylists));
 
@@ -364,6 +385,7 @@ export class Leader {
   toStorageJSON(): LeaderDBProfile & { retainedPreferences?: unknown[]; retainedPlaylists?: unknown[] } {
     return {
       ...this.toJSON(),
+      ...this.listingTags(),
       ...(this.retainedPreferences.length ? { retainedPreferences: cloneJson(this.retainedPreferences) } : {}),
       ...(this.retainedPlaylists.length ? { retainedPlaylists: cloneJson(this.retainedPlaylists) } : {}),
     };
@@ -380,6 +402,7 @@ export class Leader {
       instructions: pref.instructions,
     }));
 
+    // `public` is kept for the local copy; the cloud ignores it on upload.
     const playlists = Array.from(this.schedule.entries()).map(([date, playlist]) => ({
       scheduled: date,
       label: playlist.name,
@@ -390,6 +413,7 @@ export class Leader {
         capo: item.capo,
         instructions: item.instructions || "",
       })),
+      ...(playlist.isPublic ? { public: true } : {}),
     }));
 
     return {

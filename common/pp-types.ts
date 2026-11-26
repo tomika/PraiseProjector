@@ -34,6 +34,8 @@ import {
   songHistoryEntryCodec,
   leaderProfileCodec,
   leaderAccessCodec,
+  leaderVisibilityCodec,
+  leaderGroupPathCodec,
   profileDataCodec,
   playListCodec,
   errorResponseCodec,
@@ -112,7 +114,15 @@ export type ProfileData = t.TypeOf<typeof profileDataCodec>;
 
 export type LeaderProfile = t.TypeOf<typeof leaderProfileCodec>;
 export type LeaderAccess = t.TypeOf<typeof leaderAccessCodec>;
-export type LeaderDBProfile = LeaderProfile & { version: number; access?: LeaderAccess };
+export type LeaderVisibility = NonNullable<t.TypeOf<typeof leaderVisibilityCodec>>;
+/** A group on a listed leader's path from the root (see leaderGroupPathCodec). */
+export type LeaderGroupRef = NonNullable<t.TypeOf<typeof leaderGroupPathCodec>>[number];
+export type LeaderDBProfile = LeaderProfile & {
+  version: number;
+  access?: LeaderAccess;
+  visibility?: LeaderVisibility;
+  groupPath?: LeaderGroupRef[];
+};
 
 export type LeadersResponse = t.TypeOf<typeof leadersResponseCodec>;
 

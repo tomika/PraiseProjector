@@ -1126,8 +1126,7 @@ const DBSyncDialog: React.FC<DBSyncDialogProps> = ({
       }
 
       try {
-        const profiles = await cloudApi.fetchLeaders(0);
-        const profile = profiles.find((p) => p.leaderId === leader.id);
+        const profile = await cloudApi.fetchLeaderProfile(leader.id);
         if (profile) {
           const serverLeader = database.createLeaderFromProfile(profile);
           serverLeaderCacheRef.current.set(leader.id, serverLeader);

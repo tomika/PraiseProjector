@@ -1178,6 +1178,19 @@ export class CloudApiService {
     return this.fetchLeaders(version ?? 0, { fresh: options?.fresh });
   }
 
+  /** One leader's whole (synchronized) profile by id; undefined when the user
+   *  only sees some of its lists (the group circle or public lists), which
+   *  carry no preferences and must never stand in for the server profile. */
+  async fetchLeaderProfile(leaderId: string, options?: { signal?: AbortSignal }): Promise<LeaderDBProfile | undefined> {
+    // The query-string buster also covers the Electron proxy path, which ignores `cache`.
+    const endpoint = `/leaders?leader=${encodeURIComponent(leaderId)}&_ppRefresh=${Date.now()}-${++this.proxyRequestSequence}`;
+    const response = await this.apiCall<unknown>(endpoint, undefined, {
+      signal: options?.signal,
+      cache: "no-store",
+    });
+    return this.parseResponse(leadersResponseCodec, response).find((profile) => profile.leaderId === leaderId && !profile.visibility);
+  }
+
   /** Send JSON POST request to arbitrary endpoint (legacy method name kept for compatibility). */
   async sendPost(
     endpoint: string,
@@ -1215,12 +1228,37 @@ export class CloudApiService {
   }
 
   /** Upload (store) a playlist to the server. Returns "OK", "OVERWRITE", or an error string */
-  async storeList(forced: boolean, data: { label: string; scheduled: number; songs: SongPreferenceEntry[] }, leaderId?: string): Promise<string> {
+  /** Store one playlist of the user's (or `leaderId`'s) profile. Answers "OK",
+   *  "OVERWRITE" (exists, not forced) or "EXPIRED" (older than the server keeps
+   *  playlists). `makePublic` also makes the list public, as sharing it does;
+   *  older servers ignore it. */
+  async storeList(
+    forced: boolean,
+    data: { label: string; scheduled: number; songs: SongPreferenceEntry[] },
+    leaderId?: string,
+    options?: { makePublic?: boolean }
+  ): Promise<string> {
     const leaderParam = leaderId ? `&leader=${encodeURIComponent(leaderId)}` : "";
-    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}${leaderParam}`, data, {
+    const publicParam = options?.makePublic ? "&public=true" : "";
+    const result = await this.apiCall<string | null>(`/store_list?forced=${forced}${leaderParam}${publicParam}`, data, {
       allowEmpty: true,
       headers: { "X-PP-Intent": "control-update" },
     });
+    return result ?? "";
+  }
+
+  /** Make a stored playlist public or private again. Answers "OK" or
+   *  "NOT_FOUND" (the cloud has no such list yet). */
+  async setPlaylistPublic(leaderId: string, label: string, isPublic: boolean): Promise<string> {
+    const query = `leader=${encodeURIComponent(leaderId)}&label=${encodeURIComponent(label)}&public=${isPublic}`;
+    const result = await this.apiCall<string | null>(
+      `/playlist_public?${query}`,
+      {},
+      {
+        allowEmpty: true,
+        headers: { "X-PP-Intent": "control-update" },
+      }
+    );
     return result ?? "";
   }
 

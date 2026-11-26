@@ -8,6 +8,10 @@ export class Playlist {
   name: string;
   items: PlaylistEntry[];
   modified: number; // timestamp
+  /** The cloud reports the stored list as public (readable without access to
+   *  the leader's profile). Server state: uploads never change it, and it is
+   *  not part of the list's content (equals ignores it). */
+  isPublic = false;
 
   constructor(name: string, items: PlaylistEntry[] = [], id: string | null = null) {
     this.id = id || uuidv4();
@@ -20,6 +24,7 @@ export class Playlist {
     const p = new Playlist(this.name, [], this.id);
     p.items = this.items.map((item) => item.clone());
     p.modified = this.modified;
+    p.isPublic = this.isPublic;
     return p;
   }
 
@@ -48,6 +53,7 @@ export class Playlist {
   static fromJSON(data: PlayList): Playlist {
     const items = data.songs.map((itemData) => PlaylistEntry.fromJSON(itemData)).filter((item) => item !== null) as PlaylistEntry[];
     const playlist = new Playlist(data.label, items);
+    playlist.isPublic = data.public === true;
     return playlist;
   }
 
@@ -55,6 +61,7 @@ export class Playlist {
     return {
       label: this.name,
       songs: this.items.map((item) => item.toJSON()),
+      ...(this.isPublic ? { public: true } : {}),
     };
   }
 
