@@ -305,10 +305,6 @@ export class WebServer {
       res.redirect(302, clientViewRedirectTarget(req));
     });
 
-    // NOTE: there is deliberately no static mount for the legacy /app tree here
-    // any more. The host serves only the web build (see the /webapp mount) — the
-    // frozen legacy client is not shipped with the desktop app.
-
     // Setup remaining routes
     this.setupDisplayRoutes();
   }

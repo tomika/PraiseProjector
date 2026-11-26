@@ -21,7 +21,6 @@ const readline = require("readline");
 const GLOBS = [
   "src/**/*.{ts,tsx,css}",
   "electron/**/*.ts",
-  "client/**/*.ts",
   "common/**/*.ts",
   "db-common/**/*.ts",
   "chordpro/**/*.{ts,css}",

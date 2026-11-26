@@ -8,7 +8,7 @@ import sharp from "sharp";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Source PNG from the webapp's own image set (NOT the frozen legacy public/app tree).
+// Source PNG from the webapp's own image set.
 const inputPng = path.join(__dirname, "../public/images/pp.png");
 const outputDir = path.join(__dirname, "../dist/build");
 const outputFilename = "icon";

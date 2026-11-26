@@ -1,13 +1,95 @@
-import { getClientWebAppLicenseSections, type LicenseSection as ClientLicenseSection } from "../client/about-licenses";
 import { getElectronBackendLicenseSections } from "../electron/about-licenses";
 import type { LicenseSectionOf, ThirdPartyEntry } from "../common/licenses";
 
 export type LicenseSection = LicenseSectionOf<
-  "electron-frontend-webapp" | "electron-backend-runtime" | ClientLicenseSection["id"],
-  "AboutSectionElectronFrontend" | "AboutSectionElectronBackend" | ClientLicenseSection["titleKey"]
+  "electron-frontend-webapp" | "electron-backend-runtime" | "client-webapp-libraries" | "client-webapp-tools",
+  "AboutSectionElectronFrontend" | "AboutSectionElectronBackend" | "AboutSectionClientWebAppLibraries" | "AboutSectionClientWebAppTools"
 >;
 
 export type AboutRuntimeMode = "frontend-only" | "full-electron";
+
+const sharedAppLibraries: ThirdPartyEntry[] = [
+  {
+    name: "yalps",
+    url: "https://github.com/Ivordir/YALPS",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/Ivordir/YALPS/blob/master/LICENSE",
+  },
+  {
+    name: "midi.js",
+    url: "https://github.com/mudcube/MIDI.js/",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/mudcube/MIDI.js/blob/master/LICENSE.txt",
+  },
+  {
+    url: "https://github.com/paulrosen/midi-js-soundfonts",
+    name: "midi-js-soundfonts",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/paulrosen/midi-js-soundfonts/blob/master/LICENSE",
+  },
+  {
+    name: "abcjs",
+    url: "https://github.com/paulrosen/abcjs",
+    licence: "MIT-based custom license",
+    licenceUrl: "https://github.com/paulrosen/abcjs/blob/main/LICENSE.md",
+  },
+  {
+    name: "diff",
+    url: "https://github.com/kpdecker/jsdiff",
+    licence: "BSD License",
+    licenceUrl: "https://github.com/kpdecker/jsdiff/blob/master/LICENSE",
+  },
+  {
+    name: "io-ts",
+    url: "https://github.com/gcanti/io-ts",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/gcanti/io-ts/blob/master/LICENSE",
+  },
+  {
+    name: "fp-ts",
+    url: "https://github.com/gcanti/fp-ts",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/gcanti/fp-ts/blob/master/LICENSE",
+  },
+];
+
+const sharedAppTools: ThirdPartyEntry[] = [
+  {
+    name: "Visual Studio Code",
+    url: "https://github.com/microsoft/vscode",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/microsoft/vscode/blob/main/LICENSE.txt",
+  },
+  {
+    name: "TypeScript",
+    url: "https://github.com/microsoft/TypeScript",
+    licence: "Apache License 2.0",
+    licenceUrl: "https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt",
+  },
+  {
+    name: "esbuild",
+    url: "https://github.com/evanw/esbuild",
+    licence: "MIT License",
+    licenceUrl: "https://github.com/evanw/esbuild/blob/main/LICENSE.md",
+  },
+];
+
+function getSharedAppLicenseSections(): LicenseSection[] {
+  return [
+    {
+      id: "client-webapp-libraries",
+      titleKey: "AboutSectionClientWebAppLibraries",
+      title: "Shared app libraries",
+      entries: sharedAppLibraries,
+    },
+    {
+      id: "client-webapp-tools",
+      titleKey: "AboutSectionClientWebAppTools",
+      title: "Shared app build/dev tools",
+      entries: sharedAppTools,
+    },
+  ];
+}
 
 const electronFrontendWebApp: ThirdPartyEntry[] = [
   {
@@ -124,7 +206,7 @@ function getAppFrontendLicenseSection(): LicenseSection {
 }
 
 export function getClientViewAboutLicenseSections(): LicenseSection[] {
-  return [...getClientWebAppLicenseSections(), getAppFrontendLicenseSection()];
+  return [...getSharedAppLicenseSections(), getAppFrontendLicenseSection()];
 }
 
 export function getSettingsAboutLicenseSections(mode: AboutRuntimeMode): LicenseSection[] {

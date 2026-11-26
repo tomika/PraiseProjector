@@ -26,9 +26,8 @@ declare global {
 /**
  * The webapp asset root. SINGLE SOURCE OF TRUTH — every consumer (icons,
  * soundfonts, …) must call this rather than re-deriving the base, or the copies
- * drift. Must stay in sync with the fallbacks in client-view.html / index.html,
- * and must NEVER point at the frozen legacy /app tree — the webapp owns its
- * assets (public/public/{images,soundfont,chordselector.css}).
+ * drift. Must stay in sync with the fallbacks in client-view.html / index.html.
+ * The webapp owns its assets (public/public/{images,soundfont,chordselector.css}).
  */
 export function assetBase(): string {
   if (typeof window === "undefined") return "/webapp";

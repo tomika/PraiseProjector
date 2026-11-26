@@ -7,8 +7,7 @@
  * for this codebase (constructor parameter properties, the yalps runtime import,
  * extensionless ESM imports), so tests are bundled with esbuild instead of run
  * directly. esbuild itself is resolved explicitly (never via cwd) from the
- * public/ workspace/project root; it is already an installed dependency
- * (via the client workspace) and is never added here.
+ * public/ project root, where it is a declared devDependency.
  */
 
 const fs = require("fs");
@@ -27,7 +26,7 @@ function resolveEsbuild() {
     console.error(
       "[test:chordpro] Could not resolve the 'esbuild' package from the public/ " +
         "workspace/project root. Run `npm install` at the repository root so the " +
-        "hoisted 'esbuild' dependency (from the client workspace) is installed, " +
+        "'esbuild' devDependency is installed, " +
         "then retry.\n" +
         String((err && err.message) || err)
     );

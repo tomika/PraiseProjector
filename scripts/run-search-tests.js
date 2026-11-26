@@ -17,7 +17,7 @@ function resolveEsbuild() {
     console.error(
       "[test:search] Could not resolve the 'esbuild' package from the public/ " +
         "workspace/project root. Run `npm install` at the repository root so the " +
-        "hoisted 'esbuild' dependency (from the client workspace) is installed, " +
+        "'esbuild' devDependency is installed, " +
         "then retry.\n" +
         String((err && err.message) || err)
     );

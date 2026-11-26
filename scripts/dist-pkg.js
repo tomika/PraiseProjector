@@ -8,27 +8,13 @@ const out = path.resolve(__dirname, "..", "dist", "pkg");
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
-// The FROZEN legacy client (public/app, and the copy publicDir leaves in the
-// build output) must never ride along into a package — mirrors the "!app/**"
-// filters in package.json's build.files / build.extraResources.
-const skipLegacyApp = (src, root) => {
-  const rel = path.relative(root, src);
-  return rel !== "app" && !rel.startsWith(`app${path.sep}`);
-};
-
 // Copy compiled electron + webapp
 for (const dir of ["dist/electron", "dist/webapp"]) {
-  fs.cpSync(dir, path.join(out, dir), {
-    recursive: true,
-    filter: (src) => skipLegacyApp(src, path.resolve(dir)),
-  });
+  fs.cpSync(dir, path.join(out, dir), { recursive: true });
 }
 
 // Copy public (extraResources equivalent)
-fs.cpSync("public", path.join(out, "public"), {
-  recursive: true,
-  filter: (src) => skipLegacyApp(src, path.resolve("public")),
-});
+fs.cpSync("public", path.join(out, "public"), { recursive: true });
 
 // Copy assets if present
 if (fs.existsSync("assets")) {

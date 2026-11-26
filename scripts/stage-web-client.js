@@ -8,11 +8,6 @@
  * /webapp root with no help from us. The client-view resolves them via
  * __ppAssetBase="/webapp" (see client-view.html / src/client-view/ui/assets.ts).
  *
- * Vite's publicDir also copies the FROZEN legacy `app/` folder into the build.
- * That tree is retired — nothing here may depend on it — so we simply drop it.
- * Do NOT reintroduce "lifting" assets out of app/: that was the coupling that
- * made new-app icons get added to the legacy client's folder.
- *
  * Then we emit two manifests:
  *   - /webapp/precache.json — the URL list consumed by the browser service worker.
  *   - /webapp/release-manifest.json — the size/hash manifest consumed by the
@@ -197,10 +192,7 @@ function main() {
     process.exit(1);
   }
 
-  // 1. Drop the publicDir-copied FROZEN legacy /app tree. The webapp must never
-  //    serve or depend on it.
-  rmrf(path.join(distDir, "app"));
-  // A stale manifest from an interrupted/manual build must never describe this build.
+  // 1. A stale manifest from an interrupted/manual build must never describe this build.
   rmrf(path.join(distDir, releaseManifestName));
 
   // 2. Assert the webapp's own assets are present (publicDir put them there):
@@ -218,7 +210,7 @@ function main() {
   patchServiceWorkerVersion([...all, "/webapp/precache.json"].sort());
   // Generate hashes after sw.js has received its final build-specific version.
   emitReleaseManifest();
-  console.log(`[stage-web-client] staged legacy assets and wrote ${all.length} precache entries → dist/web/precache.json`);
+  console.log(`[stage-web-client] wrote ${all.length} precache entries → dist/web/precache.json`);
 }
 
 main();

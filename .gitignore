@@ -60,11 +60,8 @@ android/keystore.properties
 *.keystore
 
 *.bak
-public/app/pp-api.js
-public/app/pp-api.js.map
-public/app/pp-api.css
-public/app/pp-api.css.map
-public/app/pp-api.build-mode
+# Build output of the removed legacy client (tag legacy-client-final)
+public/app/
 proxy-config.json
 tsconfig.node.tsbuildinfo
 
@@ -73,5 +70,4 @@ public/assets/pp.ico
 public/assets/pp.icns
 public/assets/pp-*.png
 
-public/app/client-view/
 CLAUDE.md

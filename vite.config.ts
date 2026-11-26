@@ -51,10 +51,15 @@ export default defineConfig(({ command, mode }) => {
   // and the public /webapp deploy) gets its own outDir so it never collides with the
   // Electron *renderer* build (base "./", loaded via file://) which keeps dist/webapp.
   const webOutDir = "dist/web";
-  // The webapp's OWN asset set (public/public/{images,soundfont,chordselector.css}).
-  // Never point these at public/app — that tree is the frozen legacy client and
-  // the coupling is deliberately severed.
+  // The webapp's asset set (public/public/{images,soundfont,chordselector.css}).
   const webappAssetSourceDir = path.join(__dirname, "public");
+  // An older checkout may still hold the ignored build output of the removed
+  // legacy client here. publicDir would copy it into every build and package.
+  const staleLegacyAppDir = path.join(webappAssetSourceDir, "app");
+  if (fs.existsSync(staleLegacyAppDir)) {
+    console.warn(`[vite] removing stale legacy client output: ${staleLegacyAppDir}`);
+    fs.rmSync(staleLegacyAppDir, { recursive: true, force: true });
+  }
   const soundfontSourceDir = path.join(__dirname, "public", "soundfont");
   // fs.createReadStream(...).pipe(res) never sets Content-Type on its own. Browsers happily
   // sniff PNG/JPEG without one, but Chrome refuses to render SVG via <img> without the correct
@@ -139,13 +144,6 @@ export default defineConfig(({ command, mode }) => {
           const soundfontOutDir = path.join(__dirname, "dist", "webapp", "soundfont");
           fs.rmSync(soundfontOutDir, { recursive: true, force: true });
           fs.cpSync(soundfontSourceDir, soundfontOutDir, { recursive: true });
-
-          // publicDir copies the FROZEN legacy public/app tree into every build.
-          // Drop it here or it rides into the installer: electron-builder packages
-          // dist/webapp/**/* wholesale, and scripts/dist-pkg.js copies the whole
-          // directory too — so filtering extraResources alone is not enough.
-          // (stage-web-client.js does the same for the dist/web build.)
-          fs.rmSync(path.join(__dirname, "dist", "webapp", "app"), { recursive: true, force: true });
         },
       },
       // Inject a unique per-build CACHE_VERSION into sw.js so every new deploy
