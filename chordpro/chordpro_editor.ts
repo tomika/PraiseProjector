@@ -2235,11 +2235,13 @@ export class ChordProEditor extends ChordDrawer {
       if (surface && geometry) {
         const top = (viewportTop - surface.rect.top) / surface.logicalToDisplay;
         // Use the uppermost musical row, including lyrics whose repeated chords
-        // are hidden. Keep the last key when scrolling past the music.
+        // are hidden. Keep the last key when scrolling past the music. A score
+        // numbers its chords from its own K: field.
         for (const { occurrence, bottom } of geometry.occurrences) {
-          if (!occurrence.key || occurrence.kind === "comment") continue;
+          if (occurrence.kind === "comment") continue;
           if (occurrence.kind === "lyrics" && !occurrence.chords.length && !occurrence.text.trim()) continue;
-          const localKey = this.system.getKey(occurrence.key);
+          const name = (occurrence.kind === "abc" ? this.domRenderer?.getAbcScoreKey(occurrence.id) : undefined) ?? occurrence.key;
+          const localKey = name ? this.system.getKey(name) : undefined;
           if (!localKey) continue;
           key = localKey;
           if (bottom > top) break;

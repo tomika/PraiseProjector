@@ -160,6 +160,7 @@ function romanModifier(details: ChordVisualDetails, simplified: boolean): string
  */
 export function buildChordVisualModel(options: BuildChordVisualModelOptions): ChordVisualModel {
   const { chord, chordDetails, system, chordFormat, readOnly } = options;
+  const roman = readOnly && (chordFormat & CHORDFORMAT_ROMAN_MASK) !== 0;
 
   if (!chordDetails) {
     const text = typeof chord === "string" ? chord : chord.text;
@@ -169,12 +170,18 @@ export function buildChordVisualModel(options: BuildChordVisualModelOptions): Ch
       underline: false,
     };
   }
+  // A note letter inside a word (N.C., Coda) is a recognized chord label, but
+  // not a degree to number: keep its text as written. A bracketed extension
+  // such as (add9) is still part of the chord.
+  if (roman && (/\p{L}/u.test(chordDetails.prefix) || /^\p{L}/u.test(chordDetails.suffix))) {
+    const text = typeof chord === "string" ? chord : chord.text;
+    return { unknown: false, tokens: [{ role: "unknown-text", text, subscript: false, gapBefore: 0 }], underline: !!options.actual };
+  }
 
   const tokens: ChordVisualToken[] = [];
 
   if (chordDetails.prefix) tokens.push({ role: "prefix", text: chordDetails.prefix, subscript: false, gapBefore: 0 });
 
-  const roman = readOnly && (chordFormat & CHORDFORMAT_ROMAN_MASK) !== 0;
   const romanKey = roman && options.actualKey ? system.getKey(options.actualKey) : undefined;
   const majorReference = (chordFormat & CHORDFORMAT_ROMAN_MAJOR) !== 0;
   const simplified = readOnly && (chordFormat & CHORDFORMAT_SIMPLIFIED) !== 0;

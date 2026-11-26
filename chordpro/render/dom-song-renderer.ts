@@ -5,7 +5,8 @@ import type { TuneObject } from "abcjs";
 import type { AbcRange } from "../../common/pp-types";
 import { isAbcjsLoaded, loadAbcjs } from "../abcjs-lazy";
 import { abcVisualOptions, scoreOptionValues } from "../abc-options";
-import { CHORDFORMAT_SUBSCRIPT } from "./chord-visual";
+import { CHORDFORMAT_ROMAN_MASK, CHORDFORMAT_SIMPLIFIED, CHORDFORMAT_SUBSCRIPT } from "./chord-visual";
+import { createAbcChordNotation, usesRomanAbcChords } from "./abc-chord-notation";
 import { ChordProAbc, type ChordProChord, type ChordProDocument, type ChordProLine, type ChordSystem } from "../chordpro_base";
 import type { ChordProDirectiveStyles, ChordProDisplayProperties } from "../chordpro_styles";
 import { safeMetaAlignment } from "../layout/meta-alignment";
@@ -659,6 +660,8 @@ export class DomSongRenderer {
       /** The persistent document score; `source` may be a per-projection clone. */
       origin: ChordProLine | null;
       visual?: TuneObject;
+      /** The first key the rendered score names, when its chords are shown in Roman notation. */
+      scoreKey?: string;
     }
   >();
   /** Owned diagram canvases, keyed by chord label. These are retained canvases. */
@@ -1056,9 +1059,12 @@ export class DomSongRenderer {
     const horizontalSeparation = 2 * plan.display.lyricsLineHeight;
     const visibleWidth = Math.max(1, layout.width - leftMargin);
     const maxWidth = visibleWidth / ABC_SCALE + leftMargin + horizontalSeparation;
+    // Roman chord text is formatted here, including note names and superscripts,
+    // so abcjs's own chord translation must leave it unchanged.
+    const romanChords = usesRomanAbcChords(input.chordFormat, input.readOnly);
     const options = {
-      germanAlphabet: input.system.systemCode === "G",
-      jazzchords: (input.chordFormat & CHORDFORMAT_SUBSCRIPT) !== 0,
+      germanAlphabet: !romanChords && input.system.systemCode === "G",
+      jazzchords: !romanChords && (input.chordFormat & CHORDFORMAT_SUBSCRIPT) !== 0,
       paddingleft: 0,
       paddingright: 0,
       staffwidth: maxWidth - leftMargin - horizontalSeparation,
@@ -1070,12 +1076,20 @@ export class DomSongRenderer {
     for (const occurrence of abcOccurrences) {
       const abc = occurrence.source;
       if (!(abc instanceof ChordProAbc)) continue;
+      const notationKey = romanChords
+        ? [
+            input.chordFormat & (CHORDFORMAT_ROMAN_MASK | CHORDFORMAT_SIMPLIFIED | CHORDFORMAT_SUBSCRIPT),
+            input.system.systemCode,
+            occurrence.key ?? "",
+          ].join(":")
+        : "";
       const key = [
         occurrence.text,
         options.staffwidth,
         options.currentColor,
         options.germanAlphabet,
         options.jazzchords,
+        notationKey,
         defaultsKey,
         this.measurer.styleRevision,
       ].join("|");
@@ -1094,7 +1108,19 @@ export class DomSongRenderer {
       // Double-click target metadata: the controller resolves the ABC block for
       // MIDI playback from the owning occurrence, which survives re-render.
       node.dataset.occurrenceId = occurrence.id;
-      let visual = this.abcPort.render(node, abc, options);
+      let scoreKey: string | undefined;
+      const render = (params: typeof options) => {
+        if (!romanChords) return this.abcPort.render(node, abc, params);
+        const notation = createAbcChordNotation({ system: input.system, chordFormat: input.chordFormat, fallbackKey: occurrence.key });
+        try {
+          return this.abcPort.render(node, abc, { ...params, afterParsing: notation.afterParsing });
+        } finally {
+          // Engraving is done: playback reads the original chord names from this tune.
+          notation.restore();
+          scoreKey = notation.scoreKey;
+        }
+      };
+      let visual = render(options);
       const intrinsicWidth = Number.parseFloat(abcIntrinsicWidth(node));
       // ABC-only songs can have almost no lyric/metadata width. abcjs widens
       // the staff to fit the notes but still aligns headers to the requested
@@ -1103,7 +1129,7 @@ export class DomSongRenderer {
       // width and independent of the host viewport (including FIT_PAGE).
       if (intrinsicWidth > options.staffwidth + 1) {
         node.replaceChildren();
-        visual = this.abcPort.render(node, abc, { ...options, staffwidth: intrinsicWidth });
+        visual = render({ ...options, staffwidth: intrinsicWidth });
       }
       // The visible commit scales this container, and a reused node still
       // carries that transform. `getBoundingClientRect` includes transforms, so
@@ -1132,6 +1158,7 @@ export class DomSongRenderer {
         source: abc,
         origin: occurrence.origin,
         visual,
+        scoreKey,
       });
     }
     return false;
@@ -1146,6 +1173,11 @@ export class DomSongRenderer {
   getAbcVisualObject(abc: ChordProAbc): TuneObject | undefined {
     for (const entry of this.abcNodes.values()) if (entry.source === abc) return entry.visual;
     return undefined;
+  }
+
+  /** The key a rendered score names for its Roman chords, so the key badge matches the score. */
+  getAbcScoreKey(occurrenceId: string): string | undefined {
+    return this.abcNodes.get(occurrenceId)?.scoreKey;
   }
 
   /** Resolve canonical lyric rows against the tune actually on screen. abcjs's

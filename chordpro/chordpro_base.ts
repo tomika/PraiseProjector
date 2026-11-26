@@ -853,6 +853,14 @@ export class ChordProChord extends ChordProChordBase {
 
 export type AbcRenderParams = AbcVisualParams & { currentColor?: string };
 
+/** ABC chord symbols and keys use international note names; German/Hungarian
+ * songs spell B as H and B-flat as B. */
+export function abcChordNameToSystem(system: ChordSystem, name: string) {
+  return system.systemCode === "G"
+    ? name.replace(/^B(b|♭)?/, (_, flat) => (flat ? "B" : "H")).replace(/\/B(b|♭)?$/, (_, flat) => "/" + (flat ? "B" : "H"))
+    : name;
+}
+
 export class ChordProAbc extends ChordProLine {
   private forcedLabel?: string | DifferentialText;
   private chordProCache?: { source: string; lines: readonly ChordProLine[] };
@@ -981,10 +989,7 @@ export class ChordProAbc extends ChordProLine {
         const partial = new ChordProDocument(this.doc.system, "");
         partial.lines = [];
         for (const name of ChordProDocument.metaDataDirectives) if (this.doc.hasMeta(name)) partial.setMeta(name, this.doc.getMeta(name));
-        const chordName = (name: string) =>
-          this.doc.system.systemCode === "G"
-            ? name.replace(/^B(b|♭)?/, (_, flat) => (flat ? "B" : "H")).replace(/\/B(b|♭)?$/, (_, flat) => "/" + (flat ? "B" : "H"))
-            : name;
+        const chordName = (name: string) => abcChordNameToSystem(this.doc.system, name);
         for (const section of converted) {
           const directive = section.grid
             ? "start_of_grid"

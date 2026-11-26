@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { abcjs, loadAbcjs } from "../abcjs-lazy";
 import { ChordProAbc, ChordProDocument, getChordSystem } from "../chordpro_base";
 import type { DisplayPlan } from "../render/display-plan";
 import { DomSongRenderer, type AbcPlaybackAnchor, type AbcRenderPort, type DomSongRendererInput } from "../render/dom-song-renderer";
 import type { SongLayoutResult } from "../layout/song-layout";
-import { CHORDFORMAT_SUBSCRIPT } from "../render/chord-visual";
+import { CHORDFORMAT_ROMAN, CHORDFORMAT_SUBSCRIPT } from "../render/chord-visual";
 
 type TuneObject = NonNullable<ReturnType<AbcRenderPort["render"]>>;
 
@@ -13,6 +14,7 @@ type AbcCacheHarness = {
   getAbcVisualObject(abc: ChordProAbc): TuneObject | undefined;
   getAbcPlaybackAnchor(abc: ChordProAbc): AbcPlaybackAnchor | undefined;
   getAbcVisualObjectForAnchor(anchor: AbcPlaybackAnchor): TuneObject | undefined;
+  getAbcScoreKey(occurrenceId: string): string | undefined;
 };
 
 const SONG = `{start_of_abc: Intro}\nX:1\nK:G\n"G"GABc|\n{end_of_abc}`;
@@ -30,17 +32,17 @@ function fakeNode(svg?: SVGSVGElement) {
 }
 
 /** The renderer's ABC cache only, without a DOM: abcjs is stood in by the port. */
-function abcCacheHarness(svg?: SVGSVGElement) {
+function abcCacheHarness(svg?: SVGSVGElement, render?: AbcRenderPort["render"]) {
   const renderer = Object.create(DomSongRenderer.prototype) as DomSongRenderer;
   const rendered: ChordProAbc[] = [];
   const options: Parameters<AbcRenderPort["render"]>[2][] = [];
   const abcPort: AbcRenderPort = {
     isLoaded: () => true,
     load: () => Promise.resolve(),
-    render: (_node, abc, params) => {
+    render: (node, abc, params) => {
       rendered.push(abc);
       options.push(params);
-      return { rendered: rendered.length } as unknown as TuneObject;
+      return render ? render(node, abc, params) : ({ rendered: rendered.length } as unknown as TuneObject);
     },
   };
   Object.assign(renderer, {
@@ -95,6 +97,58 @@ test("superscript changes invalidate the ABC cache and follow the same chord fla
   assert.equal(rendered.length, 2);
   assert.equal(options[0].jazzchords, false);
   assert.equal(options[1].jazzchords, true);
+});
+
+const chordNames = (tune: TuneObject | undefined) =>
+  (tune?.lines ?? []).flatMap((line) =>
+    (line.staff ?? []).flatMap((staff) =>
+      (staff.voices ?? []).flatMap((voice) => voice.flatMap((item) => ((item as { chord?: { name: string }[] }).chord ?? []).map(({ name }) => name)))
+    )
+  );
+
+test("Roman scores are engraved from formatted names, keep the original names for playback and report their key", async () => {
+  await loadAbcjs();
+  const document = new ChordProDocument(
+    getChordSystem("S"),
+    `{start_of_abc: Intro}
+X:1
+K:Am
+"Am"A "G7"G|
+{end_of_abc}`
+  );
+  const abc = document.lines[0] as ChordProAbc;
+  const engraved: string[][] = [];
+  const { harness, rendered, options } = abcCacheHarness(undefined, (_node, source, params) => {
+    // Stands in for abcjs.renderAbc: parse, run the hook, then engrave.
+    const [tune] = abcjs().parseOnly(source.getAbc());
+    params.afterParsing?.(tune, 0, "");
+    engraved.push(chordNames(tune));
+    return tune;
+  });
+  const layout = { width: 300 } as SongLayoutResult;
+  const input = {
+    system: document.system,
+    isDark: false,
+    readOnly: true,
+    chordFormat: CHORDFORMAT_ROMAN | CHORDFORMAT_SUBSCRIPT,
+  } as unknown as DomSongRendererInput;
+
+  harness.renderAbcBlocks(abcPlan(abc), layout, input);
+  assert.deepEqual(engraved, [["i", "VII7"]]);
+  assert.equal(options[0].jazzchords, false, "abcjs must not translate the formatted chord text again");
+  assert.equal(options[0].germanAlphabet, false);
+  assert.deepEqual(chordNames(harness.getAbcVisualObject(abc)), ["Am", "G7"]);
+  assert.equal(harness.getAbcScoreKey("abc-occurrence"), "Am");
+
+  harness.renderAbcBlocks(abcPlan(abc), layout, input);
+  assert.equal(rendered.length, 1, "an unchanged Roman score is not re-rendered");
+
+  harness.renderAbcBlocks(abcPlan(abc), layout, { ...input, chordFormat: CHORDFORMAT_SUBSCRIPT });
+  assert.equal(rendered.length, 2, "switching back to note names re-renders");
+  assert.equal(options[1].afterParsing, undefined);
+  assert.equal(options[1].jazzchords, true);
+  assert.deepEqual(engraved[1], ["Am", "G7"]);
+  assert.equal(harness.getAbcScoreKey("abc-occurrence"), undefined);
 });
 
 /** An abcjs SVG without a viewBox attribute, as each browser reports it. */

@@ -124,6 +124,13 @@ test("Roman notation distinguishes the song scale from parallel major, preservin
   assert.deepEqual(chords(CHORDFORMAT_ROMAN_MAJOR), ["i", "♭III", "♭VI", "♭VII", "vii°7/II", "iiø7", "V7♯9", "iv7/♭VI", "xyz"]);
 });
 
+test("Roman notation numbers bracketed chords but keeps a chord label written as a word", () => {
+  const doc = new ChordProDocument(system, "{key:Am}\n" + verse("V", "(Am) (E7) N.C. Coda Am(add9)"));
+  const chords = display(doc, undefined, CHORDFORMAT_ROMAN).occurrences[0].chords.map(({ visual }) => visual);
+  assert.deepEqual(chords.map(visualText), ["(i)", "(V7)", "N.C.", "Coda", "i(add9)"]);
+  assert.equal(chords[2].unknown, false, "a known label keeps the normal chord colour");
+});
+
 test("Roman notation uses the local key in grids and instructed sections after a playback shift", () => {
   const doc = new ChordProDocument(system, "{key:Am}\n" + verse("V", "Am C F G") + "\n{start_of_grid:Grid +5}\nAm C F G\n{end_of_grid}");
   const raw = display(doc, undefined, CHORDFORMAT_ROMAN_MAJOR);
@@ -160,6 +167,29 @@ test("the visible Roman key follows chord rows in the scaled viewport and keeps 
   assert.deepEqual(editor.getDisplayKey(20), { name: "Am", inferred: true });
   assert.deepEqual(editor.getDisplayKey(120), { name: "Dm", inferred: true });
   assert.deepEqual(editor.getDisplayKey(330), { name: "Dm", inferred: true });
+});
+
+test("the visible Roman key over a score is the score's own key, or the song key when it names none", () => {
+  const doc = new ChordProDocument(system, "{key:C}\n[C]word");
+  const occurrences = [
+    { occurrence: { id: "named", kind: "abc", key: "C", chords: [], text: "K:Am" }, bottom: 100 },
+    { occurrence: { id: "unnamed", kind: "abc", key: "C", chords: [], text: "K:none" }, bottom: 200 },
+  ];
+  const editor = Object.assign(Object.create(ChordProEditor.prototype), {
+    chordPro: doc,
+    chordFormat: CHORDFORMAT_ROMAN,
+    readOnly: true,
+    system,
+    domRenderer: {
+      element: { getBoundingClientRect: () => ({ top: 0, height: 200 }) },
+      getLayoutSnapshot: () => ({ height: 200 }),
+      getGeometryIndex: () => ({ occurrences }),
+      getAbcScoreKey: (id: string) => (id === "named" ? "Am" : undefined),
+    },
+  }) as ChordProEditor;
+
+  assert.deepEqual(editor.getDisplayKey(50), { name: "Am", inferred: false });
+  assert.deepEqual(editor.getDisplayKey(150), { name: "C", inferred: false });
 });
 
 test("Roman notation respects chromatic spelling and German/Hungarian note names", () => {

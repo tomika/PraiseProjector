@@ -582,9 +582,9 @@ export const clientViewTutorial: TutorialDefinition = {
             "[data-tutorial-id='client-chord-mode']",
             tx(
               "Akkordjelölés",
-              "Az „Am”, „am” és „a” jelölés hangneveket használ. A „VI” az aktuális hangnem skálájához, a „♭VI” az azonos alaphangú dúr skálához viszonyít. A-mollban például a C akkord így III, illetve ♭III. Római jelölésnél a hangnem görgetéskor is látható egy kis körben a bal felső sarokban. A csillag becsült hangnemet jelöl.",
+              "Az „Am”, „am” és „a” jelölés hangneveket használ. A „VI” az aktuális hangnem skálájához, a „♭VI” az azonos alaphangú dúr skálához viszonyít. A-mollban például a C akkord így III, illetve ♭III. A kották akkordjelei is így jelennek meg, a kotta saját hangneméhez viszonyítva. Római jelölésnél a hangnem görgetéskor is látható egy kis körben a bal felső sarokban. A csillag becsült hangnemet jelöl.",
               "Chord notation",
-              "Am, am and a use note names. VI uses the scale of the current key, and ♭VI uses the major scale on the same tonic. For example, a C chord in A minor appears as III or ♭III, respectively. In either Roman mode, the key stays visible in a small circle in the top left while scrolling. An asterisk marks an estimated key."
+              "Am, am and a use note names. VI uses the scale of the current key, and ♭VI uses the major scale on the same tonic. For example, a C chord in A minor appears as III or ♭III, respectively. Chord symbols in scores use the same notation, relative to the score's own key. In either Roman mode, the key stays visible in a small circle in the top left while scrolling. An asterisk marks an estimated key."
             ),
             { helpIcons: [{ label: "Am" }, { label: "am" }, { label: "a" }, { label: "VI" }, { label: "♭VI" }, { label: "VI*" }, { label: "♭VI*" }] }
           ),
